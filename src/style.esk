@@ -1,0 +1,32 @@
+// Element props: Style, colors, Align and Justify, keys.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+struct Key { bool set; int64 value; }
+
+Key key(int64 value) { return Key{true, value}; }
+
+// `label` is the accessible name (ARIA label, accessibilityLabel, contentDescription).
+// width and height are points (0: sized by content and parent); grow shares the free
+// space along the parent's direction (flex-grow); wrap lets a row's children flow onto
+// more lines (flex-wrap). The visual props: colors from rgb()/rgba() (-1: the platform's
+// default), font_size in points and font_weight 100 to 900 (0: default), border_width and
+// radius in points, opacity in percent, align (children across the axis) and justify
+// (children along it) from the Align and Justify members (0: default).
+struct Style {
+    Key key; int gap = 8; int padding = 0; string label;
+    int width; int height; int grow; bool wrap;
+    int64 background = -1; int64 color = -1; int font_size; int font_weight;
+    int border_width; int64 border_color = -1; int radius; int opacity = 100;
+    int align; int justify;
+}
+
+enum Align { AlignDefault, AlignStart, AlignCenter, AlignEnd, AlignStretch }
+
+enum Justify { JustifyDefault, JustifyStart, JustifyCenter, JustifyEnd, JustifyBetween, JustifyAround }
+
+// An opaque color, each channel 0 to 255; rgba adds the alpha.
+int64 rgb(int r, int g, int b) { return rgba(r, g, b, 255); }
+
+int64 rgba(int r, int g, int b, int a) {
+    return ((int64)(r & 255) << 24) | ((int64)(g & 255) << 16) | ((int64)(b & 255) << 8) | (int64)(a & 255);
+}

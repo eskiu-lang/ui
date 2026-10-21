@@ -1,0 +1,39 @@
+// Controls: TextInput and Switch.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A controlled on/off switch: it shows `value`, and on_change gets the user's toggle.
+void Switch(Style style, bool value, escaping fn(bool)->void on_change) {
+    SwitchExtra extra = SwitchExtra{value, on_change};
+    ui.next_switch = &extra;
+    ui_element(9, style, null, void() {}, void() {}, void() {});
+}
+
+// A controlled text field: `value` is what it shows, `on_change` gets each edit (the text
+// is borrowed for the call; keep it in owned state such as use_string). `focused` is 1 to
+// focus it, 0 to blur it, -1 to leave focus to the user.
+struct Input { Key key; string value; string placeholder; string label; int focused = -1; Style style; }
+
+// The field's style, with the Input's key and label.
+Style ui_input_style(Input input) {
+    Style style = input.style;
+    if (input.key.set) { style.key = input.key; }
+    if (input.label != null) { style.label = input.label; }
+    return style;
+}
+
+void TextInput(Input input, escaping fn(string)->void on_change) {
+    InputExtra extra = InputExtra{on_text: on_change, placeholder: input.placeholder,
+        focused: input.focused};
+    ui.next_input = &extra;
+    ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
+        void() {}, void() {}, void() {});
+}
+
+// The same, with `on_focus` told when the field gains (true) or loses (false) focus.
+void TextInput_focus(Input input, escaping fn(string)->void on_change, escaping fn(bool)->void on_focus) {
+    InputExtra extra = InputExtra{on_text: on_change, on_focus: on_focus, has_on_focus: true,
+        placeholder: input.placeholder, focused: input.focused};
+    ui.next_input = &extra;
+    ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
+        void() {}, void() {}, void() {});
+}

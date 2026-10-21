@@ -1,5 +1,4 @@
 import "../src/ui.esk";
-import "../src/owned_string.esk";
 import <string>;
 import <time>;
 

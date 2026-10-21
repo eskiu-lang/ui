@@ -1,0 +1,301 @@
+// Signals, memos and effects: subscriptions as indexed edges, dirty queues, hooks.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A subscription is one entry on each side, each holding the other's index, so either
+// side removes it in O(1) by swapping in its last entry.
+struct Reader { *Observer observer; int at; }
+
+struct Edge { *Source source; int at; }
+
+struct Source {
+    List<Reader> readers;
+    *Observer memo;
+    // The observer run that last subscribed: a second read in the same run is not a new edge.
+    *Observer marked;
+    int64 marked_epoch;
+}
+
+struct Observer {
+    int kind;
+    *Node owner;
+    List<Edge> deps;
+    // Unique per run across all observers (ui_epochs), so a freed observer's mark never
+    // matches a new one at the same address.
+    int64 epoch;
+    bool dirty;
+    bool evaluating;
+    bool queued;
+    fn()->void compute;
+    fn()->void cleanup;
+    bool has_cleanup;
+    *Source output;
+}
+
+struct Slot { int kind; *void tag; *void data; fn()->void dispose; *Observer observer; }
+
+
+void ui_remove_reader(*Source source, int at) {
+    int last = source.readers.size - 1;
+    if (at != last) {
+        Reader moved = source.readers.data[last];
+        source.readers.data[at] = moved;
+        moved.observer.deps.data[moved.at].at = at;
+    }
+    source.readers.size = last;
+}
+
+void ui_remove_edge(*Observer observer, int at) {
+    int last = observer.deps.size - 1;
+    if (at != last) {
+        Edge moved = observer.deps.data[last];
+        observer.deps.data[at] = moved;
+        moved.source.readers.data[moved.at].at = at;
+    }
+    observer.deps.size = last;
+}
+
+// Drop every subscription of the observer; a new run subscribes again.
+void ui_untrack(*Observer observer) {
+    for (int i = observer.deps.size - 1; i >= 0; i--) {
+        Edge edge = observer.deps.data[i];
+        ui_remove_reader(edge.source, edge.at);
+    }
+    observer.deps.size = 0;
+    observer.epoch = ++ui_epochs;
+}
+
+void ui_track(*Source source) {
+    if (ui == null) { return; }
+    *Observer observer = ui.tracking;
+    if (observer == null) { return; }
+    if (source.marked == observer && source.marked_epoch == observer.epoch) { return; }
+    // A memo validated between two reads moves the mark; a short dependency list is
+    // checked directly. A longer one may get a duplicate edge, which only costs a visit.
+    if (observer.deps.size <= kSmall) {
+        for (i in 0..observer.deps.size) {
+            if (observer.deps.data[i].source == source) { return; }
+        }
+    }
+    source.marked = observer;
+    source.marked_epoch = observer.epoch;
+    observer.deps.push(Edge{source, source.readers.size});
+    source.readers.push(Reader{observer, observer.deps.size - 1});
+}
+
+void ui_queue(List<*Observer>* list, *Observer observer) {
+    if (observer.queued) { return; }
+    observer.queued = true;
+    list.push(observer);
+}
+
+void ui_unqueue(List<*Observer>* list, *Observer observer) {
+    if (!observer.queued) { return; }
+    observer.queued = false;
+    for (int i = list.size - 1; i >= 0; i--) {
+        if (list.data[i] == observer) { list.remove(i); return; }
+    }
+}
+
+void ui_changed(*Source source) {
+    if (ui == null) { return; }
+    for (i in 0..source.readers.size) {
+        *Observer observer = source.readers.data[i].observer;
+        observer.dirty = true;
+        if (observer.kind == 1) {
+            ui_queue(&ui.dirty_memos, observer);
+            ui_stale_memos(observer.output);
+        } else if (observer.kind == 2) {
+            ui_queue(&ui.dirty_effects, observer);
+        } else {
+            ui_schedule(observer.owner);
+            if (ui.phase == 1 && !observer.owner.render_write) {
+                observer.owner.render_write = true;
+                ui.render_writes.push(observer.owner);
+            }
+        }
+    }
+}
+
+void ui_stale_memos(*Source source) {
+    for (i in 0..source.readers.size) {
+        *Observer reader = source.readers.data[i].observer;
+        if (reader.kind == 1 && !reader.dirty) {
+            reader.dirty = true;
+            ui_queue(&ui.dirty_memos, reader);
+            ui_stale_memos(reader.output);
+        }
+    }
+}
+
+// Forget a source that is being freed: no observer keeps it as a dependency.
+void ui_detach_source(*Source source) {
+    for (int i = source.readers.size - 1; i >= 0; i--) {
+        Reader reader = source.readers.data[i];
+        ui_remove_edge(reader.observer, reader.at);
+    }
+    source.readers.free();
+    source.marked = null;
+}
+
+void ui_validate(*Observer observer) {
+    ui_require(!observer.evaluating, "memo cycle");
+    if (!observer.dirty) { return; }
+    observer.evaluating = true;
+    *Observer previous = ui.tracking;
+    ui_untrack(observer);
+    ui.tracking = observer;
+    observer.dirty = false;
+    observer.compute();
+    ui.tracking = previous;
+    observer.evaluating = false;
+}
+
+*Observer ui_observer(int kind, *Node owner) {
+    *Observer observer = alloc<Observer>(1);
+    observer.kind = kind;
+    observer.owner = owner;
+    observer.epoch = ++ui_epochs;
+    return observer;
+}
+
+void ui_drop_observer(*Observer observer) {
+    ui_untrack(observer);
+    ui_unqueue(observer.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, observer);
+    if (observer.has_cleanup) { observer.cleanup(); ui_release_closure(observer.cleanup); }
+    if (observer.kind != 0) { ui_release_closure(observer.compute); }
+    observer.deps.free();
+    free(observer);
+}
+
+string ui_hook_name(int kind) {
+    if (kind == 0) { return "use_signal"; }
+    if (kind == 1) { return "use_memo"; }
+    if (kind == 2) { return "use_effect"; }
+    if (kind == 4) { return "use_back"; }
+    if (kind == 5) { return "use_native_event"; }
+    return "use_string";
+}
+
+*Slot ui_slot(int kind, *void tag) {
+    *Node node = ui.builder;
+    ui_require(node != null && ui.phase == 1, "hook outside render");
+    int index = node.cursor++;
+    if (index == node.slots.size) {
+        ui_require(!node.mounted, "hook count increased");
+        node.slots.push(Slot{kind: kind, tag: tag});
+    }
+    *Slot slot = &node.slots.data[index];
+    if (slot.kind != kind || slot.tag != tag) {
+        String message;
+        if (slot.kind != kind) {
+            String_appendf(&message, "hook kind/type changed at slot %d: expected %s, found %s",
+                index, ui_hook_name(slot.kind), ui_hook_name(kind));
+        } else {
+            String_appendf(&message, "hook kind/type changed at slot %d: %s with another type",
+                index, ui_hook_name(kind));
+        }
+        ui_fail(message.data);
+    }
+    return slot;
+}
+
+struct Signal<T> { T value; Source source; }
+
+*Signal<T> use_signal<T>(T initial) {
+    static int tag;
+    *Slot slot = ui_slot(0, &tag);
+    if (slot.data == null) {
+        *Signal<T> signal = alloc<Signal<T>>(1);
+        signal.value = initial;
+        slot.data = signal;
+        slot.dispose = void() { ui_detach_source(&signal.source); free(signal); };
+    }
+    return (*Signal<T>)slot.data;
+}
+
+// A signal owned by the app's model rather than by a scope: it outlives any mount, works
+// with no runtime, and is freed by its owner (after the UI that reads it is shut down).
+*Signal<T> signal_new<T>(T initial) {
+    *Signal<T> signal = alloc<Signal<T>>(1);
+    signal.value = initial;
+    return signal;
+}
+
+void Signal_free<T>(Signal<T>* self) {
+    ui_detach_source(&self.source);
+    free(self);
+}
+
+T Signal_get<T>(Signal<T>* self) {
+    if (self.source.memo != null) { ui_validate(self.source.memo); }
+    ui_track(&self.source);
+    return self.value;
+}
+
+void Signal_apply<T>(Signal<T>* self, T value) {
+    if (self.value == value) { return; }
+    self.value = value;
+    ui_changed(&self.source);
+}
+
+void Signal_set<T>(Signal<T>* self, T value) {
+    ui_require(ui == null || ui.tracking == null || ui.tracking.kind != 1, "memo must be pure");
+    if (ui != null && ui.phase == 1) {
+        ui.writes.push(void() { self.apply(value); });
+    } else { self.apply(value); }
+}
+
+struct Memo<T> { Signal<T> signal; fn()->T callback; bool initialized; }
+
+*Signal<T> use_memo<T>(escaping fn()->T callback) {
+    static int tag;
+    *Slot slot = ui_slot(1, &tag);
+    *Memo<T> memo = (*Memo<T>)slot.data;
+    if (memo == null) {
+        memo = alloc<Memo<T>>(1);
+        slot.data = memo;
+        *Observer observer = ui_observer(1, ui.builder);
+        slot.observer = observer;
+        observer.output = &memo.signal.source;
+        memo.signal.source.memo = observer;
+        observer.compute = void() {
+            T value = memo.callback();
+            bool changed = !memo.initialized || memo.signal.value != value;
+            memo.signal.value = value;
+            memo.initialized = true;
+            if (changed) { ui_changed(&memo.signal.source); }
+        };
+        slot.dispose = void() {
+            ui_drop_observer(memo.signal.source.memo);
+            ui_detach_source(&memo.signal.source);
+            free_closure(memo.callback);
+            free(memo);
+        };
+    } else { free_closure(memo.callback); }
+    memo.callback = callback;
+    memo.signal.source.memo.dirty = true;
+    ui_queue(&ui.dirty_memos, memo.signal.source.memo);
+    return &memo.signal;
+}
+
+void use_effect(escaping fn()->void callback) {
+    static int tag;
+    *Slot slot = ui_slot(2, &tag);
+    *Observer effect = (*Observer)slot.data;
+    if (effect == null) {
+        effect = ui_observer(2, ui.builder);
+        slot.data = effect;
+        slot.observer = effect;
+        slot.dispose = void() { ui_drop_observer(effect); };
+    } else { ui_release_closure(effect.compute); }
+    effect.compute = callback;
+    effect.dirty = true;
+    ui_queue(&ui.dirty_effects, effect);
+}
+
+void on_cleanup(escaping fn()->void callback) {
+    ui_require(ui.tracking != null && ui.tracking.kind == 2, "on_cleanup outside effect");
+    ui_require(!ui.tracking.has_cleanup, "only one cleanup per effect");
+    ui.tracking.cleanup = callback;
+    ui.tracking.has_cleanup = true;
+}

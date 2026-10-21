@@ -1,0 +1,107 @@
+// The commit format the renderers read, and a decoder for tests and tools.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A commit is one byte buffer, little-endian. Each record is an op byte and the node id
+// (u32), then:
+//   1 create   generation u32, kind u8
+//   2 prop     prop u8, value i32
+//   3 text     length u32, the bytes, a NUL
+//   4 insert   parent u32, before u32 (0: at the end)
+//   5 move     parent u32, before u32
+//   6 remove   (nothing)
+//   7 listen, 8 unlisten
+//   9 string prop  prop u8 (1 label, 2 placeholder, 3 image source, 4 native view type),
+//                  length u32, the bytes, a NUL
+//  11 named prop  (a native view's) name: length u32, the bytes, a NUL; value: the same
+//  10 command  (the id is a request id, not a node) command u8 (1 alert: title, message,
+//              then the buttons; 2 open a URL), u8 count, then that many strings, each a
+//              length u32, the bytes and a NUL
+// Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow,
+// 7 wrap (1 or 0), 8 background and 9 text color (RGBA, 0: platform default), 10 font size,
+// 11 font weight, 12 border width, 13 border color, 14 radius, 15 opacity (percent),
+// 16 align and 17 justify (Align / Justify), 18 switch on (1 or 0), 19 spinning (1 or 0),
+// 20 status bar style (BarStyle), 21 status bar hidden (1 or 0), 22 refreshing (1 or 0, a
+// scroll with a RefreshControl).
+// An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
+// 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
+// that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal
+// (a column on a layer over the whole screen, laid out on its own), 13 native view (a view
+// the app registered with the host, by type).
+// The renderer reads it during apply and copies what it keeps.
+struct Commit { *uint8 data; int len; int cap; }
+
+void Commit_room(*Commit self, int n) {
+    if (self.len + n <= self.cap) { return; }
+    int cap = self.cap < 256 ? 256 : self.cap;
+    while (self.len + n > cap) { cap = cap * 2; }
+    *uint8 grown = alloc<uint8>(cap);
+    if (self.len > 0) { memcpy(grown, self.data, (size_t)self.len); }
+    free(self.data);
+    self.data = grown;
+    self.cap = cap;
+}
+
+void Commit_u8(*Commit self, int value) {
+    self.room(1);
+    self.data[self.len++] = (uint8)value;
+}
+
+void Commit_u32(*Commit self, int value) {
+    self.room(4);
+    uint32 v = (uint32)value;
+    self.data[self.len] = (uint8)(v & 255);
+    self.data[self.len + 1] = (uint8)((v >> 8) & 255);
+    self.data[self.len + 2] = (uint8)((v >> 16) & 255);
+    self.data[self.len + 3] = (uint8)((v >> 24) & 255);
+    self.len += 4;
+}
+
+void Commit_free(*Commit self) { free(self.data); *self = Commit{}; }
+
+// A decoded record, for tests and tools; `text` points into the buffer.
+struct Mutation { int op; int id; int generation; int parent; int before; int kind; string text; string name; }
+
+int ui_read_u32(*uint8 p) {
+    return (int)((uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24));
+}
+
+void ui_decode(*uint8 data, int len, List<Mutation>* out) {
+    int at = 0;
+    while (at < len) {
+        Mutation m = Mutation{op: (int)data[at], id: ui_read_u32(&data[at + 1])};
+        at += 5;
+        if (m.op == 1) { m.generation = ui_read_u32(&data[at]); m.kind = (int)data[at + 4]; at += 5; }
+        else if (m.op == 2) { m.kind = (int)data[at]; m.before = ui_read_u32(&data[at + 1]); at += 5; }
+        else if (m.op == 3) {
+            int n = ui_read_u32(&data[at]);
+            m.text = (string)&data[at + 4];
+            at += 4 + n + 1;
+        } else if (m.op == 11) {
+            // A named prop: name in `name`, value in `text`.
+            int n = ui_read_u32(&data[at]);
+            m.name = (string)&data[at + 4];
+            at += 4 + n + 1;
+            int v = ui_read_u32(&data[at]);
+            m.text = (string)&data[at + 4];
+            at += 4 + v + 1;
+        } else if (m.op == 10) {
+            // A command: kind is the command, before the number of strings, text the first.
+            m.kind = (int)data[at];
+            m.before = (int)data[at + 1];
+            at += 2;
+            for (j in 0..m.before) {
+                int n = ui_read_u32(&data[at]);
+                if (j == 0) { m.text = (string)&data[at + 4]; }
+                at += 4 + n + 1;
+            }
+        } else if (m.op == 9) {
+            m.kind = (int)data[at];
+            int n = ui_read_u32(&data[at + 1]);
+            m.text = (string)&data[at + 5];
+            at += 5 + n + 1;
+        } else if (m.op == 4 || m.op == 5) {
+            m.parent = ui_read_u32(&data[at]); m.before = ui_read_u32(&data[at + 4]); at += 8;
+        }
+        out.push(m);
+    }
+}

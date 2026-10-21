@@ -1,0 +1,108 @@
+// Native modules and views: code the app ships per platform.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+struct NativePair { string name; string value; }
+
+struct NativeHandler { string channel; fn(string)->void handler; bool removed; }
+
+void ui_free_pairs(List<NativePair>* pairs) {
+    for (i in 0..pairs.size) { free(pairs.data[i].name); free(pairs.data[i].value); }
+    pairs.free();
+}
+
+// A handler for a native channel's events while the scope is mounted; the payload is
+// borrowed for the call.
+void use_native_event(string channel, escaping fn(string)->void handler) {
+    static int tag;
+    *Slot slot = ui_slot(5, &tag);
+    *NativeHandler entry = (*NativeHandler)slot.data;
+    if (entry == null) {
+        entry = alloc<NativeHandler>(1);
+        entry.channel = ui_copy(channel);
+        slot.data = entry;
+        ui.native_handlers.push(entry);
+        slot.dispose = void() {
+            ui_drop_native(entry); ui_release_payload(entry.handler); free(entry.channel); free(entry);
+        };
+    } else { ui_release_payload(entry.handler); }
+    entry.handler = handler;
+}
+
+void ui_drop_native(*NativeHandler entry) {
+    if (entry.removed) { return; }
+    entry.removed = true;
+    for (int i = ui.native_handlers.size - 1; i >= 0; i--) {
+        if (ui.native_handlers.data[i] == entry) { ui.native_handlers.remove(i); break; }
+    }
+}
+
+// The host's side: a native module posted `payload` on `channel` (both read during the call).
+bool ui_event_native(string channel, string payload) {
+    return ui_post(Event{0, 0, 8, 0, payload, 0, channel});
+}
+
+// A named prop for the NativeView right after it.
+void ui_native_prop(string name, string value) {
+    ui.next_native_props.push(NativePair{ui_copy(name), ui_copy(value == null ? "" : value)});
+}
+
+// A view the app registered with each host under `type` (see the hosts' registries). It is
+// a leaf: give it a size. on_event gets the events the view sends (name and payload).
+void NativeView(Style style, string type, escaping fn(string, string)->void on_event) {
+    ui.next_view_type = type;
+    ui_element(13, style, null, void() {}, void() {}, void() {});
+    *Node node = ui.builder.emitted.data[ui.builder.emitted.size - 1];
+    node.on_view = on_event;
+}
+
+void ui_emit_named(*Node node, string name, string value) {
+    *Commit c = &ui.commit;
+    c.u8(11); c.u32(node.id);
+    for (k in 0..2) {
+        string text = k == 0 ? name : value;
+        int n = (int)strlen(text);
+        c.u32(n);
+        c.room(n + 1);
+        memcpy(&c.data[c.len], text, (size_t)(n + 1));
+        c.len += n + 1;
+    }
+}
+
+// Send the type once, then each named prop that is new or changed; one no longer given is
+// sent empty.
+void ui_native_view_props(*Node node, bool fresh) {
+    string type = ui.next_view_type;
+    ui.next_view_type = null;
+    if (ui_update_string(&node.source, type)) { ui_emit_string_prop(node, 4, node.source); }
+    List<NativePair> given = ui.next_native_props;
+    ui.next_native_props = List<NativePair>{};
+    for (i in 0..given.size) {
+        NativePair pair = given.data[i];
+        int at = -1;
+        for (j in 0..node.native_props.size) {
+            if (strcmp(node.native_props.data[j].name, pair.name) == 0) { at = j; break; }
+        }
+        if (at < 0) {
+            ui_emit_named(node, pair.name, pair.value);
+            node.native_props.push(NativePair{ui_copy(pair.name), ui_copy(pair.value)});
+        } else if (strcmp(node.native_props.data[at].value, pair.value) != 0) {
+            ui_emit_named(node, pair.name, pair.value);
+            free(node.native_props.data[at].value);
+            node.native_props.data[at].value = ui_copy(pair.value);
+        }
+    }
+    for (int j = node.native_props.size - 1; j >= 0; j--) {
+        bool kept = false;
+        for (i in 0..given.size) { if (strcmp(given.data[i].name, node.native_props.data[j].name) == 0) { kept = true; } }
+        if (!kept) {
+            ui_emit_named(node, node.native_props.data[j].name, "");
+            free(node.native_props.data[j].name); free(node.native_props.data[j].value);
+            node.native_props.remove(j);
+        }
+    }
+    ui_free_pairs(&given);
+}
+
+bool ui_event_view(int id, int generation, string name, string payload) {
+    return ui_post(Event{id, generation, 9, 0, payload, 0, name});
+}

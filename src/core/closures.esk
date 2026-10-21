@@ -1,0 +1,35 @@
+// Freeing the closures the tree and components are given.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+void ui_release_closure(escaping fn()->void callback) { free_closure(callback); }
+
+// Through a parameter: the self-hosted compiler miscompiles free_closure of a captured
+// variable inside a lambda.
+void ui_release_text(escaping fn(string)->void callback) { free_closure(callback); }
+
+void ui_release_focus(escaping fn(bool)->void callback) { free_closure(callback); }
+
+void ui_release_item(escaping fn(int)->void callback) { free_closure(callback); }
+
+void ui_release_cell(escaping fn(int, int)->void callback) { free_closure(callback); }
+
+// Free a caller's closure of each common type (for ui_own destructors).
+void ui_release_bool(escaping fn(bool)->void callback) { free_closure(callback); }
+
+void ui_release_int(escaping fn(int)->void callback) { free_closure(callback); }
+
+void ui_release_string(escaping fn(string)->void callback) { free_closure(callback); }
+
+// ---- native modules and views ----
+//
+// A native module is code the app ships per platform (native/ios, native/android,
+// native/web: tools/ui.esk builds them in). Eskiu calls it through `extern`; it answers
+// through events on a channel, which reach use_native_event handlers on the UI thread.
+
+void ui_release_view(escaping fn(string, string)->void callback) { free_closure(callback); }
+
+void ui_release_payload(escaping fn(string)->void callback) { free_closure(callback); }
+
+void ui_release_back(escaping fn()->bool callback) { free_closure(callback); }
+
+void ui_release_choice(escaping fn(int)->void callback) { free_closure(callback); }

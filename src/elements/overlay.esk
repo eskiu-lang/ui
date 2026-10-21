@@ -1,0 +1,61 @@
+// Over the content: Modal and Alert, and the commands that carry alerts and URLs.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// Content over the whole screen while `visible`; `on_request_close` runs when the user
+// asks to leave it (Android's back, Escape on the web).
+void Modal(bool visible, escaping fn()->void on_request_close, escaping fn()->void block) {
+    if (!visible) {
+        ui_release_closure(on_request_close);
+        ui_release_closure(block);
+        return;
+    }
+    ui_element(12, Style{padding: 0}, null, block, on_request_close, void() {});
+}
+
+void ui_command(int request, int command, List<string>* strings) {
+    *Commit c = &ui.commands;
+    c.u8(10); c.u32(request); c.u8(command); c.u8(strings.size);
+    for (i in 0..strings.size) {
+        string value = strings.data[i] == null ? "" : strings.data[i];
+        int n = (int)strlen(value);
+        c.u32(n);
+        c.room(n + 1);
+        memcpy(&c.data[c.len], value, (size_t)(n + 1));
+        c.len += n + 1;
+    }
+}
+
+// A native alert: `buttons` are separated by newlines; on_choice gets the index of the one
+// pressed, or -1 when the alert was dismissed.
+void Alert(string title, string message, string buttons, escaping fn(int)->void on_choice) {
+    int request = ++ui.next_request;
+    ui.alerts.push(Pending{request, on_choice});
+    List<string> strings;
+    strings.push(title); strings.push(message);
+    String names;
+    String_append(&names, buttons == null ? "OK" : buttons);
+    // Each button is its own string; split at the newlines in a copy.
+    int start = 0;
+    for (int i = 0; i <= names.len; i++) {
+        if (i == names.len || names.data[i] == '\n') {
+            names.data[i] = 0;
+            strings.push((string)&names.data[start]);
+            start = i + 1;
+        }
+    }
+    ui_command(request, 1, &strings);
+    strings.free();
+    String_free(&names);
+}
+
+// Open a URL with the platform (the browser, the app that handles it).
+void ui_open_url(string url) {
+    List<string> strings;
+    strings.push(url);
+    ui_command(0, 2, &strings);
+    strings.free();
+}
+
+bool ui_event_alert(int request, int choice) {
+    return ui_post(Event{request, 0, 6, choice, null});
+}

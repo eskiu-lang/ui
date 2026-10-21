@@ -1,0 +1,17 @@
+// Text and buttons.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+void Text(string text) { ui_element(3, Style{}, text, void() {}, void() {}, void() {}); }
+
+void Button(string text, escaping fn()->void handler) { ui_element(4, Style{}, text, void() {}, handler, void() {}); }
+
+// Text and Button with a style: color, font, background and the rest of Style.
+void TextWith(Style style, string text) { ui_element(3, style, text, void() {}, void() {}, void() {}); }
+
+void ButtonWith(Style style, string text, escaping fn()->void handler) {
+    ui_element(4, style, text, void() {}, handler, void() {});
+}
+
+void Button_owned(string text, escaping fn()->void handler, escaping fn()->void cleanup) {
+    ui_element(4, Style{}, text, void() {}, handler, cleanup);
+}

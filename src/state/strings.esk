@@ -1,4 +1,5 @@
-import "ui.esk";
+// Owned strings: use_string keeps text that outlives a render, reference-counted.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
 // Borrowed get() values last until set(). Retain a snapshot for escaping captures.
 struct UiString { string text; int references; }

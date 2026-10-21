@@ -1,0 +1,20 @@
+// Containers: Column, Row, Scope, Scroll, Pressable.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
+
+void Row(Style style, escaping fn()->void block) { ui_element(2, style, null, block, void() {}, void() {}); }
+
+// A column whose content scrolls when it is taller than the space it gets.
+void Scroll(Style style, escaping fn()->void block) { ui_element(6, style, null, block, void() {}, void() {}); }
+
+// A component's own scope: state, identity and its name in diagnostics.
+void Scope(string name, Key k, escaping fn()->void block) {
+    ui.next_name = name;
+    ui_element(0, Style{key: k}, null, block, void() {}, void() {});
+}
+
+// A container that reacts to a press anywhere in it (the children are its content).
+void Pressable(Style style, escaping fn()->void on_press, escaping fn()->void block) {
+    ui_element(8, style, null, block, on_press, void() {});
+}

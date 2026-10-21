@@ -1,0 +1,578 @@
+// The element tree: nodes, matching children (keys, then kind and position), minimal moves, unmounting, props, and the element call every component ends in.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+struct Node {
+    int id;
+    int generation;
+    int kind;
+    int depth;
+    Key key;
+    // A component's name for diagnostics (Scope); a literal, not copied.
+    string name;
+    int gap;
+    int padding;
+    // The value last sent for each int prop (by code), so only a change is sent again.
+    int64[24] props;
+    *Node parent;
+    List<*Node> children;
+    List<*Node> emitted;
+    // Matching state while this node's block runs. Up to kSmall children are matched by
+    // scanning; more get the tables.
+    bool indexed;
+    int old_index;
+    // Unkeyed children match by position among the unkeyed siblings of their own kind, so a
+    // conditional element of another kind does not shift them. old_unkeyed holds the old
+    // ones grouped by kind (from kind_start), kind_emitted counts the new ones per kind.
+    List<*Node> old_unkeyed;
+    int[17] kind_start;
+    int[16] kind_emitted;
+    KeyTable old_keys;
+    KeyTable new_keys;
+    List<Slot> slots;
+    int cursor;
+    bool mounted;
+    bool seen;
+    bool fresh;
+    bool next;
+    bool current;
+    int runs;
+    int loop_frames;
+    bool render_write;
+    *Observer observer;
+    fn()->void block;
+    fn()->void handler;
+    fn()->void handler_cleanup;
+    // What the element's owner gave it to free with its block (ui_own): run when the
+    // block is replaced or the node unmounted, after the commit.
+    List<fn()->void> owned;
+    // TextInput: the new text (borrowed for the call) and focus changes.
+    fn(string)->void on_text;
+    // TextInput focus changes and Switch toggles.
+    fn(bool)->void on_bool;
+    // A virtual list (FlatList, SectionList): a scroll that mounts only the rows near its
+    // viewport. on_item renders a FlatList row, on_cell a SectionList header (item -1) or row.
+    bool virtual;
+    int row_count;
+    int row_height;
+    int header_height;
+    *List<int> section_sizes;
+    fn(int)->void on_item;
+    fn(int, int)->void on_cell;
+    int scroll_offset;
+    int viewport;
+    int rendered_offset;
+    int rendered_viewport;
+    bool has_on_bool;
+    string label;
+    string placeholder;
+    // An image's source, or a native view's type.
+    string source;
+    // A native view: the named props last sent and its event handler.
+    List<NativePair> native_props;
+    fn(string, string)->void on_view;
+    int focused;
+    string text;
+}
+
+
+void ui_emit(int op, *Node node, int before) {
+    *Commit c = &ui.commit;
+    c.u8(op);
+    c.u32(node.id);
+    if (op == 1) { c.u32(node.generation); c.u8(node.kind); }
+    else if (op == 3) {
+        int n = (int)strlen(node.text);
+        c.u32(n);
+        c.room(n + 1);
+        memcpy(&c.data[c.len], node.text, (size_t)(n + 1));
+        c.len += n + 1;
+    } else if (op == 4 || op == 5) {
+        c.u32(node.parent == null ? 0 : node.parent.id);
+        c.u32(before);
+    }
+}
+
+void ui_emit_prop(*Node node, int prop, int value) {
+    ui.commit.u8(2); ui.commit.u32(node.id); ui.commit.u8(prop); ui.commit.u32(value);
+}
+
+// Send int prop `code` when it differs from what was sent; a fresh node starts at the
+// default, `unset`. A color's default (-1) goes out as 0, which renderers read as "the
+// platform's own".
+void ui_prop(*Node node, bool fresh, int code, int64 value, int64 unset) {
+    if (fresh) { node.props[code] = unset; }
+    if (node.props[code] == value) { return; }
+    node.props[code] = value;
+    ui_emit_prop(node, code, value == -1 && unset == -1 ? 0 : (int)value);
+}
+
+void ui_emit_string_prop(*Node node, int prop, string value) {
+    *Commit c = &ui.commit;
+    c.u8(9); c.u32(node.id); c.u8(prop);
+    if (value == null) { value = ""; }
+    int n = (int)strlen(value);
+    c.u32(n);
+    c.room(n + 1);
+    memcpy(&c.data[c.len], value, (size_t)(n + 1));
+    c.len += n + 1;
+}
+
+// Keep a copy of `value` in `*slot` when it changed, retiring the old one after the
+// commit; true when the renderer must hear about it. Null and "" are the same and stored
+// as null, so an element without the prop allocates nothing.
+bool ui_update_string(*string slot, string value) {
+    string current = *slot;
+    bool empty = value == null || value[0] == 0;
+    if (current == null) {
+        if (empty) { return false; }
+        *slot = ui_copy(value);
+        return true;
+    }
+    if (!empty && strcmp(current, value) == 0) { return false; }
+    ui_retire(void() { free(current); });
+    *slot = empty ? null : ui_copy(value);
+    return true;
+}
+
+void ui_drop_from(List<*Node>* list, *Node node) {
+    for (int i = list.size - 1; i >= 0; i--) {
+        if (list.data[i] == node) { list.remove(i); return; }
+    }
+}
+
+void ui_schedule(*Node node) {
+    if (node.next) { return; }
+    node.next = true;
+    ui.next_nodes.push(node);
+}
+
+// Which entries of `seq` (old positions, -1 for new nodes) form a longest increasing
+// subsequence: those children keep their place, every other one moves.
+List<bool> ui_kept(List<int>* seq) {
+    List<bool> kept;
+    List<int> previous;
+    List<int> tails;
+    for (i in 0..seq.size) { kept.push(false); previous.push(-1); }
+    for (i in 0..seq.size) {
+        int value = seq.data[i];
+        if (value < 0) { continue; }
+        int lo = 0;
+        int hi = tails.size;
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (seq.data[tails.data[mid]] < value) { lo = mid + 1; } else { hi = mid; }
+        }
+        if (lo > 0) { previous.data[i] = tails.data[lo - 1]; }
+        if (lo == tails.size) { tails.push(i); } else { tails.data[lo] = i; }
+    }
+    int at = tails.size > 0 ? tails.data[tails.size - 1] : -1;
+    while (at >= 0) { kept.data[at] = true; at = previous.data[at]; }
+    previous.free(); tails.free();
+    return kept;
+}
+
+void ui_run(*Node node) {
+    node.current = false;
+    node.runs++;
+    node.cursor = 0;
+    node.indexed = node.children.size > kSmall;
+    int keyed = 0;
+    for (i in 0..node.children.size) {
+        *Node child = node.children.data[i];
+        child.seen = false;
+        child.old_index = i;
+        if (child.key.set) { keyed++; }
+    }
+    if (keyed > 0 && node.indexed) {
+        KeyTable_init(&node.old_keys, keyed);
+        for (i in 0..node.children.size) {
+            *Node child = node.children.data[i];
+            if (child.key.set) { node.old_keys.put(child.key.value, child); }
+        }
+    }
+    for (k in 0..kKinds) { node.kind_emitted[k] = 0; }
+    if (node.indexed) {
+        // Group the old unkeyed children by kind, keeping their order (a counting sort).
+        for (k in 0..kKinds + 1) { node.kind_start[k] = 0; }
+        int unkeyed = 0;
+        for (i in 0..node.children.size) {
+            *Node child = node.children.data[i];
+            if (!child.key.set) { node.kind_start[child.kind + 1]++; unkeyed++; }
+        }
+        for (k in 1..kKinds + 1) { node.kind_start[k] += node.kind_start[k - 1]; }
+        int[16] fill;
+        for (k in 0..kKinds) { fill[k] = node.kind_start[k]; }
+        for (i in 0..unkeyed) { node.old_unkeyed.push(null); }
+        for (i in 0..node.children.size) {
+            *Node child = node.children.data[i];
+            if (!child.key.set) { node.old_unkeyed.data[fill[child.kind]++] = child; }
+        }
+    }
+    *Node previous_builder = ui.builder;
+    *Observer previous_tracking = ui.tracking;
+    ui.builder = node;
+    ui_untrack(node.observer);
+    ui.tracking = node.observer;
+    node.block();
+    ui_require(ui.next_refresh == null, "RefreshControl must come right before a Scroll or FlatList");
+    ui_require(ui.next_owned.size == 0, "ui_own must come right before an element");
+    ui_require(node.cursor == node.slots.size, "hook count decreased");
+    ui.builder = previous_builder;
+    ui.tracking = previous_tracking;
+    node.old_unkeyed.free();
+    if (node.old_keys.mask != 0) { node.old_keys.free(); }
+    if (node.new_keys.mask != 0) { node.new_keys.free(); }
+    for (int i = node.children.size - 1; i >= 0; i--) {
+        if (!node.children.data[i].seen) { ui_unmount(node.children.data[i]); }
+    }
+    // Back to front, each child goes before the one after it, which is already placed.
+    // The kept children keep their place; when the old ones kept their order, all do.
+    bool ordered = true;
+    int last = -1;
+    for (i in 0..node.emitted.size) {
+        *Node child = node.emitted.data[i];
+        if (!child.fresh) {
+            if (child.old_index < last) { ordered = false; break; }
+            last = child.old_index;
+        }
+    }
+    List<bool> kept;
+    if (!ordered) {
+        List<int> seq;
+        for (i in 0..node.emitted.size) {
+            *Node child = node.emitted.data[i];
+            seq.push(child.fresh ? -1 : child.old_index);
+        }
+        kept = ui_kept(&seq);
+        seq.free();
+    }
+    int before = 0;
+    for (int i = node.emitted.size - 1; i >= 0; i--) {
+        *Node child = node.emitted.data[i];
+        if (child.fresh) { ui_emit(4, child, before); }
+        else if (!ordered && !kept.data[i]) { ui_emit(5, child, before); }
+        child.fresh = false;
+        before = child.id;
+    }
+    kept.free();
+    node.children.free();
+    node.children = node.emitted;
+    node.emitted = List<*Node>{};
+    node.mounted = true;
+}
+
+void ui_unmount(*Node node) {
+    for (int i = node.children.size - 1; i >= 0; i--) { ui_unmount(node.children.data[i]); }
+    ui_emit(6, node, 0);
+    if (node.next) { ui_drop_from(&ui.next_nodes, node); node.next = false; }
+    if (node.render_write) { ui_drop_from(&ui.render_writes, node); node.render_write = false; }
+    if (node.loop_frames > 0) { ui_drop_from(&ui.looping, node); node.loop_frames = 0; }
+    node.current = false;
+    node.seen = false;
+    // Detach dependencies immediately, destroy resources after renderer completion.
+    ui_untrack(node.observer);
+    for (i in 0..node.slots.size) {
+        *Observer hook = node.slots.data[i].observer;
+        if (hook != null) {
+            ui_untrack(hook);
+            ui_unqueue(hook.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, hook);
+        }
+    }
+    for (i in 0..node.slots.size) {
+        Slot slot = node.slots.data[i];
+        if (slot.kind == 4) { ui_drop_back((*BackEntry)slot.data); }
+        if (slot.kind == 5) { ui_drop_native((*NativeHandler)slot.data); }
+    }
+    if (node.kind == 12) { ui_drop_from(&ui.modals, node); }
+    ui.by_id.data[node.id] = null;
+    ui.retired_ids.push(node.id);
+    // Every unmount cleanup runs while ALL retired state is still alive. A cleanup
+    // may read a signal registered after its own hook, or state in a sibling scope.
+    ui.finalizers.push(void() {
+        for (i in 0..node.slots.size) {
+            Slot slot = node.slots.data[i];
+            if (slot.kind == 2) {
+                *Observer effect = (*Observer)slot.data;
+                if (effect.has_cleanup) {
+                    effect.cleanup(); ui_release_closure(effect.cleanup);
+                    effect.has_cleanup = false;
+                }
+            }
+        }
+        node.handler_cleanup();
+    });
+    ui_retire(void() {
+        for (int i = node.slots.size - 1; i >= 0; i--) {
+            Slot slot = node.slots.data[i];
+            slot.dispose(); ui_release_closure(slot.dispose);
+        }
+        ui_drop_observer(node.observer);
+        ui_release_closure(node.block);
+        ui_release_closure(node.handler);
+        ui_release_closure(node.handler_cleanup);
+        ui_run_owned(&node.owned);
+        ui_release_text(node.on_text);
+        ui_release_focus(node.on_bool);
+        ui_release_item(node.on_item);
+        ui_release_cell(node.on_cell);
+        free(node.text); free(node.label); free(node.placeholder); free(node.source);
+        ui_free_pairs(&node.native_props);
+        ui_release_view(node.on_view);
+        node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
+        free(node);
+    });
+}
+
+struct SwitchExtra { bool value; fn(bool)->void on_change; }
+
+struct RefreshExtra { bool refreshing; fn()->void on_refresh; }
+
+struct ListExtra { int count; int item_height; int header_height; *List<int> sizes;
+    fn(int)->void on_item; fn(int, int)->void on_cell; }
+
+// What an input element adds to an element: set by TextInput before ui_element.
+struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_on_focus;
+    string placeholder; int focused; }
+
+*Node ui_element(int kind, Style style, string text,
+    escaping fn()->void block, escaping fn()->void handler, escaping fn()->void handler_cleanup) {
+    *Node parent = ui.builder;
+    // A scroll takes the RefreshControl that came right before it: its handler is the
+    // scroll's handler, its state a prop.
+    bool refresh = false;
+    bool refreshing = false;
+    ui_require(kind == 6 || ui.next_refresh == null, "RefreshControl must come right before a Scroll or FlatList");
+    if (kind == 6 && ui.next_refresh != null) {
+        ui_release_closure(handler);
+        handler = ui.next_refresh.on_refresh;
+        refreshing = ui.next_refresh.refreshing;
+        refresh = true;
+        ui.next_refresh = null;
+    }
+    ui_require(parent != null, "element outside render");
+    // A keyed child matches the old child with its key, an unkeyed one the old unkeyed
+    // child at its position; either only if the kind is the same.
+    *Node node = null;
+    *Node candidate = null;
+    if (style.key.set) {
+        int64 k = style.key.value;
+        if (parent.new_keys.mask == 0 && parent.emitted.size >= kSmall) {
+            KeyTable_init(&parent.new_keys, parent.emitted.size * 2);
+            for (i in 0..parent.emitted.size) {
+                *Node sibling = parent.emitted.data[i];
+                if (sibling.key.set) { parent.new_keys.put(sibling.key.value, sibling); }
+            }
+        }
+        bool duplicate = false;
+        if (parent.new_keys.mask != 0) {
+            duplicate = parent.new_keys.get(k) != null;
+        } else {
+            for (i in 0..parent.emitted.size) {
+                *Node sibling = parent.emitted.data[i];
+                if (sibling.key.set && sibling.key.value == k) { duplicate = true; }
+            }
+        }
+        if (duplicate) {
+            String message;
+            String_appendf(&message, "duplicate key %lld at child %d", k, parent.emitted.size);
+            if (!ui.lenient) { ui_fail(message.data); }
+            String_append(&message, ", treated as unkeyed\n  in ");
+            ui_scope_path(&message);
+            print_err("ui: warning: "); println_err(message.data);
+            String_free(&message);
+            style.key = Key{};
+        }
+    }
+    if (style.key.set) {
+        int64 k = style.key.value;
+        if (parent.indexed) {
+            if (parent.old_keys.mask != 0) { candidate = parent.old_keys.get(k); }
+        } else {
+            for (i in 0..parent.children.size) {
+                *Node old = parent.children.data[i];
+                if (old.key.set && old.key.value == k) { candidate = old; break; }
+            }
+        }
+    } else {
+        int position = parent.kind_emitted[kind]++;
+        if (parent.indexed) {
+            int at = parent.kind_start[kind] + position;
+            if (at < parent.kind_start[kind + 1]) { candidate = parent.old_unkeyed.data[at]; }
+        } else {
+            for (i in 0..parent.children.size) {
+                *Node old = parent.children.data[i];
+                if (!old.key.set && old.kind == kind) {
+                    if (position == 0) { candidate = old; break; }
+                    position--;
+                }
+            }
+        }
+    }
+    if (candidate != null && !candidate.seen && candidate.kind == kind) { node = candidate; }
+    bool fresh = node == null;
+    if (fresh) {
+        node = alloc<Node>(1);
+        ui_assign_id(node);
+        node.kind = kind; node.key = style.key; node.parent = parent;
+        node.depth = parent.depth + 1;
+        node.fresh = true;
+        node.observer = ui_observer(0, node);
+        ui_emit(1, node, 0);
+    } else {
+        fn()->void old_block = node.block;
+        fn()->void old_handler = node.handler;
+        fn()->void old_cleanup = node.handler_cleanup;
+        ui_retire(void() { ui_release_closure(old_block); });
+        if (node.owned.size > 0) {
+            List<fn()->void> old_owned = node.owned;
+            node.owned = List<fn()->void>{};
+            ui_retire(void() { ui_finish_owned(old_owned); });
+        }
+        ui_retire(void() { ui_release_closure(old_handler); old_cleanup(); ui_release_closure(old_cleanup); });
+        if (kind == 13) {
+            fn(string, string)->void old_view = node.on_view;
+            ui_retire(void() { ui_release_view(old_view); });
+        }
+        if (node.virtual) {
+            fn(int)->void old_item = node.on_item;
+            fn(int, int)->void old_cell = node.on_cell;
+            ui_retire(void() { ui_release_item(old_item); ui_release_cell(old_cell); });
+        }
+        if (kind == 5 || kind == 9) {
+            fn(string)->void old_text = node.on_text;
+            fn(bool)->void old_bool = node.on_bool;
+            ui_retire(void() { ui_release_text(old_text); ui_release_focus(old_bool); });
+        }
+    }
+    node.seen = true;
+    node.name = ui.next_name;
+    ui.next_name = null;
+    if (style.key.set && parent.new_keys.mask != 0) { parent.new_keys.put(style.key.value, node); }
+    if (fresh || node.gap != style.gap) { node.gap = style.gap; ui_emit_prop(node, 1, style.gap); }
+    if (fresh || node.padding != style.padding) {
+        node.padding = style.padding;
+        ui_emit_prop(node, 2, style.padding);
+    }
+    // Sizes are sent when set or changed, so most elements send none.
+    // Props left at their default are not sent, so most elements send none.
+    ui_prop(node, fresh, 4, style.width, 0);
+    ui_prop(node, fresh, 5, style.height, 0);
+    ui_prop(node, fresh, 6, style.grow, 0);
+    ui_prop(node, fresh, 7, style.wrap ? 1 : 0, 0);
+    ui_prop(node, fresh, 8, style.background, -1);
+    ui_prop(node, fresh, 9, style.color, -1);
+    ui_prop(node, fresh, 10, style.font_size, 0);
+    ui_prop(node, fresh, 11, style.font_weight, 0);
+    ui_prop(node, fresh, 12, style.border_width, 0);
+    ui_prop(node, fresh, 13, style.border_color, -1);
+    ui_prop(node, fresh, 14, style.radius, 0);
+    ui_prop(node, fresh, 15, style.opacity, 100);
+    ui_prop(node, fresh, 16, style.align, 0);
+    ui_prop(node, fresh, 17, style.justify, 0);
+    if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
+    // What the caller gave this element to free with its block.
+    for (i in 0..ui.next_owned.size) { node.owned.push(ui.next_owned.data[i]); }
+    ui.next_owned.size = 0;
+    node.block = block;
+    node.handler = handler;
+    node.handler_cleanup = handler_cleanup;
+    if (kind == 5) {
+        *InputExtra extra = ui.next_input;
+        ui.next_input = null;
+        node.on_text = extra.on_text;
+        node.on_bool = extra.on_focus;
+        node.has_on_bool = extra.has_on_focus;
+        if (ui_update_string(&node.placeholder, extra.placeholder)) {
+            ui_emit_string_prop(node, 2, node.placeholder);
+        }
+        if (extra.focused >= 0 && (fresh || extra.focused != node.focused)) {
+            node.focused = extra.focused;
+            ui_emit_prop(node, 3, extra.focused);
+        }
+    }
+    if (kind == 7) {
+        string source = ui.next_source;
+        ui.next_source = null;
+        if (ui_update_string(&node.source, source)) { ui_emit_string_prop(node, 3, node.source); }
+    }
+    if (kind == 9) {
+        *SwitchExtra toggle = ui.next_switch;
+        ui.next_switch = null;
+        node.on_bool = toggle.on_change;
+        node.has_on_bool = true;
+        ui_prop(node, fresh, 18, toggle.value ? 1 : 0, -1);
+    }
+    if (kind == 10) {
+        ui_prop(node, fresh, 19, ui.next_animating ? 1 : 0, -1);
+    }
+    if (kind == 6 && (refresh || node.props[22] != 0)) {
+        // A new scroll with a RefreshControl always sends it (the host attaches the control);
+        // a scroll that loses its RefreshControl is sent "not refreshing".
+        ui_prop(node, fresh, 22, refresh && refreshing ? 1 : 0, refresh && fresh ? -1 : 0);
+    }
+    if (kind == 11) {
+        ui_prop(node, fresh, 20, ui.next_bar_style, -1);
+        ui_prop(node, fresh, 21, ui.next_bar_hidden ? 1 : 0, -1);
+    }
+    if (kind == 12 && fresh) { ui.modals.push(node); }
+    if (kind == 13) { ui_native_view_props(node, fresh); }
+    if (kind == 6 && ui.next_list != null) {
+        *ListExtra list = ui.next_list;
+        ui.next_list = null;
+        node.virtual = true;
+        node.row_count = list.count;
+        node.row_height = list.item_height;
+        node.header_height = list.header_height;
+        node.section_sizes = list.sizes;
+        node.on_item = list.on_item;
+        node.on_cell = list.on_cell;
+    }
+    if (kind == 4 || kind == 5 || kind == 8 || kind == 9 || kind == 12 || node.virtual) { ui_emit(7, node, 0); }
+    if (text != null && (node.text == null || strcmp(text, node.text) != 0)) {
+        string previous = node.text;
+        if (previous != null) { ui_retire(void() { free(previous); }); }
+        node.text = ui_copy(text);
+        ui_emit(3, node, 0);
+    }
+    parent.emitted.push(node);
+    ui_run(node);
+    return node;
+}
+
+// For components built on others: `destructor` runs when the next element's block is
+// replaced or the element unmounted, after the commit. A component that captures a
+// caller's closure in its own lambdas frees it this way, as the tree frees the closures it
+// is given directly:
+//
+//   void Checkbox(string label, bool checked, escaping fn(bool)->void on_change) {
+//       ui_own(void() { ui_release_bool(on_change); });
+//       Pressable(Style{...}, void() { on_change(!checked); }, void() { ... });
+//   }
+void ui_own(escaping fn()->void destructor) { ui.next_owned.push(destructor); }
+
+void ui_run_owned(List<fn()->void>* owned) {
+    for (i in 0..owned.size) {
+        fn()->void destructor = owned.data[i];
+        destructor();
+        ui_release_closure(destructor);
+    }
+    owned.size = 0;
+}
+
+// Run and free a list of destructors taken from a node (a copy owns it now).
+void ui_finish_owned(List<fn()->void> owned) {
+    ui_run_owned(&owned);
+    owned.free();
+}
+
+void ui_assign_id(*Node node) {
+    if (ui.free_ids.size > 0) {
+        node.id = ui.free_ids.data[--ui.free_ids.size];
+    } else {
+        node.id = ui.by_id.size;
+        ui.by_id.push(null);
+        ui.generations.push(0);
+    }
+    node.generation = ++ui.generations.data[node.id];
+    ui.by_id.data[node.id] = node;
+}

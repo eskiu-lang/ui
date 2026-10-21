@@ -1,0 +1,85 @@
+// Virtual lists and pull to refresh.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// Virtual lists. The rows near the viewport are mounted, `kOverscan` rows each side, and
+// spacers stand for the rest, so a list of any length costs the same to render. Rows have
+// a fixed height (React Native's getItemLayout); the list scrolls like a Scroll.
+const int kOverscan = 5;
+
+// The rows from `start` to `end` (exclusive) of a FlatList, each in a keyed cell.
+void ui_list_rows(*Node list) {
+    int h = list.row_height;
+    int viewport = list.viewport > 0 ? list.viewport : (list.props[5] > 0 ? (int)list.props[5] : 400);
+    int first = list.scroll_offset / h;
+    int start = first - kOverscan < 0 ? 0 : first - kOverscan;
+    int end = first + viewport / h + 1 + kOverscan;
+    if (end > list.row_count) { end = list.row_count; }
+    if (start > end) { start = end; }
+    list.rendered_offset = list.scroll_offset;
+    list.rendered_viewport = viewport;
+    if (start > 0) { Row(Style{key: key(-1), gap: 0, height: start * h}, void() {}); }
+    for (i in start..end) {
+        int index = i;
+        Column(Style{key: key(index), gap: 0, height: h}, void() { list.on_item(index); });
+    }
+    if (end < list.row_count) { Row(Style{key: key(-2), gap: 0, height: (list.row_count - end) * h}, void() {}); }
+}
+
+// A SectionList's headers and rows near the viewport: each section is a header row, then
+// its items. Cells are keyed by section and item.
+void ui_section_rows(*Node list) {
+    int viewport = list.viewport > 0 ? list.viewport : (list.props[5] > 0 ? (int)list.props[5] : 400);
+    int low = list.scroll_offset - kOverscan * list.row_height;
+    int high = list.scroll_offset + viewport + kOverscan * list.row_height;
+    list.rendered_offset = list.scroll_offset;
+    list.rendered_viewport = viewport;
+    int y = 0;
+    int skipped = 0;
+    int after = 0;
+    for (s in 0..list.section_sizes.size) {
+        int section = s;
+        for (int i = -1; i < list.section_sizes.data[s]; i++) {
+            int item = i;
+            int h = item < 0 ? list.header_height : list.row_height;
+            if (y + h <= low) { skipped += h; }
+            else if (y >= high) { after += h; }
+            else {
+                if (skipped > 0) { Row(Style{key: key(-1), gap: 0, height: skipped}, void() {}); skipped = 0; }
+                int64 cell = ((int64)section << 32) | (int64)(item + 1);
+                Column(Style{key: key(cell), gap: 0, height: h}, void() { list.on_cell(section, item); });
+            }
+            y += h;
+        }
+    }
+    if (skipped > 0) { Row(Style{key: key(-1), gap: 0, height: skipped}, void() {}); }
+    if (after > 0) { Row(Style{key: key(-2), gap: 0, height: after}, void() {}); }
+}
+
+// `count` rows of `item_height` points; render(i) emits row i's content.
+void FlatList(Style style, int count, int item_height, escaping fn(int)->void render) {
+    ListExtra list = ListExtra{count: count, item_height: item_height < 1 ? 1 : item_height, on_item: render};
+    ui.next_list = &list;
+    style.gap = 0;
+    ui_element(6, style, null, void() { ui_list_rows(ui.builder); }, void() {}, void() {});
+}
+
+// Sections from `sizes` (the app keeps it alive), each a header of `header_height` and its
+// rows of `item_height`; render(section, -1) emits a header, render(section, i) row i.
+void SectionList(Style style, *List<int> sizes, int header_height, int item_height,
+    escaping fn(int, int)->void render) {
+    ListExtra list = ListExtra{item_height: item_height < 1 ? 1 : item_height, header_height: header_height,
+        sizes: sizes, on_cell: render};
+    ui.next_list = &list;
+    style.gap = 0;
+    ui_element(6, style, null, void() { ui_section_rows(ui.builder); }, void() {}, void() {});
+}
+
+// Pull to refresh for the Scroll or FlatList that comes right after it: on_refresh runs when
+// the user pulls at the top, and the platform's indicator shows while `refreshing`.
+void RefreshControl(bool refreshing, escaping fn()->void on_refresh) {
+    if (ui.next_refresh != null) { ui_release_closure(ui.next_refresh.on_refresh); }
+    ui.refresh_slot = RefreshExtra{refreshing, on_refresh};
+    ui.next_refresh = &ui.refresh_slot;
+}
+
+bool ui_event_refresh(int id, int generation) { return ui_post(Event{id, generation, 7, 0, null}); }

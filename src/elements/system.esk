@@ -1,0 +1,88 @@
+// The platform: status bar, back, links, insets, window, foreground state.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// The host's side: report the insets (whatever the host policy, so an edge-to-edge app can
+// pad itself) and whether the app is in the foreground. Readers re-run on a change.
+void ui_set_insets(Insets insets) {
+    Insets old = ui.insets;
+    if (old.top == insets.top && old.right == insets.right && old.bottom == insets.bottom &&
+        old.left == insets.left && old.keyboard == insets.keyboard) { return; }
+    ui.insets = insets;
+    ui.environment.set(ui.environment.value + 1);
+}
+
+void ui_set_active(bool active) {
+    if (ui.inactive == !active) { return; }
+    ui.inactive = !active;
+    ui.environment.set(ui.environment.value + 1);
+}
+
+Insets ui_insets() { ui.environment.get(); return ui.insets; }
+
+void ui_set_window(Window window) {
+    Window old = ui.window;
+    if (old.width == window.width && old.height == window.height && old.scale == window.scale) { return; }
+    ui.window = window;
+    ui.environment.set(ui.environment.value + 1);
+}
+
+Window ui_window() { ui.environment.get(); return ui.window; }
+
+bool ui_is_active() { ui.environment.get(); return !ui.inactive; }
+
+// The system status bar: its content style and whether it shows. The last one rendered
+// wins; it has no view.
+enum BarStyle { BarDefault, BarLight, BarDark }
+
+void StatusBar(int bar_style, bool hidden) {
+    ui.next_bar_style = bar_style;
+    ui.next_bar_hidden = hidden;
+    ui_element(11, Style{}, null, void() {}, void() {}, void() {});
+}
+
+// A back handler for as long as the scope is mounted (Android's back button, and a modal's
+// request to close goes first). It returns true when it handled the press.
+void use_back(escaping fn()->bool handler) {
+    static int tag;
+    *Slot slot = ui_slot(4, &tag);
+    *BackEntry entry = (*BackEntry)slot.data;
+    if (entry == null) {
+        entry = alloc<BackEntry>(1);
+        slot.data = entry;
+        ui.back_handlers.push(entry);
+        slot.dispose = void() { ui_drop_back(entry); ui_release_back(entry.handler); free(entry); };
+    } else { ui_release_back(entry.handler); }
+    entry.handler = handler;
+}
+
+void ui_drop_back(*BackEntry entry) {
+    if (entry.removed) { return; }
+    entry.removed = true;
+    for (int i = ui.back_handlers.size - 1; i >= 0; i--) {
+        if (ui.back_handlers.data[i] == entry) { ui.back_handlers.remove(i); break; }
+    }
+}
+
+// The host's back press: the newest modal's request to close, else the back handlers
+// from the newest; false lets the platform go back.
+bool ui_back() {
+    ui_require_consistent();
+    if (ui.modals.size > 0) {
+        ui.modals.data[ui.modals.size - 1].handler();
+        return true;
+    }
+    for (int i = ui.back_handlers.size - 1; i >= 0; i--) {
+        if (ui.back_handlers.data[i].handler()) { return true; }
+    }
+    return false;
+}
+
+// The host's side: the link the app was opened with or was sent, read through ui_link.
+void ui_set_link(string url) {
+    if (ui.link != null && url != null && strcmp(ui.link, url) == 0) { return; }
+    free(ui.link);
+    ui.link = url == null ? null : ui_copy(url);
+    ui.environment.set(ui.environment.value + 1);
+}
+
+string ui_link() { ui.environment.get(); return ui.link; }

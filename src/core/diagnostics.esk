@@ -1,0 +1,66 @@
+// Stopping with a message that says where: the scope path.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+extern void abort();
+
+string ui_kind_name(int kind) {
+    if (kind == 13) { return "NativeView"; }
+    if (kind == 12) { return "Modal"; }
+    if (kind == 11) { return "StatusBar"; }
+    if (kind == 10) { return "ActivityIndicator"; }
+    if (kind == 9) { return "Switch"; }
+    if (kind == 8) { return "Pressable"; }
+    if (kind == 7) { return "Image"; }
+    if (kind == 6) { return "Scroll"; }
+    if (kind == 5) { return "TextInput"; }
+    if (kind == 1) { return "Column"; }
+    if (kind == 2) { return "Row"; }
+    if (kind == 3) { return "Text"; }
+    if (kind == 4) { return "Button"; }
+    return "Scope";
+}
+
+// Where the running block is, from the root down: `Column[0] > Row[key 3]`, each step
+// the component name or element kind with its key or its index among its siblings.
+void ui_scope_path(*String out) {
+    List<*Node> steps;
+    *Node node = ui == null ? null : ui.builder;
+    while (node != null && node.parent != null) { steps.push(node); node = node.parent; }
+    if (steps.size == 0) { String_append(out, "the root block"); }
+    for (int i = steps.size - 1; i >= 0; i--) {
+        *Node step = steps.data[i];
+        String_append(out, step.name != null ? step.name : ui_kind_name(step.kind));
+        if (step.key.set) {
+            String_appendf(out, "[key %lld]", step.key.value);
+        } else {
+            *Node parent = step.parent;
+            int index = -1;
+            List<*Node>* siblings = parent.emitted.size > 0 ? &parent.emitted : &parent.children;
+            for (j in 0..siblings.size) { if (siblings.data[j] == step) { index = j; break; } }
+            String_appendf(out, "[%d]", index);
+        }
+        if (i > 0) { String_append(out, " > "); }
+    }
+    steps.free();
+}
+
+void ui_fail(string message) {
+    // stderr is unbuffered: the message survives the abort when output goes to a file.
+    String text;
+    String_appendf(&text, "ui: %s\n  in ", message);
+    ui_scope_path(&text);
+    println_err(text.data);
+    abort();
+}
+
+void ui_require(bool ok, string message) {
+    if (!ok) { ui_fail(message); }
+}
+
+// A throw out of a block, handler or effect is not caught by the runtime: the program
+// stops through the uncaught-exception reporter. A caller that catches it anyway leaves
+// the runtime mid-phase, and the next entry point stops here instead of running on it.
+void ui_require_consistent() {
+    ui_require(ui.phase == 0 && ui.builder == null && ui.tracking == null,
+        "runtime left mid-phase (an exception escaped a block, handler or effect)");
+}

@@ -1,5 +1,4 @@
 import "../hosts/bridge.esk";
-import "../src/owned_string.esk";
 import <string>;
 
 // The conformance scene: one fixed-width column whose fixed-size elements come first, so

@@ -1,0 +1,42 @@
+// The int64 key table children are matched through.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// int64 key -> node, open addressing. Built per run, only for children that have keys.
+struct KeyTable { List<int64> keys; List<*Node> nodes; int mask; int count; }
+
+void KeyTable_init(*KeyTable self, int expected) {
+    int cap = 8;
+    while (cap < expected * 2) { cap = cap * 2; }
+    self.mask = cap - 1;
+    for (i in 0..cap) { self.keys.push(0); self.nodes.push(null); }
+}
+
+int KeyTable_slot(*KeyTable self, int64 key) {
+    int64 h = key * 0x9E3779B97F4A7C15;
+    int at = (int)((h ^ (h >> 31)) & (int64)self.mask);
+    while (self.nodes.data[at] != null && self.keys.data[at] != key) { at = (at + 1) & self.mask; }
+    return at;
+}
+
+*Node KeyTable_get(*KeyTable self, int64 key) { return self.nodes.data[self.slot(key)]; }
+
+void KeyTable_free(*KeyTable self) {
+    self.keys.free(); self.nodes.free(); self.mask = 0; self.count = 0;
+}
+
+void KeyTable_put(*KeyTable self, int64 key, *Node node) {
+    if ((self.count + 1) * 2 > self.mask + 1) {
+        // Keep it at most half full: rehash into twice the room.
+        KeyTable old = *self;
+        *self = KeyTable{};
+        KeyTable_init(self, old.mask + 1);
+        for (i in 0..old.mask + 1) {
+            if (old.nodes.data[i] != null) { self.put(old.keys.data[i], old.nodes.data[i]); }
+        }
+        old.free();
+    }
+    int at = self.slot(key);
+    if (self.nodes.data[at] == null) { self.count++; }
+    self.keys.data[at] = key;
+    self.nodes.data[at] = node;
+}

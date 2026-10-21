@@ -1,0 +1,15 @@
+// The runtime's globals, first because Eskiu declares a global where it is defined (as C).
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// The runtime the hosts and the element calls use (one UI thread).
+*Ui ui;
+
+// Unique per observer run across all observers, so a freed observer's subscription mark
+// never matches a new one at the same address.
+int64 ui_epochs;
+
+// Up to kSmall children are matched by scanning; more get the key tables.
+const int kSmall = 8;
+
+// Room for the element kinds (0 to 13 today); kind_start and kind_emitted are sized by it.
+const int kKinds = 16;

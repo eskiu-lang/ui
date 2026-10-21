@@ -1,0 +1,384 @@
+// The runtime: its state, frames and commits, events from the host.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// Event kinds: 1 press, 2 change (text), 3 focus (value 1 focused, 0 blurred), 4 toggle
+// (value 1 on, 0 off), 5 scroll (value the offset, extra the viewport height), 6 alert
+// answered (the id is the request, value the button's index, -1 dismissed), 7 refresh
+// (the user pulled a scroll's RefreshControl), 8 native module event (name the channel, text
+// the payload; no node), 9 native view event (name and text from the view).
+struct Event { int id; int generation; int kind; int value; string text; int extra; string name; }
+
+// What the host reports about the screen, in points: the system bars and display cutouts
+// on each side, and the software keyboard over the bottom.
+struct Insets { int top; int right; int bottom; int left; int keyboard; }
+
+struct Window { int width; int height; int scale; }
+
+struct Ui {
+    *Node root;
+    // The host's environment, read through ui_insets and ui_is_active: a change of either
+    // bumps `environment`, which those reads subscribe to.
+    Insets insets;
+    bool inactive;
+    *Signal<int> environment;
+    *Node builder;
+    *Observer tracking;
+    // Index = node id; null once the node is unmounted. An id is reused only after the
+    // commit that removed its node completes, with the next generation.
+    List<*Node> by_id;
+    List<int> generations;
+    List<int> retired_ids;
+    List<int> free_ids;
+    // Work lists, so a frame touches only what changed.
+    List<*Node> next_nodes;
+    List<*Node> render_writes;
+    List<*Node> looping;
+    List<*Observer> dirty_memos;
+    List<*Observer> dirty_effects;
+    Commit commit;
+    List<fn()->void> writes;
+    List<fn()->void> retired;
+    List<fn()->void> finalizers;
+    List<Event> events;
+    fn(*uint8, int)->void apply;
+    int phase;
+    int sequence;
+    // Release behavior: a duplicate key warns and is treated as unkeyed instead of
+    // stopping the program.
+    bool lenient;
+    // The name the next element takes (Scope), cleared as soon as it is taken.
+    string next_name;
+    // The input parts of the next element (TextInput), likewise.
+    *InputExtra next_input;
+    // The source of the next element (Image), likewise.
+    string next_source;
+    // The value and handler of the next Switch, and whether the next ActivityIndicator spins.
+    *SwitchExtra next_switch;
+    bool next_animating;
+    // The rows and renderer of the next virtual list, likewise.
+    *ListExtra next_list;
+    int next_bar_style;
+    bool next_bar_hidden;
+    // The handlers of native modules' events, by registration order.
+    List<*NativeHandler> native_handlers;
+    // The next NativeView's named props and type.
+    List<NativePair> next_native_props;
+    string next_view_type;
+    // Destructors for the next element (ui_own).
+    List<fn()->void> next_owned;
+    // The RefreshControl for the next Scroll or FlatList.
+    *RefreshExtra next_refresh;
+    RefreshExtra refresh_slot;
+    // Commands for the host (alerts, URLs), written between frames and sent with the next
+    // commit; the alerts waiting for an answer.
+    Commit commands;
+    List<Pending> alerts;
+    int next_request;
+    // Back handlers by registration order, and the modals open, by opening order.
+    List<*BackEntry> back_handlers;
+    List<*Node> modals;
+    // The last link the app was opened with (Linking), or null.
+    string link;
+    // The window the root is in, in points, and its scale (pixels per point, times 100).
+    Window window;
+    bool in_flight;
+}
+
+
+string ui_copy(string text) {
+    int64 n = strlen(text);
+    *char copy = alloc<char>(n + 1);
+    memcpy(copy, text, (size_t)(n + 1));
+    return (string)copy;
+}
+
+void ui_retire(escaping fn()->void dispose) { ui.retired.push(dispose); }
+
+struct Pending { int id; fn(int)->void on_choice; }
+
+struct BackEntry { fn()->bool handler; bool removed; }
+
+void ui_init(*Ui runtime, escaping fn(*uint8, int)->void apply) {
+    ui = runtime;
+    ui.apply = apply;
+    ui.environment = signal_new<int>(0);
+    ui.by_id.push(null);
+    ui.generations.push(0);
+    *Node root = alloc<Node>(1);
+    ui_assign_id(root);
+    root.block = void() {}; root.handler = void() {}; root.handler_cleanup = void() {};
+    root.observer = ui_observer(0, root);
+    ui.root = root;
+}
+
+void ui_mount(escaping fn()->void block) {
+    ui_require(!ui.root.next && !ui.root.mounted, "already mounted");
+    ui.root.block = block;
+    ui_schedule(ui.root);
+}
+
+// The indices of `depths` ordered by depth, ties in their order (a counting sort: stable
+// and linear). Parents come before children.
+List<int> ui_by_depth(List<int>* depths) {
+    int deepest = 0;
+    for (i in 0..depths.size) { if (depths.data[i] > deepest) { deepest = depths.data[i]; } }
+    List<int> starts;
+    for (i in 0..deepest + 2) { starts.push(0); }
+    for (i in 0..depths.size) { starts.data[depths.data[i] + 1]++; }
+    for (i in 1..deepest + 2) { starts.data[i] += starts.data[i - 1]; }
+    List<int> order;
+    for (i in 0..depths.size) { order.push(0); }
+    for (i in 0..depths.size) { order.data[starts.data[depths.data[i]]++] = i; }
+    starts.free();
+    return order;
+}
+
+// One pass over the effects dirty at completion, parents first and, within a depth, in
+// the order they were scheduled. An effect dirtied again after it ran waits for the next
+// commit.
+void ui_run_effects() {
+    List<*Observer> due = ui.dirty_effects;
+    ui.dirty_effects = List<*Observer>{};
+    List<int> depths;
+    for (i in 0..due.size) { depths.push(due.data[i].owner.depth); }
+    List<int> order = ui_by_depth(&depths);
+    for (i in 0..order.size) {
+        *Observer effect = due.data[order.data[i]];
+        effect.queued = false;
+        if (!effect.dirty) { continue; }
+        if (effect.has_cleanup) {
+            effect.cleanup(); ui_release_closure(effect.cleanup); effect.has_cleanup = false;
+        }
+        ui_validate(effect);
+    }
+    order.free();
+    depths.free();
+    due.free();
+}
+
+void ui_complete(int sequence) {
+    ui_require(ui.in_flight && sequence == ui.sequence, "invalid commit completion");
+    ui.in_flight = false;
+    for (i in 0..ui.finalizers.size) {
+        fn()->void finalize = ui.finalizers.data[i];
+        finalize(); ui_release_closure(finalize);
+    }
+    ui.finalizers.size = 0;
+    for (i in 0..ui.retired.size) {
+        fn()->void dispose = ui.retired.data[i];
+        dispose(); ui_release_closure(dispose);
+    }
+    ui.retired.size = 0;
+    // The renderer has applied the removals: their ids are free again.
+    for (i in 0..ui.retired_ids.size) { ui.free_ids.push(ui.retired_ids.data[i]); }
+    ui.retired_ids.size = 0;
+    ui.commit.len = 0;
+    ui.phase = 2;
+    ui_run_effects();
+    ui.phase = 0;
+    // Events that arrived while the commit was in flight, in arrival order. Their text was
+    // copied on receipt and is freed once the handler returns.
+    for (i in 0..ui.events.size) {
+        Event event = ui.events.data[i];
+        ui_dispatch_event(&event);
+        free(event.text);
+        free(event.name);
+    }
+    ui.events.size = 0;
+}
+
+bool ui_memo_work() {
+    for (i in 0..ui.dirty_memos.size) {
+        *Observer memo = ui.dirty_memos.data[i];
+        if (memo.dirty && memo.output.readers.size > 0) { return true; }
+    }
+    return false;
+}
+
+bool ui_frame() {
+    ui_require_consistent();
+    ui_require(!ui.in_flight, "frame while commit in flight");
+    // Validate observed memos even when their consumers have not been scheduled yet.
+    // Validation can queue more memos; the loop reaches them too.
+    for (int i = 0; i < ui.dirty_memos.size; i++) {
+        *Observer memo = ui.dirty_memos.data[i];
+        memo.queued = false;
+        if (memo.dirty && memo.output.readers.size > 0) { ui_validate(memo); }
+    }
+    ui.dirty_memos.size = 0;
+    if (ui.next_nodes.size == 0 && ui.dirty_effects.size == 0 && ui.commands.len == 0) { return false; }
+    List<*Node> due = ui.next_nodes;
+    ui.next_nodes = List<*Node>{};
+    List<int> depths;
+    for (i in 0..due.size) {
+        due.data[i].next = false; due.data[i].current = true;
+        depths.push(due.data[i].depth);
+    }
+    // Parents before children: a parent's run re-runs a dirty child and clears it.
+    List<int> order = ui_by_depth(&depths);
+    ui.phase = 1;
+    for (i in 0..order.size) {
+        *Node node = due.data[order.data[i]];
+        if (node.current) { ui_run(node); }
+    }
+    order.free();
+    depths.free();
+    due.free();
+    for (i in 0..ui.writes.size) {
+        fn()->void write = ui.writes.data[i];
+        write(); ui_release_closure(write);
+    }
+    ui.writes.size = 0;
+    for (i in 0..ui.looping.size) {
+        if (!ui.looping.data[i].render_write) { ui.looping.data[i].loop_frames = 0; }
+    }
+    ui.looping.size = 0;
+    for (i in 0..ui.render_writes.size) {
+        *Node node = ui.render_writes.data[i];
+        node.render_write = false;
+        node.loop_frames++;
+        ui_require(node.loop_frames < 100, "render loop (100 frames)");
+        ui.looping.push(node);
+    }
+    ui.render_writes.size = 0;
+    ui.phase = 0;
+    // Commands asked for since the last frame go after the tree's mutations.
+    if (ui.commands.len > 0) {
+        ui.commit.room(ui.commands.len);
+        memcpy(&ui.commit.data[ui.commit.len], ui.commands.data, (size_t)ui.commands.len);
+        ui.commit.len += ui.commands.len;
+        ui.commands.len = 0;
+    }
+    ui.sequence++;
+    ui.in_flight = true;
+    ui.apply(ui.commit.data, ui.commit.len);
+    return true;
+}
+
+// Dispatch now, or queue until the commit in flight completes (copying its text). Returns
+// false only for an event dispatched now whose node is gone or stale; a queued one is
+// checked when it runs.
+bool ui_post(Event event) {
+    if (ui.in_flight || ui.phase != 0) {
+        if (event.text != null) { event.text = ui_copy(event.text); }
+        if (event.name != null) { event.name = ui_copy(event.name); }
+        ui.events.push(event);
+        return true;
+    }
+    ui_require_consistent();
+    return ui_dispatch_event(&event);
+}
+
+bool ui_event(int id, int generation) { return ui_post(Event{id, generation, 1, 0, null}); }
+
+// The text of an input changed; `text` is only read during the call.
+bool ui_event_text(int id, int generation, string text) {
+    return ui_post(Event{id, generation, 2, 0, text});
+}
+
+bool ui_event_focus(int id, int generation, bool focused) {
+    return ui_post(Event{id, generation, 3, focused ? 1 : 0, null});
+}
+
+bool ui_event_toggle(int id, int generation, bool on) {
+    return ui_post(Event{id, generation, 4, on ? 1 : 0, null});
+}
+
+// A scroll view moved: its offset and viewport height, in points.
+bool ui_event_scroll(int id, int generation, int offset, int viewport) {
+    return ui_post(Event{id, generation, 5, offset, null, viewport});
+}
+
+bool ui_dispatch_event(*Event event) {
+    if (event.kind == 8) {
+        // A native module's event: every handler of the channel, newest first.
+        bool handled = false;
+        for (int i = ui.native_handlers.size - 1; i >= 0; i--) {
+            *NativeHandler entry = ui.native_handlers.data[i];
+            if (strcmp(entry.channel, event.name) == 0) { entry.handler(event.text); handled = true; }
+        }
+        return handled;
+    }
+    if (event.kind == 6) {
+        for (i in 0..ui.alerts.size) {
+            Pending pending = ui.alerts.data[i];
+            if (pending.id == event.id) {
+                ui.alerts.remove(i);
+                pending.on_choice(event.value);
+                ui_release_choice(pending.on_choice);
+                return true;
+            }
+        }
+        return false;
+    }
+    int id = event.id;
+    if (id <= 0 || id >= ui.by_id.size) { return false; }
+    *Node node = ui.by_id.data[id];
+    if (node == null || node.generation != event.generation) { return false; }
+    // A press on a modal is the user asking to close it (Escape, a back gesture).
+    if (event.kind == 1 && (node.kind == 4 || node.kind == 8 || node.kind == 12)) { node.handler(); return true; }
+    // What the user changed is what the renderer shows now: recorded as sent, so a render
+    // that keeps the old value (the app refused the change) sends it back.
+    if (event.kind == 2 && node.kind == 5) {
+        string shown = node.text;
+        if (shown != null) { ui_retire(void() { free(shown); }); }
+        node.text = ui_copy(event.text);
+        node.on_text(event.text);
+        // Render the scope again even if the app ignored the edit, so its value wins.
+        ui_schedule(node.parent);
+        return true;
+    }
+    if (event.kind == 3 && node.kind == 5) {
+        node.focused = event.value;
+        if (node.has_on_bool) { node.on_bool(event.value != 0); }
+        return true;
+    }
+    if (event.kind == 7 && node.kind == 6) { node.handler(); return true; }
+    if (event.kind == 9 && node.kind == 13) { node.on_view(event.name, event.text); return true; }
+    if (event.kind == 5 && node.kind == 6) {
+        if (!node.virtual) { return true; }
+        // A new window only after the view moved a row's height or was resized: the overscan
+        // covers what is between.
+        bool resized = event.extra != node.rendered_viewport;
+        node.scroll_offset = event.value < 0 ? 0 : event.value;
+        node.viewport = event.extra;
+        int moved = node.scroll_offset - node.rendered_offset;
+        if (moved < 0) { moved = -moved; }
+        if (resized || moved >= node.row_height) { ui_schedule(node); }
+        return true;
+    }
+    if (event.kind == 4 && node.kind == 9) {
+        node.props[18] = event.value;
+        node.on_bool(event.value != 0);
+        ui_schedule(node.parent);
+        return true;
+    }
+    return false;
+}
+
+bool ui_needs_frame() {
+    if (ui == null || ui.in_flight) { return false; }
+    return ui.next_nodes.size > 0 || ui.dirty_effects.size > 0 || ui.commands.len > 0 || ui_memo_work();
+}
+
+void ui_shutdown() {
+    ui_require(!ui.in_flight, "shutdown while commit in flight");
+    ui_unmount(ui.root);
+    ui.root = null;
+    ui.sequence++; ui.in_flight = true;
+    ui.apply(ui.commit.data, ui.commit.len);
+    ui_require(!ui.in_flight, "prototype shutdown requires synchronous renderer");
+    free_closure(ui.apply);
+    ui.environment.free();
+    ui.by_id.free(); ui.generations.free(); ui.retired_ids.free(); ui.free_ids.free();
+    ui.next_nodes.free(); ui.render_writes.free(); ui.looping.free();
+    ui.dirty_memos.free(); ui.dirty_effects.free();
+    ui.commit.free(); ui.writes.free(); ui.retired.free(); ui.commands.free();
+    for (i in 0..ui.alerts.size) { ui_release_choice(ui.alerts.data[i].on_choice); }
+    ui.alerts.free(); ui.back_handlers.free(); ui.modals.free(); ui.next_owned.free();
+    free(ui.link);
+    for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }
+    ui.native_handlers.free(); ui_free_pairs(&ui.next_native_props);
+    ui.finalizers.free(); ui.events.free();
+    ui = null;
+}
