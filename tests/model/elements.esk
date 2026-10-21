@@ -157,6 +157,27 @@ void positions() {
     ui_shutdown(); balanced("positions leak");
 }
 
+*Signal<int> motion_version;
+
+void transforms() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        motion_version = use_signal<int>(0);
+        int v = motion_version.get();
+        Row(Style{opacity: v == 0 ? 0 : 100, translate_y: v == 0 ? 40 : 0, scale: v == 0 ? 90 : 100, rotate: 0,
+                  transition_ms: 250, easing: EaseOut}, void() {});
+    });
+    ui_frame();
+    check(mutation_ops[0] == 1 && mutation_kinds[1] == 39 && mutation_befores[1] == 250 && mutation_kinds[2] == 40,
+        "the transition comes right after the create, before what it animates");
+    check(prop_value(2, 36) == 40 && prop_value(2, 37) == 90 && count_prop(2, 38) == 0, "transforms, defaults unsent");
+    motion_version.set(1); ui_frame();
+    check(count_prop(2, 39) == 0 && prop_value(2, 15) == 100 && prop_value(2, 36) == 0 && prop_value(2, 37) == 100,
+        "the change; the transition already set");
+    ui_shutdown(); balanced("transforms leak");
+}
+
 *Signal<int> layout_version;
 
 Frame laid_out;

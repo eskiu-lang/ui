@@ -38,6 +38,7 @@ int main() {
     visual_styles(); printf("PASS visual styles\n");
     positions(); printf("PASS positions\n");
     layouts(); printf("PASS layouts\n");
+    transforms(); printf("PASS transforms\n");
     hovers(); printf("PASS hovers\n");
     sliders(); printf("PASS sliders\n");
     environment_apis(); printf("PASS environment apis\n");

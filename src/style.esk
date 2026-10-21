@@ -16,6 +16,9 @@ Key key(int64 value) { return Key{true, value}; }
 // (points, kUnset: not set) place it against the parent's edges, and the other children are
 // laid out as if it were not there. `aspect_ratio` (width over height, 0: none) gives the
 // side that is not set from the one that is.
+// translate_x and translate_y (points), scale (percent) and rotate (degrees) move the drawn
+// element without changing its layout; transition_ms (0: none) and easing (the Easing
+// members) animate changes of opacity, the transforms and the colors on the host.
 struct Style {
     Key key; int gap = 8; int padding = 0; string label;
     int width; int height; int grow; bool wrap;
@@ -24,7 +27,11 @@ struct Style {
     int align; int justify;
     bool absolute; int left = kUnset; int top = kUnset; int right = kUnset; int bottom = kUnset;
     double aspect_ratio;
+    int translate_x; int translate_y; int scale = 100; int rotate;
+    int transition_ms; int easing;
 }
+
+enum Easing { EaseInOut, EaseOut, EaseIn, EaseLinear, EaseSpring }
 
 enum Align { AlignDefault, AlignStart, AlignCenter, AlignEnd, AlignStretch }
 

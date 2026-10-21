@@ -12,7 +12,7 @@ struct Node {
     int gap;
     int padding;
     // The value last sent for each int prop (by code), so only a change is sent again.
-    int64[40] props;
+    int64[48] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -475,6 +475,9 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     node.name = ui.next_name;
     ui.next_name = null;
     if (style.key.set && parent.new_keys.mask != 0) { parent.new_keys.put(style.key.value, node); }
+    // A transition first, so the changes after it in this commit are animated by it.
+    ui_prop(node, fresh, 39, style.transition_ms, 0);
+    ui_prop(node, fresh, 40, style.easing, 0);
     if (fresh || node.gap != style.gap) { node.gap = style.gap; ui_emit_prop(node, 1, style.gap); }
     if (fresh || node.padding != style.padding) {
         node.padding = style.padding;
@@ -502,6 +505,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 27, style.right, kUnset);
     ui_prop(node, fresh, 28, style.bottom, kUnset);
     ui_prop(node, fresh, 29, (int)(style.aspect_ratio * 1000.0 + 0.5), 0);
+    ui_prop(node, fresh, 35, style.translate_x, 0);
+    ui_prop(node, fresh, 36, style.translate_y, 0);
+    ui_prop(node, fresh, 37, style.scale, 100);
+    ui_prop(node, fresh, 38, style.rotate, 0);
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
     // A layout handler from ui_on_layout, and whether the host reports this node's frame.
     node.has_on_layout = ui.has_next_layout;
