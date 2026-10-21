@@ -1,0 +1,176 @@
+// Things over the content: Popover, DropdownMenu, Select, Tooltip, toasts.
+// Part of <ui/kit> (src/kit.esk imports every part).
+
+void kit_release_int64(escaping fn(int64)->void callback) { free_closure(callback); }
+
+// `content` in a panel next to `trigger` while `open`: below it, or above when there is no room
+// below, kept inside the window. A tap outside, back and Escape call on_dismiss.
+void Popover(bool open, escaping fn()->void on_dismiss, escaping fn()->void trigger, escaping fn()->void content) {
+    ui_own(void() { ui_release_closure(on_dismiss); ui_release_closure(trigger); ui_release_closure(content); });
+    Scope("Popover", Key{}, void() {
+        // The trigger's frame in the window, and the panel's height once laid out.
+        *Signal<int> ax = use_signal<int>(0);
+        *Signal<int> ay = use_signal<int>(0);
+        *Signal<int> aw = use_signal<int>(0);
+        *Signal<int> ah = use_signal<int>(0);
+        *Signal<int> panel = use_signal<int>(0);
+        *Signal<int> panel_width = use_signal<int>(0);
+        ui_on_layout(void(Frame f) { ax.set(f.window_x); ay.set(f.window_y); aw.set(f.width); ah.set(f.height); });
+        Column(Style{gap: 0}, void() { trigger(); });
+        Overlay(open, void() { on_dismiss(); }, void() {
+            Window window = ui_window();
+            // At least the trigger's width; wider when the content is.
+            int width = panel_width.get() > aw.get() ? panel_width.get() : aw.get();
+            int left = ax.get();
+            if (left + width > window.width - 8) { left = window.width - 8 - width; }
+            if (left < 8) { left = 8; }
+            int below = ay.get() + ah.get() + 6;
+            int top = below + panel.get() > window.height - 8 && ay.get() - panel.get() - 6 > 8 ? ay.get() - panel.get() - 6 : below;
+            ui_on_layout(void(Frame f) { panel.set(f.height); panel_width.set(f.width); });
+            // Hidden until measured, so it never shows on the wrong side.
+            Column(Style{absolute: true, left: left, top: top, min_width: aw.get() > 180 ? aw.get() : 180, padding: 6, gap: 2,
+                         max_width: window.width - 16, radius: kit.radius,
+                         background: kit.surface, border_width: 1, border_color: kit.line, opacity: panel.get() > 0 ? 100 : 0,
+                         translate_y: panel.get() > 0 ? 0 : -6, transition_ms: 150, easing: EaseOut}, void() { content(); });
+        });
+    });
+}
+
+// A row of a menu: a press runs on_press.
+void MenuItem(string text, bool checked, escaping fn()->void on_press) {
+    ui_own(void() { ui_release_closure(on_press); });
+    Scope("MenuItem", Key{}, void() {
+        *Signal<bool> over = use_signal<bool>(false);
+        ui_on_hover(void(bool inside) { over.set(inside); });
+        Pressable(Style{padding: 10, radius: kit.radius - 4, background: over.get() ? kit.track : -1, label: text},
+            void() { on_press(); }, void() {
+                Row(Style{align: AlignCenter, gap: 8}, void() {
+                    TextWith(Style{grow: 1, font_size: 15, color: kit.ink}, text);
+                    if (checked) { TextWith(Style{font_size: 15, font_weight: 700, color: kit.primary}, "✓"); }
+                });
+            });
+    });
+}
+
+// A button that opens a menu of `options` (a line each); on_select gets the index chosen.
+void DropdownMenu(string label, string options, escaping fn(int)->void on_select) {
+    ui_own(void() { ui_release_int(on_select); });
+    Scope("DropdownMenu", Key{}, void() {
+        *Signal<bool> open = use_signal<bool>(false);
+        Popover(open.get(), void() { open.set(false); }, void() {
+            String text;
+            defer String_free(&text);
+            String_format(&text, "%s  ▾", label);
+            KitButton(text.data, VariantSecondary, void() { open.set(true); });
+        }, void() {
+            List<String> items;
+            kit_options(options, &items);
+            for (i in 0..items.size) {
+                int index = i;
+                MenuItem(items.data[i].data, false, void() { open.set(false); on_select(index); });
+            }
+            kit_free_options(&items);
+        });
+    });
+}
+
+// One of `options` (a line each), chosen from a menu under a field that shows it.
+void Select(string options, int selected, escaping fn(int)->void on_change) {
+    ui_own(void() { ui_release_int(on_change); });
+    Scope("Select", Key{}, void() {
+        *Signal<bool> open = use_signal<bool>(false);
+        List<String> items;
+        kit_options(options, &items);
+        string current = selected >= 0 && selected < items.size ? items.data[selected].data : "";
+        Popover(open.get(), void() { open.set(false); }, void() {
+            Pressable(Style{padding: 12, radius: kit.radius, background: kit.surface, border_width: 1, border_color: kit.line,
+                            label: current}, void() { open.set(true); }, void() {
+                Row(Style{align: AlignCenter, gap: 8}, void() {
+                    TextWith(Style{grow: 1, font_size: 16, color: kit.ink}, current);
+                    TextWith(Style{font_size: 14, color: kit.muted, rotate: open.get() ? 180 : 0, transition_ms: 150}, "▾");
+                });
+            });
+        }, void() {
+            List<String> names;
+            kit_options(options, &names);
+            for (i in 0..names.size) {
+                int index = i;
+                MenuItem(names.data[i].data, index == selected, void() { open.set(false); on_change(index); });
+            }
+            kit_free_options(&names);
+        });
+        kit_free_options(&items);
+    });
+}
+
+// `text` in a bubble above `content` while a pointer is over it (no hover on touch screens:
+// the text is also the content's accessible name).
+void Tooltip(string text, escaping fn()->void content) {
+    ui_own(void() { ui_release_closure(content); });
+    Scope("Tooltip", Key{}, void() {
+        *Signal<bool> over = use_signal<bool>(false);
+        *Signal<int> height = use_signal<int>(0);
+        ui_on_layout(void(Frame f) { height.set(f.height); });
+        ui_on_hover(void(bool inside) { over.set(inside); });
+        Column(Style{gap: 0, label: text}, void() {
+            content();
+            if (over.get()) {
+                Row(Style{absolute: true, left: 0, bottom: height.get() + 6, padding: 8, radius: 8, background: kit.ink}, void() {
+                    TextWith(Style{font_size: 13, color: kit.page}, text);
+                });
+            }
+        });
+    });
+}
+
+// Toasts: kit_toast shows a short message at the bottom for a few seconds, through the
+// ToastHost the app puts last in its root (it is absolute over the root's bottom). With no
+// host mounted, a toast is dropped.
+*Signal<int> kit_toast_count;
+*StringState kit_toast_message;
+
+void kit_toast(string text) {
+    if (kit_toast_count == null) { return; }
+    kit_toast_message.set(text == null ? "" : text);
+    kit_toast_count.set(kit_toast_count.value + 1);
+}
+
+// The mounted host takes the toasts while it is mounted.
+void kit_toast_owner(*Signal<int> count, *StringState message) {
+    static int tag;
+    *Slot slot = ui_slot(8, &tag);
+    if (slot.data != null) { return; }
+    slot.data = count;
+    kit_toast_count = count;
+    kit_toast_message = message;
+    slot.dispose = void() {
+        if (kit_toast_count == count) { kit_toast_count = null; kit_toast_message = null; }
+    };
+}
+
+void ToastHost() {
+    // A strip of no height along the parent's bottom: the toast sits above it, and it blocks
+    // no touch.
+    ui.next_name = "ToastHost";
+    ui_element(0, Style{absolute: true, left: 0, right: 0, bottom: 0, height: 0, gap: 0}, null, void() {
+        *Signal<int> toasts = use_signal<int>(0);
+        *StringState message = use_string("");
+        kit_toast_owner(toasts, message);
+        int count = toasts.get();
+        *Signal<int> shown = use_signal<int>(0);
+        *Signal<bool> visible = use_signal<bool>(false);
+        *Signal<bool> present = use_signal<bool>(false);
+        if (count != shown.value) { shown.set(count); visible.set(true); present.set(true); }
+        // A new message restarts the clock (a different period re-arms the timer).
+        use_timeout(visible.get() ? 2500 + count % 2 : 0, void() { visible.set(false); });
+        use_timeout(!visible.get() && present.get() ? 300 : 0, void() { present.set(false); });
+        if (!present.get()) { return; }
+        Row(Style{absolute: true, left: 24, right: 24, bottom: 24 + ui_insets().bottom, justify: JustifyCenter,
+                  opacity: visible.get() ? 100 : 0, translate_y: visible.get() ? 0 : 16, transition_ms: 250,
+                  easing: EaseOut}, void() {
+            Row(Style{padding: 14, radius: 14, background: kit.ink, label: message.get()}, void() {
+                TextWith(Style{font_size: 15, font_weight: 600, color: kit.page}, message.get());
+            });
+        });
+    }, void() {}, void() {});
+}
