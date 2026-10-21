@@ -23,6 +23,7 @@ shim: the app, its components and its state are the same Eskiu code everywhere.
 | image | `img` | `UIImageView` | `ImageView` |
 | pressable | `div role=button` | `UIControl` with the button trait | a clickable view group |
 | switch | `input type=checkbox role=switch` | `UISwitch` | `Switch` |
+| slider | `input type=range` | `UISlider` | `SeekBar` (its progress counts from the minimum) |
 | activity indicator | a CSS spinner, `role=progressbar` | `UIActivityIndicatorView` | `ProgressBar` |
 | refresh control | a pull at the top of the scroll | `UIRefreshControl` | a pull at the top of the scroll and a `ProgressBar` (the framework has no refresh view) |
 | modal | `div role=dialog` over the page | a view over the window | a view over the window |

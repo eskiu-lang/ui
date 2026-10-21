@@ -52,8 +52,9 @@ string on the web, an intent extra on Android, a launch argument on iOS).
 
 `tests/harness/conformance.esk` is one scene every renderer draws. Each host reports the
 frame and accessibility role of every labeled element and the handler log after a fixed
-script: two taps, typing "abc", a press, a toggle, an alert answered, a modal opened and
-closed, a pull to refresh, a feed of 1000 rows scrolled. It also reports the colors,
+script: two taps, typing "abc", a press, a toggle, a slider moved, an alert answered, a modal opened and
+closed, a pull to refresh, a feed of 1000 rows scrolled; before them, a layout report and a
+timer. It checks an absolute element and an aspect ratio too. It also reports the colors,
 radius, border, opacity and font a styled box and a title were drawn with.
 
 ```bash

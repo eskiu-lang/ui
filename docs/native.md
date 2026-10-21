@@ -46,7 +46,7 @@ ones that changed are sent, and one no longer given is sent as `""`. Its events 
 `on_event` as a name and a payload:
 
 ```eskiu
-void Slider(string label, int value, escaping fn(int)->void on_change) {
+void NativeSlider(string label, int value, escaping fn(int)->void on_change) {
     ui_own(void() { ui_release_int(on_change); });
     String text;
     defer String_free(&text);

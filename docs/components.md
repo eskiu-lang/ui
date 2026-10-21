@@ -33,10 +33,11 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 | `TextInput(Input, fn(string)->void)` | A controlled text field. `Input{key, value, placeholder, label, focused, style}`: `value` is what it shows, the handler gets each edit (borrowed for the call). `focused` is 1 to focus it, 0 to blur it, -1 (the default) to leave focus to the user. |
 | `TextInput_focus(Input, on_change, fn(bool)->void on_focus)` | The same, told when the field gains or loses focus. |
 | `Switch(Style, bool value, fn(bool)->void)` | A controlled on/off switch. |
+| `Slider(Style, int value, int min, int max, fn(int)->void)` | A controlled slider in whole steps from `min` to `max`: `UISlider`, `SeekBar`, `<input type=range>`. |
 
-Inputs and switches are controlled: what they show is the value the app rendered. When the
-app ignores an edit or a toggle, the next frame sends its value back and the view returns
-to it.
+Inputs, switches and sliders are controlled: what they show is the value the app rendered.
+When the app ignores an edit, a toggle or a move, the next frame sends its value back and the
+view returns to it.
 
 ### Media
 

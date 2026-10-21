@@ -46,6 +46,7 @@ it into `Mutation` records for tests and tools.
 | 5 | text input | 12 | modal (a column on a layer over the window, laid out on its own) |
 | 6 | scroll | 13 | native view (registered with the host by type) |
 | | | 14 | screen (a column filling its navigator; only the active one shows) |
+| | | 15 | slider |
 
 ### Int props
 
@@ -68,6 +69,7 @@ it into `Mutation` records for tests and tools.
 | | | 29 | aspect ratio (width over height, in thousandths; 0: none) |
 | | | 30 | layout listener (1: report the node's frame when it changes) |
 | | | 31 | hover listener (1: report a pointer entering and leaving) |
+| | | 32, 33, 34 | slider value, minimum, maximum (the range comes first) |
 
 A text input's value is its text (op 3). Sizes are points.
 
@@ -105,6 +107,7 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_native(channel, payload)` | a native module posted an event (`use_native_event`) |
 | `ui_dispatch_view(id, gen, name, payload)` | a native view sent an event (`NativeView`'s `on_event`) |
 | `ui_dispatch_layout(id, gen, x, y, width, height)` | a listened node's frame changed (points, relative to its parent) |
+| `ui_dispatch_value(id, gen, value)` | the user moved a slider |
 | `ui_dispatch_hover(id, gen, inside)` | a pointer entered (1) or left (0) a node with a hover handler |
 | `ui_dispatch_timer(token)` | a timer the core armed fired |
 | `ui_dispatch_route(route, index)` | the browser went back or forward to `route`, at `index` in the app's history entries |
