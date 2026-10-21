@@ -260,8 +260,44 @@ public final class UiActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 28) text.setTypeface(Typeface.create(Typeface.DEFAULT, font[1] > 0 ? font[1] : 400, false));
     }
     // Int props (layout ones are applied to Yoga in host.cpp): the code in kind, the value in before.
+    // Screens (kind 14) that have been on top: a first activation over another slides in, and
+    // a removed top screen slides out.
+    private final java.util.HashSet<Integer> shownScreens = new java.util.HashSet<>();
+    private final HashMap<Integer, Boolean> activeScreens = new HashMap<>();
+    // Screens sliding out: what was inside them stays until they go.
+    private final java.util.HashSet<View> leaving = new java.util.HashSet<>();
+    private boolean insideLeaving(View view) {
+        for (android.view.ViewParent p = view.getParent(); p instanceof View; p = p.getParent()) if (leaving.contains(p)) return true;
+        return false;
+    }
+    private static final int kSlide = 300;
+
     private void prop(int id, View view, int code, int value) {
         float d = density();
+        if (code == 23) {
+            // A screen under the top is hidden, after a push's slide it stays under.
+            activeScreens.put(id, value != 0);
+            if (value != 0) {
+                view.setVisibility(View.VISIBLE);
+                if (shownScreens.add(id)) {
+                    // Placed under its parent after this commit: the slide starts on the next frame.
+                    view.post(() -> {
+                        ViewGroup parent = (ViewGroup)view.getParent();
+                        boolean over = false;
+                        for (int i = 0; parent != null && i < parent.getChildCount(); i++) {
+                            View other = parent.getChildAt(i);
+                            if (other != view && other.getVisibility() == View.VISIBLE && shownScreens.contains(idOf(other))) over = true;
+                        }
+                        if (!over) return;
+                        view.setTranslationX(root.getWidth());
+                        view.animate().translationX(0).setDuration(kSlide).start();
+                    });
+                }
+            } else if (shownScreens.contains(id)) {
+                view.postDelayed(() -> { if (!activeScreens.getOrDefault(id, false)) view.setVisibility(View.GONE); }, kSlide);
+            } else view.setVisibility(View.GONE);
+            return;
+        }
         if (code == 3) { if (value != 0) view.requestFocus(); else view.clearFocus(); }
         else if (code == 2 && (view instanceof EditText || (view instanceof Button && !(view instanceof Switch)))) {
             int p = Math.round(value * d);
@@ -490,9 +526,24 @@ public final class UiActivity extends Activity {
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
             group.addView(view, before == 0 ? group.getChildCount() : group.indexOfChild(nodes.get(before)));
         } else if (op == 6) {
-            if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
+            ViewGroup owner = (ViewGroup)view.getParent();
+            boolean slide = false;
+            if (owner != null && activeScreens.getOrDefault(id, false) && view.getVisibility() == View.VISIBLE) {
+                for (int i = 0; i < owner.getChildCount(); i++) {
+                    View other = owner.getChildAt(i);
+                    if (other != view && shownScreens.contains(idOf(other))) slide = true;
+                }
+            }
+            if (slide) {
+                view.bringToFront();
+                leaving.add(view);
+                view.animate().translationX(root.getWidth()).setDuration(kSlide)
+                    .withEndAction(() -> { owner.removeView(view); leaving.remove(view); }).start();
+            } else if (owner != null && !insideLeaving(view)) owner.removeView(view);
+            activeScreens.remove(id);
             nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
             modalIds.remove(id); refreshers.remove(id); nativeViews.remove(id); nativeTypes.remove(id);
+            shownScreens.remove(id);
             scrollViewports.remove(id);
         } else if (op == 7 || op == 8) {
             if (view instanceof ScrollView) { if (op == 7) scrollViewports.put(id, -1); else scrollViewports.remove(id); }

@@ -55,6 +55,8 @@ static YGSize measure(YGNodeConstRef node, float width, YGMeasureMode wm, float 
 static void place(YGNodeRef parent) {
     for (size_t i = 0; i < YGNodeGetChildCount(parent); i++) {
         YGNodeRef node = YGNodeGetChild(parent, i);
+        // A hidden screen keeps its frame (it stays under a push's slide).
+        if (YGNodeStyleGetDisplay(node) == YGDisplayNone) continue;
         int id = static_cast<int>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
         env->CallVoidMethod(activity, placeMethod, id, YGNodeLayoutGetLeft(node), YGNodeLayoutGetTop(node),
                             YGNodeLayoutGetWidth(node), YGNodeLayoutGetHeight(node));
@@ -99,6 +101,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             else if (kind == 7) YGNodeStyleSetFlexWrap(node, before ? YGWrapWrap : YGWrapNoWrap);
             else if ((kind == 10 || kind == 11) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
             else if (kind == 12) YGNodeStyleSetBorder(node, YGEdgeAll, before);
+            else if (kind == 23) YGNodeStyleSetDisplay(node, before ? YGDisplayFlex : YGDisplayNone);
             else if (kind == 16) {
                 const YGAlign aligns[] = {YGAlignStretch, YGAlignFlexStart, YGAlignCenter, YGAlignFlexEnd, YGAlignStretch};
                 YGNodeStyleSetAlignItems(node, aligns[std::min(4, std::max(0, before))]);
