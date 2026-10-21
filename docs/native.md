@@ -258,6 +258,31 @@ native side, and an example app. A package like it starts and stops its service 
 `use_mount` ([state](state.md)), so the service runs while a component that uses it is
 mounted.
 
+## Hooks in a package
+
+A hook keeps its state in a slot of the calling scope: `ui_slot(kind, &tag)` returns it, the
+same one each render, with `data` (null on the first render) and `dispose` (run when the
+scope unmounts). A package uses kind 10 and a `static int tag` of its own, so mixing up the
+order of hooks is reported. This keeps the closure of the latest render, and frees the ones
+before it:
+
+```eskiu
+struct OnOpen { fn(string)->void handler; }
+
+void use_opened(escaping fn(string)->void handler) {
+    static int tag;
+    *Slot slot = ui_slot(10, &tag);
+    *OnOpen held = (*OnOpen)slot.data;
+    if (held == null) {
+        held = alloc<OnOpen>(1);
+        slot.data = held;
+        slot.dispose = void() { ui_release_payload(held.handler); free(held); };
+    } else { ui_release_payload(held.handler); }
+    held.handler = handler;
+    use_native_event("opened", void(string id) { held.handler(id); });
+}
+```
+
 ## Testing
 
 `tests/web.mjs` runs the native example's web code against the recording DOM;

@@ -177,6 +177,7 @@ string ui_hook_name(int kind) {
     if (kind == 7) { return "use_interval"; }
     if (kind == 8) { return "ToastHost"; }
     if (kind == 9) { return "use_mount"; }
+    if (kind == 10) { return "a package's hook"; }
     return "use_string";
 }
 
