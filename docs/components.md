@@ -15,6 +15,7 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 | `Scroll(Style, block)` | A column whose content scrolls when it is taller than the space it gets. |
 | `Pressable(Style, on_press, block)` | A column that reacts to a press anywhere in it. |
 | `Scope(name, Key, block)` | A component's own scope: state, identity, and `name` in diagnostics. No view. |
+| `ui_on_layout(fn(Frame)->void)` | For the element right after it: the handler gets its `Frame{x, y, width, height}` (points, relative to the parent) after each layout that changes it, as React Native's `onLayout`. |
 
 ### Text and buttons
 
