@@ -140,6 +140,26 @@ assert.equal(todoFind('Pending: 0').length, 1);
 todo._ui_stop();
 assert.equal(todoHost.nodes.size, 0);
 assert.equal(todoRoot.children.length, 0);
+// Hover: a kit ListItem lights up while a pointer is over it.
+const kitRoot = new Element('root');
+let kitApp;
+const kitHost = createHost(kitRoot, (...event) => uiDispatch(kitApp, ...event));
+const kitFrames = fakeFrames(() => kitApp._ui_tick());
+kitHost.schedule = () => kitFrames.scheduler.request();
+kitHost.cancel = () => kitFrames.scheduler.cancel();
+kitApp = await createApp({uiHost: kitHost});
+kitApp._ui_start(5);
+const account = [...kitHost.nodes.values()].find(node => node.attributes['aria-label'] === 'Account');
+assert(account && account.listeners.mouseenter, 'a ListItem listens to hovers');
+const resting = account.style.backgroundColor;
+account.listeners.mouseenter();
+kitFrames.frame();
+assert.notEqual(account.style.backgroundColor, resting, 'the pointer lights it up');
+account.listeners.mouseleave();
+kitFrames.frame();
+assert.equal(account.style.backgroundColor, resting, 'and leaving restores it');
+kitApp._ui_stop();
+
 // Native code: the native example's slider view (native/web/slider.mjs, registered as an app
 // would) and its clock module (native/web/clock.js, linked in), with the interval run by hand.
 const {setup: setupSlider} = await import('../examples/native/native/web/slider.mjs');
