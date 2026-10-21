@@ -279,11 +279,11 @@ string android_manifest(Project* p, string setup_classes, bool package) {
         "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n"
         "      <intent-filter><action android:name=\"android.intent.action.MAIN\"/>"
         "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n%s"
-        "    </activity>\n  </application>\n</manifest>\n",
+        "    </activity>\n%s  </application>\n</manifest>\n",
         attribute.data == null ? "" : attribute.data,
         package ? "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n" : "",
         android_permissions(p), xml_escape(p.display.data), package ? " android:debuggable=\"true\"" : "", setup_classes,
-        android_scheme(p));
+        android_scheme(p), android_receivers(p));
     return manifest.data;
 }
 
@@ -336,6 +336,19 @@ string android_permissions(Project* p) {
     String out;
     for (i in 0..permissions.size) {
         String_appendf(&out, "  <uses-permission android:name=\"%s\"/>\n", xml_escape(permissions.data[i]));
+    }
+    return out.data == null ? "" : out.data;
+}
+
+// The broadcast receivers native code declares (ui.toml [android] receivers, class names),
+// which the system can start while the app is not running: an alarm, a boot.
+string android_receivers(Project* p) {
+    List<string> receivers;
+    defer receivers.free();
+    p.config.all("android.receivers", &receivers);
+    String out;
+    for (i in 0..receivers.size) {
+        String_appendf(&out, "    <receiver android:name=\"%s\" android:exported=\"false\"/>\n", xml_escape(receivers.data[i]));
     }
     return out.data == null ? "" : out.data;
 }

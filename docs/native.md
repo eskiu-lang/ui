@@ -109,6 +109,7 @@ macOS runs the web host, so it uses the web's native code.
 void ui_native_emit(const char *channel, const char *payload);   // any thread
 void ui_register_view(NSString *type, UIView *(^create)(UiViewEmit emit),
                       void (^set)(UIView *view, NSString *name, NSString *value));
+UIViewController *ui_view_controller(void);   // to present system screens from
 #define UI_NATIVE_SETUP(name) ...   // a function that runs before the app starts
 ```
 
@@ -152,6 +153,8 @@ UiActivity.registerView(String type, UiActivity.ViewFactory factory);
 UiActivity.emit(String channel, String payload);   // any thread
 UiActivity.current();                              // the activity, for a Context
 UiActivity.requestPermissions(String[] permissions, Consumer<Boolean> done);   // runtime permissions
+UiActivity.startForResult(Intent intent, UiActivity.ActivityResult done);       // another activity's result
+UiActivity.onIntent(Consumer<Intent> listener);   // the launch intent, then each new one
 ```
 
 ```java
@@ -207,6 +210,7 @@ Collections = { url = "https://github.com/apple/swift-collections", from = "1.1.
 [android]
 permissions = ["android.permission.ACCESS_FINE_LOCATION"]
 dependencies = ["com.google.android.material:material:1.12.0"]
+receivers = ["org.example.Alarm"]   # broadcast receivers in native/android, for the manifest
 ```
 
 Values are strings and arrays of strings, and a table's key may take an inline table of
