@@ -553,6 +553,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view.clipsToBounds = YES;
         } else if (kind == 6) {
             UIScrollView *scroll = [UIScrollView new];
+            // The app places content from ui_insets() itself (as React Native's default): UIKit
+            // adding the safe area again would leave a second gap under the status bar.
+            scroll.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
             scroll.tag = id;
             scroll.delegate = events;
             node.view = scroll;
