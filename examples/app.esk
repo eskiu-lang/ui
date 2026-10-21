@@ -32,6 +32,12 @@ void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+void ui_dispatch_scroll(int id, int generation, int offset, int viewport) {
+    if (!app_active) { return; }
+    ui_event_scroll(id, generation, offset, viewport);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 void ui_dispatch_toggle(int id, int generation, int on) {
     if (!app_active) { return; }
     ui_event_toggle(id, generation, on != 0);

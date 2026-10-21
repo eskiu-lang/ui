@@ -42,5 +42,15 @@ export async function runConformance(app, root) {
   root.querySelector('[aria-label="Press"]').click();
   root.querySelector('[aria-label="Toggle"]').click();
   await frame();
-  return {status: 'DONE', frames, roles, styles, log: app.ccall('ui_conformance_log', 'string', [], [])};
+  // Scroll the feed: rows near 2000 points mount, rows from the top go.
+  const feed = root.querySelector('[aria-label="Feed"]');
+  feed.scrollTop = 2000;
+  await frame(); await frame(); await frame();
+  const feedBox = feed.getBoundingClientRect();
+  const scrolled = {Feed: [feedBox.left - base.left, feedBox.top - base.top, feedBox.width, feedBox.height]};
+  for (const row of feed.querySelectorAll('[aria-label^="Row "]')) {
+    const r = row.getBoundingClientRect();
+    scrolled[row.getAttribute('aria-label')] = [r.left - base.left, r.top - base.top, r.width, r.height].map(v => Math.round(v * 10) / 10);
+  }
+  return {status: 'DONE', frames, roles, styles, scrolled, log: app.ccall('ui_conformance_log', 'string', [], [])};
 }

@@ -11,6 +11,7 @@ extern "C" void ui_dispatch(int, int);
 extern "C" void ui_dispatch_text(int, int, const char *);
 extern "C" void ui_dispatch_focus(int, int, int);
 extern "C" void ui_dispatch_toggle(int, int, int);
+extern "C" void ui_dispatch_scroll(int, int, int, int);
 extern "C" void ui_report_window(int, int, int);
 extern "C" int ui_edge_to_edge();
 extern "C" void ui_report_insets(int, int, int, int, int);
@@ -157,6 +158,9 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeI
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeActive(JNIEnv *current, jobject, jint value) {
     env = current; ui_report_active(value);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeScroll(JNIEnv *current, jobject, jint id, jint generation, jint offset, jint viewport) {
+    env = current; ui_dispatch_scroll(id, generation, offset, viewport);
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeToggle(JNIEnv *current, jobject, jint id, jint generation, jint on) {
     env = current; ui_dispatch_toggle(id, generation, on);

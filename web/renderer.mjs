@@ -1,9 +1,11 @@
-// Events back into the wasm app: 1 press, 2 change (text), 3 focus (1 or 0), 4 toggle (1 or 0).
-export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0) {
+// Events back into the wasm app: 1 press, 2 change (text), 3 focus (1 or 0), 4 toggle
+// (1 or 0), 5 scroll (the offset in value, the viewport height in extra).
+export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
   else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
-  else app._ui_dispatch_toggle(id, generation, value);
+  else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
+  else app._ui_dispatch_scroll(id, generation, value, extra);
 }
 
 // Kinds (src/ui.esk): 0 scope, 1 column, 2 row, 3 text, 4 button, 5 text input, 6 scroll,
@@ -64,6 +66,13 @@ export function createHost(root, dispatch) {
     const input = listening(event, 'input[data-ui-id]');
     if (input && kindOf(input) === 9) dispatch(...ids(input), 4, null, input.checked ? 1 : 0);
   });
+  // Scroll does not bubble: listen in the capture phase. A virtual list also hears its
+  // viewport once it is laid out.
+  const reportScroll = node => dispatch(...ids(node), 5, null, Math.round(node.scrollTop), Math.round(node.clientHeight));
+  root.addEventListener('scroll', event => {
+    const node = event.target;
+    if (node.dataset && kindOf(node) === 6 && node.dataset.listening === 'true') reportScroll(node);
+  }, true);
   root.addEventListener('focusin', event => {
     const input = listening(event, 'input[data-ui-id]');
     if (input && kindOf(input) === 5) dispatch(...ids(input), 3, null, 1);
@@ -154,7 +163,12 @@ export function createHost(root, dispatch) {
         } else if (m.op === 4 || m.op === 5) {
           parentNode(m.parent).insertBefore(node, m.before ? nodes.get(m.before) : null);
         } else if (m.op === 6) { node.remove(); nodes.delete(m.id); }
-        else if (m.op === 7 || m.op === 8) node.dataset.listening = String(m.op === 7);
+        else if (m.op === 7 || m.op === 8) {
+          node.dataset.listening = String(m.op === 7);
+          if (m.op === 7 && kindOf(node) === 6 && typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => { if (node.isConnected) reportScroll(node); });
+          }
+        }
         else throw new Error(`unknown operation ${m.op}`);
       }
       pending.length = 0;

@@ -38,11 +38,12 @@ EXPECTED_FRAMES = {
     "Busy": [10, None, 24, 24],
     "Painted": [10, None, 60, 30],
     "Title": [10, None, None, None],
+    "Feed": [10, None, 300, 120],
 }
 EXPECTED_ROLES = {"Suite": "group", "Boxes": "group", "Fixed": "group", "Grow": "group", "List": "scroll",
                   "Item 0": "group", "Item 1": "group", "Item 2": "group", "Logo": "image",
                   "Field": "textfield", "Tap": "button", "Press": "button", "Toggle": "switch",
-                  "Busy": "progressbar", "Painted": "group", "Title": "text"}
+                  "Busy": "progressbar", "Painted": "group", "Title": "text", "Feed": "scroll"}
 EXPECTED_LOG = "tap,tap,text:abc,press,switch:1"
 # What the host drew: colors as rrggbbaa, sizes in points, opacity 0 to 1.
 EXPECTED_STYLES = {
@@ -71,6 +72,19 @@ def differences(report):
             same = abs(want - have) <= 0.02 if isinstance(want, (int, float)) and isinstance(have, (int, float)) else want == have
             if not same:
                 out.append(f"{label}.{name}: expected {want!r}, got {have!r}")
+    # After the feed scrolls to 2000 points: row 50 at the top of its viewport, the first rows
+    # unmounted, and only a window of rows alive.
+    scrolled = report.get("scrolled", {})
+    rows = [label for label in scrolled if label.startswith("Row ")]
+    if "Row 50" not in scrolled or "Feed" not in scrolled:
+        out.append(f"feed: row 50 not mounted after scrolling ({len(rows)} rows)")
+    else:
+        if abs(scrolled["Row 50"][1] - scrolled["Feed"][1]) > TOLERANCE:
+            out.append(f"feed: row 50 at y {scrolled['Row 50'][1]}, expected the feed's top {scrolled['Feed'][1]}")
+    if "Row 0" in scrolled:
+        out.append("feed: row 0 still mounted after scrolling")
+    if len(rows) > 30:
+        out.append(f"feed: {len(rows)} rows mounted, expected a window")
     if report.get("log") != EXPECTED_LOG:
         out.append(f"log: {report.get('log')!r}, expected {EXPECTED_LOG!r}")
     return out

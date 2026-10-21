@@ -15,6 +15,7 @@ extern "C" void ui_dispatch(int id, int generation);
 extern "C" void ui_dispatch_text(int id, int generation, const char *text);
 extern "C" void ui_dispatch_focus(int id, int generation, int focused);
 extern "C" void ui_dispatch_toggle(int id, int generation, int on);
+extern "C" void ui_dispatch_scroll(int id, int generation, int offset, int viewport);
 extern "C" void ui_report_window(int width, int height, int scale);
 extern "C" int ui_edge_to_edge(void);
 extern "C" void ui_report_insets(int top, int right, int bottom, int left, int keyboard);
@@ -29,6 +30,8 @@ extern "C" void ui_stop(void);
 @property(nonatomic) int generation;
 @property(nonatomic) CGFloat fontSize;
 @property(nonatomic) int fontWeight;
+@property(nonatomic) bool listening;
+@property(nonatomic) CGFloat reportedViewport;
 @end
 @implementation UiHostNode
 @end
@@ -119,12 +122,19 @@ static void place(YGNodeRef yoga, UIView *parent) {
             YGNodeRef child = YGNodeGetChild(yoga, i);
             bottom = std::max(bottom, (CGFloat)(YGNodeLayoutGetTop(child) + YGNodeLayoutGetHeight(child)));
         }
-        ((UIScrollView *)owner.view).contentSize =
-            CGSizeMake(YGNodeLayoutGetWidth(yoga), bottom + YGNodeLayoutGetPadding(yoga, YGEdgeBottom));
+        UIScrollView *scroll = (UIScrollView *)owner.view;
+        scroll.contentSize = CGSizeMake(YGNodeLayoutGetWidth(yoga), bottom + YGNodeLayoutGetPadding(yoga, YGEdgeBottom));
+        // A virtual list hears its viewport once laid out, and again when it changes size.
+        CGFloat viewport = YGNodeLayoutGetHeight(yoga);
+        if (owner.listening && viewport != owner.reportedViewport) {
+            owner.reportedViewport = viewport;
+            ui_dispatch_scroll((int)scroll.tag, owner.generation, (int)std::lround(scroll.contentOffset.y),
+                               (int)std::lround(viewport));
+        }
     }
 }
 
-@interface UiEvents : NSObject
+@interface UiEvents : NSObject <UIScrollViewDelegate>
 - (void)press:(UIControl *)sender;
 - (void)edit:(UITextField *)sender;
 - (void)toggle:(UISwitch *)sender;
@@ -136,6 +146,13 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)press:(UIControl *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
     if (node) ui_dispatch((int)sender.tag, node.generation);
+}
+- (void)scrollViewDidScroll:(UIScrollView *)scroll {
+    UiHostNode *node = nodes[@(scroll.tag)];
+    if (!node || !node.listening) return;
+    node.reportedViewport = scroll.bounds.size.height;
+    ui_dispatch_scroll((int)scroll.tag, node.generation, (int)std::lround(scroll.contentOffset.y),
+                       (int)std::lround(scroll.bounds.size.height));
 }
 - (void)toggle:(UISwitch *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
@@ -217,7 +234,10 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         } else if (kind == 10) {
             node.view = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
         } else if (kind == 6) {
-            node.view = [UIScrollView new];
+            UIScrollView *scroll = [UIScrollView new];
+            scroll.tag = id;
+            scroll.delegate = events;
+            node.view = scroll;
             YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
             YGNodeStyleSetOverflow(node.yoga, YGOverflowScroll);
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
@@ -302,7 +322,10 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         [node.view removeFromSuperview];
         YGNodeFree(node.yoga);
         [nodes removeObjectForKey:@(id)];
-    } else if (op == 7 || op == 8) { node.view.userInteractionEnabled = op == 7; }
+    } else if (op == 7 || op == 8) {
+        if ([node.view isKindOfClass:UIScrollView.class]) node.listening = op == 7;
+        else node.view.userInteractionEnabled = op == 7;
+    }
     else { fprintf(stderr, "ui host: unknown op %d\n", op); abort(); }
 }
 
@@ -470,14 +493,30 @@ static void runConformance(void) {
         [press sendActionsForControlEvents:UIControlEventTouchUpInside];
         [toggle setOn:YES animated:NO];
         [toggle sendActionsForControlEvents:UIControlEventValueChanged];
+        UIScrollView *feed = nil;
+        for (UiHostNode *node in nodes.allValues) if ([node.view.accessibilityLabel isEqualToString:@"Feed"]) feed = (UIScrollView *)node.view;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        // Scroll the feed: rows near 2000 points mount, rows from the top go.
+        [feed setContentOffset:CGPointMake(0, 2000) animated:NO];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 400 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            auto round1 = [](CGFloat v) { return @(std::round(v * 10) / 10); };
+            NSMutableDictionary *scrolled = [NSMutableDictionary new];
+            for (UiHostNode *node in nodes.allValues) {
+                NSString *label = node.view.accessibilityLabel;
+                if (!([label hasPrefix:@"Row "] || [label isEqualToString:@"Feed"])) continue;
+                // Rows are compared where they show: content coordinates minus the offset.
+                CGRect r = [node.view convertRect:node.view.bounds toView:suite];
+                scrolled[label] = @[round1(r.origin.x), round1(r.origin.y), round1(r.size.width), round1(r.size.height)];
+            }
             NSDictionary *result = @{@"status": @"DONE", @"frames": frames, @"roles": roles, @"styles": styles,
+                                     @"scrolled": scrolled,
                                      @"log": [NSString stringWithUTF8String:ui_conformance_log()]};
             NSData *json = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingSortedKeys error:nil];
             printf("CONFORMANCE %s\n", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
             fflush(stdout);
             ui_stop();
             exit(0);
+        });
         });
     });
 }

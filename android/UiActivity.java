@@ -41,6 +41,9 @@ public final class UiActivity extends Activity {
     private native void nativeActive(int active);
     private native String nativeConformanceLog();
     private native void nativeToggle(int id, int generation, int on);
+    private native void nativeScroll(int id, int generation, int offset, int viewport);
+    // Scroll views whose offset the core wants (virtual lists), and the viewport last reported.
+    private final HashMap<Integer, Integer> scrollViewports = new HashMap<>();
     private native void nativeWindow(int width, int height, int scale);
     // Per view: the drawable that paints background, border and radius, and the font.
     private final HashMap<Integer, GradientDrawable> paints = new HashMap<>();
@@ -253,6 +256,7 @@ public final class UiActivity extends Activity {
                 // A ScrollView holds one child: the group its children go into.
                 ScrollView scroll = new ScrollView(this);
                 scroll.addView(new YogaGroup());
+                scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> reportScroll(id, (ScrollView)v));
                 view = scroll;
             } else view = new YogaGroup();
             view.setId(View.generateViewId());
@@ -284,7 +288,11 @@ public final class UiActivity extends Activity {
         } else if (op == 6) {
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
             nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
-        } else if (op == 7 || op == 8) view.setEnabled(op == 7);
+            scrollViewports.remove(id);
+        } else if (op == 7 || op == 8) {
+            if (view instanceof ScrollView) { if (op == 7) scrollViewports.put(id, -1); else scrollViewports.remove(id); }
+            else view.setEnabled(op == 7);
+        }
     }
     public long measure(int id, float width, int wm, float height, int hm) {
         View view = nodes.get(id);
@@ -303,6 +311,13 @@ public final class UiActivity extends Activity {
         if (view.getParent() == root) { l += root.getPaddingLeft(); t += root.getPaddingTop(); }
         view.layout(l, t, l + w, t + h);
     }
+    private void reportScroll(int id, ScrollView view) {
+        if (!active || !scrollViewports.containsKey(id)) return;
+        float d = density();
+        int viewport = Math.round(view.getHeight() / d);
+        scrollViewports.put(id, viewport);
+        nativeScroll(id, generations.get(id), Math.round(view.getScrollY() / d), viewport);
+    }
     public void content(int id, float width, float height) {
         YogaGroup content = (YogaGroup)((ScrollView)nodes.get(id)).getChildAt(0);
         content.contentWidth = Math.round(width * density());
@@ -310,6 +325,10 @@ public final class UiActivity extends Activity {
         content.measure(View.MeasureSpec.makeMeasureSpec(content.contentWidth, View.MeasureSpec.EXACTLY),
                         View.MeasureSpec.makeMeasureSpec(content.contentHeight, View.MeasureSpec.EXACTLY));
         content.layout(0, 0, content.contentWidth, content.contentHeight);
+        // A virtual list hears its viewport once laid out, and again when it changes size.
+        ScrollView scroll = (ScrollView)nodes.get(id);
+        Integer reported = scrollViewports.get(id);
+        if (reported != null && reported != Math.round(scroll.getHeight() / density())) reportScroll(id, scroll);
     }
     public float width() { return (root.getWidth() - root.getPaddingLeft() - root.getPaddingRight()) / density(); }
     public float height() { return (root.getHeight() - root.getPaddingTop() - root.getPaddingBottom()) / density(); }
@@ -423,11 +442,33 @@ public final class UiActivity extends Activity {
         toggle.setChecked(true);
         final String result = "{\"status\":\"DONE\",\"session\":\"" + getIntent().getStringExtra("session") +
             "\",\"frames\":{" + frames + "},\"roles\":{" + roles + "},\"styles\":" + styles;
+        ScrollView feed = null;
+        for (View view : nodes.values()) if ("Feed".contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) feed = (ScrollView)view;
+        final ScrollView feedView = feed;
+        final View suiteView = suite;
         root.postDelayed(() -> {
-            String json = result + ",\"log\":\"" + nativeConformanceLog() + "\"}";
+        // Scroll the feed: rows near 2000 points mount, rows from the top go.
+        feedView.scrollTo(0, Math.round(2000 * density()));
+        root.postDelayed(() -> {
+            float dd = density();
+            int[] origin = new int[2];
+            suiteView.getLocationInWindow(origin);
+            StringBuilder scrolled = new StringBuilder();
+            for (View view : nodes.values()) {
+                String label = view.getContentDescription() == null ? "" : view.getContentDescription().toString();
+                if (!(label.startsWith("Row ") || label.equals("Feed"))) continue;
+                int[] at = new int[2];
+                view.getLocationInWindow(at);
+                if (scrolled.length() > 0) scrolled.append(',');
+                scrolled.append('"').append(label).append("\":[").append(round1((at[0] - origin[0]) / dd)).append(',')
+                    .append(round1((at[1] - origin[1]) / dd)).append(',').append(round1(view.getWidth() / dd)).append(',')
+                    .append(round1(view.getHeight() / dd)).append(']');
+            }
+            String json = result + ",\"scrolled\":{" + scrolled + "},\"log\":\"" + nativeConformanceLog() + "\"}";
             try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "conformance.json"))) {
                 out.write(json.getBytes(StandardCharsets.UTF_8));
             } catch (Exception error) { throw new RuntimeException(error); }
+        }, 500);
         }, 300);
     }
     private static float round1(float value) { return Math.round(value * 10) / 10f; }
