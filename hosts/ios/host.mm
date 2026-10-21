@@ -363,6 +363,23 @@ static void place(YGNodeRef yoga, UIView *parent) {
     }
 }
 
+// A pressable: a touch on a descendant that does not handle touches (a label, a row) is the
+// pressable's, so its text presses it too. A control, a scroll or a gesture inside keeps its own.
+@interface UiPressable : UIControl
+@end
+@implementation UiPressable
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    if (!hit || hit == self) return hit;
+    for (UIView *view = hit; view && view != self; view = view.superview) {
+        if ([view isKindOfClass:UIControl.class] || [view isKindOfClass:UIScrollView.class]) return hit;
+        for (UIGestureRecognizer *g in view.gestureRecognizers)
+            if (![g isKindOfClass:UIHoverGestureRecognizer.class]) return hit;
+    }
+    return self;
+}
+@end
+
 @interface UiEvents : NSObject <UIScrollViewDelegate>
 - (void)press:(UIControl *)sender;
 - (void)hover:(UIHoverGestureRecognizer *)gesture;
@@ -511,7 +528,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             image.accessibilityTraits = UIAccessibilityTraitImage;
             node.view = image;
         } else if (kind == 8) {
-            UIControl *control = [UIControl new];
+            UIControl *control = [UiPressable new];
             control.tag = id;
             control.isAccessibilityElement = YES;
             control.accessibilityTraits = UIAccessibilityTraitButton;
