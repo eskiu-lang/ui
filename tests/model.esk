@@ -560,7 +560,8 @@ void text_input() {
     check(ui_event_text(input.id, input.generation, "Buy milk"), "edit dispatched");
     check(strcmp(draft.get(), "Buy milk") == 0, "the handler got the text");
     ui_frame();
-    check(ops[3] == 1 && count_prop(2, 3) == 0 && count_prop(9, 1) == 0, "the new value only");
+    check(ops[3] == 0 && count_prop(2, 3) == 0 && count_prop(9, 1) == 0,
+        "the typed text is already shown: nothing is sent back");
     // The renderer moved focus away: the handler hears it, and focused: 1 is a change again.
     ui_event_focus(input.id, input.generation, false);
     check(focus_calls == 1 && !last_focus, "focus handler");
@@ -660,6 +661,91 @@ void environment() {
     ui_shutdown(); balanced("environment leak");
 }
 
+int prop_value(int op, int prop) {
+    for (i in 0..mutation_count) { if (mutation_ops[i] == op && mutation_kinds[i] == prop) { return mutation_befores[i]; } }
+    return -12345;
+}
+
+*Signal<int> style_version;
+void visual_styles() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        style_version = use_signal<int>(0);
+        int v = style_version.get();
+        Row(Style{background: v < 2 ? rgb(255, 0, 0) : -1, radius: 8, border_width: 2, border_color: rgb(0, 0, 0),
+                  opacity: 50, align: AlignCenter, justify: JustifyBetween}, void() {
+            TextWith(Style{color: rgb(0, 0, 255), font_size: 24, font_weight: 700}, "Title");
+        });
+        Row(Style{}, void() {});
+    });
+    ui_frame();
+    for (code in 8..18) { check(count_prop(2, code) == 1, "each visual prop sent once"); }
+    check(prop_value(2, 8) == (int)0xFF0000FF && prop_value(2, 16) == 2 && prop_value(2, 17) == 4, "values");
+    style_version.set(1); ui_frame();
+    for (code in 8..18) { check(count_prop(2, code) == 0, "unchanged styles send nothing"); }
+    style_version.set(2); ui_frame();
+    check(count_prop(2, 8) == 1 && prop_value(2, 8) == 0, "a cleared background is 0");
+    ui_shutdown(); balanced("visual styles leak");
+}
+
+*Signal<bool> switch_on;
+bool accept_toggle;
+int presses;
+*StringState strict_draft;
+void controls() {
+    Ui runtime;
+    presses = 0;
+    accept_toggle = false;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        switch_on = use_signal<bool>(false);
+        strict_draft = use_string("");
+        Pressable(Style{width: 100, height: 40}, void() { presses++; }, void() { Text("Press"); });
+        Switch(Style{}, switch_on.get(), void(bool on) { if (accept_toggle) { switch_on.set(on); } });
+        ActivityIndicator(Style{}, !switch_on.get());
+        // Accepts only digits.
+        TextInput(Input{value: strict_draft.get()}, void(string text) {
+            if (text[0] >= '0' && text[0] <= '9') { strict_draft.set(text); }
+        });
+    });
+    ui_frame();
+    check(count_prop(2, 18) == 1 && prop_value(2, 18) == 0 && prop_value(2, 19) == 1, "switch off, spinner on");
+    check(ops[7] == 3, "pressable, switch and input listen");
+    *Node pressable = ui.root.children.data[0];
+    *Node toggle = ui.root.children.data[1];
+    *Node input = ui.root.children.data[3];
+    check(ui_event(pressable.id, pressable.generation) && presses == 1, "a press reaches the pressable");
+    // Refused toggle: the switch is sent back to off.
+    ui_event_toggle(toggle.id, toggle.generation, true);
+    ui_frame();
+    check(count_prop(2, 18) == 1 && prop_value(2, 18) == 0, "a refused toggle is reverted");
+    accept_toggle = true;
+    ui_event_toggle(toggle.id, toggle.generation, true);
+    ui_frame();
+    check(count_prop(2, 18) == 0 && prop_value(2, 19) == 0, "an accepted toggle is not resent; the spinner stops");
+    // Refused edit: the input gets its value back.
+    ui_event_text(input.id, input.generation, "abc");
+    ui_frame();
+    check(ops[3] == 1 && strcmp(input.text, "") == 0, "a refused edit is reverted");
+    ui_event_text(input.id, input.generation, "42");
+    ui_frame();
+    check(ops[3] == 0 && strcmp(strict_draft.get(), "42") == 0, "an accepted edit is not resent");
+    ui_shutdown(); balanced("controls leak");
+}
+
+int seen_width;
+void window_size() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() { Row(Style{key: key(1)}, void() { seen_width = ui_window().width; }); });
+    ui_frame();
+    ui_set_window(Window{390, 844, 300});
+    ui_frame();
+    check(seen_width == 390 && keyed(1).runs == 2, "window size reaches readers");
+    ui_shutdown(); balanced("window leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -678,6 +764,9 @@ int main() {
     sizes(); printf("PASS sizes\n");
     images(); printf("PASS images\n");
     environment(); printf("PASS environment\n");
+    visual_styles(); printf("PASS visual styles\n");
+    controls(); printf("PASS controls\n");
+    window_size(); printf("PASS window\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");

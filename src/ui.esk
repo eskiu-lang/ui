@@ -11,8 +11,26 @@ Key key(int64 value) { return Key{true, value}; }
 // `label` is the accessible name (ARIA label, accessibilityLabel, contentDescription).
 // width and height are points (0: sized by content and parent); grow shares the free
 // space along the parent's direction (flex-grow); wrap lets a row's children flow onto
-// more lines (flex-wrap).
-struct Style { Key key; int gap = 8; int padding = 0; string label; int width; int height; int grow; bool wrap; }
+// more lines (flex-wrap). The visual props: colors from rgb()/rgba() (-1: the platform's
+// default), font_size in points and font_weight 100 to 900 (0: default), border_width and
+// radius in points, opacity in percent, align (children across the axis) and justify
+// (children along it) from the Align and Justify members (0: default).
+struct Style {
+    Key key; int gap = 8; int padding = 0; string label;
+    int width; int height; int grow; bool wrap;
+    int64 background = -1; int64 color = -1; int font_size; int font_weight;
+    int border_width; int64 border_color = -1; int radius; int opacity = 100;
+    int align; int justify;
+}
+
+enum Align { AlignDefault, AlignStart, AlignCenter, AlignEnd, AlignStretch }
+enum Justify { JustifyDefault, JustifyStart, JustifyCenter, JustifyEnd, JustifyBetween, JustifyAround }
+
+// An opaque color, each channel 0 to 255; rgba adds the alpha.
+int64 rgb(int r, int g, int b) { return rgba(r, g, b, 255); }
+int64 rgba(int r, int g, int b, int a) {
+    return ((int64)(r & 255) << 24) | ((int64)(g & 255) << 16) | ((int64)(b & 255) << 8) | (int64)(a & 255);
+}
 
 // A subscription is one entry on each side, each holding the other's index, so either
 // side removes it in O(1) by swapping in its last entry.
@@ -91,10 +109,8 @@ struct Node {
     string name;
     int gap;
     int padding;
-    int width;
-    int height;
-    int grow;
-    bool wrap;
+    // The value last sent for each int prop (by code), so only a change is sent again.
+    int64[24] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -122,8 +138,9 @@ struct Node {
     fn()->void handler_cleanup;
     // TextInput: the new text (borrowed for the call) and focus changes.
     fn(string)->void on_text;
-    fn(bool)->void on_focus;
-    bool has_on_focus;
+    // TextInput focus changes and Switch toggles.
+    fn(bool)->void on_bool;
+    bool has_on_bool;
     string label;
     string placeholder;
     string source;
@@ -141,9 +158,12 @@ struct Node {
 //   7 listen, 8 unlisten
 //   9 string prop  prop u8 (1 label, 2 placeholder, 3 image source), length u32, the bytes, a NUL
 // Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow,
-// 7 wrap (1 or 0).
+// 7 wrap (1 or 0), 8 background and 9 text color (RGBA, 0: platform default), 10 font size,
+// 11 font weight, 12 border width, 13 border color, 14 radius, 15 opacity (percent),
+// 16 align and 17 justify (Align / Justify), 18 switch on (1 or 0), 19 spinning (1 or 0).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
-// 5 text input, 6 scroll (a column whose content scrolls), 7 image.
+// 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
+// that takes presses), 9 switch, 10 activity indicator.
 // The renderer reads it during apply and copies what it keeps.
 struct Commit { *uint8 data; int len; int cap; }
 
@@ -204,11 +224,13 @@ void ui_decode(*uint8 data, int len, List<Mutation>* out) {
         out.push(m);
     }
 }
-// Event kinds: 1 press, 2 change (text), 3 focus (value 1 focused, 0 blurred).
+// Event kinds: 1 press, 2 change (text), 3 focus (value 1 focused, 0 blurred), 4 toggle
+// (value 1 on, 0 off).
 struct Event { int id; int generation; int kind; int value; string text; }
 // What the host reports about the screen, in points: the system bars and display cutouts
 // on each side, and the software keyboard over the bottom.
 struct Insets { int top; int right; int bottom; int left; int keyboard; }
+struct Window { int width; int height; int scale; }
 
 struct Ui {
     *Node root;
@@ -248,6 +270,11 @@ struct Ui {
     *InputExtra next_input;
     // The source of the next element (Image), likewise.
     string next_source;
+    // The value and handler of the next Switch, and whether the next ActivityIndicator spins.
+    *SwitchExtra next_switch;
+    bool next_animating;
+    // The window the root is in, in points, and its scale (pixels per point, times 100).
+    Window window;
     bool in_flight;
 }
 *Ui ui;
@@ -255,6 +282,9 @@ int64 ui_epochs;
 const int kSmall = 8;
 
 string ui_kind_name(int kind) {
+    if (kind == 10) { return "ActivityIndicator"; }
+    if (kind == 9) { return "Switch"; }
+    if (kind == 8) { return "Pressable"; }
     if (kind == 7) { return "Image"; }
     if (kind == 6) { return "Scroll"; }
     if (kind == 5) { return "TextInput"; }
@@ -335,6 +365,16 @@ void ui_emit(int op, *Node node, int before) {
 
 void ui_emit_prop(*Node node, int prop, int value) {
     ui.commit.u8(2); ui.commit.u32(node.id); ui.commit.u8(prop); ui.commit.u32(value);
+}
+
+// Send int prop `code` when it differs from what was sent; a fresh node starts at the
+// default, `unset`. A color's default (-1) goes out as 0, which renderers read as "the
+// platform's own".
+void ui_prop(*Node node, bool fresh, int code, int64 value, int64 unset) {
+    if (fresh) { node.props[code] = unset; }
+    if (node.props[code] == value) { return; }
+    node.props[code] = value;
+    ui_emit_prop(node, code, value == -1 && unset == -1 ? 0 : (int)value);
 }
 
 void ui_emit_string_prop(*Node node, int prop, string value) {
@@ -779,12 +819,14 @@ void ui_unmount(*Node node) {
         ui_release_closure(node.handler);
         ui_release_closure(node.handler_cleanup);
         ui_release_text(node.on_text);
-        ui_release_focus(node.on_focus);
+        ui_release_focus(node.on_bool);
         free(node.text); free(node.label); free(node.placeholder); free(node.source);
         node.slots.free(); node.children.free(); node.emitted.free();
         free(node);
     });
 }
+
+struct SwitchExtra { bool value; fn(bool)->void on_change; }
 
 // What an input element adds to an element: set by TextInput before ui_element.
 struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_on_focus;
@@ -867,10 +909,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         fn()->void old_cleanup = node.handler_cleanup;
         ui_retire(void() { ui_release_closure(old_block); });
         ui_retire(void() { ui_release_closure(old_handler); old_cleanup(); ui_release_closure(old_cleanup); });
-        if (kind == 5) {
+        if (kind == 5 || kind == 9) {
             fn(string)->void old_text = node.on_text;
-            fn(bool)->void old_focus = node.on_focus;
-            ui_retire(void() { ui_release_text(old_text); ui_release_focus(old_focus); });
+            fn(bool)->void old_bool = node.on_bool;
+            ui_retire(void() { ui_release_text(old_text); ui_release_focus(old_bool); });
         }
     }
     node.seen = true;
@@ -883,18 +925,21 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         ui_emit_prop(node, 2, style.padding);
     }
     // Sizes are sent when set or changed, so most elements send none.
-    if ((fresh && style.width != 0) || (!fresh && node.width != style.width)) {
-        node.width = style.width; ui_emit_prop(node, 4, style.width);
-    }
-    if ((fresh && style.height != 0) || (!fresh && node.height != style.height)) {
-        node.height = style.height; ui_emit_prop(node, 5, style.height);
-    }
-    if ((fresh && style.grow != 0) || (!fresh && node.grow != style.grow)) {
-        node.grow = style.grow; ui_emit_prop(node, 6, style.grow);
-    }
-    if ((fresh && style.wrap) || (!fresh && node.wrap != style.wrap)) {
-        node.wrap = style.wrap; ui_emit_prop(node, 7, style.wrap ? 1 : 0);
-    }
+    // Props left at their default are not sent, so most elements send none.
+    ui_prop(node, fresh, 4, style.width, 0);
+    ui_prop(node, fresh, 5, style.height, 0);
+    ui_prop(node, fresh, 6, style.grow, 0);
+    ui_prop(node, fresh, 7, style.wrap ? 1 : 0, 0);
+    ui_prop(node, fresh, 8, style.background, -1);
+    ui_prop(node, fresh, 9, style.color, -1);
+    ui_prop(node, fresh, 10, style.font_size, 0);
+    ui_prop(node, fresh, 11, style.font_weight, 0);
+    ui_prop(node, fresh, 12, style.border_width, 0);
+    ui_prop(node, fresh, 13, style.border_color, -1);
+    ui_prop(node, fresh, 14, style.radius, 0);
+    ui_prop(node, fresh, 15, style.opacity, 100);
+    ui_prop(node, fresh, 16, style.align, 0);
+    ui_prop(node, fresh, 17, style.justify, 0);
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
     node.block = block;
     node.handler = handler;
@@ -903,8 +948,8 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         *InputExtra extra = ui.next_input;
         ui.next_input = null;
         node.on_text = extra.on_text;
-        node.on_focus = extra.on_focus;
-        node.has_on_focus = extra.has_on_focus;
+        node.on_bool = extra.on_focus;
+        node.has_on_bool = extra.has_on_focus;
         if (ui_update_string(&node.placeholder, extra.placeholder)) {
             ui_emit_string_prop(node, 2, node.placeholder);
         }
@@ -918,7 +963,17 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         ui.next_source = null;
         if (ui_update_string(&node.source, source)) { ui_emit_string_prop(node, 3, node.source); }
     }
-    if (kind == 4 || kind == 5) { ui_emit(7, node, 0); }
+    if (kind == 9) {
+        *SwitchExtra toggle = ui.next_switch;
+        ui.next_switch = null;
+        node.on_bool = toggle.on_change;
+        node.has_on_bool = true;
+        ui_prop(node, fresh, 18, toggle.value ? 1 : 0, -1);
+    }
+    if (kind == 10) {
+        ui_prop(node, fresh, 19, ui.next_animating ? 1 : 0, -1);
+    }
+    if (kind == 4 || kind == 5 || kind == 8 || kind == 9) { ui_emit(7, node, 0); }
     if (text != null && (node.text == null || strcmp(text, node.text) != 0)) {
         string previous = node.text;
         if (previous != null) { ui_retire(void() { free(previous); }); }
@@ -956,6 +1011,15 @@ void ui_set_active(bool active) {
 }
 
 Insets ui_insets() { ui.environment.get(); return ui.insets; }
+
+void ui_set_window(Window window) {
+    Window old = ui.window;
+    if (old.width == window.width && old.height == window.height && old.scale == window.scale) { return; }
+    ui.window = window;
+    ui.environment.set(ui.environment.value + 1);
+}
+
+Window ui_window() { ui.environment.get(); return ui.window; }
 bool ui_is_active() { ui.environment.get(); return !ui.inactive; }
 
 // A column whose content scrolls when it is taller than the space it gets.
@@ -967,6 +1031,30 @@ void Scope(string name, Key k, escaping fn()->void block) {
 }
 void Text(string text) { ui_element(3, Style{}, text, void() {}, void() {}, void() {}); }
 void Button(string text, escaping fn()->void handler) { ui_element(4, Style{}, text, void() {}, handler, void() {}); }
+
+// Text and Button with a style: color, font, background and the rest of Style.
+void TextWith(Style style, string text) { ui_element(3, style, text, void() {}, void() {}, void() {}); }
+void ButtonWith(Style style, string text, escaping fn()->void handler) {
+    ui_element(4, style, text, void() {}, handler, void() {});
+}
+
+// A container that reacts to a press anywhere in it (the children are its content).
+void Pressable(Style style, escaping fn()->void on_press, escaping fn()->void block) {
+    ui_element(8, style, null, block, on_press, void() {});
+}
+
+// A controlled on/off switch: it shows `value`, and on_change gets the user's toggle.
+void Switch(Style style, bool value, escaping fn(bool)->void on_change) {
+    SwitchExtra extra = SwitchExtra{value, on_change};
+    ui.next_switch = &extra;
+    ui_element(9, style, null, void() {}, void() {}, void() {});
+}
+
+// The platform's busy indicator, spinning while `animating`.
+void ActivityIndicator(Style style, bool animating) {
+    ui.next_animating = animating;
+    ui_element(10, style, null, void() {}, void() {}, void() {});
+}
 void Button_owned(string text, escaping fn()->void handler, escaping fn()->void cleanup) {
     ui_element(4, Style{}, text, void() {}, handler, cleanup);
 }
@@ -1186,17 +1274,36 @@ bool ui_event_focus(int id, int generation, bool focused) {
     return ui_post(Event{id, generation, 3, focused ? 1 : 0, null});
 }
 
+bool ui_event_toggle(int id, int generation, bool on) {
+    return ui_post(Event{id, generation, 4, on ? 1 : 0, null});
+}
+
 bool ui_dispatch_event(*Event event) {
     int id = event.id;
     if (id <= 0 || id >= ui.by_id.size) { return false; }
     *Node node = ui.by_id.data[id];
     if (node == null || node.generation != event.generation) { return false; }
-    if (event.kind == 1 && node.kind == 4) { node.handler(); return true; }
-    if (event.kind == 2 && node.kind == 5) { node.on_text(event.text); return true; }
+    if (event.kind == 1 && (node.kind == 4 || node.kind == 8)) { node.handler(); return true; }
+    // What the user changed is what the renderer shows now: recorded as sent, so a render
+    // that keeps the old value (the app refused the change) sends it back.
+    if (event.kind == 2 && node.kind == 5) {
+        string shown = node.text;
+        if (shown != null) { ui_retire(void() { free(shown); }); }
+        node.text = ui_copy(event.text);
+        node.on_text(event.text);
+        // Render the scope again even if the app ignored the edit, so its value wins.
+        ui_schedule(node.parent);
+        return true;
+    }
     if (event.kind == 3 && node.kind == 5) {
-        // The renderer moved focus: remember it so a later `focused` prop is a change.
         node.focused = event.value;
-        if (node.has_on_focus) { node.on_focus(event.value != 0); }
+        if (node.has_on_bool) { node.on_bool(event.value != 0); }
+        return true;
+    }
+    if (event.kind == 4 && node.kind == 9) {
+        node.props[18] = event.value;
+        node.on_bool(event.value != 0);
+        ui_schedule(node.parent);
         return true;
     }
     return false;
