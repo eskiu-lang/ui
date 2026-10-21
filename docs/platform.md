@@ -137,6 +137,33 @@ Button("Copy link", void() {
 });
 ```
 
+## The network
+
+```eskiu
+*Signal<int> status = use_signal<int>(0);
+Button("Refresh", void() {
+    ui_fetch(FetchRequest{url: "https://api.example.com/today", headers: "Accept: application/json"},
+        void(FetchResult r) {
+            if (r.status == 0) { println(r.error); return; }
+            status.set(r.status);
+            JsonValue* doc = json_parse(r.body);   // <json>
+            ...
+        });
+});
+```
+
+`ui_fetch(request, on_done)` sends a request through the platform: `NSURLSession` on iOS,
+`HttpURLConnection` on Android, the browser's `fetch` on the web. TLS, proxies and
+certificates are the system's, and nothing else has to be linked. A `FetchRequest` has
+`url`, `method` (`"GET"` when null), `headers` (one `"Name: value"` per line), `body` (sent
+unless null) and `timeout_ms` (0 for the platform's). The handler runs on the UI thread with
+a `FetchResult`: `status` (0 when the request failed, with `error` saying why), `body` as text
+and the response `headers`, borrowed for the call.
+
+Android apps get the `INTERNET` permission, and builds allow plain HTTP for development
+(`usesCleartextTraffic`); iOS allows plain HTTP to the local network. On the web, a request
+to another origin needs that server's CORS headers.
+
 ## Modals
 
 ```eskiu
