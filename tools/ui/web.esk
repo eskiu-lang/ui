@@ -77,6 +77,14 @@ void write_web_native(Project* p, string out) {
 // A static file server for build/ui/web: one connection at a time is plenty for a page.
 string serve_root;
 
+// Under `ui serve`: the page's requests and its waits for the next build (/__ui/).
+bool serve_dev;
+
+int serve_port;
+
+int serve_listener;
+
+
 string content_type(string path) {
     String name;
     defer String_free(&name);
@@ -106,14 +114,20 @@ void serve_one(int client) {
     // "GET /path?query HTTP/1.1"
     String path;
     defer String_free(&path);
+    String query;
+    defer String_free(&query);
     int at = 0;
     while (at < got && request[at] != ' ') { at++; }
     at++;
-    while (at < got && request[at] != ' ' && request[at] != '?') {
-        char[2] one;
-        one[0] = request[at]; one[1] = 0;
-        String_append(&path, (string)&one[0]);
+    while (at < got && request[at] != ' ' && request[at] != '?') { String_push(&path, request[at]); at++; }
+    if (at < got && request[at] == '?') {
         at++;
+        while (at < got && request[at] != ' ') { String_push(&query, request[at]); at++; }
+    }
+    if (serve_dev && String_starts_with(&path, "/__ui/") == 1) {
+        serve_dev_request(client, &path, &query);
+        net_close(client);
+        return;
     }
     if (path.len == 0 || String_eq_cstr(&path, "/") == 1) { String_from(&path, "/index.html"); }
     String header;
@@ -129,6 +143,15 @@ void serve_one(int client) {
         String_from(&path, "/index.html");
     }
     String_free(&last);
+    // Under `ui serve`, the page waits for the next build.
+    String page;
+    defer String_free(&page);
+    if (serve_dev && String_eq_cstr(&path, "/index.html") == 1) {
+        if (body != null) { free(body); }
+        serve_page(join(serve_root, "index.html"), &page);
+        body = (*uint8)page.data;
+        size = page.len;
+    }
     if (body == null) {
         net_send_str(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     } else {
@@ -141,7 +164,7 @@ void serve_one(int client) {
             if (n <= 0) { break; }
             sent += n;
         }
-        free(body);
+        if (body != (*uint8)page.data) { free(body); }
     }
     net_close(client);
 }
@@ -153,6 +176,21 @@ void serve(string root, int port) {
     while (true) {
         int client = net_accept(listener);
         if (client >= 0) { serve_one(client); }
+    }
+}
+
+// serve_root on serve_port from threads that each take one connection at a time, so a page
+// waiting for a build does not hold the others up; returns once it listens.
+void serve_listen() {
+    serve_listener = net_tcp_listen((uint16)serve_port);
+    if (serve_listener < 0) { fail("ui: cannot listen on the port (set UI_PORT to another one)"); }
+    for (i in 0..8) {
+        thread_create(void() {
+            while (true) {
+                int client = net_accept(serve_listener);
+                if (client >= 0) { serve_one(client); }
+            }
+        });
     }
 }
 

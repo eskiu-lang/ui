@@ -1,0 +1,277 @@
+// `ui serve`: build, then build again after each change to the sources and reload the app. A
+// page (the web, the macOS window) waits on the server for the next build and reloads, or
+// shows a failed build's errors over the app; a simulator or device gets the app installed
+// and launched again.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// The tool itself, which runs each build as a child: a failed build stops the child, not the
+// server.
+string serve_self;
+
+// The builds so far, and the last one's output when it failed ("" when it built). The pages'
+// requests read them on the server's threads.
+int serve_version;
+Mutex serve_lock;
+String serve_error;
+
+// A hash of what a build reads, mixed into serve_sum by serve_signature.
+uint64 serve_sum;
+int64 serve_now;
+
+void serve_mix(*uint8 data, int64 size) {
+    for (int64 i = 0; i < size; i++) {
+        serve_sum = (serve_sum ^ (uint64)data[i]) * 1099511628211;
+    }
+}
+
+void serve_mix_text(string text) { serve_mix((*uint8)text, (int64)strlen(text)); }
+
+// Each file's size, mtime and content hash at the last look.
+struct ServeFile { int64 size; int64 mtime; uint64 hash; }
+
+Map<ServeFile> serve_files;
+
+bool serve_files_ready;
+
+// A file by its path and content: its content is read again when its size or mtime changed,
+// or when it changed in the last few seconds (mtime has whole seconds, so a second save within
+// the same second has the same one).
+void serve_mix_file(string path) {
+    FileStat st;
+    if (fs_stat(path, &st) != 0 || !st.is_file) { return; }
+    if (!serve_files_ready) { Map_init<ServeFile>(&serve_files, 64); serve_files_ready = true; }
+    int created = 0;
+    *ServeFile known = Map_at<ServeFile>(&serve_files, path, &created);
+    if (created == 1 || known.size != st.size || known.mtime != st.mtime || st.mtime >= serve_now - 3) {
+        uint64 sum = serve_sum;
+        serve_sum = 1469598103934665603;
+        int64 size = 0;
+        *uint8 body = fs_read_all(path, &size);
+        if (body != null) { serve_mix(body, size); free(body); }
+        *known = ServeFile{st.size, st.mtime, serve_sum};
+        serve_sum = sum;
+    }
+    serve_mix_text(path);
+    serve_mix((*uint8)&known.hash, 8);
+}
+
+// Every package's src, native, hosts and assets, and the app's ui.toml, eskiu.toml and lock.
+uint64 serve_signature(Project* p) {
+    serve_sum = 1469598103934665603;
+    serve_now = time_now_ms() / 1000;
+    for (i in 0..p.roots.size) {
+        string root = p.roots.data[i].data;
+        List<string> dirs;
+        dirs.push("src"); dirs.push("native"); dirs.push("hosts"); dirs.push("assets");
+        for (j in 0..dirs.size) {
+            string dir = join(root, dirs.data[j]);
+            if (fs_is_dir(dir) != 1) { continue; }
+            fs_walk(dir, void(string path, bool is_dir) { if (!is_dir) { serve_mix_file(path); } });
+        }
+        dirs.free();
+        serve_mix_file(join(root, "ui.toml"));
+        serve_mix_file(join(root, "eskiu.toml"));
+    }
+    serve_mix_file(join(p.root.data, "eskiu.lock"));
+    return serve_sum;
+}
+
+// A line on standard output now: under `ui serve` it is often a pipe or a file.
+void serve_say(string line) {
+    println(line);
+    fflush(null);
+}
+
+// One build in a child (`ui build web`, `ui run ios`...), its output on ours; true if it built.
+bool serve_build(string command, string target) {
+    int64 start = time_monotonic_ms();
+    List<string> argv;
+    defer argv.free();
+    argv.push(serve_self); argv.push(command); argv.push(target);
+    ProcessOptions options = ProcessOptions{merge_stderr: true};
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    bool ok = process_run(&argv, &options, &result) == 0 && result.exit_code == 0;
+    string output = result.stdout.data == null ? "" : result.stdout.data;
+    print(output);
+    // The page shows the compiler's output, without the tool's line naming the command.
+    String shown;
+    defer String_free(&shown);
+    if (!ok) {
+        List<String> lines;
+        String_lines(&result.stdout, &lines);
+        for (i in 0..lines.size) {
+            if (String_starts_with(&lines.data[i], "ui: failed: ") == 1) { continue; }
+            String_appendf(&shown, "%s\n", lines.data[i].data);
+        }
+        fs_list_free(&lines);
+        if (shown.len == 0) { String_from(&shown, "ui: the build failed"); }
+    }
+    Mutex_lock(&serve_lock);
+    String_from(&serve_error, ok ? "" : shown.data);
+    Mutex_unlock(&serve_lock);
+    atomic_fetch_add(&serve_version, 1);
+    double seconds = (double)(time_monotonic_ms() - start) / 1000.0;
+    if (ok) { printf("ui: built in %.1f s\n", seconds); fflush(null); }
+    else { println_err("ui: the build failed; waiting for a change"); }
+    return ok;
+}
+
+// Build again whenever the sources change, until the tool is stopped.
+void serve_watch(Project* p, string command, string target) {
+    uint64 seen = serve_signature(p);
+    while (true) {
+        time_sleep_ms(300);
+        uint64 now = serve_signature(p);
+        if (now == seen) { continue; }
+        // An editor may write a file in steps: build once it holds still.
+        while (true) {
+            time_sleep_ms(150);
+            uint64 settled = serve_signature(p);
+            if (settled == now) { break; }
+            now = settled;
+        }
+        seen = now;
+        serve_say("ui: changed, building");
+        serve_build(command, target);
+    }
+}
+
+// `text` as a JSON string, appended to `out`.
+void serve_json_string(String* out, string text) {
+    String_append(out, "\"");
+    for (int64 i = 0; text[i] != 0; i++) {
+        uint8 c = (uint8)text[i];
+        if (c == '"') { String_append(out, "\\\""); }
+        else if (c == '\\') { String_append(out, "\\\\"); }
+        else if (c == '\n') { String_append(out, "\\n"); }
+        else if (c == '\t') { String_append(out, "\\t"); }
+        else if (c < 32) { String_appendf(out, "\\u%04x", (int)c); }
+        else { String_push(out, (char)c); }
+    }
+    String_append(out, "\"");
+}
+
+// GET /__ui/wait?v=N: the build after N, once there is one (or the current one after 25 s, so
+// the request never outlives a proxy's patience): {"version": V, "error": "..."}.
+void serve_wait(int client, int after) {
+    int64 until = time_monotonic_ms() + 25000;
+    while (atomic_load(&serve_version) == after && time_monotonic_ms() < until) { time_sleep_ms(100); }
+    String body;
+    defer String_free(&body);
+    Mutex_lock(&serve_lock);
+    String_appendf(&body, "{\"version\": %d, \"error\": ", atomic_load(&serve_version));
+    serve_json_string(&body, serve_error.data == null ? "" : serve_error.data);
+    Mutex_unlock(&serve_lock);
+    String_append(&body, "}");
+    String header;
+    defer String_free(&header);
+    String_appendf(&header, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lld\r\n"
+        "Cache-Control: no-store\r\nConnection: close\r\n\r\n", body.len);
+    net_send_str(client, header.data);
+    net_send_str(client, body.data);
+}
+
+// The script `ui serve` adds to the page: it waits for each build, reloads after one that
+// built, and shows one that failed over the app until the next.
+const string kServeScript = "// Made by ui serve: reload after each build, a failed build's output over the app.\n"
+    "let version = -1;\n"
+    "let panel = null;\n"
+    "const show = text => {\n"
+    "  if (!text) { panel?.remove(); panel = null; return; }\n"
+    "  if (!panel) {\n"
+    "    panel = document.createElement('pre');\n"
+    "    Object.assign(panel.style, {position: 'fixed', inset: '0', margin: '0', padding: '24px', overflow: 'auto',\n"
+    "      background: 'rgba(17, 24, 39, 0.94)', color: '#fca5a5', font: '13px/1.5 ui-monospace, Menlo, monospace',\n"
+    "      whiteSpace: 'pre-wrap', zIndex: '2147483647'});\n"
+    "    document.body.append(panel);\n"
+    "  }\n"
+    "  panel.textContent = 'ui serve: the build failed\\n\\n' + text;\n"
+    "};\n"
+    "for (;;) {\n"
+    "  try {\n"
+    "    const state = await (await fetch('/__ui/wait?v=' + version, {cache: 'no-store'})).json();\n"
+    "    if (version >= 0 && state.version !== version && !state.error) { location.reload(); break; }\n"
+    "    version = state.version;\n"
+    "    show(state.error);\n"
+    "  } catch {\n"
+    "    await new Promise(resolve => setTimeout(resolve, 1000));\n"
+    "  }\n"
+    "}\n";
+
+const string kServeTag = "<script type=\"module\" src=\"/__ui/serve.mjs\"></script>\n";
+
+// A request under /__ui/: the script, or a wait for the next build.
+void serve_dev_request(int client, String* path, String* query) {
+    String body;
+    defer String_free(&body);
+    string type = "text/javascript";
+    if (String_eq_cstr(path, "/__ui/wait") == 1) {
+        int after = -1;
+        if (String_starts_with(query, "v=") == 1) { after = atoi(&query.data[2]); }
+        serve_wait(client, after);
+        return;
+    }
+    if (String_eq_cstr(path, "/__ui/serve.mjs") == 1) { String_from(&body, kServeScript); }
+    else {
+        net_send_str(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        return;
+    }
+    String header;
+    defer String_free(&header);
+    String_appendf(&header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\n"
+        "Cache-Control: no-store\r\nConnection: close\r\n\r\n", type, body.len);
+    net_send_str(client, header.data);
+    net_send_str(client, body.data);
+}
+
+// The page at `path` with the script added; a bare page with it when there is none yet (the
+// first build failed).
+void serve_page(string path, String* out) {
+    if (fs_read_text(path, out) != 0) {
+        String_from(out, "<!doctype html>\n<meta charset=\"utf-8\">\n<title>ui serve</title>\n<body>\n");
+    }
+    String_append(out, kServeTag);
+}
+
+// The project the macOS window's watcher builds.
+Project* macos_project;
+
+void serve_command(Project* p, string target) {
+    Mutex_init(&serve_lock);
+    if (strcmp(target, "web") == 0) {
+        // Listening first: a page opened during the first build waits for it.
+        serve_dev = true;
+        serve_root = join(p.root.data, "build/ui/web");
+        serve_port = port();
+        serve_listen();
+        serve_build("build", "web");
+        String url;
+        String_appendf(&url, "http://127.0.0.1:%d/", serve_port);
+        printf("Serving %s, building again on each change (Ctrl+C to stop)\n", url.data);
+        fflush(null);
+        open_url(url.data);
+        serve_watch(p, "build", "web");
+    } else if (strcmp(target, "macos") == 0) {
+        if (!serve_build("build", "macos")) { exit(1); }
+        serve_dev = true;
+        serve_root = join(p.root.data, "build/ui/web");
+        serve_port = port();
+        serve_listen();
+        macos_project = p;
+        thread_create(void() { serve_watch(macos_project, "build", "web"); });
+        String url;
+        String_appendf(&url, "http://127.0.0.1:%d/", serve_port);
+        printf("Serving %s in a window, building again on each change\n", url.data);
+        fflush(null);
+        Cmd window;
+        window.add(join(join(p.root.data, "build/ui/macos"), p.name.data)); window.add(url.data);
+        int code = window.run(null);
+        window.free();
+        exit(code);
+    } else if (strcmp(target, "ios") == 0 || strcmp(target, "android") == 0) {
+        serve_build("run", target);
+        serve_say("Watching for changes: each one installs and launches the app again (Ctrl+C to stop)");
+        serve_watch(p, "run", target);
+    } else { usage(); }
+}
