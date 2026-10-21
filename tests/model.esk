@@ -620,6 +620,24 @@ void sizes() {
     ui_shutdown(); balanced("sizes leak");
 }
 
+*Signal<int> image_version;
+void images() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        image_version = use_signal<int>(0);
+        int v = image_version.get();
+        Image(Style{width: 64, height: 64, label: "Eskiu"}, v < 2 ? "logo.png" : "https://eskiu-lang.org/logo.png");
+    });
+    ui_frame();
+    check(count_prop(9, 3) == 1 && count_prop(9, 1) == 1 && count_prop(2, 4) == 1, "source, alt text and size");
+    image_version.set(1); ui_frame();
+    check(count_prop(9, 3) == 0, "an unchanged source sends nothing");
+    image_version.set(2); ui_frame();
+    check(count_prop(9, 3) == 1, "a new source is sent");
+    ui_shutdown(); balanced("images leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -636,6 +654,7 @@ int main() {
     text_input(); printf("PASS text input\n");
     labels(); printf("PASS labels\n");
     sizes(); printf("PASS sizes\n");
+    images(); printf("PASS images\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");

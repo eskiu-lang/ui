@@ -124,6 +124,7 @@ struct Node {
     bool has_on_focus;
     string label;
     string placeholder;
+    string source;
     int focused;
     string text;
 }
@@ -136,10 +137,10 @@ struct Node {
 //   5 move     parent u32, before u32
 //   6 remove   (nothing)
 //   7 listen, 8 unlisten
-//   9 string prop  prop u8 (1 label, 2 placeholder), length u32, the bytes, a NUL
+//   9 string prop  prop u8 (1 label, 2 placeholder, 3 image source), length u32, the bytes, a NUL
 // Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow.
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
-// 5 text input, 6 scroll (a column whose content scrolls).
+// 5 text input, 6 scroll (a column whose content scrolls), 7 image.
 // The renderer reads it during apply and copies what it keeps.
 struct Commit { *uint8 data; int len; int cap; }
 
@@ -233,6 +234,8 @@ struct Ui {
     string next_name;
     // The input parts of the next element (TextInput), likewise.
     *InputExtra next_input;
+    // The source of the next element (Image), likewise.
+    string next_source;
     bool in_flight;
 }
 *Ui ui;
@@ -240,6 +243,7 @@ int64 ui_epochs;
 const int kSmall = 8;
 
 string ui_kind_name(int kind) {
+    if (kind == 7) { return "Image"; }
     if (kind == 6) { return "Scroll"; }
     if (kind == 5) { return "TextInput"; }
     if (kind == 1) { return "Column"; }
@@ -764,7 +768,7 @@ void ui_unmount(*Node node) {
         ui_release_closure(node.handler_cleanup);
         ui_release_text(node.on_text);
         ui_release_focus(node.on_focus);
-        free(node.text); free(node.label); free(node.placeholder);
+        free(node.text); free(node.label); free(node.placeholder); free(node.source);
         node.slots.free(); node.children.free(); node.emitted.free();
         free(node);
     });
@@ -894,6 +898,11 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             ui_emit_prop(node, 3, extra.focused);
         }
     }
+    if (kind == 7) {
+        string source = ui.next_source;
+        ui.next_source = null;
+        if (ui_update_string(&node.source, source)) { ui_emit_string_prop(node, 3, node.source); }
+    }
     if (kind == 4 || kind == 5) { ui_emit(7, node, 0); }
     if (text != null && (node.text == null || strcmp(text, node.text) != 0)) {
         string previous = node.text;
@@ -908,6 +917,13 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
 
 void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
 void Row(Style style, escaping fn()->void block) { ui_element(2, style, null, block, void() {}, void() {}); }
+// An image from an http(s) URL or a resource bundled with the app (its file name). Give it
+// a width and height; `label` is its text alternative.
+void Image(Style style, string source) {
+    ui.next_source = source;
+    ui_element(7, style, null, void() {}, void() {}, void() {});
+}
+
 // A column whose content scrolls when it is taller than the space it gets.
 void Scroll(Style style, escaping fn()->void block) { ui_element(6, style, null, block, void() {}, void() {}); }
 // A component's own scope: state, identity and its name in diagnostics.
