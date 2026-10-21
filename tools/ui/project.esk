@@ -1,8 +1,9 @@
 // The project: its root, name, app id, the ui package from eskiu.lock, the entry file.
 // Part of the ui tool (tools/ui/main.esk imports every part).
 
-// The project: its root (where eskiu.toml is), its name, and the ui package's root.
-struct Project { String root; String name; String ui; String id; }
+// The project: its root (where eskiu.toml is), its name, the ui package's root, and the
+// root of every package in the build (the project first), where native code is looked for.
+struct Project { String root; String name; String ui; String id; List<String> roots; }
 
 // The value of `key = "..."` on its own line in a TOML file, or "".
 void toml_value(string text, string key, String* out) {
@@ -66,17 +67,23 @@ void Project_find(Project* self) {
     List<String> lines;
     defer fs_list_free(&lines);
     String_lines(&lock, &lines);
+    String project_root;
+    String_from(&project_root, dir.data);
+    self.roots.push(project_root);
     for (i in 0..lines.size) {
         List<String> fields;
         String_split(&lines.data[i], '\t', &fields);
-        if (fields.size >= 3 && String_eq_cstr(&fields.data[0], "ui") == 1) {
-            if (String_eq_cstr(&fields.data[1], "git") == 1 && fields.size >= 5) {
-                string pkgs = join(eskiu_home(), "pkgs/ui");
-                String_from(&self.ui, join(pkgs, fields.data[4].data));
-            } else if (String_eq_cstr(&fields.data[1], "path") == 1) {
-                if (fields.data[2].data[0] == '/') { String_from(&self.ui, fields.data[2].data); }
-                else { String_from(&self.ui, join(dir.data, fields.data[2].data)); }
-            }
+        String root;
+        if (fields.size >= 5 && String_eq_cstr(&fields.data[1], "git") == 1) {
+            string pkgs = join(eskiu_home(), "pkgs");
+            String_from(&root, join(join(pkgs, fields.data[0].data), fields.data[4].data));
+        } else if (fields.size >= 3 && String_eq_cstr(&fields.data[1], "path") == 1) {
+            if (fields.data[2].data[0] == '/') { String_from(&root, fields.data[2].data); }
+            else { String_from(&root, join(dir.data, fields.data[2].data)); }
+        }
+        if (root.len > 0) {
+            if (String_eq_cstr(&fields.data[0], "ui") == 1) { String_from(&self.ui, root.data); }
+            self.roots.push(root);
         }
         fs_list_free(&fields);
     }
@@ -111,4 +118,23 @@ void Project_copy_assets(Project* self, string dir) {
     defer fs_list_free(&names);
     fs_list_dir(assets, &names);
     for (i in 0..names.size) { fs_copy(join(assets, names.data[i].data), join(dir, names.data[i].data)); }
+}
+
+// The native code for `platform` with extension `ext` (".m", ".java"...) in every package:
+// ROOT/native/PLATFORM/*EXT, sorted within each package.
+void Project_native(Project* self, string platform, string ext, List<String>* out) {
+    for (i in 0..self.roots.size) {
+        string dir = join(join(self.roots.data[i].data, "native"), platform);
+        if (fs_is_dir(dir) != 1) { continue; }
+        List<String> names;
+        fs_list_dir(dir, &names);
+        for (j in 0..names.size) {
+            if (String_ends_with(&names.data[j], ext) == 1) {
+                String path;
+                String_from(&path, join(dir, names.data[j].data));
+                out.push(path);
+            }
+        }
+        fs_list_free(&names);
+    }
 }

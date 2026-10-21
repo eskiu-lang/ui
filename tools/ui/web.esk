@@ -13,16 +13,28 @@ string build_web(Project* p) {
     defer String_free(&library);
     String_appendf(&library, "--link-arg=%s", join(p.ui.data, "hosts/web/ui-library.js"));
     cmd.add("--link-arg=--js-library"); cmd.add(library.data);
+    // Native modules: each native/web/*.js is an emscripten library (the externs it defines).
+    List<String> libraries;
+    defer fs_list_free(&libraries);
+    p.native("web", ".js", &libraries);
+    for (i in 0..libraries.size) {
+        String arg;
+        String_appendf(&arg, "--link-arg=%s", libraries.data[i].data);
+        cmd.add("--link-arg=--js-library"); cmd.add(arg.data);
+        String_free(&arg);
+    }
     cmd.add("--link-arg=-sMODULARIZE=1"); cmd.add("--link-arg=-sEXPORT_ES6=1");
     cmd.add("--link-arg=-sALLOW_MEMORY_GROWTH=1"); cmd.add("--link-arg=-sINVOKE_RUN=0");
     cmd.add("--link-arg=--no-entry");
     cmd.add("--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_dispatch_text,_ui_dispatch_focus,"
             "_ui_dispatch_toggle,_ui_dispatch_scroll,_ui_dispatch_alert,_ui_dispatch_refresh,_ui_report_back,"
-            "_ui_report_link,_ui_report_window,_ui_tick,_ui_stop,_ui_conformance_log");
+            "_ui_report_link,_ui_report_window,_ui_tick,_ui_stop,_ui_conformance_log,_ui_dispatch_native,"
+            "_ui_dispatch_view");
     cmd.add("--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall");
     cmd.must(null);
     fs_copy(join(p.ui.data, "hosts/web/renderer.mjs"), join(out, "renderer.mjs"));
     fs_copy(join(p.ui.data, "hosts/web/scheduler.mjs"), join(out, "scheduler.mjs"));
+    write_web_native(p, out);
     String page;
     defer String_free(&page);
     fs_read_text(join(p.ui.data, "hosts/web/app.html"), &page);
@@ -30,6 +42,33 @@ string build_web(Project* p) {
     fs_write_text(join(out, "index.html"), page.data);
     p.copy_assets(out);
     return out;
+}
+
+// native.mjs: imports each native/web/*.mjs (copied to native/) and calls its setup(ui),
+// where ui is {registerView(type, factory), emit(channel, payload)}.
+void write_web_native(Project* p, string out) {
+    List<String> modules;
+    defer fs_list_free(&modules);
+    p.native("web", ".mjs", &modules);
+    string dir = join(out, "native");
+    fs_remove_all(dir);
+    String text;
+    defer String_free(&text);
+    String_append(&text, "// Made by ui: the app's native web modules.\n");
+    for (i in 0..modules.size) {
+        String name;
+        path_basename(&name, modules.data[i].data);
+        if (i == 0) { fs_mkdir_p(dir); }
+        String copied;
+        String_appendf(&copied, "%d-%s", i, name.data);
+        fs_copy(modules.data[i].data, join(dir, copied.data));
+        String_appendf(&text, "import * as m%d from './native/%s';\n", i, copied.data);
+        String_free(&name); String_free(&copied);
+    }
+    String_append(&text, "export function setupNative(ui) {\n");
+    for (i in 0..modules.size) { String_appendf(&text, "  m%d.setup?.(ui);\n", i); }
+    String_append(&text, "}\n");
+    fs_write_text(join(out, "native.mjs"), text.data);
 }
 
 // A static file server for build/ui/web: one connection at a time is plenty for a page.
