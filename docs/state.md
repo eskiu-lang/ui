@@ -40,10 +40,26 @@ use_effect(void() {
 parents first. `on_cleanup` (once per run) is called before the next run and when the scope
 unmounts.
 
+## Timers
+
+```eskiu
+*Signal<int> seconds = use_signal<int>(0);
+*Signal<bool> running = use_signal<bool>(true);
+use_interval(running.get() ? 1000 : 0, void() { seconds.set(seconds.get() + 1); });
+use_timeout(3000, void() { hint.set(false); });
+```
+
+`use_interval(ms, handler)` calls `handler` every `ms` milliseconds while the scope is
+mounted; a period of 0 or less pauses it, and a new period restarts it. `use_timeout(ms,
+handler)` calls it once, `ms` after the scope mounts or after `ms` last changed. The host keeps
+the clock (a `setInterval` on the web, a run loop timer on iOS, a `Handler` on Android), and a
+tick reaches the handler on the UI thread like any event, so it may set signals.
+
 ## The hooks rule
 
 Hooks (`use_signal`, `use_memo`, `use_effect`, `use_string`, `use_back`,
-`use_native_event`) are matched by the order a block calls them in. A block must call the
+`use_native_event`, `use_interval`, `use_timeout`) are matched by the order a block calls
+them in. A block must call the
 same hooks, of the same types, in the same order every time it renders. The core checks it:
 a block that calls a different hook, or the same hook with another type, at a slot stops
 the program with "hook kind/type changed at slot N", and one that calls more hooks after it

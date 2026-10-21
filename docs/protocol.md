@@ -104,6 +104,7 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_native(channel, payload)` | a native module posted an event (`use_native_event`) |
 | `ui_dispatch_view(id, gen, name, payload)` | a native view sent an event (`NativeView`'s `on_event`) |
 | `ui_dispatch_layout(id, gen, x, y, width, height)` | a listened node's frame changed (points, relative to its parent) |
+| `ui_dispatch_timer(token)` | a timer the core armed fired |
 | `ui_dispatch_route(route, index)` | the browser went back or forward to `route`, at `index` in the app's history entries |
 | `ui_report_back()` | Android's back: returns 1 when the app handled it |
 | `ui_report_insets(top, right, bottom, left, keyboard)`, `ui_report_window(w, h, scale)`, `ui_report_active(active)`, `ui_report_link(url)` | the environment |
@@ -112,6 +113,10 @@ The host calls the bridge, on the UI thread:
 After a call that leaves work, the bridge calls the host's `ui_host_schedule()`, and the host
 calls `ui_tick()` on its next frame (`requestAnimationFrame`, a `CADisplayLink`, the
 `Choreographer`). `ui_host_cancel()` drops a scheduled frame at stop.
+
+The core also asks the host for timers (`use_interval`, `use_timeout`):
+`ui_host_timer_start(token, ms, repeat)` arms one and `ui_host_timer_stop(token)` disarms it;
+each tick comes back as `ui_dispatch_timer(token)`.
 
 A refused edit or toggle is answered: the core renders the input's scope again and, if the
 app kept the old value, sends it back, so what the view shows stays what the app rendered.
