@@ -188,6 +188,7 @@ public final class UiActivity extends Activity {
                 bottom = insets.getSystemWindowInsetBottom(); left = insets.getSystemWindowInsetLeft(); keyboard = 0;
             }
             if (nativeEdgeToEdge() == 0) root.setPadding(left, top, right, Math.max(bottom, keyboard));
+            else root.setPadding(0, 0, 0, 0);
             float d = density();
             lastInsets = new int[] {Math.round(top / d), Math.round(right / d), Math.round(bottom / d),
                                     Math.round(left / d), Math.round(keyboard / d)};
@@ -201,6 +202,8 @@ public final class UiActivity extends Activity {
             active = true;
             boolean conformance = getIntent().getBooleanExtra("conformance", false);
             nativeStart(conformance ? 3 : getIntent().getIntExtra("example", 0));
+            // The app sets its edge policy as it starts: apply the insets again under it.
+            root.requestApplyInsets();
             reportInsets();
             if (getIntent().getData() != null) nativeLink(getIntent().getData().toString());
             if (conformance) root.postDelayed(this::runConformance, 400);
