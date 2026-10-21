@@ -79,10 +79,13 @@ string build_android(Project* p) {
     link.add("-llog"); link.add("-o"); link.add(join(libs, "libeskiu_ui.so"));
     link.must(null);
     link.free();
-    // Native Java code: native/android/*.java; each class's static setup() runs at start.
+    // Native Java and Kotlin code: native/android/*.java and *.kt; each class's static setup()
+    // runs at start (in Kotlin, an object's @JvmStatic fun setup()).
     List<String> java;
     defer fs_list_free(&java);
     p.native("android", ".java", &java);
+    int java_count = java.size;
+    p.native("android", ".kt", &java);
     String setup_classes;
     defer String_free(&setup_classes);
     String_from(&setup_classes, "");
@@ -97,12 +100,13 @@ string build_android(Project* p) {
     fs_mkdir_p(assets);
     p.copy_assets(assets);
     // Maven dependencies (ui.toml [android] dependencies) need Gradle: AARs bring resources and
-    // manifests to merge. UI_GRADLE=1 takes that path without them.
+    // manifests to merge; Kotlin needs its compiler, which the Android Gradle plugin brings.
+    // UI_GRADLE=1 takes that path without them.
     List<string> maven;
     defer maven.free();
     p.config.all("android.dependencies", &maven);
     string gradle = env_get("UI_GRADLE");
-    if (maven.size > 0 || (gradle != null && strcmp(gradle, "1") == 0)) {
+    if (maven.size > 0 || java.size > java_count || (gradle != null && strcmp(gradle, "1") == 0)) {
         return build_android_gradle(p, out, setup_classes.data, &java, &maven);
     }
     string classes = join(out, "classes");
@@ -113,7 +117,7 @@ string build_android(Project* p) {
     javac.add("javac"); javac.add("-nowarn"); javac.add("-source"); javac.add("8"); javac.add("-target"); javac.add("8");
     javac.add("-bootclasspath"); javac.add(bootclasspath.data); javac.add("-d"); javac.add(classes);
     javac.add(join(p.ui.data, "hosts/android/UiActivity.java"));
-    for (i in 0..java.size) { javac.add(java.data[i].data); }
+    for (i in 0..java_count) { javac.add(java.data[i].data); }
     javac.must(null);
     javac.free();
     List<String> class_files;
@@ -207,7 +211,7 @@ void java_class_name(string path, String* out) {
     String base;
     defer String_free(&base);
     path_basename(&base, path);
-    base.len -= 5;
+    base.len -= String_ends_with(&base, ".kt") == 1 ? 3 : 5;
     base.data[base.len] = 0;
     String_append(out, base.data);
 }
