@@ -58,6 +58,16 @@ void Conformance() {
             conformance_note(entry.data);
             volume.set(v);
         });
+        // The clipboard: copy, then read it back.
+        Button("Copy", void() {
+            ui_clipboard_set("eskiu");
+            ui_clipboard_get(void(string text) {
+                String entry;
+                defer String_free(&entry);
+                String_appendf(&entry, "clip:%s", text);
+                conformance_note(entry.data);
+            });
+        });
         ActivityIndicator(Style{width: 24, height: 24, label: "Busy"}, true);
         Row(Style{width: 60, height: 30, label: "Painted", background: rgb(255, 0, 0), radius: 8,
                   border_width: 2, border_color: rgb(0, 0, 0), opacity: 50}, void() {});

@@ -46,6 +46,8 @@ export async function runConformance(app, root) {
   volume.value = '70';
   volume.dispatchEvent(new Event('input', {bubbles: true}));
   await frame();
+  [...root.querySelectorAll('button')].find(b => b.textContent === 'Copy').click();
+  await frame(); await frame();
   // The alert: answer its second button. The modal: open it, measure, close it from inside.
   [...root.querySelectorAll('button')].find(b => b.textContent === 'Ask').click();
   await frame(); await frame();
