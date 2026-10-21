@@ -69,6 +69,8 @@ signals and [Components](components.md) for what there is.
 myapp/
   eskiu.toml          the package, with ui as a dependency
   eskiu.lock          the resolved dependencies (commit it)
+  ui.toml             optional: the app's name and id, frameworks, permissions, native dependencies
+  native/             optional: code per platform (native/web, native/ios, native/android)
   src/main.esk        the app: ui_app_start and ui_app_stop
   assets/             files the app loads by name (Image("logo.png") ...), shipped on every platform
   build/ui/           what `ui build` makes: web/, macos/, ios/, android/ (ignored by git)
@@ -88,6 +90,7 @@ Each directory in `examples/` is a project like the one above:
 | `todo` | keyed rows with their own state, a model-owned signal, a text field, a scroll |
 | `tasks` | a whole app: header, progress card, filters, a styled field, a virtual list of cards |
 | `kit-gallery` | every `<ui/kit>` component |
+| `native` | a native module and a native view on every platform ([native code](native.md)) |
 
 ```bash
 cd examples/tasks && ui run ios

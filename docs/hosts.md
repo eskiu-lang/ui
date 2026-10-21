@@ -28,9 +28,13 @@ shim: the app, its components and its state are the same Eskiu code everywhere.
 | modal | `div role=dialog` over the page | a view over the window | a view over the window |
 | alert | `dialog` | `UIAlertController` | `AlertDialog` |
 | status bar | nothing | the view controller's status bar | `WindowInsetsController` |
+| native view | a `div` holding the factory's element | a `UIView` holding the factory's view | a `FrameLayout` holding the factory's view |
 
 Labels become `aria-label` (an image's `alt`), `accessibilityLabel` and
 `contentDescription`.
+
+Each host also has a registry of native view types and a way for native code to post
+events from any thread: [native code](native.md).
 
 ## The web
 
@@ -44,7 +48,7 @@ and the assets.
 ## iOS
 
 `ui build ios` cross-compiles the app for the simulator (`arm64-apple-ios15.0-simulator`),
-compiles Yoga and the host with `xcrun clang`, and makes `build/ui/ios/NAME.app` with
+compiles Yoga, the host and `native/ios` with `xcrun clang`, and makes `build/ui/ios/NAME.app` with
 `Info.plist` and the assets. A `CADisplayLink` drives `ui_tick`; the scene delegate reports
 the safe area, the keyboard, the window, foreground changes and opened URLs.
 
@@ -53,7 +57,9 @@ the safe area, the keyboard, the window, foreground changes and opened URLs.
 `ui build android` cross-compiles the app for `aarch64-linux-android24`, compiles Yoga and
 `host.cpp` with the NDK's clang into `libeskiu_ui.so`, compiles `UiActivity.java` with `javac`
 and `d8`, and packages, aligns and signs the APK with the build tools (`aapt`, `zipalign`,
-`apksigner`, a debug key), with no Gradle. The `Choreographer` drives `ui_tick`; the
+`apksigner`, a debug key), with no Gradle. Native C, C++ and Java code goes into the same
+library and dex. With Maven dependencies or Kotlin code it builds through Gradle instead, and
+iOS with Swift packages or Swift code through Xcode ([native code](native.md)). The `Choreographer` drives `ui_tick`; the
 activity reports insets, the window, `onResume`/`onPause`, back presses and intents.
 
 ## macOS

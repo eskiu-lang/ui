@@ -23,6 +23,10 @@ node id (`u32`):
 | 10 | command | the id is a request id, not a node: command `u8` (1 alert: title, message, then the buttons; 2 open a URL), count `u8`, then that many strings, each a length `u32`, the bytes and a NUL |
 | 11 | named prop | a native view's prop: the name (length `u32`, bytes, NUL), then the value (the same) |
 
+A native view gets its type as string prop 4 when it is created (again if it changes), then
+its named props as op 11. The host makes the view the type's factory registered and puts it
+inside the node's box ([native code](native.md)).
+
 The buffer belongs to the core: the host reads it during `apply` and copies what it keeps.
 `hosts/commit.h` is a C decoder for native hosts; `ui_decode` in `src/core/wire.esk` decodes
 it into `Mutation` records for tests and tools.
@@ -88,6 +92,8 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_scroll(id, gen, offset, viewport)` | a scroll moved, in points |
 | `ui_dispatch_refresh(id, gen)` | the user pulled a scroll's refresh control |
 | `ui_dispatch_alert(request, choice)` | an alert was answered (-1 dismissed) |
+| `ui_dispatch_native(channel, payload)` | a native module posted an event (`use_native_event`) |
+| `ui_dispatch_view(id, gen, name, payload)` | a native view sent an event (`NativeView`'s `on_event`) |
 | `ui_report_back()` | Android's back: returns 1 when the app handled it |
 | `ui_report_insets(top, right, bottom, left, keyboard)`, `ui_report_window(w, h, scale)`, `ui_report_active(active)`, `ui_report_link(url)` | the environment |
 | `ui_tick()` | render the frame the host scheduled |

@@ -78,6 +78,8 @@ These are described in [the platform](platform.md).
 | `ui_native_prop(name, value)` | A named string prop for the `NativeView` right after it. |
 | `use_native_event(channel, fn(string)->void)` | A handler for a native module's events on `channel` while the scope is mounted. |
 
+See [native code](native.md) for the platform side.
+
 ### State
 
 `use_signal`, `signal_new`, `use_memo`, `use_effect`, `on_cleanup`, `use_string` and

@@ -102,6 +102,5 @@ after the stop are ignored.
 ## Native code
 
 `use_native_event(channel, handler)` receives what native code posts on a channel;
-`NativeView(style, type, on_event)` draws a view the app registered with a host. Native
-modules call into Eskiu with `ui_event_native(channel, payload)` on the UI thread, and Eskiu
-calls them through `extern` functions. A guide to writing them is planned.
+`NativeView(style, type, on_event)` draws a view the app registered with a host. Eskiu calls
+native modules through `extern` functions. See [native code](native.md).

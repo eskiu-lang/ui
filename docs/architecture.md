@@ -67,9 +67,10 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `src/kit.esk`, `src/kit/` | `<ui/kit>`: `theme`, `display`, `buttons`, `forms`, `navigation`, `disclosure` |
 | `hosts/bridge.esk` | What every host calls (`ui_start`, `ui_dispatch_*`, `ui_report_*`, `ui_tick`, `ui_stop`) and the app's two entry points |
 | `hosts/commit.h` | A C decoder of commits, shared by the native hosts |
+| `hosts/ios/ui_native.h`, `hosts/android/ui_native.h` | The C API native code includes ([native code](native.md)) |
 | `hosts/web/`, `hosts/ios/`, `hosts/android/`, `hosts/macos/` | The hosts |
-| `tools/ui/` | The `ui` command |
-| `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery` |
+| `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `web`, `macos`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new` |
+| `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery`, `native` |
 | `tests/` | The model tests, the host harness and the conformance scene ([testing](testing.md)) |
 
 The parts of `<ui>` are not modules of their own: `src/ui.esk` imports them in an order

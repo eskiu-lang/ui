@@ -39,11 +39,13 @@ A new element or behavior gets a model test in the file for its area.
 | `python3 tools/build_web.py` then `node tests/web.mjs` | the wasm module against a recording DOM; the build fails when the demo module passes 160 KiB |
 | `python3 tools/check_ios.py` | a booted simulator (`DEVICE` picks one) |
 | `python3 tools/check_android.py` | a booted arm64 device or emulator (`ANDROID_SERIAL`), SDK 35, NDK 28.2 |
+| `python3 tools/check_native.py` | the native example on the simulator and the Android device: module events, a view's props and events |
 | `python3 tools/check_desktop.py` | a WKWebView window running the web build (needs an awake, unlocked display) |
 
 They drive `tests/harness/app.esk`, which holds every scene a host can be asked for: the
 counter (0), the TODO list (1), a probe (2), the conformance scene (3), the tasks app (4)
-and the kit gallery (5). A host is started on one with its own launch argument (a query
+the kit gallery (5) and the native example (6), whose native code each host build compiles
+in. A host is started on one with its own launch argument (a query
 string on the web, an intent extra on Android, a launch argument on iOS).
 
 ## Conformance

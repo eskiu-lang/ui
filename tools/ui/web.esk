@@ -38,7 +38,7 @@ string build_web(Project* p) {
     String page;
     defer String_free(&page);
     fs_read_text(join(p.ui.data, "hosts/web/app.html"), &page);
-    String_replace_all(&page, "{{name}}", p.name.data);
+    String_replace_all(&page, "{{name}}", xml_escape(p.display.data));
     fs_write_text(join(out, "index.html"), page.data);
     p.copy_assets(out);
     return out;
