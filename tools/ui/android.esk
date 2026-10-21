@@ -79,6 +79,32 @@ string build_android(Project* p) {
     link.add("-llog"); link.add("-o"); link.add(join(libs, "libeskiu_ui.so"));
     link.must(null);
     link.free();
+    // Native Java code: native/android/*.java; each class's static setup() runs at start.
+    List<String> java;
+    defer fs_list_free(&java);
+    p.native("android", ".java", &java);
+    String setup_classes;
+    defer String_free(&setup_classes);
+    String_from(&setup_classes, "");
+    for (i in 0..java.size) {
+        String name;
+        java_class_name(java.data[i].data, &name);
+        if (setup_classes.len > 0) { String_append(&setup_classes, ","); }
+        String_append(&setup_classes, name.data);
+        String_free(&name);
+    }
+    string assets = join(out, "assets");
+    fs_mkdir_p(assets);
+    p.copy_assets(assets);
+    // Maven dependencies (ui.toml [android] dependencies) need Gradle: AARs bring resources and
+    // manifests to merge. UI_GRADLE=1 takes that path without them.
+    List<string> maven;
+    defer maven.free();
+    p.config.all("android.dependencies", &maven);
+    string gradle = env_get("UI_GRADLE");
+    if (maven.size > 0 || (gradle != null && strcmp(gradle, "1") == 0)) {
+        return build_android_gradle(p, out, setup_classes.data, &java, &maven);
+    }
     string classes = join(out, "classes");
     fs_mkdir_p(classes);
     String bootclasspath;
@@ -87,20 +113,7 @@ string build_android(Project* p) {
     javac.add("javac"); javac.add("-nowarn"); javac.add("-source"); javac.add("8"); javac.add("-target"); javac.add("8");
     javac.add("-bootclasspath"); javac.add(bootclasspath.data); javac.add("-d"); javac.add(classes);
     javac.add(join(p.ui.data, "hosts/android/UiActivity.java"));
-    // Native Java code: native/android/*.java; each class's static setup() runs at start.
-    List<String> java;
-    defer fs_list_free(&java);
-    p.native("android", ".java", &java);
-    String setup_classes;
-    defer String_free(&setup_classes);
-    for (i in 0..java.size) {
-        javac.add(java.data[i].data);
-        String name;
-        java_class_name(java.data[i].data, &name);
-        if (setup_classes.len > 0) { String_append(&setup_classes, ","); }
-        String_append(&setup_classes, name.data);
-        String_free(&name);
-    }
+    for (i in 0..java.size) { javac.add(java.data[i].data); }
     javac.must(null);
     javac.free();
     List<String> class_files;
@@ -111,21 +124,7 @@ string build_android(Project* p) {
     for (i in 0..class_files.size) { d8.add(class_files.data[i].data); }
     d8.must(null);
     d8.free();
-    // The app's id and label; the activity keeps the class the JNI names are built from.
-    String manifest;
-    String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" package=\"%s\">\n"
-        "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n%s"
-        "  <application android:label=\"%s\" android:theme=\"@android:style/Theme.Material.Light.NoActionBar\""
-        " android:debuggable=\"true\">\n"
-        "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\">\n"
-        "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n"
-        "      <intent-filter><action android:name=\"android.intent.action.MAIN\"/>"
-        "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n"
-        "    </activity>\n  </application>\n</manifest>\n", p.id.data, android_permissions(p), xml_escape(p.display.data), setup_classes.data == null ? "" : setup_classes.data);
-    fs_write_text(join(out, "AndroidManifest.xml"), manifest.data);
-    string assets = join(out, "assets");
-    fs_mkdir_p(assets);
-    p.copy_assets(assets);
+    fs_write_text(join(out, "AndroidManifest.xml"), android_manifest(p, setup_classes.data, true));
     string unsigned_apk = join(out, "unsigned.apk");
     Cmd aapt;
     aapt.add(join(tools, "aapt")); aapt.add("package"); aapt.add("-f"); aapt.add("-M"); aapt.add(join(out, "AndroidManifest.xml"));
@@ -161,6 +160,27 @@ string build_android(Project* p) {
     sign.must(null);
     sign.free();
     return apk;
+}
+
+// The manifest: the app's id (as the package attribute when `package`; Gradle takes it from
+// the build file), its permissions and label, and the activity the JNI names are built from,
+// with the classes whose setup() it runs.
+string android_manifest(Project* p, string setup_classes, bool package) {
+    String attribute;
+    if (package) { String_appendf(&attribute, " package=\"%s\"", p.id.data); }
+    String manifest;
+    String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"%s>\n"
+        "%s%s"
+        "  <application android:label=\"%s\" android:theme=\"@android:style/Theme.Material.Light.NoActionBar\"%s>\n"
+        "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\">\n"
+        "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n"
+        "      <intent-filter><action android:name=\"android.intent.action.MAIN\"/>"
+        "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n"
+        "    </activity>\n  </application>\n</manifest>\n",
+        attribute.data == null ? "" : attribute.data,
+        package ? "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n" : "",
+        android_permissions(p), xml_escape(p.display.data), package ? " android:debuggable=\"true\"" : "", setup_classes);
+    return manifest.data;
 }
 
 // A Java file's class, package included: "com.example.Clock" for Clock.java in package com.example.

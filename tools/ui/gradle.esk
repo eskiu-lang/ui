@@ -1,0 +1,73 @@
+// Android through Gradle, for apps whose native code needs Maven libraries: a Gradle project
+// around the library the tool already built, which Android Studio can also open.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// The Android Gradle plugin, unless ui.toml's [android] agp names another.
+const string kAgpVersion = "9.4.1";
+
+// `text` as a Groovy string literal's contents.
+string groovy_escape(string text) {
+    String out;
+    String_from(&out, text == null ? "" : text);
+    String_replace_all(&out, "\\", "\\\\");
+    String_replace_all(&out, "'", "\\'");
+    return out.data;
+}
+
+// build/ui/android/gradle: settings, the build file (sources from hosts/android and every
+// native/android, the library in lib/, the assets, the Maven dependencies) and the manifest;
+// `gradle assembleDebug` makes the APK, signed with the debug key.
+string build_android_gradle(Project* p, string out, string setup_classes, List<String>* java, List<string>* maven) {
+    string dir = join(out, "gradle");
+    string app = join(dir, "app");
+    fs_mkdir_p(app);
+    string agp = p.config.string("android.agp");
+    String settings;
+    defer String_free(&settings);
+    String_appendf(&settings, "// Made by ui.\npluginManagement {\n    repositories { google(); mavenCentral(); gradlePluginPortal() }\n}\n"
+        "plugins { id 'com.android.application' version '%s' apply false }\n"
+        "dependencyResolutionManagement {\n    repositories { google(); mavenCentral() }\n}\n"
+        "rootProject.name = '%s'\ninclude ':app'\n", agp != null ? agp : kAgpVersion, groovy_escape(p.name.data));
+    fs_write_text(join(dir, "settings.gradle"), settings.data);
+    fs_write_text(join(dir, "gradle.properties"), "android.useAndroidX=true\norg.gradle.jvmargs=-Xmx2g\n");
+    fs_write_text(join(app, "AndroidManifest.xml"), android_manifest(p, setup_classes, false));
+    // Java sources: the host's directory and each native/android directory with Java in it.
+    String sources;
+    defer String_free(&sources);
+    String_appendf(&sources, "'%s'", groovy_escape(join(p.ui.data, "hosts/android")));
+    List<String> dirs;
+    defer fs_list_free(&dirs);
+    for (i in 0..java.size) {
+        String parent;
+        path_dirname(&parent, java.data[i].data);
+        bool seen = false;
+        for (j in 0..dirs.size) { if (String_eq_cstr(&dirs.data[j], parent.data) == 1) { seen = true; } }
+        if (seen) { String_free(&parent); continue; }
+        String_appendf(&sources, ", '%s'", groovy_escape(parent.data));
+        dirs.push(parent);
+    }
+    String dependencies;
+    defer String_free(&dependencies);
+    for (i in 0..maven.size) { String_appendf(&dependencies, "    implementation '%s'\n", groovy_escape(maven.data[i])); }
+    String build;
+    defer String_free(&build);
+    String_appendf(&build, "// Made by ui.\nplugins { id 'com.android.application' }\n\nandroid {\n"
+        "    namespace = '%s'\n    compileSdk = 35\n"
+        "    defaultConfig {\n        applicationId = '%s'\n        minSdk = 24\n        targetSdk = 35\n"
+        "        versionCode = 1\n        versionName = '0.1.0'\n    }\n"
+        "    sourceSets {\n        main {\n            manifest.srcFile 'AndroidManifest.xml'\n"
+        "            java.srcDirs = [%s]\n            jniLibs.srcDirs = ['%s']\n            assets.srcDirs = ['%s']\n"
+        "        }\n    }\n}\n\ndependencies {\n%s}\n",
+        groovy_escape(p.id.data), groovy_escape(p.id.data), sources.data, groovy_escape(join(out, "lib")),
+        groovy_escape(join(out, "assets")), dependencies.data == null ? "" : dependencies.data);
+    fs_write_text(join(app, "build.gradle"), build.data);
+    Cmd cmd;
+    defer cmd.free();
+    cmd.add("gradle"); cmd.add("--quiet"); cmd.add("-p"); cmd.add(dir); cmd.add("assembleDebug");
+    if (cmd.run(null) != 0) { fail("ui: gradle failed (install Gradle 9 and a JDK 17, or open build/ui/android/gradle in Android Studio)"); }
+    String apk_name;
+    String_appendf(&apk_name, "%s.apk", p.name.data);
+    string apk = join(out, apk_name.data);
+    fs_copy(join(app, "build/outputs/apk/debug/app-debug.apk"), apk);
+    return apk;
+}

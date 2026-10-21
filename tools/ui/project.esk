@@ -59,6 +59,20 @@ void Project_find(Project* self) {
         one[0] = c; one[1] = 0;
         String_append(&self.id, (string)&one[0]);
     }
+    // A Java package name: not a keyword, not starting with a digit.
+    String segment;
+    String_from(&segment, &self.id.data[14]);
+    string keywords = " abstract assert boolean break byte case catch char class const continue default do double "
+        "else enum extends final finally float for goto if implements import instanceof int interface long native new "
+        "package private protected public return short static strictfp super switch synchronized this throw throws "
+        "transient try void volatile while true false null ";
+    String padded;
+    String_appendf(&padded, " %s ", segment.data);
+    if (segment.len == 0 || (segment.data[0] >= '0' && segment.data[0] <= '9')) {
+        String_clear(&self.id);
+        String_appendf(&self.id, "org.eskiu.app._%s", segment.data);
+    } else if (strstr(keywords, padded.data) != null) { String_append(&self.id, "_"); }
+    String_free(&segment); String_free(&padded);
     // The ui package: the lock's entry (NAME git URL REV COMMIT, or NAME path DIR).
     String lock;
     defer String_free(&lock);
