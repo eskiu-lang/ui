@@ -35,6 +35,23 @@ shim: the app, its components and its state are the same Eskiu code everywhere.
 Labels become `aria-label` (an image's `alt`), `accessibilityLabel` and
 `contentDescription`.
 
+## Services per host
+
+| Service | Web | iOS | Android |
+|---|---|---|---|
+| frames | `requestAnimationFrame` | `CADisplayLink` | `Choreographer` |
+| timers | `setTimeout`, `setInterval` | `NSTimer` on the main run loop | `Handler.postDelayed` |
+| transitions | CSS transitions | `UIView` animations (springs too) | `ViewPropertyAnimator`, `ValueAnimator` for colors |
+| drags | pointer events, captured once past 6 px | `UIPanGestureRecognizer` | a touch listener, intercepted from a pressable inside past the slop |
+| hover | `mouseenter`, `mouseleave` | `UIHoverGestureRecognizer` | `setOnHoverListener` |
+| network | `fetch` | `NSURLSession` | `HttpURLConnection` on a thread |
+| storage | `localStorage` | Application Support | `getFilesDir()` |
+| clipboard | `navigator.clipboard` (or the page's copy) | `UIPasteboard` | `ClipboardManager` |
+| share | `navigator.share` (or a copy) | `UIActivityViewController` | `ACTION_SEND` chooser |
+| haptics | `navigator.vibrate` | feedback generators | `performHapticFeedback` |
+| announcements | a live region | `UIAccessibilityAnnouncementNotification` | `announceForAccessibility` |
+| appearance | `prefers-color-scheme`, `prefers-reduced-motion`, `navigator.language` | trait collection, `UIAccessibility`, `NSLocale` | configuration, `AccessibilityManager`, animator scale |
+
 Each host also has a registry of native view types and a way for native code to post
 events from any thread: [native code](native.md).
 

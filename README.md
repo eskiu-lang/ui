@@ -48,13 +48,18 @@ void Counter() {
 - **Linear updates.** 10,000 rows mount, reverse or unmount in under 10 ms.
 - **Checked rules.** Hooks, keys and memos are checked, and a misuse stops with where it
   happened: `in Column[0] > TodoRow[key 3]`.
+- **Motion.** Transforms and transitions animated by each platform, drags, swipe to
+  delete, and the interactive back swipe on iOS.
+- **The system.** Dark mode, accessibility settings, the language, sharing, the clipboard,
+  haptics, saved data and the network, each through the platform's own API.
 - **Navigation.** A router's stack of routes is screens on the phone, with their slides and
   back gestures, and pages with URLs and history on the web.
 - **Native code.** An app or a package ships modules and views per platform in `native/`
   (Objective-C or Swift, Java, Kotlin or C, JavaScript), with Maven and Swift package
   dependencies from `ui.toml`. See [native code](docs/native.md).
-- **A kit.** `<ui/kit>` adds themed cards, badges, buttons, fields, checkboxes, tabs, bars
-  and accordions built from the same elements.
+- **A kit.** `<ui/kit>` adds cards, badges, buttons, fields, checkboxes, tabs, bars,
+  accordions, menus, selects, tooltips, toasts and date and color pickers, in a light and a
+  dark theme, built from the same elements.
 
 Views use explicit lambdas for now; trailing blocks, planned for Eskiu 0.13, will let
 `Column(Style{padding: 16}) { ... }` stand for the same call.
@@ -78,8 +83,8 @@ layout.
 | [Architecture](docs/architecture.md) | The layers, a frame, the repository |
 | [State](docs/state.md) | Signals, memos, effects, hooks, strings |
 | [Components](docs/components.md) | `<ui>` and `<ui/kit>` |
-| [Style and layout](docs/style-and-layout.md) | `Style`, colors, flexbox |
-| [The platform](docs/platform.md) | Insets, window, status bar, back, links, alerts, modals |
+| [Style and layout](docs/style-and-layout.md) | `Style`, colors, flexbox, motion |
+| [The platform](docs/platform.md) | Dark mode, accessibility, system actions, the network, back, links, alerts, modals |
 | [Navigation](docs/navigation.md) | Screens and pages, back, links, the browser's history |
 | [Native code](docs/native.md) | Modules and views per platform, `ui.toml`, Gradle and Swift packages |
 | [Protocol](docs/protocol.md), [Hosts](docs/hosts.md) | For writing a host |

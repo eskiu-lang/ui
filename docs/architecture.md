@@ -62,15 +62,16 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `src/ui.esk` | `<ui>`, importing its parts in order |
 | `src/style.esk` | `Style`, `key`, colors, `Align`, `Justify` |
 | `src/core/` | `state` (the runtime global), `diagnostics`, `keys` (the key table), `wire` (commits and the decoder), `reactive` (signals, memos, effects, hooks), `closures` (freeing closures by type), `tree` (nodes, matching, moves, unmounting, `ui_element`), `runtime` (frames, commits, events) |
-| `src/elements/` | `layout`, `text`, `input`, `media`, `lists`, `overlay`, `system`, `native` |
+| `src/elements/` | `layout` (containers, `ui_on_layout`, `ui_on_hover`), `text`, `input` (fields, switches, sliders), `media`, `lists`, `overlay` (`Modal`, `Overlay`, `Alert`), `system`, `native`, `navigation`, `timers`, `gestures`, `animated` |
+| `src/apis/` | `environment` (platform, appearance, accessibility, language), `actions` (keyboard, share, clipboard, haptics, announcements), `storage`, `network` (`ui_fetch`) |
 | `src/state/strings.esk` | `use_string` |
-| `src/kit.esk`, `src/kit/` | `<ui/kit>`: `theme`, `display`, `buttons`, `forms`, `navigation`, `disclosure` |
+| `src/kit.esk`, `src/kit/` | `<ui/kit>`: `theme` (light and dark), `display`, `buttons`, `forms`, `navigation`, `disclosure`, `swipe`, `overlays` (popovers, menus, tooltips, toasts), `pickers` (calendar, date, color) |
 | `hosts/bridge.esk` | What every host calls (`ui_start`, `ui_dispatch_*`, `ui_report_*`, `ui_tick`, `ui_stop`) and the app's two entry points |
 | `hosts/commit.h` | A C decoder of commits, shared by the native hosts |
 | `hosts/ios/ui_native.h`, `hosts/android/ui_native.h` | The C API native code includes ([native code](native.md)) |
 | `hosts/web/`, `hosts/ios/`, `hosts/android/`, `hosts/macos/` | The hosts |
 | `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `web`, `macos`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new` |
-| `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery`, `native` |
+| `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery`, `native`, `navigation` |
 | `tests/` | The model tests, the host harness and the conformance scene ([testing](testing.md)) |
 
 The parts of `<ui>` are not modules of their own: `src/ui.esk` imports them in an order
