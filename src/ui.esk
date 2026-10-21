@@ -118,8 +118,12 @@ struct Node {
     // scanning; more get the tables.
     bool indexed;
     int old_index;
+    // Unkeyed children match by position among the unkeyed siblings of their own kind, so a
+    // conditional element of another kind does not shift them. old_unkeyed holds the old
+    // ones grouped by kind (from kind_start), kind_emitted counts the new ones per kind.
     List<*Node> old_unkeyed;
-    int unkeyed_emitted;
+    int[14] kind_start;
+    int[13] kind_emitted;
     KeyTable old_keys;
     KeyTable new_keys;
     List<Slot> slots;
@@ -762,7 +766,7 @@ void ui_run(*Node node) {
         *Node child = node.children.data[i];
         child.seen = false;
         child.old_index = i;
-        if (child.key.set) { keyed++; } else if (node.indexed) { node.old_unkeyed.push(child); }
+        if (child.key.set) { keyed++; }
     }
     if (keyed > 0 && node.indexed) {
         KeyTable_init(&node.old_keys, keyed);
@@ -771,7 +775,24 @@ void ui_run(*Node node) {
             if (child.key.set) { node.old_keys.put(child.key.value, child); }
         }
     }
-    node.unkeyed_emitted = 0;
+    for (k in 0..13) { node.kind_emitted[k] = 0; }
+    if (node.indexed) {
+        // Group the old unkeyed children by kind, keeping their order (a counting sort).
+        for (k in 0..14) { node.kind_start[k] = 0; }
+        int unkeyed = 0;
+        for (i in 0..node.children.size) {
+            *Node child = node.children.data[i];
+            if (!child.key.set) { node.kind_start[child.kind + 1]++; unkeyed++; }
+        }
+        for (k in 1..14) { node.kind_start[k] += node.kind_start[k - 1]; }
+        int[13] fill;
+        for (k in 0..13) { fill[k] = node.kind_start[k]; }
+        for (i in 0..unkeyed) { node.old_unkeyed.push(null); }
+        for (i in 0..node.children.size) {
+            *Node child = node.children.data[i];
+            if (!child.key.set) { node.old_unkeyed.data[fill[child.kind]++] = child; }
+        }
+    }
     *Node previous_builder = ui.builder;
     *Observer previous_tracking = ui.tracking;
     ui.builder = node;
@@ -939,13 +960,14 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             }
         }
     } else {
-        int position = parent.unkeyed_emitted++;
+        int position = parent.kind_emitted[kind]++;
         if (parent.indexed) {
-            if (position < parent.old_unkeyed.size) { candidate = parent.old_unkeyed.data[position]; }
+            int at = parent.kind_start[kind] + position;
+            if (at < parent.kind_start[kind + 1]) { candidate = parent.old_unkeyed.data[at]; }
         } else {
             for (i in 0..parent.children.size) {
                 *Node old = parent.children.data[i];
-                if (!old.key.set) {
+                if (!old.key.set && old.kind == kind) {
                     if (position == 0) { candidate = old; break; }
                     position--;
                 }
@@ -1580,7 +1602,8 @@ bool ui_dispatch_event(*Event event) {
     if (id <= 0 || id >= ui.by_id.size) { return false; }
     *Node node = ui.by_id.data[id];
     if (node == null || node.generation != event.generation) { return false; }
-    if (event.kind == 1 && (node.kind == 4 || node.kind == 8)) { node.handler(); return true; }
+    // A press on a modal is the user asking to close it (Escape, a back gesture).
+    if (event.kind == 1 && (node.kind == 4 || node.kind == 8 || node.kind == 12)) { node.handler(); return true; }
     // What the user changed is what the renderer shows now: recorded as sent, so a render
     // that keeps the old value (the app refused the change) sends it back.
     if (event.kind == 2 && node.kind == 5) {

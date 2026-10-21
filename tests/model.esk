@@ -492,8 +492,9 @@ void id_reuse() {
     ui_init(&runtime, record);
     ui_mount(void() {
         a = use_signal<int>(1);
+        // Different kinds in each branch, so switching replaces the nodes.
         if (a.get() > 0) { Button("old", void() { observed = 1; }); }
-        else { Text("gap"); Button("new", void() { observed = 2; }); }
+        else { Text("gap"); Pressable(Style{}, void() { observed = 2; }, void() {}); }
     });
     ui_frame(); ui_complete(ui.sequence);
     *Node old = ui.root.children.data[0];
@@ -878,6 +879,30 @@ void back_and_modal() {
     ui_shutdown(); balanced("back and modal leak");
 }
 
+*Signal<bool> banner;
+// An element that comes and goes does not move its siblings of other kinds.
+void conditional_siblings() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        banner = use_signal<bool>(false);
+        if (banner.get()) { Text("Saved"); }
+        Row(Style{}, void() { *Signal<int> kept = use_signal<int>(7); text_number(kept.get()); });
+        Scroll(Style{}, void() {});
+    });
+    ui_frame();
+    *Node row = ui.root.children.data[0];
+    *Node scroll = ui.root.children.data[1];
+    *Signal<int> kept = (*Signal<int>)row.slots.data[0].data;
+    kept.set(8); ui_frame();
+    banner.set(true); ui_frame();
+    check(ui.root.children.data[1] == row && ui.root.children.data[2] == scroll, "row and scroll keep their nodes");
+    check(text_is(row.children.data[0], 8), "and the row its state");
+    banner.set(false); ui_frame();
+    check(ui.root.children.data[0] == row, "and when the text goes away");
+    ui_shutdown(); balanced("conditional siblings leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -888,6 +913,7 @@ int main() {
     cleanup_lifetime(); printf("PASS cleanup state lifetime\n");
     identity(); printf("PASS identity\n");
     large_lists(); printf("PASS large lists\n");
+    conditional_siblings(); printf("PASS conditional siblings\n");
     shared_subscriptions(); printf("PASS shared subscriptions\n");
     id_reuse(); printf("PASS id reuse\n");
     lenient_keys(); printf("PASS lenient keys\n");
