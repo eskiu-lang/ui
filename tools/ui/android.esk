@@ -21,8 +21,46 @@ string newest(string dir, string prefix) {
     return best;
 }
 
+// Under `ui serve` (UI_DEV=1) the app's code is a library of its own the running app loads
+// again after each build (the host's UI_RELOAD mode); the APK, with the host, is installed
+// again only when it changed. build_android says which in android_reinstall, and where the
+// app's newest library is in android_core.
+bool android_reinstall;
+
+string android_core;
+
+// The debug keystore both builds sign with (the direct one and Gradle's), made on first use,
+// so either build installs over the other.
+string android_keystore() {
+    string keystore = join(eskiu_home(), "ui-debug.keystore");
+    if (fs_exists(keystore) != 1) {
+        Cmd key;
+        key.add("keytool"); key.add("-genkeypair"); key.add("-keystore"); key.add(keystore);
+        key.add("-storepass"); key.add("android"); key.add("-keypass"); key.add("android"); key.add("-alias"); key.add("debug");
+        key.add("-keyalg"); key.add("RSA"); key.add("-validity"); key.add("10000"); key.add("-dname"); key.add("CN=Eskiu debug");
+        key.add("-noprompt");
+        key.must(null);
+        key.free();
+    }
+    return keystore;
+}
+
 string build_android(Project* p) {
     string out = p.out("android");
+    // Maven dependencies (ui.toml [android] dependencies) need Gradle: AARs bring resources and
+    // manifests to merge; Kotlin needs its compiler, which the Android Gradle plugin brings.
+    // UI_GRADLE=1 takes that path without them. Its builds are not reload builds.
+    List<string> maven;
+    defer maven.free();
+    p.config.all("android.dependencies", &maven);
+    List<String> kotlin;
+    defer fs_list_free(&kotlin);
+    p.native("android", ".kt", &kotlin);
+    string gradle = env_get("UI_GRADLE");
+    bool use_gradle = maven.size > 0 || kotlin.size > 0 || (gradle != null && strcmp(gradle, "1") == 0);
+    bool dev = ios_dev() && !use_gradle;
+    android_reinstall = true;
+    android_core = null;
     string sdk = android_sdk();
     string ndk = env_get("ANDROID_NDK_HOME");
     if (ndk == null || ndk[0] == 0) { ndk = newest(join(sdk, "ndk"), ""); }
@@ -37,12 +75,21 @@ string build_android(Project* p) {
     compiler.push(clang); compiler.push("-fPIC"); compiler.push("-O2");
     List<String> objects;
     yoga_objects(&compiler, join(eskiu_home(), "cache/yoga-android-arm64"), &objects);
-    string host = join(out, "host.o");
-    Cmd cmd;
-    cmd.add(clang); cmd.add("-fPIC"); cmd.add("-O2"); cmd.add("-std=c++17"); cmd.add("-I"); cmd.add(yoga_source());
-    cmd.add("-c"); cmd.add(join(p.ui.data, "hosts/android/host.cpp")); cmd.add("-o"); cmd.add(host);
-    cmd.must(null);
-    cmd.free();
+    // The host, the native code and the Java classes are built again only when they changed.
+    string host = join(out, dev ? "host-dev.o" : "host.o");
+    string header = join(p.ui.data, "hosts/android/ui_native.h");
+    List<string> host_sources;
+    defer host_sources.free();
+    host_sources.push(join(p.ui.data, "hosts/android/host.cpp")); host_sources.push(header);
+    if (stale(host, &host_sources)) {
+        Cmd cmd;
+        cmd.add(clang); cmd.add("-fPIC"); cmd.add("-O2"); cmd.add("-std=c++17"); cmd.add("-I"); cmd.add(yoga_source());
+        if (dev) { cmd.add("-DUI_RELOAD"); }
+        cmd.add("-c"); cmd.add(host_sources.data[0]); cmd.add("-o"); cmd.add(host);
+        cmd.must(null);
+        cmd.free();
+        built(host, &host_sources);
+    }
     // Native C and C++ code: native/android/*.c and *.cpp of every package, into the library.
     List<String> sources;
     defer fs_list_free(&sources);
@@ -52,33 +99,65 @@ string build_android(Project* p) {
     defer fs_list_free(&native_objects);
     for (i in 0..sources.size) {
         String object;
-        String_appendf(&object, "%s/native-%d.o", out, i);
-        Cmd compile;
-        compile.add(clang); compile.add("-fPIC"); compile.add("-O2");
-        if (String_ends_with(&sources.data[i], ".c") == 1) { compile.add("-x"); compile.add("c"); }
-        else { compile.add("-std=c++17"); }
-        compile.add("-I"); compile.add(join(p.ui.data, "hosts/android"));
-        compile.add("-c"); compile.add(sources.data[i].data); compile.add("-o"); compile.add(object.data);
-        compile.must(null);
-        compile.free();
+        String_appendf(&object, "%s/native-%s.o", out, native_object_name(sources.data[i].data));
+        List<string> inputs;
+        inputs.push(sources.data[i].data); inputs.push(header);
+        if (stale(object.data, &inputs)) {
+            Cmd compile;
+            compile.add(clang); compile.add("-fPIC"); compile.add("-O2");
+            if (String_ends_with(&sources.data[i], ".c") == 1) { compile.add("-x"); compile.add("c"); }
+            else { compile.add("-std=c++17"); }
+            compile.add("-I"); compile.add(join(p.ui.data, "hosts/android"));
+            compile.add("-c"); compile.add(sources.data[i].data); compile.add("-o"); compile.add(object.data);
+            compile.must(null);
+            compile.free();
+            built(object.data, &inputs);
+        }
+        inputs.free();
         native_objects.push(object);
     }
     string app = join(out, "app.o");
     Cmd esk;
-    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add("aarch64-linux-android24"); esk.add("-O2");
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add("aarch64-linux-android24"); esk.add(app_opt());
     esk.add("-o"); esk.add(app);
     esk.must(null);
     esk.free();
     string libs = join(out, "lib/arm64-v8a");
     fs_mkdir_p(libs);
-    Cmd link;
-    link.add(clang); link.add("-shared"); link.add("-static-libstdc++"); link.add("-Wl,-z,max-page-size=16384");
-    link.add(host); link.add(app);
-    for (i in 0..native_objects.size) { link.add(native_objects.data[i].data); }
-    for (i in 0..objects.size) { link.add(objects.data[i].data); }
-    link.add("-llog"); link.add("-o"); link.add(join(libs, "libeskiu_ui.so"));
-    link.must(null);
-    link.free();
+    // The host's library: with the app's code in it, or (a reload build) without, linked again
+    // only when its parts changed, and then the app's code in a library of its own that finds
+    // the host's functions in it.
+    string host_library = join(libs, "libeskiu_ui.so");
+    List<string> host_inputs;
+    defer host_inputs.free();
+    host_inputs.push(host);
+    for (i in 0..native_objects.size) { host_inputs.push(native_objects.data[i].data); }
+    if (!dev || stale(host_library, &host_inputs)) {
+        Cmd link;
+        link.add(clang); link.add("-shared"); link.add("-static-libstdc++"); link.add("-Wl,-z,max-page-size=16384");
+        link.add(host);
+        if (dev) { link.add("-Wl,-soname,libeskiu_ui.so"); } else { link.add(app); }
+        for (i in 0..native_objects.size) { link.add(native_objects.data[i].data); }
+        for (i in 0..objects.size) { link.add(objects.data[i].data); }
+        link.add("-llog"); link.add("-o"); link.add(host_library);
+        link.must(null);
+        link.free();
+        if (dev) { built(host_library, &host_inputs); }
+    }
+    if (dev) {
+        string reload = join(out, "reload");
+        fs_remove_all(reload);
+        fs_mkdir_p(reload);
+        String name;
+        String_appendf(&name, "app-%lld.so", time_now_ms());
+        android_core = join(reload, name.data);
+        Cmd core;
+        core.add(clang); core.add("-shared"); core.add("-static-libstdc++"); core.add("-Wl,-z,max-page-size=16384");
+        core.add(app); core.add("-L"); core.add(libs); core.add("-leskiu_ui"); core.add("-llog");
+        core.add("-o"); core.add(android_core);
+        core.must(null);
+        core.free();
+    }
     // Native Java and Kotlin code: native/android/*.java and *.kt; each class's static setup()
     // runs at start (in Kotlin, an object's @JvmStatic fun setup()).
     List<String> java;
@@ -99,36 +178,62 @@ string build_android(Project* p) {
     string assets = join(out, "assets");
     fs_mkdir_p(assets);
     p.copy_assets(assets);
-    // Maven dependencies (ui.toml [android] dependencies) need Gradle: AARs bring resources and
-    // manifests to merge; Kotlin needs its compiler, which the Android Gradle plugin brings.
-    // UI_GRADLE=1 takes that path without them.
-    List<string> maven;
-    defer maven.free();
-    p.config.all("android.dependencies", &maven);
-    string gradle = env_get("UI_GRADLE");
-    if (maven.size > 0 || java.size > java_count || (gradle != null && strcmp(gradle, "1") == 0)) {
+    if (use_gradle) {
         return build_android_gradle(p, out, setup_classes.data, &java, &maven);
     }
     string classes = join(out, "classes");
-    fs_mkdir_p(classes);
-    String bootclasspath;
-    String_appendf(&bootclasspath, "%s:%s", join(tools, "core-lambda-stubs.jar"), jar);
-    Cmd javac;
-    javac.add("javac"); javac.add("-nowarn"); javac.add("-source"); javac.add("8"); javac.add("-target"); javac.add("8");
-    javac.add("-bootclasspath"); javac.add(bootclasspath.data); javac.add("-d"); javac.add(classes);
-    javac.add(join(p.ui.data, "hosts/android/UiActivity.java"));
-    for (i in 0..java_count) { javac.add(java.data[i].data); }
-    javac.must(null);
-    javac.free();
-    List<String> class_files;
-    fs_glob(join(classes, "**/*.class"), &class_files);
-    Cmd d8;
-    d8.add(join(tools, "d8")); d8.add("--min-api"); d8.add("24"); d8.add("--lib"); d8.add(jar);
-    d8.add("--output"); d8.add(out);
-    for (i in 0..class_files.size) { d8.add(class_files.data[i].data); }
-    d8.must(null);
-    d8.free();
-    fs_write_text(join(out, "AndroidManifest.xml"), android_manifest(p, setup_classes.data, true));
+    string dex = join(out, "classes.dex");
+    List<string> java_sources;
+    defer java_sources.free();
+    java_sources.push(join(p.ui.data, "hosts/android/UiActivity.java"));
+    for (i in 0..java_count) { java_sources.push(java.data[i].data); }
+    if (stale(dex, &java_sources)) {
+        fs_remove_all(classes);
+        fs_mkdir_p(classes);
+        String bootclasspath;
+        String_appendf(&bootclasspath, "%s:%s", join(tools, "core-lambda-stubs.jar"), jar);
+        Cmd javac;
+        javac.add("javac"); javac.add("-nowarn"); javac.add("-source"); javac.add("8"); javac.add("-target"); javac.add("8");
+        javac.add("-bootclasspath"); javac.add(bootclasspath.data); javac.add("-d"); javac.add(classes);
+        javac.add(join(p.ui.data, "hosts/android/UiActivity.java"));
+        for (i in 0..java_count) { javac.add(java.data[i].data); }
+        javac.must(null);
+        javac.free();
+        List<String> class_files;
+        fs_glob(join(classes, "**/*.class"), &class_files);
+        Cmd d8;
+        d8.add(join(tools, "d8")); d8.add("--min-api"); d8.add("24"); d8.add("--lib"); d8.add(jar);
+        d8.add("--output"); d8.add(out);
+        for (i in 0..class_files.size) { d8.add(class_files.data[i].data); }
+        d8.must(null);
+        d8.free();
+        built(dex, &java_sources);
+    }
+    String manifest;
+    defer String_free(&manifest);
+    String_from(&manifest, android_manifest(p, setup_classes.data, true));
+    String before;
+    defer String_free(&before);
+    string manifest_path = join(out, "AndroidManifest.xml");
+    if (fs_read_text(manifest_path, &before) != 0 || String_eq_cstr(&before, manifest.data) != 1) {
+        fs_write_text(manifest_path, manifest.data);
+    }
+    String apk_name;
+    String_appendf(&apk_name, "%s.apk", p.name.data);
+    string apk = join(out, apk_name.data);
+    // A reload build packs the APK again only when what is in it changed: the host's library,
+    // the classes, the manifest, the assets.
+    List<string> apk_inputs;
+    defer apk_inputs.free();
+    apk_inputs.push(host_library); apk_inputs.push(join(out, "classes.dex")); apk_inputs.push(manifest_path);
+    List<String> asset_files;
+    defer fs_list_free(&asset_files);
+    fs_glob(join(p.root.data, "assets/**/*"), &asset_files);
+    for (i in 0..asset_files.size) { apk_inputs.push(asset_files.data[i].data); }
+    if (dev && !stale(apk, &apk_inputs)) {
+        android_reinstall = false;
+        return apk;
+    }
     string unsigned_apk = join(out, "unsigned.apk");
     Cmd aapt;
     aapt.add(join(tools, "aapt")); aapt.add("package"); aapt.add("-f"); aapt.add("-M"); aapt.add(join(out, "AndroidManifest.xml"));
@@ -145,24 +250,13 @@ string build_android(Project* p) {
     align.add(join(tools, "zipalign")); align.add("-f"); align.add("-p"); align.add("4"); align.add(unsigned_apk); align.add(aligned);
     align.must(null);
     align.free();
-    string keystore = join(eskiu_home(), "ui-debug.keystore");
-    if (fs_exists(keystore) != 1) {
-        Cmd key;
-        key.add("keytool"); key.add("-genkeypair"); key.add("-keystore"); key.add(keystore);
-        key.add("-storepass"); key.add("android"); key.add("-keypass"); key.add("android"); key.add("-alias"); key.add("debug");
-        key.add("-keyalg"); key.add("RSA"); key.add("-validity"); key.add("10000"); key.add("-dname"); key.add("CN=Eskiu debug");
-        key.add("-noprompt");
-        key.must(null);
-        key.free();
-    }
-    String apk_name;
-    String_appendf(&apk_name, "%s.apk", p.name.data);
-    string apk = join(out, apk_name.data);
+    string keystore = android_keystore();
     Cmd sign;
     sign.add(join(tools, "apksigner")); sign.add("sign"); sign.add("--ks"); sign.add(keystore);
     sign.add("--ks-pass"); sign.add("pass:android"); sign.add("--out"); sign.add(apk); sign.add(aligned);
     sign.must(null);
     sign.free();
+    if (dev) { built(apk, &apk_inputs); }
     return apk;
 }
 
@@ -171,7 +265,10 @@ string build_android(Project* p) {
 // with the classes whose setup() it runs.
 string android_manifest(Project* p, string setup_classes, bool package) {
     String attribute;
-    if (package) { String_appendf(&attribute, " package=\"%s\"", p.id.data); }
+    // The same version as the Gradle build's, so either can be installed over the other.
+    if (package) {
+        String_appendf(&attribute, " package=\"%s\" android:versionCode=\"1\" android:versionName=\"0.1.0\"", p.id.data);
+    }
     String manifest;
     String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"%s>\n"
         "%s%s"
@@ -286,14 +383,42 @@ void android_device() {
 void run_android(Project* p) {
     string apk = build_android(p);
     android_device();
-    Cmd install;
-    install.add(adb()); install.add("install"); install.add("-r"); install.add(apk);
-    install.must(null);
-    install.free();
+    if (android_reinstall) {
+        Cmd install;
+        install.add(adb()); install.add("install"); install.add("-r"); install.add(apk);
+        install.must(null);
+        install.free();
+    }
     String activity;
     String_appendf(&activity, "%s/org.eskiu.ui.UiActivity", p.id.data);
-    Cmd start;
-    start.add(adb()); start.add("shell"); start.add("am"); start.add("start"); start.add("-n"); start.add(activity.data);
-    start.must(null);
-    start.free();
+    if (android_core == null) {
+        Cmd start;
+        start.add(adb()); start.add("shell"); start.add("am"); start.add("start"); start.add("-n"); start.add(activity.data);
+        start.must(null);
+        start.free();
+        return;
+    }
+    // A reload build: the app's library into the app's files (through run-as, which the
+    // debuggable APK allows), named in files/ui-reload, and an intent that tells a running app
+    // to start again on it (or starts the app, which reads ui-reload).
+    String name;
+    path_basename(&name, android_core);
+    String staged;
+    String_appendf(&staged, "/data/local/tmp/eskiu-ui-%s", name.data);
+    Cmd push;
+    push.add(adb()); push.add("push"); push.add(android_core); push.add(staged.data);
+    String ignored;
+    if (!push.output(&ignored)) { fail("ui: failed: adb push"); }
+    push.free();
+    String target;
+    String_appendf(&target, "/data/data/%s/files/%s", p.id.data, name.data);
+    String script;
+    String_appendf(&script, "run-as %s sh -c 'mkdir -p files && rm -f files/app-*.so && cp %s files/%s && echo %s > files/ui-reload'"
+        " && rm -f %s && am start -n %s --es ui_reload %s",
+        p.id.data, staged.data, name.data, target.data, staged.data, activity.data, target.data);
+    Cmd shell;
+    shell.add(adb()); shell.add("shell"); shell.add(script.data);
+    if (!shell.output(&ignored)) { fail("ui: failed: adb shell run-as (the app must be the debug build ui makes)"); }
+    shell.free();
+    println(android_reinstall ? "Installed and started the app" : "Restarted the app on the new build");
 }

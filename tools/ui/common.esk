@@ -82,6 +82,61 @@ string eskiuc() {
     return path != null && path[0] != 0 ? path : "eskiuc";
 }
 
+// A name for a native source's object, unique per path (two packages may both have clock.m).
+string native_object_name(string path) {
+    String name;
+    String_from(&name, path);
+    String_replace_all(&name, "/", "_");
+    String_replace_all(&name, ".", "_");
+    return name.data;
+}
+
+// What `target` and its `sources` are now (path, size and mtime of each), as a stamp for stale
+// and built: the target's own line catches another build (a release one, Gradle) that
+// replaced it.
+string stamp_line(String* text, string path) {
+    FileStat st;
+    if (fs_stat(path, &st) != 0) { st.size = -1; st.mtime = -1; }
+    String_appendf(text, "%s %lld %lld\n", path, st.size, st.mtime);
+    return text.data;
+}
+
+string stamp_text(string target, List<string>* sources) {
+    String text;
+    String_from(&text, "");
+    stamp_line(&text, target);
+    for (i in 0..sources.size) { stamp_line(&text, sources.data[i]); }
+    return text.data;
+}
+
+// `target` must be made again: it is missing, or `sources` are not what they were when it was
+// last made (built wrote them to TARGET.stamp).
+bool stale(string target, List<string>* sources) {
+    if (fs_exists(target) != 1) { return true; }
+    String stamp;
+    defer String_free(&stamp);
+    String path;
+    defer String_free(&path);
+    String_appendf(&path, "%s.stamp", target);
+    if (fs_read_text(path.data, &stamp) != 0) { return true; }
+    return String_eq_cstr(&stamp, stamp_text(target, sources)) != 1;
+}
+
+// `target` was made from `sources` as they are now.
+void built(string target, List<string>* sources) {
+    String path;
+    defer String_free(&path);
+    String_appendf(&path, "%s.stamp", target);
+    fs_write_text(path.data, stamp_text(target, sources));
+}
+
+// The optimization level for the app's own code: -O0 under `ui serve` (UI_DEV=1), where a
+// build's speed matters more than the app's, -O2 otherwise.
+string app_opt() {
+    string dev = env_get("UI_DEV");
+    return dev != null && strcmp(dev, "1") == 0 ? "-O0" : "-O2";
+}
+
 bool newer(string source, string target) {
     FileStat a;
     FileStat b;

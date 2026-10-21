@@ -3,27 +3,90 @@
 
 // ---- iOS (the simulator) ----
 
+// The simulator runs this Mac's architecture, which the tool is built for.
 string ios_arch() {
-    Cmd cmd;
-    defer cmd.free();
-    cmd.add("uname"); cmd.add("-m");
-    String out;
-    cmd.output(&out);
-    return out.data;
+#ifdef __aarch64__
+    return "arm64";
+#else
+    return "x86_64";
+#endif
+}
+
+// The simulator SDK and its clang++, from xcrun once, then from build/ui/ios/toolchain while
+// both still exist (xcrun takes a tenth of a second a call).
+void ios_toolchain(Project* p, String* sdk, String* clang) {
+    string cache = join(p.out("ios"), "toolchain");
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(cache, &text) == 0) {
+        List<String> lines;
+        String_lines(&text, &lines);
+        bool ok = lines.size == 2 && fs_is_dir(lines.data[0].data) == 1 && fs_exists(lines.data[1].data) == 1;
+        if (ok) { String_from(sdk, lines.data[0].data); String_from(clang, lines.data[1].data); }
+        fs_list_free(&lines);
+        if (ok) { return; }
+    }
+    Cmd find;
+    find.add("xcrun"); find.add("--sdk"); find.add("iphonesimulator"); find.add("--show-sdk-path");
+    if (!find.output(sdk)) { fail("ui: no iOS simulator SDK (install Xcode)"); }
+    find.free();
+    Cmd tool;
+    tool.add("xcrun"); tool.add("--sdk"); tool.add("iphonesimulator"); tool.add("--find"); tool.add("clang++");
+    tool.output(clang);
+    tool.free();
+    String_clear(&text);
+    String_appendf(&text, "%s\n%s\n", sdk.data, clang.data);
+    fs_write_text(cache, text.data);
+}
+
+// Under `ui serve` (UI_DEV=1) the app's code is a dylib the running app loads again after each
+// build (the host's UI_RELOAD mode), so the app is installed and launched again only when the
+// host or the native code changed. build_ios says which in ios_reinstall.
+bool ios_reinstall;
+
+bool ios_dev() {
+    string dev = env_get("UI_DEV");
+    return dev != null && strcmp(dev, "1") == 0;
+}
+
+// The file the dev host polls: it holds the newest dylib's path.
+string ios_reload_file(Project* p) { return join(p.out("ios"), "reload/current"); }
+
+// A dev build's app code: a bundle linked against the executable (which exports the host's
+// functions), named afresh each time since dlopen keeps a path it loaded, and its path in the
+// reload file the running app polls. The previous ones go, but for the one the app runs.
+void ios_core(Project* p, string out, string app, string executable, List<string>* compiler) {
+    string reload = join(out, "reload");
+    fs_mkdir_p(reload);
+    List<String> old;
+    fs_glob(join(reload, "app-*.dylib"), &old);
+    String current;
+    fs_read_text(ios_reload_file(p), &current);
+    String_trim(&current);
+    for (i in 0..old.size) {
+        if (String_eq_cstr(&old.data[i], current.data == null ? "" : current.data) != 1) { fs_remove(old.data[i].data); }
+    }
+    fs_list_free(&old);
+    String_free(&current);
+    String name;
+    String_appendf(&name, "app-%lld.dylib", time_now_ms());
+    string library = join(reload, name.data);
+    Cmd link;
+    for (i in 0..compiler.size) { link.add(compiler.data[i]); }
+    link.add("-bundle"); link.add("-bundle_loader"); link.add(executable); link.add(app);
+    link.add("-o"); link.add(library);
+    link.must(null);
+    link.free();
+    fs_write_text(ios_reload_file(p), library);
 }
 
 string build_ios(Project* p) {
     string out = p.out("ios");
-    Cmd find;
-    find.add("xcrun"); find.add("--sdk"); find.add("iphonesimulator"); find.add("--show-sdk-path");
+    bool dev = ios_dev();
+    ios_reinstall = true;
     String sdk;
-    if (!find.output(&sdk)) { fail("ui: no iOS simulator SDK (install Xcode)"); }
-    find.free();
-    Cmd tool;
-    tool.add("xcrun"); tool.add("--sdk"); tool.add("iphonesimulator"); tool.add("--find"); tool.add("clang++");
     String clang;
-    tool.output(&clang);
-    tool.free();
+    ios_toolchain(p, &sdk, &clang);
     String target;
     String_appendf(&target, "%s-apple-ios15.0-simulator", ios_arch());
     List<string> compiler;
@@ -33,7 +96,7 @@ string build_ios(Project* p) {
     yoga_objects(&compiler, join(eskiu_home(), join("cache/yoga-ios", ios_arch())), &objects);
     string app = join(out, "app.o");
     Cmd esk;
-    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add("-O2");
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add(app_opt());
     esk.add("-o"); esk.add(app);
     esk.must(null);
     esk.free();
@@ -49,13 +112,22 @@ string build_ios(Project* p) {
     if (packages.size > 0 || swift.size > 0 || (xcode != null && strcmp(xcode, "1") == 0)) {
         return build_ios_xcode(p, out, app, &objects);
     }
-    string host = join(out, "host.o");
-    Cmd cmd;
-    for (i in 0..compiler.size) { cmd.add(compiler.data[i]); }
-    cmd.add("-std=c++17"); cmd.add("-fobjc-arc"); cmd.add("-I"); cmd.add(yoga_source());
-    cmd.add("-c"); cmd.add(join(p.ui.data, "hosts/ios/host.mm")); cmd.add("-o"); cmd.add(host);
-    cmd.must(null);
-    cmd.free();
+    // The host and the native code are compiled again only when they changed.
+    string host = join(out, dev ? "host-dev.o" : "host.o");
+    string header = join(p.ui.data, "hosts/ios/ui_native.h");
+    List<string> host_sources;
+    defer host_sources.free();
+    host_sources.push(join(p.ui.data, "hosts/ios/host.mm")); host_sources.push(header);
+    if (stale(host, &host_sources)) {
+        Cmd cmd;
+        for (i in 0..compiler.size) { cmd.add(compiler.data[i]); }
+        cmd.add("-std=c++17"); cmd.add("-fobjc-arc"); cmd.add("-I"); cmd.add(yoga_source());
+        if (dev) { cmd.add("-DUI_RELOAD"); }
+        cmd.add("-c"); cmd.add(host_sources.data[0]); cmd.add("-o"); cmd.add(host);
+        cmd.must(null);
+        cmd.free();
+        built(host, &host_sources);
+    }
     // Native code: native/ios/*.m and *.mm of every package, with ui_native.h on the path.
     List<String> sources;
     defer fs_list_free(&sources);
@@ -65,25 +137,56 @@ string build_ios(Project* p) {
     defer fs_list_free(&native_objects);
     for (i in 0..sources.size) {
         String object;
-        String_appendf(&object, "%s/native-%d.o", out, i);
-        Cmd compile;
-        for (j in 0..compiler.size) { compile.add(compiler.data[j]); }
-        compile.add("-fobjc-arc"); compile.add("-I"); compile.add(join(p.ui.data, "hosts/ios"));
-        if (String_ends_with(&sources.data[i], ".mm") == 1) { compile.add("-std=c++17"); }
-        compile.add("-c"); compile.add(sources.data[i].data); compile.add("-o"); compile.add(object.data);
-        compile.must(null);
-        compile.free();
+        String_appendf(&object, "%s/native-%s.o", out, native_object_name(sources.data[i].data));
+        List<string> inputs;
+        inputs.push(sources.data[i].data); inputs.push(header);
+        if (stale(object.data, &inputs)) {
+            Cmd compile;
+            for (j in 0..compiler.size) { compile.add(compiler.data[j]); }
+            compile.add("-fobjc-arc"); compile.add("-I"); compile.add(join(p.ui.data, "hosts/ios"));
+            if (String_ends_with(&sources.data[i], ".mm") == 1) { compile.add("-std=c++17"); }
+            compile.add("-c"); compile.add(sources.data[i].data); compile.add("-o"); compile.add(object.data);
+            compile.must(null);
+            compile.free();
+            built(object.data, &inputs);
+        }
+        inputs.free();
         native_objects.push(object);
     }
     String bundle_name;
     String_appendf(&bundle_name, "%s.app", p.name.data);
     string bundle = join(out, bundle_name.data);
     fs_mkdir_p(bundle);
-    fs_write_text(join(bundle, "Info.plist"), ios_plist(p, "", true));
+    // The bundle is installed again when anything in it changed.
+    string executable = join(bundle, p.name.data);
+    String plist;
+    defer String_free(&plist);
+    String_from(&plist, ios_plist(p, "", true));
+    String before;
+    defer String_free(&before);
+    bool plist_changed = fs_read_text(join(bundle, "Info.plist"), &before) != 0 || String_eq_cstr(&before, plist.data) != 1;
+    if (plist_changed) { fs_write_text(join(bundle, "Info.plist"), plist.data); }
     p.copy_assets(bundle);
+    // A dev build links, signs and installs the executable again only when the host, the native
+    // code or the Info.plist changed; the app's code goes to its bundle either way.
+    List<string> exe_inputs;
+    defer exe_inputs.free();
+    exe_inputs.push(host);
+    for (i in 0..native_objects.size) { exe_inputs.push(native_objects.data[i].data); }
+    List<String> asset_files;
+    defer fs_list_free(&asset_files);
+    fs_glob(join(p.root.data, "assets/**/*"), &asset_files);
+    for (i in 0..asset_files.size) { exe_inputs.push(asset_files.data[i].data); }
+    if (dev && !plist_changed && !stale(executable, &exe_inputs)) {
+        ios_reinstall = false;
+        ios_core(p, out, app, executable, &compiler);
+        return bundle;
+    }
     Cmd link;
     for (i in 0..compiler.size) { link.add(compiler.data[i]); }
-    link.add(host); link.add(app);
+    link.add(host);
+    // The dev host takes the app from its dylib, which looks up the host's functions in it.
+    if (dev) { link.add("-Wl,-export_dynamic"); } else { link.add(app); }
     for (i in 0..native_objects.size) { link.add(native_objects.data[i].data); }
     for (i in 0..objects.size) { link.add(objects.data[i].data); }
     link.add("-framework"); link.add("UIKit"); link.add("-framework"); link.add("Foundation");
@@ -92,13 +195,17 @@ string build_ios(Project* p) {
     defer frameworks.free();
     p.config.all("ios.frameworks", &frameworks);
     for (i in 0..frameworks.size) { link.add("-framework"); link.add(frameworks.data[i]); }
-    link.add("-o"); link.add(join(bundle, p.name.data));
+    link.add("-o"); link.add(executable);
     link.must(null);
     link.free();
     Cmd sign;
     sign.add("codesign"); sign.add("--force"); sign.add("--sign"); sign.add("-"); sign.add(bundle);
     sign.must(null);
     sign.free();
+    if (dev) {
+        built(executable, &exe_inputs);
+        ios_core(p, out, app, executable, &compiler);
+    }
     return bundle;
 }
 
@@ -147,6 +254,16 @@ string ios_plist_entries(Project* p) {
     return out.data == null ? "" : out.data;
 }
 
+// The dev app is running: the pid it wrote next to the reload file is alive (a simulator app
+// is a process of this Mac).
+bool ios_running(Project* p) {
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(join(p.out("ios"), "reload/pid"), &text) != 0) { return false; }
+    int pid = atoi(text.data);
+    return pid > 0 && kill(pid, 0) == 0;
+}
+
 // A booted simulator, booting the first available iPhone when none is.
 void ios_simulator() {
     Cmd list;
@@ -181,6 +298,11 @@ void ios_simulator() {
 
 void run_ios(Project* p) {
     string bundle = build_ios(p);
+    // A dev build the running app picks up itself.
+    if (!ios_reinstall && ios_running(p)) {
+        println("Restarted the app on the new build");
+        return;
+    }
     ios_simulator();
     // The simulator's window: Simulator.app inside Xcode, DeviceHub.app from Xcode 27.
     Cmd developer;
@@ -210,6 +332,22 @@ void run_ios(Project* p) {
     Cmd launch;
     launch.add("xcrun"); launch.add("simctl"); launch.add("launch"); launch.add("--terminate-running-process");
     launch.add("booted"); launch.add(p.id.data);
+    if (ios_dev()) {
+        // The dev host finds the reload file through its environment (simctl passes SIMCTL_CHILD_*).
+        String value;
+        String_appendf(&value, "SIMCTL_CHILD_UI_RELOAD_FILE=%s", ios_reload_file(p));
+        List<string> env;
+        env.push(value.data);
+        List<string> argv;
+        for (i in 0..launch.parts.size) { argv.push(launch.parts.data[i].data); }
+        ProcessOptions options = ProcessOptions{env: &env, inherit_stdout: true, inherit_stderr: true};
+        ProcessResult result;
+        if (process_run(&argv, &options, &result) != 0 || result.exit_code != 0) { fail("ui: failed: xcrun simctl launch"); }
+        ProcessResult_free(&result);
+        argv.free(); env.free();
+        launch.free();
+        return;
+    }
     launch.must(null);
     launch.free();
 }

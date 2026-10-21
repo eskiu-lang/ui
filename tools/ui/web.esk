@@ -8,7 +8,7 @@ string build_web(Project* p) {
     Cmd cmd;
     defer cmd.free();
     cmd.add(eskiuc()); cmd.add(p.entry()); cmd.add("--target"); cmd.add("wasm32-unknown-emscripten");
-    cmd.add("-O2"); cmd.add("-o"); cmd.add(join(out, "app.mjs"));
+    cmd.add(app_opt()); cmd.add("-o"); cmd.add(join(out, "app.mjs"));
     String library;
     defer String_free(&library);
     String_appendf(&library, "--link-arg=%s", join(p.ui.data, "hosts/web/ui-library.js"));

@@ -88,7 +88,11 @@ bool serve_build(string command, string target) {
     List<string> argv;
     defer argv.free();
     argv.push(serve_self); argv.push(command); argv.push(target);
-    ProcessOptions options = ProcessOptions{merge_stderr: true};
+    // UI_DEV=1: the app's code at -O0, which builds about four times faster.
+    List<string> env;
+    defer env.free();
+    env.push("UI_DEV=1");
+    ProcessOptions options = ProcessOptions{env: &env, merge_stderr: true};
     ProcessResult result;
     defer ProcessResult_free(&result);
     bool ok = process_run(&argv, &options, &result) == 0 && result.exit_code == 0;
