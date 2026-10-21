@@ -46,10 +46,14 @@ ui serve android      # the same on the device or emulator
 
 `ui serve` watches what a build reads: `src/`, `native/`, `assets/` and `ui.toml` of the
 app and of every package it depends on, and `eskiu.toml` and `eskiu.lock`. After a change it
-builds again. On the web and in the macOS window, the page reloads once the build is done,
-keeping its route and its saved data. A failed build shows the compiler's errors over the
-app until the next one builds; the app keeps running underneath. On a phone the tool
-installs and launches the app again, so it starts from its first screen.
+builds again, with the app's code at `-O0` and the host, the native code and Yoga reused when
+they did not change. On the web and in the macOS window, the page reloads once the build is
+done, keeping its route and its saved data. On the simulator and on Android the running app
+starts again on the new code in the same process, without being installed and launched again,
+so it starts from its first screen; a change to the host, the native code or the assets
+installs it again. A change takes about 0.3 s to show on iOS, 0.4 s on Android and 0.6 s on the
+web for the kit gallery. A failed build shows the compiler's errors over the app on the web
+and in the terminal; the app keeps running the last build.
 
 `src/main.esk` is the app:
 

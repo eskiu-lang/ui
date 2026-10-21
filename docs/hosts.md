@@ -75,7 +75,9 @@ threads, so a page that waits does not hold up the others.
 `ui build ios` cross-compiles the app for the simulator (`arm64-apple-ios15.0-simulator`),
 compiles Yoga, the host and `native/ios` with `xcrun clang`, and makes `build/ui/ios/NAME.app` with
 `Info.plist` and the assets. A `CADisplayLink` drives `ui_tick`; the scene delegate reports
-the safe area, the keyboard, the window, foreground changes and opened URLs.
+the safe area, the keyboard, the window, foreground changes and opened URLs. The host, the
+native code and Yoga are compiled again only when they changed (a `.stamp` next to each
+output records its inputs).
 
 ## Android
 
@@ -85,7 +87,28 @@ and `d8`, and packages, aligns and signs the APK with the build tools (`aapt`, `
 `apksigner`, a debug key), with no Gradle. Native C, C++ and Java code goes into the same
 library and dex. With Maven dependencies or Kotlin code it builds through Gradle instead, and
 iOS with Swift packages or Swift code through Xcode ([native code](native.md)). The `Choreographer` drives `ui_tick`; the
-activity reports insets, the window, `onResume`/`onPause`, back presses and intents.
+activity reports insets, the window, `onResume`/`onPause`, back presses and intents. The
+host, the native code and the classes are built again only when they changed.
+
+## Reload builds
+
+Under `ui serve`, builds set `UI_DEV=1`: the app's code is compiled at `-O0`, and on iOS and
+Android it goes into a library of its own instead of the host's binary. The host is compiled
+with `UI_RELOAD`, which makes the core's entry points (`hosts/core.h`) pointers that it fills
+with `dlopen` and `dlsym`. After a build the tool hands the running app the new library and
+the app starts again on it, in the same process: the old core stops, the host drops the views,
+timers and per-node state it left, and the new core starts as at launch. The app is installed
+and launched again only when the host, the native code, the plist or manifest, or the assets
+changed.
+
+- **iOS.** The app's code is a bundle linked against the executable (`-bundle_loader`), which
+  exports the host's and the native code's functions (`-export_dynamic`). The simulator's apps
+  read this Mac's files, so the host polls `build/ui/ios/reload/current` (its path comes in
+  `UI_RELOAD_FILE`) for the newest bundle's path, and writes its pid next to it, which tells
+  the tool the app is running.
+- **Android.** The app's code is a library linked against `libeskiu_ui.so`. The tool copies it
+  into the app's files with `run-as` (the debug APK allows it), names it in `files/ui-reload`,
+  and sends the activity an intent with `ui_reload`; the activity loads it at start too.
 
 ## macOS
 
