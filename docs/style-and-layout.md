@@ -26,6 +26,11 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}, 
 | `absolute` | false | Out of the parent's flow, placed by `left`, `top`, `right`, `bottom`. |
 | `left`, `top`, `right`, `bottom` | `kUnset` | Offsets from the parent's edges, in points, for an absolute element (0 is an offset). |
 | `aspect_ratio` | 0 | Width over height: the side that is not set comes from the one that is. |
+| `translate_x`, `translate_y` | 0 | Moves the drawn element, in points, without changing the layout. |
+| `scale` | 100 | Scales the drawn element about its center, in percent. |
+| `rotate` | 0 | Turns the drawn element about its center, in degrees. |
+| `transition_ms` | 0 | Animates changes of the opacity, the transforms and the colors, in milliseconds. |
+| `easing` | `EaseInOut` | The transition's curve: `EaseInOut`, `EaseOut`, `EaseIn`, `EaseLinear`, `EaseSpring`. |
 
 A field left at its default is not sent to the host, and changing one sends only that
 field. Styles are plain values, so shared styles are functions or globals:
@@ -61,6 +66,23 @@ Row(Style{height: 160, radius: 16, background: kit.primary}, void() {
         void() { Text("New"); });
 });
 ```
+
+## Motion
+
+A transition animates the changes the next renders make, on the host: `UIView` animations on
+iOS, `ViewPropertyAnimator` on Android, CSS transitions on the web, so an animation does not
+need the core on every frame.
+
+```eskiu
+*Signal<bool> open = use_signal<bool>(false);
+Column(Style{opacity: open.get() ? 100 : 0, translate_y: open.get() ? 0 : 24, transition_ms: 250,
+             easing: EaseOut}, void() { ... });
+```
+
+The transforms are drawn, not laid out: the element keeps its place and its siblings do not
+move. Layout changes (a size, a position from the flow) are not animated yet.
+
+## Measuring
 
 Text, buttons, inputs, images, switches and indicators are measured by the platform: their
 size comes from their content unless `width` or `height` is given. A `Modal` is laid out on

@@ -70,6 +70,10 @@ it into `Mutation` records for tests and tools.
 | | | 30 | layout listener (1: report the node's frame when it changes) |
 | | | 31 | hover listener (1: report a pointer entering and leaving) |
 | | | 32, 33, 34 | slider value, minimum, maximum (the range comes first) |
+| | | 35, 36 | translate x, y (points) |
+| | | 37 | scale (percent) |
+| | | 38 | rotate (degrees) |
+| | | 39, 40 | transition (ms; 0 none), easing (`Easing`); sent before the props they animate |
 
 A text input's value is its text (op 3). Sizes are points.
 
