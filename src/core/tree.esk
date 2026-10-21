@@ -517,6 +517,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 36, style.translate_y, 0);
     ui_prop(node, fresh, 37, style.scale, 100);
     ui_prop(node, fresh, 38, style.rotate, 0);
+    ui_prop(node, fresh, 42, style.min_width, 0);
+    ui_prop(node, fresh, 43, style.max_width, 0);
+    ui_prop(node, fresh, 44, style.min_height, 0);
+    ui_prop(node, fresh, 45, style.max_height, 0);
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
     // A layout handler from ui_on_layout, and whether the host reports this node's frame.
     node.has_on_layout = ui.has_next_layout;

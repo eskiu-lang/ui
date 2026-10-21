@@ -19,6 +19,8 @@ Key key(int64 value) { return Key{true, value}; }
 // translate_x and translate_y (points), scale (percent) and rotate (degrees) move the drawn
 // element without changing its layout; transition_ms (0: none) and easing (the Easing
 // members) animate changes of opacity, the transforms and the colors on the host.
+// min_width, max_width, min_height and max_height bound the size the layout gives (points;
+// 0: no bound).
 struct Style {
     Key key; int gap = 8; int padding = 0; string label;
     int width; int height; int grow; bool wrap;
@@ -29,6 +31,7 @@ struct Style {
     double aspect_ratio;
     int translate_x; int translate_y; int scale = 100; int rotate;
     int transition_ms; int easing;
+    int min_width; int max_width; int min_height; int max_height;
 }
 
 enum Easing { EaseInOut, EaseOut, EaseIn, EaseLinear, EaseSpring }

@@ -45,6 +45,18 @@ void kit_gallery() {
     press_label("Settings");
     press_label("What is Eskiu?");
     check(find_label(ui.root, "What is Eskiu?").parent.children.size == 2, "the section opened");
+    // Overlays: the Select opens a layer with its options; one is chosen and it closes.
+    check(ui.modals.size == 0, "no layer yet");
+    press_label("Newest first");
+    check(ui.modals.size == 1 && find_label(ui.root, "By name") != null, "the options, on a layer");
+    press_label("By name");
+    check(ui.modals.size == 0 && find_label(ui.root, "By name") != null, "chosen: closed, and the field shows it");
+    // A tap on the backdrop closes it without choosing.
+    press_label("By name");
+    *Node layer = ui.modals.data[0];
+    ui_event(layer.id, layer.generation);
+    ui_frame();
+    check(ui.modals.size == 0, "the backdrop dismisses");
     int64 live = ui_live_allocations();
     for (i in 0..500) {
         press_label(i % 2 == 0 ? "Secondary" : "Ghost");

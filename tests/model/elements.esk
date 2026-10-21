@@ -196,7 +196,7 @@ void swipes() {
     // The red band (the element with the layout listener) is 300 wide; drag the row 40 left.
     *Node band = find_label(ui.root, "Delete");
     check(band != null, "the band");
-    ui_event_layout(band.id, band.generation, 0, 0, 300, 60);
+    ui_event_layout(band.id, band.generation, 0, 0, 300, 60, 0, 0);
     // The content, which the drag moves, takes the pan.
     *Node row = band.children.data[1];
     ui_event_pan(row.id, row.generation, PanBegan, 0, 0, 0, 0);
@@ -253,13 +253,14 @@ void layouts() {
     ui_frame();
     check(count_prop(2, 30) == 1 && prop_value(2, 30) == 1, "only the listening element asks for its frame");
     *Node row = keyed(1);
-    check(ui_event_layout(row.id, row.generation, 10, 20, 120, 30), "a layout event");
-    check(laid_out.x == 10 && laid_out.y == 20 && laid_out.width == 120 && laid_out.height == 30, "the frame");
+    check(ui_event_layout(row.id, row.generation, 10, 20, 120, 30, 50, 80), "a layout event");
+    check(laid_out.x == 10 && laid_out.y == 20 && laid_out.width == 120 && laid_out.height == 30 &&
+          laid_out.window_x == 50 && laid_out.window_y == 80, "the frame, and in the window");
     layout_version.set(1); ui_frame();
     check(count_prop(2, 30) == 0, "a new handler is not a new listener");
     layout_version.set(2); ui_frame();
     check(count_prop(2, 30) == 1 && prop_value(2, 30) == 0, "no handler: the host stops reporting");
-    check(!ui_event_layout(row.id, row.generation, 0, 0, 1, 1), "nothing to tell");
+    check(!ui_event_layout(row.id, row.generation, 0, 0, 1, 1, 0, 0), "nothing to tell");
     ui_on_layout(void(Frame f) {});
     ui_shutdown(); balanced("layout leak");
 }

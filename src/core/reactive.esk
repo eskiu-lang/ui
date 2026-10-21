@@ -175,6 +175,7 @@ string ui_hook_name(int kind) {
     if (kind == 5) { return "use_native_event"; }
     if (kind == 6) { return "Navigator"; }
     if (kind == 7) { return "use_interval"; }
+    if (kind == 8) { return "ToastHost"; }
     return "use_string";
 }
 

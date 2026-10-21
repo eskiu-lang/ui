@@ -1,8 +1,9 @@
 // Containers: Column, Row, Scope, Scroll, Pressable; the frames the host lays them out at.
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
-// An element's frame, in points, relative to its parent.
-struct Frame { int x; int y; int width; int height; }
+// An element's frame, in points: x and y relative to its parent, window_x and window_y from
+// the window's top left (where an overlay places something next to it).
+struct Frame { int x; int y; int width; int height; int window_x; int window_y; }
 
 // For the element right after it: `handler` gets its frame after each layout that changes
 // it (React Native's onLayout).
