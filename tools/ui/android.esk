@@ -43,6 +43,26 @@ string build_android(Project* p) {
     cmd.add("-c"); cmd.add(join(p.ui.data, "hosts/android/host.cpp")); cmd.add("-o"); cmd.add(host);
     cmd.must(null);
     cmd.free();
+    // Native C and C++ code: native/android/*.c and *.cpp of every package, into the library.
+    List<String> sources;
+    defer fs_list_free(&sources);
+    p.native("android", ".c", &sources);
+    p.native("android", ".cpp", &sources);
+    List<String> native_objects;
+    defer fs_list_free(&native_objects);
+    for (i in 0..sources.size) {
+        String object;
+        String_appendf(&object, "%s/native-%d.o", out, i);
+        Cmd compile;
+        compile.add(clang); compile.add("-fPIC"); compile.add("-O2");
+        if (String_ends_with(&sources.data[i], ".c") == 1) { compile.add("-x"); compile.add("c"); }
+        else { compile.add("-std=c++17"); }
+        compile.add("-I"); compile.add(join(p.ui.data, "hosts/android"));
+        compile.add("-c"); compile.add(sources.data[i].data); compile.add("-o"); compile.add(object.data);
+        compile.must(null);
+        compile.free();
+        native_objects.push(object);
+    }
     string app = join(out, "app.o");
     Cmd esk;
     esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add("aarch64-linux-android24"); esk.add("-O2");
@@ -54,6 +74,7 @@ string build_android(Project* p) {
     Cmd link;
     link.add(clang); link.add("-shared"); link.add("-static-libstdc++"); link.add("-Wl,-z,max-page-size=16384");
     link.add(host); link.add(app);
+    for (i in 0..native_objects.size) { link.add(native_objects.data[i].data); }
     for (i in 0..objects.size) { link.add(objects.data[i].data); }
     link.add("-llog"); link.add("-o"); link.add(join(libs, "libeskiu_ui.so"));
     link.must(null);
@@ -66,6 +87,20 @@ string build_android(Project* p) {
     javac.add("javac"); javac.add("-nowarn"); javac.add("-source"); javac.add("8"); javac.add("-target"); javac.add("8");
     javac.add("-bootclasspath"); javac.add(bootclasspath.data); javac.add("-d"); javac.add(classes);
     javac.add(join(p.ui.data, "hosts/android/UiActivity.java"));
+    // Native Java code: native/android/*.java; each class's static setup() runs at start.
+    List<String> java;
+    defer fs_list_free(&java);
+    p.native("android", ".java", &java);
+    String setup_classes;
+    defer String_free(&setup_classes);
+    for (i in 0..java.size) {
+        javac.add(java.data[i].data);
+        String name;
+        java_class_name(java.data[i].data, &name);
+        if (setup_classes.len > 0) { String_append(&setup_classes, ","); }
+        String_append(&setup_classes, name.data);
+        String_free(&name);
+    }
     javac.must(null);
     javac.free();
     List<String> class_files;
@@ -82,10 +117,11 @@ string build_android(Project* p) {
         "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n"
         "  <application android:label=\"%s\" android:theme=\"@android:style/Theme.Material.Light.NoActionBar\""
         " android:debuggable=\"true\">\n"
-        "    <activity android:name=\"org.eskiu.ui.prototype.UiActivity\" android:exported=\"true\">\n"
+        "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\">\n"
+        "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n"
         "      <intent-filter><action android:name=\"android.intent.action.MAIN\"/>"
         "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n"
-        "    </activity>\n  </application>\n</manifest>\n", p.id.data, p.name.data);
+        "    </activity>\n  </application>\n</manifest>\n", p.id.data, p.name.data, setup_classes.data == null ? "" : setup_classes.data);
     fs_write_text(join(out, "AndroidManifest.xml"), manifest.data);
     string assets = join(out, "assets");
     fs_mkdir_p(assets);
@@ -125,6 +161,35 @@ string build_android(Project* p) {
     sign.must(null);
     sign.free();
     return apk;
+}
+
+// A Java file's class, package included: "com.example.Clock" for Clock.java in package com.example.
+void java_class_name(string path, String* out) {
+    String text;
+    defer String_free(&text);
+    fs_read_text(path, &text);
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&text, &lines);
+    for (i in 0..lines.size) {
+        String* line = &lines.data[i];
+        String_trim(line);
+        if (String_starts_with(line, "package ") == 1) {
+            for (int64 j = 8; j < line.len && line.data[j] != ';'; j++) {
+                char[2] one;
+                one[0] = line.data[j]; one[1] = 0;
+                String_append(out, (string)&one[0]);
+            }
+            String_append(out, ".");
+            break;
+        }
+    }
+    String base;
+    defer String_free(&base);
+    path_basename(&base, path);
+    base.len -= 5;
+    base.data[base.len] = 0;
+    String_append(out, base.data);
 }
 
 string adb() { return join(android_sdk(), "platform-tools/adb"); }
@@ -175,7 +240,7 @@ void run_android(Project* p) {
     install.must(null);
     install.free();
     String activity;
-    String_appendf(&activity, "%s/org.eskiu.ui.prototype.UiActivity", p.id.data);
+    String_appendf(&activity, "%s/org.eskiu.ui.UiActivity", p.id.data);
     Cmd start;
     start.add(adb()); start.add("shell"); start.add("am"); start.add("start"); start.add("-n"); start.add(activity.data);
     start.must(null);
