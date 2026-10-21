@@ -37,6 +37,7 @@ extern "C" void ui_dispatch_timer(int token);
 extern "C" void ui_dispatch_hover(int id, int generation, int inside);
 extern "C" void ui_dispatch_value(int id, int generation, int value);
 extern "C" void ui_dispatch_answer(int request, const char *text);
+extern "C" void ui_report_data_dir(const char *path);
 extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
 
 @interface UiHostNode : NSObject
@@ -992,6 +993,10 @@ static void runConformance(void) {
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     nodes = [NSMutableDictionary new];
     modals = [NSMutableArray new];
+    // The app's data directory, before the app starts (ui_data_dir).
+    NSString *data = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
+    [NSFileManager.defaultManager createDirectoryAtPath:data withIntermediateDirectories:YES attributes:nil error:nil];
+    ui_report_data_dir(data.UTF8String);
     // A link the app was launched with waits for the app to start (ui_link).
     NSURL *launchURL = options.URLContexts.anyObject.URL;
     if (launchURL) ui_report_link(launchURL.absoluteString.UTF8String);

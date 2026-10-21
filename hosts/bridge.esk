@@ -49,6 +49,9 @@ void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// The app's data directory (ui_data_dir); hosts report it before ui_start.
+void ui_report_data_dir(string path) { ui_set_data_dir(path); }
+
 // The text a request asked for (the clipboard).
 void ui_dispatch_answer(int request, string text) {
     if (!app_active) { return; }

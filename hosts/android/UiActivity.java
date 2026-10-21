@@ -90,6 +90,7 @@ public final class UiActivity extends Activity {
     private native void nativeHover(int id, int generation, int inside);
     private native void nativeValue(int id, int generation, int value);
     private native void nativeAnswer(int request, String text);
+    private native void nativeDataDir(String path);
     // A slider's range: SeekBar counts from 0, so its progress is the value minus the minimum.
     private final HashMap<Integer, int[]> sliderRanges = new HashMap<>();
     // Timers for use_interval and use_timeout, on the UI thread, by token.
@@ -243,6 +244,7 @@ public final class UiActivity extends Activity {
         root.post(() -> {
             active = true;
             boolean conformance = getIntent().getBooleanExtra("conformance", false);
+            nativeDataDir(getFilesDir().getPath());
             nativeStart(conformance ? 3 : getIntent().getIntExtra("example", 0));
             // The app sets its edge policy as it starts: apply the insets again under it.
             root.requestApplyInsets();

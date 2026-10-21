@@ -35,6 +35,16 @@ mergeInto(LibraryManager.library, {
   },
   ui_host_schedule: function() { Module['uiHost'].schedule(); },
   ui_host_cancel: function() { Module['uiHost'].cancel(); },
+  // Storage (ui_storage_*): the whole store as one localStorage entry per app (by its base).
+  ui_host_storage_load__deps: ['$stringToNewUTF8'],
+  ui_host_storage_load: function() {
+    let text = null;
+    try { text = localStorage.getItem('eskiu-ui:' + new URL(document.baseURI).pathname); } catch (e) {}
+    return text === null ? 0 : stringToNewUTF8(text);
+  },
+  ui_host_storage_save: function(ptr) {
+    try { localStorage.setItem('eskiu-ui:' + new URL(document.baseURI).pathname, UTF8ToString(ptr)); } catch (e) {}
+  },
   // Timers for use_interval and use_timeout, by token.
   ui_host_timer_start: function(token, ms, repeat) {
     const timers = Module['uiTimers'] || (Module['uiTimers'] = new Map());
