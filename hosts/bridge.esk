@@ -49,6 +49,13 @@ void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// The text a request asked for (the clipboard).
+void ui_dispatch_answer(int request, string text) {
+    if (!app_active) { return; }
+    ui_event_answer(request, text == null ? "" : text);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 // The user moved a Slider to `value`.
 void ui_dispatch_value(int id, int generation, int value) {
     if (!app_active) { return; }

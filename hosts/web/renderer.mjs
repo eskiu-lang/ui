@@ -2,7 +2,8 @@
 // (1 or 0), 5 scroll (the offset in value, the viewport height in extra), 6 alert, 7 refresh,
 // 9 a native view's event (the payload in text, its name in extra), 10 the browser went to a
 // route (the route in text, its history index in value), 11 a node's frame (x in value, y in
-// extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value.
+// extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value,
+// 15 an answer (the request in id, its text).
 export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
@@ -12,6 +13,7 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 6) app._ui_dispatch_alert(id, value);
   else if (kind === 13) app._ui_dispatch_hover(id, generation, value);
   else if (kind === 14) app._ui_dispatch_value(id, generation, value);
+  else if (kind === 15) app.ccall('ui_dispatch_answer', null, ['number', 'string'], [id, text]);
   else if (kind === 11) app._ui_dispatch_layout(id, generation, value, extra, width, height);
   else if (kind === 10) app.ccall('ui_dispatch_route', null, ['string', 'number'], [text, value]);
   else if (kind === 9) app.ccall('ui_dispatch_view', null, ['number', 'number', 'string', 'string'], [id, generation, extra, text]);
@@ -285,6 +287,18 @@ export function createHost(root, dispatch, views = {}) {
       document.body.appendChild(dialog);
       dialog.showModal();
     } else if (c.command === 2) window.open(c.strings[0], '_blank', 'noopener');
+    else if (c.command === 4) document.activeElement?.blur?.();
+    else if (c.command === 5) {
+      const [text, url] = c.strings;
+      if (navigator.share) navigator.share({text: text || undefined, url: url || undefined}).catch(() => {});
+      else copy([text, url].filter(Boolean).join(' '));
+    } else if (c.command === 6) copy(c.strings[0]);
+    else if (c.command === 7) {
+      const answer = text => dispatch(c.request, 0, 15, text ?? '');
+      if (navigator.clipboard?.readText) navigator.clipboard.readText().then(answer, () => answer(copied));
+      else answer(copied);
+    } else if (c.command === 8) navigator.vibrate?.([10, 15, 25, 40, 20, 30, 40][Number(c.strings[0])] ?? 10);
+    else if (c.command === 9) announce(c.strings[0]);
     else if (c.command === 3) navigate(c.strings);
   }
   // The page's URL follows the app's first Navigator: routes are paths under the page's
@@ -316,6 +330,24 @@ export function createHost(root, dispatch, views = {}) {
       historyIndex = event.state?.ui ?? 0;
       dispatch(0, 0, 10, route(), historyIndex);
     });
+  }
+  // The clipboard, kept here too where the page may not read it (no permission, no API).
+  let copied = '';
+  function copy(text) {
+    copied = text;
+    navigator.clipboard?.writeText?.(text).catch(() => {});
+  }
+  // Announcements for a screen reader: a polite live region.
+  let live;
+  function announce(text) {
+    if (!live) {
+      live = document.createElement('div');
+      live.setAttribute('aria-live', 'polite');
+      Object.assign(live.style, {position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)'});
+      document.body?.appendChild(live);
+    }
+    live.textContent = '';
+    setTimeout(() => { live.textContent = text; }, 50);
   }
   return {
     nodes,

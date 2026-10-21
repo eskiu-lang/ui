@@ -89,6 +89,7 @@ public final class UiActivity extends Activity {
     private native void nativeTimer(int token);
     private native void nativeHover(int id, int generation, int inside);
     private native void nativeValue(int id, int generation, int value);
+    private native void nativeAnswer(int request, String text);
     // A slider's range: SeekBar counts from 0, so its progress is the value minus the minimum.
     private final HashMap<Integer, int[]> sliderRanges = new HashMap<>();
     // Timers for use_interval and use_timeout, on the UI thread, by token.
@@ -468,6 +469,37 @@ public final class UiActivity extends Activity {
         } else if (command == 2 && strings.length >= 1) {
             try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(strings[0]))); }
             catch (Exception error) { /* no app handles it */ }
+        } else if (command == 4) {
+            View focused = getCurrentFocus();
+            android.view.inputmethod.InputMethodManager input =
+                (android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
+            if (input != null) input.hideSoftInputFromWindow(root.getWindowToken(), 0);
+            if (focused != null) focused.clearFocus();
+        } else if (command == 5 && strings.length >= 2) {
+            String text = strings[1].isEmpty() ? strings[0] : (strings[0].isEmpty() ? strings[1] : strings[0] + "\n" + strings[1]);
+            Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text);
+            try { startActivity(Intent.createChooser(send, null)); } catch (Exception error) { /* nothing shares */ }
+        } else if (command == 6 && strings.length >= 1) {
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            if (clipboard != null) clipboard.setPrimaryClip(android.content.ClipData.newPlainText("text", strings[0]));
+        } else if (command == 7) {
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            CharSequence text = null;
+            if (clipboard != null && clipboard.getPrimaryClip() != null && clipboard.getPrimaryClip().getItemCount() > 0) {
+                text = clipboard.getPrimaryClip().getItemAt(0).coerceToText(this);
+            }
+            nativeAnswer(request, text == null ? "" : text.toString());
+        } else if (command == 8 && strings.length >= 1) {
+            // Selection, light, medium, heavy, success, warning, error.
+            int[] feedback = {android.view.HapticFeedbackConstants.CLOCK_TICK, android.view.HapticFeedbackConstants.VIRTUAL_KEY,
+                android.view.HapticFeedbackConstants.KEYBOARD_TAP, android.view.HapticFeedbackConstants.LONG_PRESS,
+                Build.VERSION.SDK_INT >= 30 ? android.view.HapticFeedbackConstants.CONFIRM : android.view.HapticFeedbackConstants.VIRTUAL_KEY,
+                Build.VERSION.SDK_INT >= 30 ? android.view.HapticFeedbackConstants.REJECT : android.view.HapticFeedbackConstants.LONG_PRESS,
+                Build.VERSION.SDK_INT >= 30 ? android.view.HapticFeedbackConstants.REJECT : android.view.HapticFeedbackConstants.LONG_PRESS};
+            int kind = Math.max(0, Math.min(6, Integer.parseInt(strings[0])));
+            root.performHapticFeedback(feedback[kind]);
+        } else if (command == 9 && strings.length >= 1) {
+            root.announceForAccessibility(strings[0]);
         }
     }
     public float screenWidth() { return findViewById(android.R.id.content).getWidth() / density(); }
@@ -785,6 +817,7 @@ public final class UiActivity extends Activity {
         volume.setKeyProgressIncrement(40);
         volume.onKeyDown(android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
             new android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DPAD_RIGHT));
+        findButton("Copy").performClick();
         final String result = "{\"status\":\"DONE\",\"session\":\"" + getIntent().getStringExtra("session") +
             "\",\"frames\":{" + frames + "},\"roles\":{" + roles + "},\"styles\":" + styles;
         final View suiteView = suite;

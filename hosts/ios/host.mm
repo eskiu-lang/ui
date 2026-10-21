@@ -36,6 +36,7 @@ extern "C" void ui_dispatch_layout(int id, int generation, int x, int y, int wid
 extern "C" void ui_dispatch_timer(int token);
 extern "C" void ui_dispatch_hover(int id, int generation, int inside);
 extern "C" void ui_dispatch_value(int id, int generation, int value);
+extern "C" void ui_dispatch_answer(int request, const char *text);
 extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
 
 @interface UiHostNode : NSObject
@@ -634,6 +635,35 @@ static void ui_host_command(int request, int command, int count, const char **st
     } else if (command == 2 && count >= 1) {
         NSURL *url = [NSURL URLWithString:@(strings[0])];
         if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
+    } else if (command == 4) {
+        [rootView.window endEditing:YES];
+    } else if (command == 5 && count >= 2) {
+        NSMutableArray *items = [NSMutableArray new];
+        if (strings[0][0]) [items addObject:@(strings[0])];
+        NSURL *url = strings[1][0] ? [NSURL URLWithString:@(strings[1])] : nil;
+        if (url) [items addObject:url];
+        UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
+        UIViewController *top = rootView.window.rootViewController;
+        sheet.popoverPresentationController.sourceView = top.view;
+        dispatch_async(dispatch_get_main_queue(), ^{ [top presentViewController:sheet animated:YES completion:nil]; });
+    } else if (command == 6 && count >= 1) {
+        UIPasteboard.generalPasteboard.string = @(strings[0]);
+    } else if (command == 7) {
+        NSString *text = UIPasteboard.generalPasteboard.string ?: @"";
+        ui_dispatch_answer(request, text.UTF8String);
+    } else if (command == 8 && count >= 1) {
+        int kind = atoi(strings[0]);
+        if (kind == 0) [[UISelectionFeedbackGenerator new] selectionChanged];
+        else if (kind <= 3) {
+            const UIImpactFeedbackStyle styles[] = {UIImpactFeedbackStyleLight, UIImpactFeedbackStyleMedium, UIImpactFeedbackStyleHeavy};
+            [[[UIImpactFeedbackGenerator alloc] initWithStyle:styles[kind - 1]] impactOccurred];
+        } else {
+            const UINotificationFeedbackType types[] = {UINotificationFeedbackTypeSuccess, UINotificationFeedbackTypeWarning,
+                                                        UINotificationFeedbackTypeError};
+            [[UINotificationFeedbackGenerator new] notificationOccurred:types[std::min(kind - 4, 2)]];
+        }
+    } else if (command == 9 && count >= 1) {
+        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @(strings[0]));
     }
 }
 
@@ -875,6 +905,7 @@ static void runConformance(void) {
         [toggle sendActionsForControlEvents:UIControlEventValueChanged];
         volume.value = 70;
         [volume sendActionsForControlEvents:UIControlEventValueChanged];
+        [(UIButton *)findView(UIButton.class, @"Copy") sendActionsForControlEvents:UIControlEventTouchUpInside];
         UIScrollView *feed = nil;
         for (UiHostNode *node in nodes.allValues) if ([node.view.accessibilityLabel isEqualToString:@"Feed"]) feed = (UIScrollView *)node.view;
         UIButton *ask = (UIButton *)findView(UIButton.class, @"Ask");
