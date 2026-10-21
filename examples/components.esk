@@ -1,0 +1,81 @@
+import "../src/ui.esk";
+import <string>;
+
+// Text takes finished text; formatting goes through <string>, which -Wformat checks.
+void NumberText(string label, int value) {
+    String text;
+    defer String_free(&text);
+    String_format(&text, "%s%d", label, value);
+    Text(text.data);
+}
+
+void Counter() {
+    Column(Style{padding: 16}, void() {
+        *Signal<int> count = use_signal<int>(0);
+        Text("Eskiu counter");
+        NumberText("Count: ", count.get());
+        Button("Increment", void() { count.set(count.get() + 1); });
+    });
+}
+
+struct Todo { int id; bool done; string title; }
+// The model owns its signal, so it outlives any mount of the view that reads it.
+struct Store { List<Todo> items; int next_id; *Signal<int> revision; }
+Store todo_store;
+
+void Store_init(*Store self) { self.revision = signal_new<int>(0); }
+void Store_free(*Store self) {
+    self.items.free();
+    self.revision.free();
+    self.revision = null;
+}
+
+void Store_changed(*Store self) { self.revision.set(self.revision.get() + 1); }
+void Store_add(*Store self) {
+    self.items.push(Todo{self.next_id++, false, "New task"});
+    self.changed();
+}
+void Store_toggle(*Store self, int id) {
+    for (i in 0..self.items.size) {
+        if (self.items.data[i].id == id) { self.items.data[i].done = !self.items.data[i].done; }
+    }
+    self.changed();
+}
+void Store_remove(*Store self, int id) {
+    for (i in 0..self.items.size) {
+        if (self.items.data[i].id == id) { self.items.remove(i); break; }
+    }
+    self.changed();
+}
+
+void TodoApp(*Store store) {
+    Column(Style{padding: 16}, void() {
+        store.revision.get();
+        Text("Eskiu TODO");
+        int pending = 0;
+        for (i in 0..store.items.size) { if (!store.items.data[i].done) { pending++; } }
+        NumberText("Pending: ", pending);
+        for (i in 0..store.items.size) {
+            Todo item = store.items.data[i];
+            Row(Style{key: key(item.id)}, void() {
+                *Signal<bool> editing = use_signal<bool>(false);
+                Text(item.title);
+                if (editing.get()) { Text("Editing"); }
+                Button(item.done ? "Undo" : "Done", void() { store.toggle(item.id); });
+                Button("Edit", void() { editing.set(!editing.get()); });
+                Button("Delete", void() { store.remove(item.id); });
+            });
+        }
+        if (store.items.size == 0) { Text("Nothing to do"); }
+        Button("Add", void() { store.add(); });
+        Button("Reverse", void() {
+            for (int i = 0; i < store.items.size / 2; i++) {
+                int j = store.items.size - 1 - i;
+                Todo temporary = store.items.data[i];
+                store.items.data[i] = store.items.data[j];
+                store.items.data[j] = temporary;
+            }
+            store.changed();
+        });
+    });
+}

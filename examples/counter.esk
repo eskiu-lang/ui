@@ -1,0 +1,17 @@
+import "components.esk";
+
+int main() {
+    Ui runtime;
+    ui_init(&runtime, void(*Mutation items, int n) {
+        for (i in 0..n) {
+            if (items[i].op == 3) { printf("%s\n", items[i].text); }
+        }
+        ui_complete(ui.sequence);
+    });
+    ui_mount(void() { Counter(); });
+    ui_frame();
+    int button = ui.root.children.data[0].children.data[2].id;
+    for (i in 0..3) { ui_event(button, 1); ui_frame(); }
+    ui_shutdown();
+    return 0;
+}

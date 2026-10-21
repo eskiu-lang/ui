@@ -1,0 +1,60 @@
+import "components.esk";
+extern void ui_host_apply(int op, int id, int generation, int parent, int before, int kind, string text);
+extern void ui_host_ready();
+extern void ui_host_schedule();
+extern void ui_host_cancel();
+Ui app;
+bool app_active;
+
+void ui_dispatch(int id, int generation) {
+    if (!app_active) { return; }
+    ui_event(id, generation);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+void ui_tick() {
+    if (!app_active) { return; }
+    ui_frame();
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+void ui_stop() {
+    if (!app_active) { return; }
+    app_active = false;
+    ui_host_cancel();
+    ui_shutdown();
+    if (todo_store.revision != null) { todo_store.free(); }
+}
+
+void ui_start(int example) {
+    if (app_active) { ui_stop(); }
+    app_active = true;
+    ui_init(&app, void(*Mutation items, int n) {
+        for (i in 0..n) {
+            Mutation m = items[i];
+            ui_host_apply(m.op, m.id, m.generation, m.parent, m.before, m.kind, m.text);
+        }
+        ui_host_ready();
+        ui_complete(ui.sequence);
+    });
+    if (example == 0) { ui_mount(void() { Counter(); }); }
+    else if (example == 2) {
+        // Scheduler probe: effects must advance without another user event.
+        ui_mount(void() {
+            *Signal<int> progress = use_signal<int>(0);
+            NumberText("Progress: ", progress.get());
+            use_effect(void() {
+                int value = progress.get();
+                if (value < 2) { progress.set(value + 1); }
+            });
+        });
+    }
+    else {
+        todo_store.init();
+        todo_store.items.push(Todo{0, false, "Try Eskiu UI"});
+        todo_store.items.push(Todo{1, false, "Reorder without losing state"});
+        todo_store.next_id = 2;
+        ui_mount(void() { TodoApp(&todo_store); });
+    }
+    ui_frame();
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
