@@ -28,3 +28,8 @@ rm -rf build/newapp
 (cd build && ./ui new newapp --ui "$PWD/..")
 test -f build/newapp/src/main.esk && grep -q "ui	path" build/newapp/eskiu.lock
 echo "PASS ui new"
+# ui.toml is read before building: a malformed one stops with its line.
+printf '[app]\nname = "New app"\n\n[ios]\nframeworks = ["CoreLocation", 3]\n' > build/newapp/ui.toml
+if (cd build/newapp && ../ui build web) > build/uitoml.txt 2>&1; then echo "FAIL ui.toml: accepted"; exit 1; fi
+grep -q "ui.toml:5: expected a string in the array" build/uitoml.txt || { cat build/uitoml.txt; exit 1; }
+echo "PASS ui.toml errors"
