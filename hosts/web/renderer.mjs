@@ -254,8 +254,8 @@ export function createHost(root, dispatch, views = {}) {
       case 1: if (container) s.gap = `${value}px`; break;
       case 2: if (container || kindOf(node) === 4 || kindOf(node) === 5) s.padding = `${value}px`; break;
       case 3: if (value) node.focus(); else node.blur(); break;
-      case 4: s.width = px(value); break;
-      case 5: s.height = px(value); break;
+      case 4: s.width = px(value); ratioAlign(s); break;
+      case 5: s.height = px(value); ratioAlign(s); break;
       case 6:
         // A growing child also shrinks to its parent, so a scroll under it stays in the window.
         s.flexGrow = value ? String(value) : '';
@@ -312,10 +312,14 @@ export function createHost(root, dispatch, views = {}) {
       case 27: s.right = value === UNSET ? '' : `${value}px`; break;
       case 28: s.bottom = value === UNSET ? '' : `${value}px`; break;
       // Yoga sizes a stretched child from its ratio; CSS would stretch it, so it starts.
-      case 29: s.aspectRatio = value ? String(value / 1000) : ''; s.alignSelf = value ? 'flex-start' : ''; break;
+      case 29: s.aspectRatio = value ? String(value / 1000) : ''; ratioAlign(s); break;
       default: throw new Error(`unknown prop ${code}`);
     }
   }
+  // An aspect ratio gives one side from the other. With one side set, the parent must not
+  // stretch the other (Yoga lets the ratio win); with neither, the stretched side is the one
+  // given and CSS works the other out.
+  function ratioAlign(s) { s.alignSelf = s.aspectRatio && (s.height || s.width) ? 'flex-start' : ''; }
   // Pull to refresh: a wheel or drag upward at the top of the scroll, past a threshold, once
   // per gesture; the indicator sits over the top of the content.
   function refresh(node, on) {
