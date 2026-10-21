@@ -515,6 +515,7 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         ui_prop(node, fresh, 21, ui.next_bar_hidden ? 1 : 0, -1);
     }
     if (kind == 12 && fresh) { ui.modals.push(node); }
+    if (kind == 14) { ui_prop(node, fresh, 23, ui.next_active ? 1 : 0, -1); }
     if (kind == 13) { ui_native_view_props(node, fresh); }
     if (kind == 6 && ui.next_list != null) {
         *ListExtra list = ui.next_list;

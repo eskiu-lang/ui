@@ -4,7 +4,7 @@
 //   style            Style, colors, Align and Justify, keys
 //   core/            the runtime: state, tree, reactivity, frames and commits, the wire format
 //   elements/        what apps build with: layout, text, input, media, lists, overlays,
-//                    the platform, native modules and views
+//                    the platform, native modules and views, navigation
 //   state/strings    owned strings (use_string)
 //
 // One UI thread; hosts deliver events and frames on it.
@@ -30,4 +30,5 @@ import "elements/lists.esk";
 import "elements/overlay.esk";
 import "elements/system.esk";
 import "elements/native.esk";
+import "elements/navigation.esk";
 import "state/strings.esk";

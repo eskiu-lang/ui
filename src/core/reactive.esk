@@ -173,6 +173,7 @@ string ui_hook_name(int kind) {
     if (kind == 2) { return "use_effect"; }
     if (kind == 4) { return "use_back"; }
     if (kind == 5) { return "use_native_event"; }
+    if (kind == 6) { return "Navigator"; }
     return "use_string";
 }
 

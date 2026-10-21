@@ -5,7 +5,8 @@
 // (value 1 on, 0 off), 5 scroll (value the offset, extra the viewport height), 6 alert
 // answered (the id is the request, value the button's index, -1 dismissed), 7 refresh
 // (the user pulled a scroll's RefreshControl), 8 native module event (name the channel, text
-// the payload; no node), 9 native view event (name and text from the view).
+// the payload; no node), 9 native view event (name and text from the view), 10 route (the
+// browser went to `text`, at history index `value`; no node).
 struct Event { int id; int generation; int kind; int value; string text; int extra; string name; }
 
 // What the host reports about the screen, in points: the system bars and display cutouts
@@ -64,6 +65,10 @@ struct Ui {
     // The next NativeView's named props and type.
     List<NativePair> next_native_props;
     string next_view_type;
+    // The router the platform's URL and links follow (the first Navigator's), and whether
+    // the next Screen is the top one.
+    *Router router;
+    bool next_active;
     // Destructors for the next element (ui_own).
     List<fn()->void> next_owned;
     // The RefreshControl for the next Scroll or FlatList.
@@ -299,6 +304,7 @@ bool ui_dispatch_event(*Event event) {
         }
         return handled;
     }
+    if (event.kind == 10) { ui_dispatch_route_event(event); return ui.router != null; }
     if (event.kind == 6) {
         for (i in 0..ui.alerts.size) {
             Pending pending = ui.alerts.data[i];

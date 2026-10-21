@@ -1,0 +1,261 @@
+// Navigation: a stack of routes, drawn as screens on the phone and as pages on the web.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A route is a path ("/", "/tasks/42?tab=notes"). A Router is the stack of them; the app's
+// model owns it (router_new, Router_free), so it outlives the screens it shows. Reading it
+// (Router_path, Router_depth, Router_at) subscribes; pushing, replacing and going back
+// render the Navigator that shows it again.
+struct Router { List<String> stack; *Signal<int> version; bool synced; string link; }
+
+*Router router_new(string root) {
+    *Router router = alloc<Router>(1);
+    String first;
+    String_from(&first, root == null || root[0] == 0 ? "/" : root);
+    router.stack.push(first);
+    router.version = signal_new<int>(0);
+    return router;
+}
+
+// Free it after the UI that shows it is shut down (in ui_app_stop).
+void Router_free(*Router self) {
+    for (i in 0..self.stack.size) { String_free(&self.stack.data[i]); }
+    self.stack.free();
+    self.version.free();
+    free(self.link);
+    if (ui != null && ui.router == self) { ui.router = null; }
+    free(self);
+}
+
+string Router_path(*Router self) {
+    self.version.get();
+    return self.stack.data[self.stack.size - 1].data;
+}
+
+int Router_depth(*Router self) {
+    self.version.get();
+    return self.stack.size;
+}
+
+// The route at depth `i` (0 is the root).
+string Router_at(*Router self, int i) {
+    self.version.get();
+    return self.stack.data[i].data;
+}
+
+// A route's text lives until the commit that stopped showing it completes.
+void ui_route_drop(String route) {
+    if (ui != null) { ui_retire(void() { free(route.data); }); } else { free(route.data); }
+}
+
+void ui_route_changed(*Router self) { self.version.set(self.version.value + 1); }
+
+// What the web host does with the browser's history for the router the URL follows:
+// command 3 with a mode ("push", "replace", "back", "reset") and its strings.
+void ui_route_history(*Router self, string mode, List<string>* strings) {
+    if (!self.synced || ui == null) { return; }
+    List<string> all;
+    all.push(mode);
+    for (i in 0..strings.size) { all.push(strings.data[i]); }
+    ui_command(0, 3, &all);
+    all.free();
+}
+
+void ui_route_push(*Router self, string path, bool history) {
+    String route;
+    String_from(&route, path);
+    self.stack.push(route);
+    ui_route_changed(self);
+    if (history) {
+        List<string> strings;
+        strings.push(path);
+        ui_route_history(self, "push", &strings);
+        strings.free();
+    }
+}
+
+void ui_route_replace(*Router self, string path, bool history) {
+    String route;
+    String_from(&route, path);
+    ui_route_drop(self.stack.data[self.stack.size - 1]);
+    self.stack.data[self.stack.size - 1] = route;
+    ui_route_changed(self);
+    if (history) {
+        List<string> strings;
+        strings.push(path);
+        ui_route_history(self, "replace", &strings);
+        strings.free();
+    }
+}
+
+void ui_route_pop(*Router self) {
+    ui_route_drop(self.stack.data[self.stack.size - 1]);
+    self.stack.size--;
+    ui_route_changed(self);
+}
+
+void Router_push(*Router self, string path) { ui_route_push(self, path, true); }
+
+void Router_replace(*Router self, string path) { ui_route_replace(self, path, true); }
+
+// Back one route; false at the root.
+bool Router_back(*Router self) {
+    if (self.stack.size <= 1) { return false; }
+    ui_route_pop(self);
+    List<string> strings;
+    ui_route_history(self, "back", &strings);
+    strings.free();
+    return true;
+}
+
+// Only `path` on the stack.
+void Router_reset(*Router self, string path) {
+    while (self.stack.size > 1) { ui_route_pop(self); }
+    ui_route_replace(self, path, false);
+    List<string> strings;
+    strings.push(path);
+    ui_route_history(self, "reset", &strings);
+    strings.free();
+}
+
+// The whole stack to the history, when the router starts following the URL.
+void ui_route_sync(*Router self) {
+    List<string> strings;
+    for (i in 0..self.stack.size) { strings.push(self.stack.data[i].data); }
+    ui_route_history(self, "reset", &strings);
+    strings.free();
+}
+
+// The host's side, on the web: the browser went back or forward to `path`, at `index` in
+// the history the router made.
+bool ui_event_route(string path, int index) { return ui_post(Event{0, 0, 10, index, path}); }
+
+void ui_dispatch_route_event(*Event event) {
+    *Router router = ui.router;
+    if (router == null || event.text == null) { return; }
+    int index = event.value < 0 ? 0 : event.value;
+    while (router.stack.size > index + 1) { ui_route_pop(router); }
+    if (index > router.stack.size - 1) { ui_route_push(router, event.text, false); }
+    else if (strcmp(router.stack.data[router.stack.size - 1].data, event.text) != 0) {
+        ui_route_replace(router, event.text, false);
+    }
+}
+
+// A link's route: "/tasks/42" from https://example.com/tasks/42 (the host is the site),
+// from myapp://tasks/42 (the host is the first part) or from /tasks/42; without its #part.
+void ui_link_route(string link, String* out) {
+    String_clear(out);
+    if (link == null) { String_append(out, "/"); return; }
+    string scheme = strstr(link, "://");
+    string rest = link;
+    if (scheme != null) {
+        bool web = strncmp(link, "http://", 7) == 0 || strncmp(link, "https://", 8) == 0;
+        rest = (string)((*char)scheme + 3);
+        if (web) {
+            string slash = strchr(rest, '/');
+            rest = slash == null ? "/" : slash;
+        }
+    }
+    if (rest[0] != '/') { String_append(out, "/"); }
+    for (int i = 0; rest[i] != 0 && rest[i] != '#'; i++) {
+        char[2] one;
+        one[0] = rest[i]; one[1] = 0;
+        String_append(out, (string)&one[0]);
+    }
+}
+
+// Whether `path` matches `pattern` ("/tasks/:id", "/files/*"), segment by segment; each
+// ":name" segment's text goes into `params`, and "*" takes the rest. The query is ignored.
+bool route_match(string pattern, string path, List<String>* params) {
+    int a = 0;
+    int b = 0;
+    while (true) {
+        while (pattern[a] == '/') { a++; }
+        while (path[b] == '/') { b++; }
+        bool pattern_end = pattern[a] == 0;
+        bool path_end = path[b] == 0 || path[b] == '?';
+        if (pattern_end || path_end) { return pattern_end && path_end; }
+        if (pattern[a] == '*') {
+            if (params != null) {
+                String rest;
+                while (path[b] != 0 && path[b] != '?') {
+                    char[2] one; one[0] = path[b]; one[1] = 0;
+                    String_append(&rest, (string)&one[0]);
+                    b++;
+                }
+                params.push(rest);
+            }
+            return true;
+        }
+        if (pattern[a] == ':') {
+            String value;
+            while (path[b] != 0 && path[b] != '/' && path[b] != '?') {
+                char[2] one; one[0] = path[b]; one[1] = 0;
+                String_append(&value, (string)&one[0]);
+                b++;
+            }
+            while (pattern[a] != 0 && pattern[a] != '/') { a++; }
+            if (params != null) { params.push(value); } else { String_free(&value); }
+            continue;
+        }
+        while (pattern[a] != 0 && pattern[a] != '/' && path[b] != 0 && path[b] != '/' && path[b] != '?') {
+            if (pattern[a] != path[b]) { return false; }
+            a++; b++;
+        }
+        bool pattern_seg = pattern[a] == 0 || pattern[a] == '/';
+        bool path_seg = path[b] == 0 || path[b] == '/' || path[b] == '?';
+        if (!pattern_seg || !path_seg) { return false; }
+    }
+}
+
+// Frees what route_match put in `params`.
+void route_params_free(List<String>* params) {
+    for (i in 0..params.size) { String_free(&params.data[i]); }
+    params.free();
+}
+
+// The first Navigator's router follows the platform while it is mounted.
+void ui_route_owner(*Router router) {
+    static int tag;
+    *Slot slot = ui_slot(6, &tag);
+    if (slot.data != null) { return; }
+    slot.data = router;
+    if (ui.router == null) {
+        ui.router = router;
+        router.synced = true;
+        ui_route_sync(router);
+    }
+    slot.dispose = void() { if (ui.router == router) { ui.router = null; router.synced = false; } };
+}
+
+// The router's stack as screens, each drawn by screen(route). The ones under the top stay
+// mounted (hidden) and keep their state. Back (Android's button, the iOS edge swipe, a
+// modal-free Escape) pops it. The first Navigator mounted follows the platform: the web
+// page's URL and history, and the links the app is opened with (ui_link).
+void Navigator(*Router router, escaping fn(string)->void screen) {
+    ui_own(void() { ui_release_text(screen); });
+    Scope("Navigator", Key{}, void() {
+        use_back(bool() { return router.back(); });
+        ui_route_owner(router);
+        if (router.synced) {
+            string link = ui_link();
+            if (link != null && (router.link == null || strcmp(router.link, link) != 0)) {
+                free(router.link);
+                router.link = ui_copy(link);
+                String route;
+                ui_link_route(link, &route);
+                if (strcmp(route.data, router.stack.data[router.stack.size - 1].data) != 0) {
+                    ui_route_push(router, route.data, true);
+                }
+                String_free(&route);
+            }
+        }
+        int depth = router.depth();
+        for (i in 0..depth) {
+            int index = i;
+            string route = router.stack.data[i].data;
+            ui.next_active = index == depth - 1;
+            ui_element(14, Style{key: key(index), grow: 1, gap: 0}, null, void() { screen(route); },
+                void() {}, void() {});
+        }
+    });
+}

@@ -14,19 +14,21 @@
 //                  length u32, the bytes, a NUL
 //  11 named prop  (a native view's) name: length u32, the bytes, a NUL; value: the same
 //  10 command  (the id is a request id, not a node) command u8 (1 alert: title, message,
-//              then the buttons; 2 open a URL), u8 count, then that many strings, each a
+//              then the buttons; 2 open a URL; 3 history, on the web: "push" path,
+//              "replace" path, "back", "reset" paths...), u8 count, then that many strings, each a
 //              length u32, the bytes and a NUL
 // Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow,
 // 7 wrap (1 or 0), 8 background and 9 text color (RGBA, 0: platform default), 10 font size,
 // 11 font weight, 12 border width, 13 border color, 14 radius, 15 opacity (percent),
 // 16 align and 17 justify (Align / Justify), 18 switch on (1 or 0), 19 spinning (1 or 0),
 // 20 status bar style (BarStyle), 21 status bar hidden (1 or 0), 22 refreshing (1 or 0, a
-// scroll with a RefreshControl).
+// scroll with a RefreshControl), 23 active (1 or 0: a screen on top of its navigator).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal
 // (a column on a layer over the whole screen, laid out on its own), 13 native view (a view
-// the app registered with the host, by type).
+// the app registered with the host, by type), 14 screen (a column filling its navigator; only
+// the active one shows).
 // The renderer reads it during apply and copies what it keeps.
 struct Commit { *uint8 data; int len; int cap; }
 

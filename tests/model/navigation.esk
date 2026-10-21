@@ -1,0 +1,110 @@
+// Navigation: the router's stack, screens kept under the top, back, links and the history.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+*Router nav_router;
+
+int nav_detail_runs;
+
+// The screens with their active prop, from the root: "1" on top, "0" under it.
+void nav_screens(String* out) {
+    String_clear(out);
+    for (i in 0..ui.by_id.size) {
+        *Node node = ui.by_id.data[i];
+        if (node != null && node.kind == 14) { String_append(out, node.props[23] != 0 ? "1" : "0"); }
+    }
+}
+
+// Press the button showing `text`.
+void nav_press(string text) {
+    for (i in 0..ui.by_id.size) {
+        *Node node = ui.by_id.data[i];
+        if (node != null && node.kind == 4 && node.text != null && strcmp(node.text, text) == 0) {
+            ui_event(node.id, node.generation);
+            ui_frame();
+            return;
+        }
+    }
+    check(false, "a button to press");
+}
+
+void nav_app() {
+    Navigator(nav_router, void(string route) {
+        List<String> params;
+        defer route_params_free(&params);
+        if (route_match("/tasks/:id", route, &params)) {
+            nav_detail_runs++;
+            String title;
+            defer String_free(&title);
+            String_format(&title, "Task %s", params.data[0].data);
+            Text(title.data);
+            Button("Back", void() { nav_router.back(); });
+        } else {
+            *Signal<int> taps = use_signal<int>(0);
+            text_number(taps.get());
+            Button("Tap", void() { taps.set(taps.get() + 1); });
+            Button("Open", void() { nav_router.push("/tasks/42"); });
+        }
+    });
+}
+
+void navigation() {
+    List<String> params;
+    check(route_match("/tasks/:id", "/tasks/7?tab=notes", &params) && params.size == 1 &&
+          String_eq_cstr(&params.data[0], "7") == 1, "a parameter, the query ignored");
+    route_params_free(&params);
+    check(!route_match("/tasks/:id", "/tasks", null) && !route_match("/tasks", "/tasks/7", null), "segment counts");
+    check(route_match("/", "/", null) && !route_match("/a", "/b", null), "literal segments");
+    check(route_match("/files/*", "/files/a/b.txt", &params) && String_eq_cstr(&params.data[0], "a/b.txt") == 1, "rest");
+    route_params_free(&params);
+    String route;
+    ui_link_route("https://example.com/tasks/3?x=1#top", &route);
+    check(String_eq_cstr(&route, "/tasks/3?x=1") == 1, "a web link's path");
+    ui_link_route("myapp://tasks/3", &route);
+    check(String_eq_cstr(&route, "/tasks/3") == 1, "a custom scheme's host is the first part");
+    String_free(&route);
+
+    Ui runtime;
+    ui_init(&runtime, record);
+    nav_router = router_new("/");
+    ui_mount(void() { nav_app(); });
+    ui_frame();
+    check(mutation_ops[mutation_count - 1] == 10 && mutation_kinds[mutation_count - 1] == 3 &&
+          strcmp(mutation_texts[mutation_count - 1], "reset") == 0, "the URL follows the first navigator");
+    String screens;
+    nav_screens(&screens);
+    check(String_eq_cstr(&screens, "1") == 1, "the root screen");
+    nav_press("Tap");
+    nav_press("Open");
+    nav_screens(&screens);
+    check(String_eq_cstr(&screens, "01") == 1, "the root stays mounted, hidden");
+    check(strcmp(nav_router.path(), "/tasks/42") == 0 && nav_router.depth() == 2, "pushed");
+    check(ops[10] == 1 && strcmp(mutation_texts[mutation_count - 1], "push") == 0, "a history push");
+    check(ui_back() && nav_router.depth() == 1, "back pops the navigator");
+    ui_frame();
+    nav_screens(&screens);
+    check(String_eq_cstr(&screens, "1") == 1, "the detail screen is gone");
+    check(text_is(keyed(0).children.data[0], 1), "the root kept its state");
+    check(!ui_back(), "at the root, back is the platform's");
+    // A link the app is opened with is pushed.
+    ui_set_link("myapp://tasks/9");
+    ui_frame();
+    check(strcmp(nav_router.path(), "/tasks/9") == 0, "a link opens its route");
+    // The browser went back to the first entry, then forward again.
+    check(ui_event_route("/", 0), "a route event");
+    ui_frame();
+    check(nav_router.depth() == 1, "the browser's back");
+    ui_event_route("/tasks/9", 1);
+    ui_frame();
+    check(nav_router.depth() == 2 && strcmp(nav_router.path(), "/tasks/9") == 0, "and forward");
+    nav_router.replace("/tasks/10");
+    ui_frame();
+    check(strcmp(nav_router.path(), "/tasks/10") == 0 && strcmp(mutation_texts[mutation_count - 1], "replace") == 0,
+        "replace");
+    nav_router.reset("/");
+    ui_frame();
+    check(nav_router.depth() == 1, "reset");
+    String_free(&screens);
+    ui_shutdown();
+    nav_router.free();
+    balanced("navigation leak");
+}

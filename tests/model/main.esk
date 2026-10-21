@@ -13,6 +13,7 @@ import "identity.esk";
 import "elements.esk";
 import "lists.esk";
 import "system.esk";
+import "navigation.esk";
 import "apps.esk";
 
 int main() {
@@ -50,6 +51,7 @@ int main() {
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");
     owned_strings(); printf("PASS owned snapshots\n");
+    navigation(); printf("PASS navigation\n");
     leak_gate(); printf("PASS leak gates\n");
     return 0;
 }
