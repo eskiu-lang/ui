@@ -33,11 +33,22 @@ EXPECTED_FRAMES = {
     "Logo": [10, 180, 48, 48],
     "Field": [10, 238, 300, None],
     "Tap": [10, None, 300, None],
+    "Press": [10, None, 100, 40],
+    "Toggle": [None, None, None, None],
+    "Busy": [10, None, 24, 24],
+    "Painted": [10, None, 60, 30],
+    "Title": [10, None, None, None],
 }
 EXPECTED_ROLES = {"Suite": "group", "Boxes": "group", "Fixed": "group", "Grow": "group", "List": "scroll",
                   "Item 0": "group", "Item 1": "group", "Item 2": "group", "Logo": "image",
-                  "Field": "textfield", "Tap": "button"}
-EXPECTED_LOG = "tap,tap,text:abc"
+                  "Field": "textfield", "Tap": "button", "Press": "button", "Toggle": "switch",
+                  "Busy": "progressbar", "Painted": "group", "Title": "text"}
+EXPECTED_LOG = "tap,tap,text:abc,press,switch:1"
+# What the host drew: colors as rrggbbaa, sizes in points, opacity 0 to 1.
+EXPECTED_STYLES = {
+    "Painted": {"background": "ff0000ff", "radius": 8, "border": 2, "borderColor": "000000ff", "opacity": 0.5},
+    "Title": {"color": "0000ffff", "fontSize": 24, "fontWeight": 700},
+}
 
 
 def differences(report):
@@ -53,6 +64,13 @@ def differences(report):
     for label, role in EXPECTED_ROLES.items():
         if report["roles"].get(label) != role:
             out.append(f"{label}: role {report['roles'].get(label)}, expected {role}")
+    for label, expected in EXPECTED_STYLES.items():
+        got = report.get("styles", {}).get(label, {})
+        for name, want in expected.items():
+            have = got.get(name)
+            same = abs(want - have) <= 0.02 if isinstance(want, (int, float)) and isinstance(have, (int, float)) else want == have
+            if not same:
+                out.append(f"{label}.{name}: expected {want!r}, got {have!r}")
     if report.get("log") != EXPECTED_LOG:
         out.append(f"log: {report.get('log')!r}, expected {EXPECTED_LOG!r}")
     return out

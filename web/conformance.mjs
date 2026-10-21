@@ -16,8 +16,22 @@ export async function runConformance(app, root) {
     if (!label) continue;
     const r = node.getBoundingClientRect();
     frames[label] = [r.left - base.left, r.top - base.top, r.width, r.height].map(v => Math.round(v * 10) / 10);
-    roles[label] = {3: 'text', 4: 'button', 5: 'textfield', 6: 'scroll', 7: 'image'}[kind] ?? 'group';
+    roles[label] = {3: 'text', 4: 'button', 5: 'textfield', 6: 'scroll', 7: 'image', 8: 'button', 9: 'switch',
+      10: 'progressbar'}[kind] ?? 'group';
   }
+  // CSS colors as rrggbbaa.
+  const hex = css => {
+    const [r, g, b, a = 1] = css.match(/[\d.]+/g).map(Number);
+    return [r, g, b, Math.round(a * 255)].map(v => v.toString(16).padStart(2, '0')).join('');
+  };
+  const css = label => getComputedStyle(root.querySelector(`[aria-label="${label}"]`));
+  const painted = css('Painted');
+  const title = css('Title');
+  const styles = {
+    Painted: {background: hex(painted.backgroundColor), radius: parseFloat(painted.borderTopLeftRadius),
+      border: parseFloat(painted.borderTopWidth), borderColor: hex(painted.borderTopColor), opacity: Number(painted.opacity)},
+    Title: {color: hex(title.color), fontSize: parseFloat(title.fontSize), fontWeight: Number(title.fontWeight)},
+  };
   const tap = [...root.querySelectorAll('button')].find(button => button.textContent === 'Tap');
   tap.click();
   tap.click();
@@ -25,5 +39,8 @@ export async function runConformance(app, root) {
   field.value = 'abc';
   field.dispatchEvent(new Event('input', {bubbles: true}));
   await frame();
-  return {status: 'DONE', frames, roles, log: app.ccall('ui_conformance_log', 'string', [], [])};
+  root.querySelector('[aria-label="Press"]').click();
+  root.querySelector('[aria-label="Toggle"]').click();
+  await frame();
+  return {status: 'DONE', frames, roles, styles, log: app.ccall('ui_conformance_log', 'string', [], [])};
 }

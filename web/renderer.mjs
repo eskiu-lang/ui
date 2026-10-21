@@ -1,8 +1,29 @@
-// Events back into the wasm app: 1 press, 2 change (text), 3 focus (1 or 0).
+// Events back into the wasm app: 1 press, 2 change (text), 3 focus (1 or 0), 4 toggle (1 or 0).
 export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
-  else app._ui_dispatch_focus(id, generation, value);
+  else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
+  else app._ui_dispatch_toggle(id, generation, value);
+}
+
+// Kinds (src/ui.esk): 0 scope, 1 column, 2 row, 3 text, 4 button, 5 text input, 6 scroll,
+// 7 image, 8 pressable, 9 switch, 10 activity indicator.
+const TAGS = {3: 'span', 4: 'button', 5: 'input', 7: 'img', 9: 'input'};
+const CONTAINERS = new Set([0, 1, 2, 6, 8]);
+const ALIGN = {1: 'flex-start', 2: 'center', 3: 'flex-end', 4: 'stretch'};
+const JUSTIFY = {1: 'flex-start', 2: 'center', 3: 'flex-end', 4: 'space-between', 5: 'space-around'};
+// The ring turns inside the node, so the node keeps its box for layout.
+const SPINNER_CSS = '@keyframes ui-spin { to { transform: rotate(360deg); } }' +
+  '.ui-spinner { position: relative; width: 20px; height: 20px; }' +
+  '.ui-spinner::after { content: ""; position: absolute; inset: 0; box-sizing: border-box; border-radius: 50%;' +
+  ' border: 2px solid #c5cedd; border-top-color: #4a6fa5; animation: ui-spin .8s linear infinite; }' +
+  '.ui-spinner[data-animating="false"]::after { visibility: hidden; animation: none; }';
+
+// An RGBA color (0: the platform's default) as CSS.
+function cssColor(value) {
+  const v = value >>> 0;
+  if (v === 0) return '';
+  return `rgba(${v >>> 24}, ${(v >>> 16) & 255}, ${(v >>> 8) & 255}, ${(v & 255) / 255})`;
 }
 
 // A deliberately small synchronous renderer shared by the demos and browser tests.
@@ -11,32 +32,103 @@ export function createHost(root, dispatch) {
   const nodes = new Map();
   let rootId;
   const pending = [];
-  const target = (event, tag) => {
-    const node = event.target.closest(`${tag}[data-ui-id]`);
+  if (document.head && !document.getElementById('ui-spinner-css')) {
+    const style = document.createElement('style');
+    style.id = 'ui-spinner-css';
+    style.textContent = SPINNER_CSS;
+    document.head.appendChild(style);
+  }
+  const listening = (event, selector) => {
+    const node = event.target.closest(selector);
     return node && root.contains(node) && node.dataset.listening === 'true' ? node : null;
   };
+  const kindOf = node => Number(node.dataset.kind);
   const ids = node => [Number(node.dataset.uiId), Number(node.dataset.generation)];
+  // A press goes to the innermost button or pressable; a switch reports through change.
   root.addEventListener('click', event => {
-    const button = target(event, 'button');
-    if (button) dispatch(...ids(button), 1);
+    const node = listening(event, 'button[data-ui-id], div[data-ui-id]');
+    if (node && (kindOf(node) === 4 || kindOf(node) === 8)) dispatch(...ids(node), 1);
+  });
+  root.addEventListener('keydown', event => {
+    const node = listening(event, 'div[data-ui-id]');
+    if (node && kindOf(node) === 8 && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      dispatch(...ids(node), 1);
+    }
   });
   root.addEventListener('input', event => {
-    const input = target(event, 'input');
-    if (input) dispatch(...ids(input), 2, input.value);
+    const input = listening(event, 'input[data-ui-id]');
+    if (input && kindOf(input) === 5) dispatch(...ids(input), 2, input.value);
+  });
+  root.addEventListener('change', event => {
+    const input = listening(event, 'input[data-ui-id]');
+    if (input && kindOf(input) === 9) dispatch(...ids(input), 4, null, input.checked ? 1 : 0);
   });
   root.addEventListener('focusin', event => {
-    const input = target(event, 'input');
-    if (input) dispatch(...ids(input), 3, null, 1);
+    const input = listening(event, 'input[data-ui-id]');
+    if (input && kindOf(input) === 5) dispatch(...ids(input), 3, null, 1);
   });
   root.addEventListener('focusout', event => {
-    const input = target(event, 'input');
-    if (input) dispatch(...ids(input), 3, null, 0);
+    const input = listening(event, 'input[data-ui-id]');
+    if (input && kindOf(input) === 5) dispatch(...ids(input), 3, null, 0);
   });
   function parentNode(id) {
     if (nodes.has(id)) return nodes.get(id);
     if (rootId === undefined) { rootId = id; return root; }
     if (id === rootId) return root;
     throw new Error(`unknown parent ${id}`);
+  }
+  function create(m) {
+    const node = document.createElement(TAGS[m.kind] ?? 'div');
+    node.dataset.uiId = m.id;
+    node.dataset.generation = m.generation;
+    node.dataset.kind = m.kind;
+    // Yoga's defaults, as react-native-web sets them: sizes include padding, items do not
+    // shrink, and their minimum size is zero.
+    node.style.boxSizing = 'border-box';
+    node.style.flexShrink = '0';
+    node.style.minWidth = '0';
+    node.style.minHeight = '0';
+    if (CONTAINERS.has(m.kind)) {
+      node.style.display = 'flex';
+      node.style.flexDirection = m.kind === 2 ? 'row' : 'column';
+      node.style.gap = '8px';
+      if (m.kind === 6) node.style.overflow = 'auto';
+    }
+    if (m.kind === 5) node.type = 'text';
+    if (m.kind === 8) { node.setAttribute('role', 'button'); node.tabIndex = 0; node.style.cursor = 'pointer'; }
+    if (m.kind === 9) { node.type = 'checkbox'; node.setAttribute('role', 'switch'); }
+    if (m.kind === 10) { node.className = 'ui-spinner'; node.setAttribute('role', 'progressbar'); }
+    nodes.set(m.id, node);
+  }
+  // Int props: the code in kind, the value in before. Leaf views keep their platform
+  // control padding and gap.
+  function prop(node, code, value) {
+    const container = CONTAINERS.has(kindOf(node));
+    const px = v => v ? `${v}px` : '';
+    const s = node.style;
+    switch (code) {
+      case 1: if (container) s.gap = `${value}px`; break;
+      case 2: if (container) s.padding = `${value}px`; break;
+      case 3: if (value) node.focus(); else node.blur(); break;
+      case 4: s.width = px(value); break;
+      case 5: s.height = px(value); break;
+      case 6: s.flexGrow = value ? String(value) : ''; break;
+      case 7: s.flexWrap = value ? 'wrap' : ''; break;
+      case 8: s.backgroundColor = cssColor(value); break;
+      case 9: s.color = cssColor(value); break;
+      case 10: s.fontSize = px(value); break;
+      case 11: s.fontWeight = value ? String(value) : ''; break;
+      case 12: s.borderWidth = px(value); s.borderStyle = value ? 'solid' : ''; break;
+      case 13: s.borderColor = cssColor(value); break;
+      case 14: s.borderRadius = px(value); if (kindOf(node) !== 6) s.overflow = value ? 'hidden' : ''; break;
+      case 15: s.opacity = value === 100 ? '' : String(value / 100); break;
+      case 16: s.alignItems = ALIGN[value] ?? ''; break;
+      case 17: s.justifyContent = JUSTIFY[value] ?? ''; break;
+      case 18: node.checked = value !== 0; node.setAttribute('aria-checked', String(value !== 0)); break;
+      case 19: node.dataset.animating = String(value !== 0); node.setAttribute('aria-busy', String(value !== 0)); break;
+      default: throw new Error(`unknown prop ${code}`);
+    }
   }
   return {
     nodes,
@@ -45,56 +137,24 @@ export function createHost(root, dispatch) {
       for (const m of pending) {
         if (m.op === 1) {
           if (nodes.has(m.id)) throw new Error(`duplicate node ${m.id}`);
-          const tag = {3: 'span', 4: 'button', 5: 'input', 7: 'img'}[m.kind] ?? 'div';
-          const node = document.createElement(tag);
-          if (m.kind === 5) node.type = 'text';
-          node.dataset.uiId = m.id;
-          node.dataset.generation = m.generation;
-          node.dataset.kind = m.kind;
-          // Yoga's defaults, as react-native-web sets them: sizes include padding, items do
-          // not shrink, and their minimum size is zero.
-          node.style.boxSizing = 'border-box';
-          node.style.flexShrink = '0';
-          node.style.minWidth = '0';
-          node.style.minHeight = '0';
-          if (m.kind <= 2 || m.kind === 6) {
-            node.style.display = 'flex';
-            node.style.flexDirection = m.kind === 2 ? 'row' : 'column';
-            node.style.gap = '8px';
-            if (m.kind === 6) { node.style.overflow = 'auto'; node.style.minHeight = '0'; }
-          }
-          nodes.set(m.id, node);
+          create(m);
           continue;
         }
         const node = nodes.get(m.id);
         // The synthetic root has no host view.
         if (!node && m.op === 6 && m.id === rootId) { rootId = undefined; continue; }
         if (!node) throw new Error(`unknown node ${m.id}`);
-        if (m.op === 3 && Number(node.dataset.kind) === 5) { if (node.value !== m.text) node.value = m.text; }
+        if (m.op === 2) prop(node, m.kind, m.before);
+        else if (m.op === 3 && kindOf(node) === 5) { if (node.value !== m.text) node.value = m.text; }
         else if (m.op === 3) node.textContent = m.text;
         else if (m.op === 9) {
           // String props: 1 label (an image's alt text), 2 placeholder, 3 image source.
-          const image = Number(node.dataset.kind) === 7;
-          const name = m.kind === 1 ? (image ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';
+          const name = m.kind === 1 ? (kindOf(node) === 7 ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';
           if (m.text) node.setAttribute(name, m.text); else node.removeAttribute(name);
-        }
-        else if (m.op === 2 && m.kind === 3) { if (m.before) node.focus(); else node.blur(); }
-        else if (m.op === 4 || m.op === 5) {
+        } else if (m.op === 4 || m.op === 5) {
           parentNode(m.parent).insertBefore(node, m.before ? nodes.get(m.before) : null);
         } else if (m.op === 6) { node.remove(); nodes.delete(m.id); }
         else if (m.op === 7 || m.op === 8) node.dataset.listening = String(m.op === 7);
-        // Props: the code in kind, the value in before. Leaf views keep their platform
-        // control padding and gap.
-        else if (m.op === 2) {
-          const container = Number(node.dataset.kind) <= 2 || Number(node.dataset.kind) === 6;
-          const px = value => value ? `${value}px` : '';
-          if (m.kind === 1 && container) node.style.gap = `${m.before}px`;
-          else if (m.kind === 2 && container) node.style.padding = `${m.before}px`;
-          else if (m.kind === 4) node.style.width = px(m.before);
-          else if (m.kind === 5) node.style.height = px(m.before);
-          else if (m.kind === 6) node.style.flexGrow = m.before ? String(m.before) : '';
-          else if (m.kind === 7) node.style.flexWrap = m.before ? 'wrap' : '';
-        }
         else throw new Error(`unknown operation ${m.op}`);
       }
       pending.length = 0;

@@ -32,6 +32,19 @@ void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+void ui_dispatch_toggle(int id, int generation, int on) {
+    if (!app_active) { return; }
+    ui_event_toggle(id, generation, on != 0);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+// The window in points and its scale, pixels per point times 100.
+void ui_report_window(int width, int height, int scale) {
+    if (!app_active) { return; }
+    ui_set_window(Window{width, height, scale});
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 void ui_report_active(int active) {
     if (!app_active) { return; }
     ui_set_active(active != 0);

@@ -41,7 +41,10 @@ class Element {
     this.parentNode = null;
   }
   contains(node) { return this === node || this.children.some(child => child.contains(node)); }
-  closest(selector) { return selector.startsWith(this.tagName + '[') ? this : this.parentNode?.closest(selector); }
+  closest(selector) {
+    const match = selector.split(',').some(one => one.trim().startsWith(this.tagName + '['));
+    return match ? this : this.parentNode?.closest(selector);
+  }
 }
 globalThis.document = {createElement: tag => new Element(tag)};
 const root = new Element('root');

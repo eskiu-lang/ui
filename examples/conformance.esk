@@ -35,5 +35,15 @@ void Conformance() {
             field.set(text);
         });
         Button("Tap", void() { conformance_note("tap"); });
+        Pressable(Style{width: 100, height: 40, label: "Press"}, void() { conformance_note("press"); }, void() {});
+        *Signal<bool> on = use_signal<bool>(false);
+        Switch(Style{label: "Toggle"}, on.get(), void(bool value) {
+            conformance_note(value ? "switch:1" : "switch:0");
+            on.set(value);
+        });
+        ActivityIndicator(Style{width: 24, height: 24, label: "Busy"}, true);
+        Row(Style{width: 60, height: 30, label: "Painted", background: rgb(255, 0, 0), radius: 8,
+                  border_width: 2, border_color: rgb(0, 0, 0), opacity: 50}, void() {});
+        TextWith(Style{label: "Title", color: rgb(0, 0, 255), font_size: 24, font_weight: 700}, "Title");
     });
 }

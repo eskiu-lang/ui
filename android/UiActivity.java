@@ -11,6 +11,11 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.widget.Button;
 import android.graphics.Bitmap;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.util.TypedValue;
+import android.widget.ProgressBar;
+import android.widget.Switch;
 import android.graphics.BitmapFactory;
 import android.widget.EditText;
 import android.widget.ImageView;
@@ -35,6 +40,12 @@ public final class UiActivity extends Activity {
     private native void nativeInsets(int top, int right, int bottom, int left, int keyboard);
     private native void nativeActive(int active);
     private native String nativeConformanceLog();
+    private native void nativeToggle(int id, int generation, int on);
+    private native void nativeWindow(int width, int height, int scale);
+    // Per view: the drawable that paints background, border and radius, and the font.
+    private final HashMap<Integer, GradientDrawable> paints = new HashMap<>();
+    private final HashMap<Integer, int[]> borders = new HashMap<>();
+    private final HashMap<Integer, int[]> fonts = new HashMap<>();
     private final HashMap<Integer, View> nodes = new HashMap<>();
     private final HashMap<Integer, Integer> generations = new HashMap<>();
     private YogaGroup root;
@@ -69,7 +80,10 @@ public final class UiActivity extends Activity {
             setMeasuredDimension(MeasureSpec.getSize(width), MeasureSpec.getSize(height));
         }
         @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
-            if (this == root && active) nativeLayout(width(), height());
+            if (this == root && active) {
+                nativeWindow(Math.round((r - l) / density()), Math.round((b - t) / density()), Math.round(density() * 100));
+                nativeLayout(width(), height());
+            }
         }
     }
     private float density() { return getResources().getDisplayMetrics().density; }
@@ -122,6 +136,50 @@ public final class UiActivity extends Activity {
         if (!pending && active) { pending = true; Choreographer.getInstance().postFrameCallback(frame); }
     }
     public void cancel() { Choreographer.getInstance().removeFrameCallback(frame); pending = false; }
+    // An RGBA color from the core as Android's ARGB.
+    private static int argb(int rgba) {
+        return ((rgba & 0xff) << 24) | ((rgba >>> 24) << 16) | (((rgba >>> 16) & 0xff) << 8) | ((rgba >>> 8) & 0xff);
+    }
+    private GradientDrawable paintOf(int id, View view) {
+        GradientDrawable paint = paints.get(id);
+        if (paint == null) {
+            paint = new GradientDrawable();
+            paint.setColor(0);
+            paints.put(id, paint);
+            view.setBackground(paint);
+            view.setClipToOutline(true);
+        }
+        return paint;
+    }
+    private void applyFont(int id, View view) {
+        if (!(view instanceof TextView)) return;
+        int[] font = fonts.getOrDefault(id, new int[] {0, 0});
+        TextView text = (TextView)view;
+        text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, font[0] > 0 ? font[0] : 18);
+        if (Build.VERSION.SDK_INT >= 28) text.setTypeface(Typeface.create(Typeface.DEFAULT, font[1] > 0 ? font[1] : 400, false));
+    }
+    // Int props (layout ones are applied to Yoga in host.cpp): the code in kind, the value in before.
+    private void prop(int id, View view, int code, int value) {
+        float d = density();
+        if (code == 3) { if (value != 0) view.requestFocus(); else view.clearFocus(); }
+        else if (code == 8) paintOf(id, view).setColor(value == 0 ? 0 : argb(value));
+        else if (code == 9 && view instanceof TextView) {
+            if (value != 0) ((TextView)view).setTextColor(argb(value));
+        } else if (code == 10 || code == 11) {
+            int[] font = fonts.computeIfAbsent(id, k -> new int[] {0, 0});
+            font[code - 10] = value;
+            applyFont(id, view);
+        } else if (code == 12 || code == 13) {
+            int[] border = borders.computeIfAbsent(id, k -> new int[] {0, 0});
+            border[code - 12] = value;
+            paintOf(id, view).setStroke(Math.round(border[0] * d), border[1] == 0 ? 0xff000000 : argb(border[1]));
+        } else if (code == 14) paintOf(id, view).setCornerRadius(value * d);
+        else if (code == 15) view.setAlpha(value / 100f);
+        else if (code == 18 && view instanceof Switch) {
+            applying = true; ((Switch)view).setChecked(value != 0); applying = false;
+        } else if (code == 19) view.setVisibility(value != 0 ? View.VISIBLE : View.INVISIBLE);
+    }
+
     // A file in the APK's assets, or an http(s) URL fetched off the UI thread.
     private void loadImage(ImageView view, String source) {
         view.setImageDrawable(null);
@@ -171,6 +229,22 @@ public final class UiActivity extends Activity {
                     if (active && generations.containsKey(id)) nativeFocus(id, generations.get(id), focused ? 1 : 0);
                 });
                 view = field;
+            } else if (kind == 8) {
+                YogaGroup pressable = new YogaGroup();
+                pressable.setClickable(true);
+                pressable.setFocusable(true);
+                pressable.setOnClickListener(v -> nativeEvent(id, generations.get(id)));
+                view = pressable;
+            } else if (kind == 9) {
+                Switch toggle = new Switch(this);
+                toggle.setOnCheckedChangeListener((b, on) -> {
+                    if (!applying && active) nativeToggle(id, generations.get(id), on ? 1 : 0);
+                });
+                view = toggle;
+            } else if (kind == 10) {
+                ProgressBar spinner = new ProgressBar(this, null, android.R.attr.progressBarStyleSmall);
+                spinner.setIndeterminate(true);
+                view = spinner;
             } else if (kind == 7) {
                 ImageView image = new ImageView(this);
                 image.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -201,9 +275,7 @@ public final class UiActivity extends Activity {
             if (kind == 1) view.setContentDescription(text.isEmpty() ? null : text);
             else if (kind == 2 && view instanceof EditText) ((EditText)view).setHint(text);
             else if (kind == 3 && view instanceof ImageView) loadImage((ImageView)view, text);
-        } else if (op == 2 && kind == 3) {
-            if (before != 0) view.requestFocus(); else view.clearFocus();
-        }
+        } else if (op == 2) prop(id, view, kind, before);
         else if (op == 4 || op == 5) {
             ViewGroup group = nodes.containsKey(parent) ? (ViewGroup)nodes.get(parent) : root;
             if (group instanceof ScrollView) group = (ViewGroup)group.getChildAt(0);
@@ -211,7 +283,7 @@ public final class UiActivity extends Activity {
             group.addView(view, before == 0 ? group.getChildCount() : group.indexOfChild(nodes.get(before)));
         } else if (op == 6) {
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
-            nodes.remove(id); generations.remove(id);
+            nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
         } else if (op == 7 || op == 8) view.setEnabled(op == 7);
     }
     public long measure(int id, float width, int wm, float height, int hm) {
@@ -289,7 +361,10 @@ public final class UiActivity extends Activity {
     }
 
     private static String roleOf(View view) {
+        if (view instanceof Switch) return "switch";
         if (view instanceof Button) return "button";
+        if (view instanceof ProgressBar) return "progressbar";
+        if (view instanceof ViewGroup && view.isClickable() && !(view instanceof ScrollView)) return "button";
         if (view instanceof EditText) return "textfield";
         if (view instanceof ImageView) return "image";
         if (view instanceof ScrollView) return "scroll";
@@ -308,8 +383,8 @@ public final class UiActivity extends Activity {
         Button tap = null;
         EditText field = null;
         for (View view : nodes.values()) {
-            String label = view instanceof Button ? ((Button)view).getText().toString()
-                : view.getContentDescription() == null ? "" : view.getContentDescription().toString();
+            String label = view.getContentDescription() != null ? view.getContentDescription().toString()
+                : view instanceof Button ? ((Button)view).getText().toString() : "";
             if (label.isEmpty()) continue;
             int[] at = new int[2];
             view.getLocationInWindow(at);
@@ -322,11 +397,32 @@ public final class UiActivity extends Activity {
             if (label.equals("Tap")) tap = (Button)view;
             if (label.equals("Field")) field = (EditText)view;
         }
+        // What was drawn: colors as rrggbbaa, sizes in points.
+        View painted = null, press = null;
+        TextView title = null;
+        Switch toggle = null;
+        for (View view : nodes.values()) {
+            String label = view.getContentDescription() == null ? "" : view.getContentDescription().toString();
+            if (label.equals("Painted")) painted = view;
+            if (label.equals("Title")) title = (TextView)view;
+            if (label.equals("Press")) press = view;
+            if (label.equals("Toggle")) toggle = (Switch)view;
+        }
+        float d = density();
+        GradientDrawable paint = paints.get(idOf(painted));
+        int[] border = borders.get(idOf(painted));
+        String styles = "{\"Painted\":{\"background\":\"" + hex(paint.getColor().getDefaultColor()) +
+            "\",\"radius\":" + round1(paint.getCornerRadius() / d) + ",\"border\":" + border[0] +
+            ",\"borderColor\":\"" + hex(argb(border[1])) + "\",\"opacity\":" + round1(painted.getAlpha()) +
+            "},\"Title\":{\"color\":\"" + hex(title.getCurrentTextColor()) + "\",\"fontSize\":" +
+            round1(title.getTextSize() / d) + ",\"fontWeight\":" + (Build.VERSION.SDK_INT >= 28 ? title.getTypeface().getWeight() : 0) + "}}";
         tap.performClick();
         tap.performClick();
         field.setText("abc");
+        press.performClick();
+        toggle.setChecked(true);
         final String result = "{\"status\":\"DONE\",\"session\":\"" + getIntent().getStringExtra("session") +
-            "\",\"frames\":{" + frames + "},\"roles\":{" + roles + "}";
+            "\",\"frames\":{" + frames + "},\"roles\":{" + roles + "},\"styles\":" + styles;
         root.postDelayed(() -> {
             String json = result + ",\"log\":\"" + nativeConformanceLog() + "\"}";
             try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "conformance.json"))) {
@@ -335,6 +431,13 @@ public final class UiActivity extends Activity {
         }, 300);
     }
     private static float round1(float value) { return Math.round(value * 10) / 10f; }
+    private static String hex(int argb) {
+        return String.format("%02x%02x%02x%02x", (argb >> 16) & 0xff, (argb >> 8) & 0xff, argb & 0xff, (argb >>> 24));
+    }
+    private int idOf(View view) {
+        for (java.util.Map.Entry<Integer, View> entry : nodes.entrySet()) if (entry.getValue() == view) return entry.getKey();
+        return -1;
+    }
 
     private void writeResult() {
         String result = "{\"status\":\"PASS\",\"session\":\"" + getIntent().getStringExtra("session") + "\",\"events\":100,\"commits\":" + commits +

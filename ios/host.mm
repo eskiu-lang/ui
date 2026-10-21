@@ -14,6 +14,8 @@ extern "C" void ui_start(int example);
 extern "C" void ui_dispatch(int id, int generation);
 extern "C" void ui_dispatch_text(int id, int generation, const char *text);
 extern "C" void ui_dispatch_focus(int id, int generation, int focused);
+extern "C" void ui_dispatch_toggle(int id, int generation, int on);
+extern "C" void ui_report_window(int width, int height, int scale);
 extern "C" int ui_edge_to_edge(void);
 extern "C" void ui_report_insets(int top, int right, int bottom, int left, int keyboard);
 extern "C" void ui_report_active(int active);
@@ -25,6 +27,8 @@ extern "C" void ui_stop(void);
 @property(nonatomic, strong) UIView *view;
 @property(nonatomic) YGNodeRef yoga;
 @property(nonatomic) int generation;
+@property(nonatomic) CGFloat fontSize;
+@property(nonatomic) int fontWeight;
 @end
 @implementation UiHostNode
 @end
@@ -50,6 +54,35 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
 }
 
 static void relayout(void);
+
+// An RGBA color from the core (0: the platform's default, nil here).
+static UIColor *colorOf(int value) {
+    uint32_t v = (uint32_t)value;
+    if (!v) return nil;
+    return [UIColor colorWithRed:(v >> 24) / 255.0 green:((v >> 16) & 255) / 255.0
+                            blue:((v >> 8) & 255) / 255.0 alpha:(v & 255) / 255.0];
+}
+
+static UIFontWeight weightOf(int weight) {
+    if (weight <= 0) return UIFontWeightRegular;
+    const UIFontWeight weights[] = {UIFontWeightUltraLight, UIFontWeightThin, UIFontWeightLight, UIFontWeightRegular,
+        UIFontWeightMedium, UIFontWeightSemibold, UIFontWeightBold, UIFontWeightHeavy, UIFontWeightBlack};
+    return weights[std::min(8, std::max(0, weight / 100 - 1))];
+}
+
+static void applyFont(UiHostNode *node) {
+    UIFont *font = [UIFont systemFontOfSize:node.fontSize > 0 ? node.fontSize : 18 weight:weightOf(node.fontWeight)];
+    if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).font = font;
+    else if ([node.view isKindOfClass:UIButton.class]) ((UIButton *)node.view).titleLabel.font = font;
+    else if ([node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).font = font;
+    YGNodeMarkDirty(node.yoga);
+}
+
+static void applyColor(UiHostNode *node, UIColor *color) {
+    if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).textColor = color ?: UIColor.labelColor;
+    else if ([node.view isKindOfClass:UIButton.class]) [(UIButton *)node.view setTitleColor:color forState:UIControlStateNormal];
+    else if ([node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).textColor = color ?: UIColor.labelColor;
+}
 
 // A bundled resource by file name, or an http(s) URL fetched in the background. The image
 // changes the node's measured size, so the layout runs again when it arrives.
@@ -92,16 +125,21 @@ static void place(YGNodeRef yoga, UIView *parent) {
 }
 
 @interface UiEvents : NSObject
-- (void)press:(UIButton *)sender;
+- (void)press:(UIControl *)sender;
 - (void)edit:(UITextField *)sender;
+- (void)toggle:(UISwitch *)sender;
 - (void)focus:(UITextField *)sender;
 - (void)blur:(UITextField *)sender;
 - (void)frame:(CADisplayLink *)sender;
 @end
 @implementation UiEvents
-- (void)press:(UIButton *)sender {
+- (void)press:(UIControl *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
     if (node) ui_dispatch((int)sender.tag, node.generation);
+}
+- (void)toggle:(UISwitch *)sender {
+    UiHostNode *node = nodes[@(sender.tag)];
+    if (node) ui_dispatch_toggle((int)sender.tag, node.generation, sender.on ? 1 : 0);
 }
 - (void)edit:(UITextField *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
@@ -162,6 +200,22 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             image.isAccessibilityElement = YES;
             image.accessibilityTraits = UIAccessibilityTraitImage;
             node.view = image;
+        } else if (kind == 8) {
+            UIControl *control = [UIControl new];
+            control.tag = id;
+            control.isAccessibilityElement = YES;
+            control.accessibilityTraits = UIAccessibilityTraitButton;
+            [control addTarget:events action:@selector(press:) forControlEvents:UIControlEventTouchUpInside];
+            node.view = control;
+            YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
+            YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
+        } else if (kind == 9) {
+            UISwitch *toggle = [UISwitch new];
+            toggle.tag = id;
+            [toggle addTarget:events action:@selector(toggle:) forControlEvents:UIControlEventValueChanged];
+            node.view = toggle;
+        } else if (kind == 10) {
+            node.view = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
         } else if (kind == 6) {
             node.view = [UIScrollView new];
             YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
@@ -173,7 +227,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
         }
         YGNodeSetContext(node.yoga, (__bridge void *)node);
-        if ((kind >= 3 && kind <= 5) || kind == 7) YGNodeSetMeasureFunc(node.yoga, measure);
+        if ((kind >= 3 && kind <= 5) || kind == 7 || kind == 9 || kind == 10) YGNodeSetMeasureFunc(node.yoga, measure);
         nodes[@(id)] = node;
         return;
     }
@@ -191,6 +245,26 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (before) YGNodeStyleSetHeight(node.yoga, before); else YGNodeStyleSetHeightAuto(node.yoga);
         } else if (kind == 6) YGNodeStyleSetFlexGrow(node.yoga, before);
         else if (kind == 7) YGNodeStyleSetFlexWrap(node.yoga, before ? YGWrapWrap : YGWrapNoWrap);
+        else if (kind == 8) node.view.backgroundColor = colorOf(before);
+        else if (kind == 9) applyColor(node, colorOf(before));
+        else if (kind == 10) { node.fontSize = before; applyFont(node); }
+        else if (kind == 11) { node.fontWeight = before; applyFont(node); }
+        else if (kind == 12) { node.view.layer.borderWidth = before; YGNodeStyleSetBorder(node.yoga, YGEdgeAll, before); }
+        else if (kind == 13) node.view.layer.borderColor = colorOf(before).CGColor;
+        else if (kind == 14) { node.view.layer.cornerRadius = before; node.view.clipsToBounds = before > 0; }
+        else if (kind == 15) node.view.alpha = before / 100.0;
+        else if (kind == 16) {
+            const YGAlign aligns[] = {YGAlignStretch, YGAlignFlexStart, YGAlignCenter, YGAlignFlexEnd, YGAlignStretch};
+            YGNodeStyleSetAlignItems(node.yoga, aligns[std::min(4, std::max(0, before))]);
+        } else if (kind == 17) {
+            const YGJustify justifies[] = {YGJustifyFlexStart, YGJustifyFlexStart, YGJustifyCenter, YGJustifyFlexEnd,
+                                           YGJustifySpaceBetween, YGJustifySpaceAround};
+            YGNodeStyleSetJustifyContent(node.yoga, justifies[std::min(5, std::max(0, before))]);
+        } else if (kind == 18) [(UISwitch *)node.view setOn:before != 0 animated:NO];
+        else if (kind == 19) {
+            UIActivityIndicatorView *spinner = (UIActivityIndicatorView *)node.view;
+            if (before) [spinner startAnimating]; else [spinner stopAnimating];
+        }
     } else if (op == 9) {
         NSString *value = text && text[0] ? [NSString stringWithUTF8String:text] : nil;
         if (kind == 1) node.view.accessibilityLabel = value;
@@ -322,12 +396,17 @@ static void runTodoTest(void) {
     rootView.frame = frame;
     relayout();
     ui_report_insets(safe.top, safe.right, safe.bottom, safe.left, self.keyboard);
+    ui_report_window(self.view.bounds.size.width, self.view.bounds.size.height,
+                     (int)std::lround(UIScreen.mainScreen.scale * 100));
 }
 @end
 
 static NSString *roleOf(UIView *view) {
     if ([view isKindOfClass:UIButton.class]) return @"button";
+    if ([view isKindOfClass:UISwitch.class]) return @"switch";
     if ([view isKindOfClass:UITextField.class]) return @"textfield";
+    if ([view isKindOfClass:UIControl.class]) return @"button";
+    if ([view isKindOfClass:UIActivityIndicatorView.class]) return @"progressbar";
     if ([view isKindOfClass:UIImageView.class]) return @"image";
     if ([view isKindOfClass:UIScrollView.class]) return @"scroll";
     if ([view isKindOfClass:UILabel.class]) return @"text";
@@ -354,12 +433,45 @@ static void runConformance(void) {
             if ([label isEqualToString:@"Tap"]) tap = (UIButton *)view;
             if ([label isEqualToString:@"Field"]) field = (UITextField *)view;
         }
+        // What was drawn: colors as rrggbbaa, sizes in points.
+        auto hex = [](UIColor *color) {
+            CGFloat r = 0, g = 0, b = 0, a = 0;
+            [color getRed:&r green:&g blue:&b alpha:&a];
+            return [NSString stringWithFormat:@"%02x%02x%02x%02x", (int)std::lround(r * 255), (int)std::lround(g * 255),
+                    (int)std::lround(b * 255), (int)std::lround(a * 255)];
+        };
+        UIView *painted = nil;
+        UILabel *title = nil;
+        UIControl *press = nil;
+        UISwitch *toggle = nil;
+        for (UiHostNode *node in nodes.allValues) {
+            NSString *label = node.view.accessibilityLabel;
+            if ([label isEqualToString:@"Painted"]) painted = node.view;
+            if ([label isEqualToString:@"Title"]) title = (UILabel *)node.view;
+            if ([label isEqualToString:@"Press"]) press = (UIControl *)node.view;
+            if ([label isEqualToString:@"Toggle"]) toggle = (UISwitch *)node.view;
+        }
+        NSNumber *weight = [title.font.fontDescriptor objectForKey:UIFontDescriptorTraitsAttribute][UIFontWeightTrait];
+        int weightValue = 400;
+        const CGFloat weights[] = {UIFontWeightUltraLight, UIFontWeightThin, UIFontWeightLight, UIFontWeightRegular,
+            UIFontWeightMedium, UIFontWeightSemibold, UIFontWeightBold, UIFontWeightHeavy, UIFontWeightBlack};
+        for (int i = 0; i < 9; ++i) if (std::fabs(weights[i] - weight.doubleValue) < 0.01) weightValue = (i + 1) * 100;
+        NSDictionary *styles = @{
+            @"Painted": @{@"background": hex(painted.backgroundColor), @"radius": @(painted.layer.cornerRadius),
+                          @"border": @(painted.layer.borderWidth),
+                          @"borderColor": hex([UIColor colorWithCGColor:painted.layer.borderColor]),
+                          @"opacity": @(std::round(painted.alpha * 100) / 100)},
+            @"Title": @{@"color": hex(title.textColor), @"fontSize": @(title.font.pointSize), @"fontWeight": @(weightValue)},
+        };
         [tap sendActionsForControlEvents:UIControlEventTouchUpInside];
         [tap sendActionsForControlEvents:UIControlEventTouchUpInside];
         field.text = @"abc";
         [field sendActionsForControlEvents:UIControlEventEditingChanged];
+        [press sendActionsForControlEvents:UIControlEventTouchUpInside];
+        [toggle setOn:YES animated:NO];
+        [toggle sendActionsForControlEvents:UIControlEventValueChanged];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-            NSDictionary *result = @{@"status": @"DONE", @"frames": frames, @"roles": roles,
+            NSDictionary *result = @{@"status": @"DONE", @"frames": frames, @"roles": roles, @"styles": styles,
                                      @"log": [NSString stringWithUTF8String:ui_conformance_log()]};
             NSData *json = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingSortedKeys error:nil];
             printf("CONFORMANCE %s\n", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);

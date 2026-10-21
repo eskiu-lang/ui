@@ -39,6 +39,9 @@
   if (example === 3) root.classList.add('conformance');
   window.uiDemo = {app, host, scheduler};
   app._ui_start(example);
+  const reportWindow = () => app._ui_report_window(innerWidth, innerHeight, Math.round(devicePixelRatio * 100));
+  reportWindow();
+  addEventListener('resize', reportWindow);
   document.querySelector('#status').textContent = 'Eskiu → WebAssembly → DOM · explicit lambdas';
   const benchmarkButton = document.querySelector('#benchmark');
   benchmarkButton.disabled = false;

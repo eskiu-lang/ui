@@ -10,6 +10,8 @@ extern "C" void ui_start(int);
 extern "C" void ui_dispatch(int, int);
 extern "C" void ui_dispatch_text(int, int, const char *);
 extern "C" void ui_dispatch_focus(int, int, int);
+extern "C" void ui_dispatch_toggle(int, int, int);
+extern "C" void ui_report_window(int, int, int);
 extern "C" int ui_edge_to_edge();
 extern "C" void ui_report_insets(int, int, int, int, int);
 extern "C" void ui_report_active(int);
@@ -60,7 +62,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         YGNodeRef node = YGNodeNew();
         nodes[id] = node;
         YGNodeSetContext(node, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
-        if (kind >= 3 && kind != 6) YGNodeSetMeasureFunc(node, measure);  // text, button, input, image
+        // Measured leaves: text, button, input, image, switch, activity indicator.
+        if (kind >= 3 && kind != 6 && kind != 8) YGNodeSetMeasureFunc(node, measure);
         else YGNodeStyleSetFlexDirection(node, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
         if (kind == 6) { YGNodeStyleSetOverflow(node, YGOverflowScroll); scrolls[id] = 1; }
     } else if (nodes.count(id)) {
@@ -73,6 +76,16 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             else if (kind == 5) { if (before) YGNodeStyleSetHeight(node, before); else YGNodeStyleSetHeightAuto(node); }
             else if (kind == 6) YGNodeStyleSetFlexGrow(node, before);
             else if (kind == 7) YGNodeStyleSetFlexWrap(node, before ? YGWrapWrap : YGWrapNoWrap);
+            else if ((kind == 10 || kind == 11) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
+            else if (kind == 12) YGNodeStyleSetBorder(node, YGEdgeAll, before);
+            else if (kind == 16) {
+                const YGAlign aligns[] = {YGAlignStretch, YGAlignFlexStart, YGAlignCenter, YGAlignFlexEnd, YGAlignStretch};
+                YGNodeStyleSetAlignItems(node, aligns[std::min(4, std::max(0, before))]);
+            } else if (kind == 17) {
+                const YGJustify justifies[] = {YGJustifyFlexStart, YGJustifyFlexStart, YGJustifyCenter, YGJustifyFlexEnd,
+                                               YGJustifySpaceBetween, YGJustifySpaceAround};
+                YGNodeStyleSetJustifyContent(node, justifies[std::min(5, std::max(0, before))]);
+            }
         }
         else if (op == 3) YGNodeMarkDirty(node);
         else if (op == 4 || op == 5) {
@@ -144,6 +157,12 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeI
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeActive(JNIEnv *current, jobject, jint value) {
     env = current; ui_report_active(value);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeToggle(JNIEnv *current, jobject, jint id, jint generation, jint on) {
+    env = current; ui_dispatch_toggle(id, generation, on);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeWindow(JNIEnv *current, jobject, jint width, jint height, jint scale) {
+    env = current; ui_report_window(width, height, scale);
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeTick(JNIEnv *current, jobject) { env = current; ui_tick(); }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeLayout(JNIEnv *current, jobject, jfloat width, jfloat height) {
