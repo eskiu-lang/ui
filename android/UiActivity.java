@@ -1,7 +1,12 @@
 package org.eskiu.ui.prototype;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
+import android.view.WindowInsetsController;
+import android.widget.FrameLayout;
 import android.os.Bundle;
 import android.view.WindowInsets;
 import android.view.Choreographer;
@@ -42,6 +47,13 @@ public final class UiActivity extends Activity {
     private native String nativeConformanceLog();
     private native void nativeToggle(int id, int generation, int on);
     private native void nativeScroll(int id, int generation, int offset, int viewport);
+    private native void nativeAlert(int request, int choice);
+    private native int nativeBack();
+    private native void nativeLink(String url);
+    // The alert on screen and how to answer it (also used by the conformance run).
+    private AlertDialog shownAlert;
+    private final java.util.HashSet<Integer> modalIds = new java.util.HashSet<>();
+    private java.util.function.IntConsumer answerAlert;
     // Scroll views whose offset the core wants (virtual lists), and the viewport last reported.
     private final HashMap<Integer, Integer> scrollViewports = new HashMap<>();
     private native void nativeWindow(int width, int height, int scale);
@@ -119,6 +131,7 @@ public final class UiActivity extends Activity {
             boolean conformance = getIntent().getBooleanExtra("conformance", false);
             nativeStart(conformance ? 3 : getIntent().getIntExtra("example", 0));
             reportInsets();
+            if (getIntent().getData() != null) nativeLink(getIntent().getData().toString());
             if (conformance) root.postDelayed(this::runConformance, 400);
             if (testing) {
                 Button button = findButton("Increment");
@@ -128,6 +141,16 @@ public final class UiActivity extends Activity {
                 Choreographer.getInstance().postFrameCallback(time -> finishSelfTest());
             }
         });
+    }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (active && intent.getData() != null) nativeLink(intent.getData().toString());
+    }
+    // Back asks the app first: an open modal closes, or a use_back handler takes it.
+    @SuppressWarnings("deprecation")
+    @Override public void onBackPressed() {
+        if (active && nativeBack() != 0) return;
+        super.onBackPressed();
     }
     @Override protected void onResume() { super.onResume(); if (active) nativeActive(1); }
     @Override protected void onPause() { if (active) nativeActive(0); super.onPause(); }
@@ -178,10 +201,51 @@ public final class UiActivity extends Activity {
             paintOf(id, view).setStroke(Math.round(border[0] * d), border[1] == 0 ? 0xff000000 : argb(border[1]));
         } else if (code == 14) paintOf(id, view).setCornerRadius(value * d);
         else if (code == 15) view.setAlpha(value / 100f);
+        else if (code == 20 || code == 21) applyStatusBar(code, value);
         else if (code == 18 && view instanceof Switch) {
             applying = true; ((Switch)view).setChecked(value != 0); applying = false;
         } else if (code == 19) view.setVisibility(value != 0 ? View.VISIBLE : View.INVISIBLE);
     }
+
+    private void applyStatusBar(int code, int value) {
+        if (Build.VERSION.SDK_INT < 30) return;
+        WindowInsetsController bars = getWindow().getInsetsController();
+        if (bars == null) return;
+        if (code == 20) {
+            // BarLight: light content (light icons); BarDark: dark icons; BarDefault: leave it.
+            if (value == 1) bars.setSystemBarsAppearance(0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
+            else if (value == 2) bars.setSystemBarsAppearance(WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+                                                              WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
+        } else if (value != 0) bars.hide(WindowInsets.Type.statusBars());
+        else bars.show(WindowInsets.Type.statusBars());
+    }
+
+    // Commands: 1 an alert (title, message, buttons; up to three, as Android shows them),
+    // 2 open a URL.
+    public void command(int request, int command, String[] strings) {
+        if (command == 1 && strings.length >= 2) {
+            final boolean[] answered = {false};
+            java.util.function.IntConsumer answer = index -> {
+                if (answered[0]) return;
+                answered[0] = true;
+                shownAlert = null; answerAlert = null;
+                nativeAlert(request, index);
+            };
+            AlertDialog.Builder builder = new AlertDialog.Builder(this).setTitle(strings[0]).setMessage(strings[1]);
+            int buttons = Math.min(3, strings.length - 2);
+            if (buttons >= 1) builder.setPositiveButton(strings[2 + buttons - 1], (d, w) -> answer.accept(buttons - 1));
+            if (buttons >= 2) builder.setNegativeButton(strings[2], (d, w) -> answer.accept(0));
+            if (buttons == 3) builder.setNeutralButton(strings[3], (d, w) -> answer.accept(1));
+            builder.setOnCancelListener(d -> answer.accept(-1));
+            shownAlert = builder.show();
+            answerAlert = answer;
+        } else if (command == 2 && strings.length >= 1) {
+            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(strings[0]))); }
+            catch (Exception error) { /* no app handles it */ }
+        }
+    }
+    public float screenWidth() { return findViewById(android.R.id.content).getWidth() / density(); }
+    public float screenHeight() { return findViewById(android.R.id.content).getHeight() / density(); }
 
     // A file in the APK's assets, or an http(s) URL fetched off the UI thread.
     private void loadImage(ImageView view, String source) {
@@ -248,6 +312,15 @@ public final class UiActivity extends Activity {
                 ProgressBar spinner = new ProgressBar(this, null, android.R.attr.progressBarStyleSmall);
                 spinner.setIndeterminate(true);
                 view = spinner;
+            } else if (kind == 11) {
+                view = new View(this);
+                view.setVisibility(View.GONE);
+            } else if (kind == 12) {
+                YogaGroup modal = new YogaGroup();
+                modal.setBackgroundColor(0x66000000);
+                modal.setClickable(true);
+                modalIds.add(id);
+                view = modal;
             } else if (kind == 7) {
                 ImageView image = new ImageView(this);
                 image.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -281,6 +354,14 @@ public final class UiActivity extends Activity {
             else if (kind == 3 && view instanceof ImageView) loadImage((ImageView)view, text);
         } else if (op == 2) prop(id, view, kind, before);
         else if (op == 4 || op == 5) {
+            if (modalIds.contains(id)) {
+                // Over everything, outside the parent's layout.
+                if (view.getParent() == null) {
+                    ((FrameLayout)findViewById(android.R.id.content)).addView(view,
+                        new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                }
+                return;
+            }
             ViewGroup group = nodes.containsKey(parent) ? (ViewGroup)nodes.get(parent) : root;
             if (group instanceof ScrollView) group = (ViewGroup)group.getChildAt(0);
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
@@ -288,6 +369,7 @@ public final class UiActivity extends Activity {
         } else if (op == 6) {
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
             nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
+            modalIds.remove(id);
             scrollViewports.remove(id);
         } else if (op == 7 || op == 8) {
             if (view instanceof ScrollView) { if (op == 7) scrollViewports.put(id, -1); else scrollViewports.remove(id); }
@@ -442,34 +524,73 @@ public final class UiActivity extends Activity {
         toggle.setChecked(true);
         final String result = "{\"status\":\"DONE\",\"session\":\"" + getIntent().getStringExtra("session") +
             "\",\"frames\":{" + frames + "},\"roles\":{" + roles + "},\"styles\":" + styles;
-        ScrollView feed = null;
-        for (View view : nodes.values()) if ("Feed".contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) feed = (ScrollView)view;
-        final ScrollView feedView = feed;
         final View suiteView = suite;
-        root.postDelayed(() -> {
-        // Scroll the feed: rows near 2000 points mount, rows from the top go.
-        feedView.scrollTo(0, Math.round(2000 * density()));
-        root.postDelayed(() -> {
-            float dd = density();
-            int[] origin = new int[2];
-            suiteView.getLocationInWindow(origin);
-            StringBuilder scrolled = new StringBuilder();
-            for (View view : nodes.values()) {
-                String label = view.getContentDescription() == null ? "" : view.getContentDescription().toString();
-                if (!(label.startsWith("Row ") || label.equals("Feed"))) continue;
-                int[] at = new int[2];
-                view.getLocationInWindow(at);
-                if (scrolled.length() > 0) scrolled.append(',');
-                scrolled.append('"').append(label).append("\":[").append(round1((at[0] - origin[0]) / dd)).append(',')
-                    .append(round1((at[1] - origin[1]) / dd)).append(',').append(round1(view.getWidth() / dd)).append(',')
-                    .append(round1(view.getHeight() / dd)).append(']');
-            }
-            String json = result + ",\"scrolled\":{" + scrolled + "},\"log\":\"" + nativeConformanceLog() + "\"}";
-            try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "conformance.json"))) {
-                out.write(json.getBytes(StandardCharsets.UTF_8));
-            } catch (Exception error) { throw new RuntimeException(error); }
-        }, 500);
-        }, 300);
+        final String[] modal = {"null"};
+        steps(300,
+            // The alert: answer its second button.
+            () -> findButton("Ask").performClick(),
+            () -> { if (shownAlert != null) { shownAlert.dismiss(); answerAlert.accept(1); } findButton("Open sheet").performClick(); },
+            // The modal: measure it, close it from inside.
+            () -> { modal[0] = modalReport(); findButton("Close").performClick(); },
+            // Back with the modal open closes it (Android only).
+            () -> findButton("Open sheet").performClick(),
+            this::onBackPressed,
+            // Scroll the feed: rows near 2000 points mount, rows from the top go.
+            () -> {
+                for (View view : nodes.values()) {
+                    if ("Feed".contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) {
+                        view.scrollTo(0, Math.round(2000 * density()));
+                    }
+                }
+            },
+            () -> {},
+            () -> {
+                float dd = density();
+                int[] origin = new int[2];
+                suiteView.getLocationInWindow(origin);
+                StringBuilder scrolled = new StringBuilder();
+                for (View view : nodes.values()) {
+                    String label = view.getContentDescription() == null ? "" : view.getContentDescription().toString();
+                    if (!(label.startsWith("Row ") || label.equals("Feed"))) continue;
+                    int[] at = new int[2];
+                    view.getLocationInWindow(at);
+                    if (scrolled.length() > 0) scrolled.append(',');
+                    scrolled.append('"').append(label).append("\":[").append(round1((at[0] - origin[0]) / dd)).append(',')
+                        .append(round1((at[1] - origin[1]) / dd)).append(',').append(round1(view.getWidth() / dd)).append(',')
+                        .append(round1(view.getHeight() / dd)).append(']');
+                }
+                String json = result + ",\"scrolled\":{" + scrolled + "},\"modal\":" + modal[0] +
+                    ",\"log\":\"" + nativeConformanceLog() + "\"}";
+                try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "conformance.json"))) {
+                    out.write(json.getBytes(StandardCharsets.UTF_8));
+                } catch (Exception error) { throw new RuntimeException(error); }
+            });
+    }
+
+    // Run each step `delay` ms after the previous one.
+    private void steps(int delay, Runnable... list) { step(0, delay, list); }
+    private void step(int index, int delay, Runnable[] list) {
+        if (index >= list.length) return;
+        root.postDelayed(() -> { list[index].run(); step(index + 1, delay, list); }, delay);
+    }
+
+    // The open modal's layer and its sheet, in points in the window, and the window size.
+    private String modalReport() {
+        View layer = null, sheet = null;
+        for (java.util.Map.Entry<Integer, View> entry : nodes.entrySet()) {
+            if (modalIds.contains(entry.getKey())) layer = entry.getValue();
+            if ("Sheet".contentEquals(entry.getValue().getContentDescription() == null ? "" : entry.getValue().getContentDescription())) sheet = entry.getValue();
+        }
+        if (layer == null || sheet == null) return "null";
+        float d = density();
+        int[] a = new int[2], b = new int[2];
+        layer.getLocationInWindow(a);
+        sheet.getLocationInWindow(b);
+        View window = getWindow().getDecorView();
+        return "{\"cover\":[" + round1(a[0] / d) + "," + round1(a[1] / d) + "," + round1(layer.getWidth() / d) + "," +
+            round1(layer.getHeight() / d) + "],\"window\":[" + round1(window.getWidth() / d) + "," +
+            round1(window.getHeight() / d) + "],\"sheet\":[" + round1(b[0] / d) + "," + round1(b[1] / d) + "," +
+            round1(sheet.getWidth() / d) + "," + round1(sheet.getHeight() / d) + "]}";
     }
     private static float round1(float value) { return Math.round(value * 10) / 10f; }
     private static String hex(int argb) {

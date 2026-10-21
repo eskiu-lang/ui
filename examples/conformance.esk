@@ -45,6 +45,22 @@ void Conformance() {
         Row(Style{width: 60, height: 30, label: "Painted", background: rgb(255, 0, 0), radius: 8,
                   border_width: 2, border_color: rgb(0, 0, 0), opacity: 50}, void() {});
         TextWith(Style{label: "Title", color: rgb(0, 0, 255), font_size: 24, font_weight: 700}, "Title");
+        StatusBar(BarDark, false);
+        Button("Ask", void() {
+            Alert("Ask?", "Pick one", "No\nYes", void(int choice) {
+                String entry;
+                defer String_free(&entry);
+                String_appendf(&entry, "alert:%d", choice);
+                conformance_note(entry.data);
+            });
+        });
+        *Signal<bool> sheet = use_signal<bool>(false);
+        Button("Open sheet", void() { sheet.set(true); });
+        Modal(sheet.get(), void() { conformance_note("close"); sheet.set(false); }, void() {
+            Column(Style{label: "Sheet", width: 200, height: 100, background: rgb(255, 255, 255)}, void() {
+                Button("Close", void() { conformance_note("close"); sheet.set(false); });
+            });
+        });
         // 1000 rows, of which only those near the viewport exist.
         FlatList(Style{height: 120, label: "Feed"}, 1000, 40, void(int i) {
             String label;

@@ -42,6 +42,10 @@
   const reportWindow = () => app._ui_report_window(innerWidth, innerHeight, Math.round(devicePixelRatio * 100));
   reportWindow();
   addEventListener('resize', reportWindow);
+  // The link the page was opened with, and later hash changes.
+  const reportLink = () => app.ccall('ui_report_link', null, ['string'], [location.href]);
+  reportLink();
+  addEventListener('hashchange', reportLink);
   document.querySelector('#status').textContent = 'Eskiu → WebAssembly → DOM · explicit lambdas';
   const benchmarkButton = document.querySelector('#benchmark');
   benchmarkButton.disabled = false;

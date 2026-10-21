@@ -5,13 +5,14 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
   else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
   else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
-  else app._ui_dispatch_scroll(id, generation, value, extra);
+  else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
+  else app._ui_dispatch_alert(id, value);
 }
 
 // Kinds (src/ui.esk): 0 scope, 1 column, 2 row, 3 text, 4 button, 5 text input, 6 scroll,
-// 7 image, 8 pressable, 9 switch, 10 activity indicator.
+// 7 image, 8 pressable, 9 switch, 10 activity indicator, 11 status bar, 12 modal.
 const TAGS = {3: 'span', 4: 'button', 5: 'input', 7: 'img', 9: 'input'};
-const CONTAINERS = new Set([0, 1, 2, 6, 8]);
+const CONTAINERS = new Set([0, 1, 2, 6, 8, 12]);
 const ALIGN = {1: 'flex-start', 2: 'center', 3: 'flex-end', 4: 'stretch'};
 const JUSTIFY = {1: 'flex-start', 2: 'center', 3: 'flex-end', 4: 'space-between', 5: 'space-around'};
 // The ring turns inside the node, so the node keeps its box for layout.
@@ -19,7 +20,10 @@ const SPINNER_CSS = '@keyframes ui-spin { to { transform: rotate(360deg); } }' +
   '.ui-spinner { position: relative; width: 20px; height: 20px; }' +
   '.ui-spinner::after { content: ""; position: absolute; inset: 0; box-sizing: border-box; border-radius: 50%;' +
   ' border: 2px solid #c5cedd; border-top-color: #4a6fa5; animation: ui-spin .8s linear infinite; }' +
-  '.ui-spinner[data-animating="false"]::after { visibility: hidden; animation: none; }';
+  '.ui-spinner[data-animating="false"]::after { visibility: hidden; animation: none; }' +
+  '.ui-modal { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .4); }' +
+  '.ui-alert { border: 0; border-radius: 12px; padding: 1rem 1.25rem; min-width: 16rem; font: inherit; }' +
+  '.ui-alert p { margin: .5rem 0 1rem; } .ui-alert div { display: flex; gap: .5rem; justify-content: flex-end; }';
 
 // An RGBA color (0: the platform's default) as CSS.
 function cssColor(value) {
@@ -45,6 +49,14 @@ export function createHost(root, dispatch) {
     return node && root.contains(node) && node.dataset.listening === 'true' ? node : null;
   };
   const kindOf = node => Number(node.dataset.kind);
+  // Open modals, newest last: Escape asks the newest to close.
+  const modals = [];
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('keydown', event => {
+      const modal = modals.at(-1);
+      if (event.key === 'Escape' && modal && modal.dataset.listening === 'true') dispatch(...ids(modal), 1);
+    });
+  }
   const ids = node => [Number(node.dataset.uiId), Number(node.dataset.generation)];
   // A press goes to the innermost button or pressable; a switch reports through change.
   root.addEventListener('click', event => {
@@ -108,6 +120,8 @@ export function createHost(root, dispatch) {
     if (m.kind === 8) { node.setAttribute('role', 'button'); node.tabIndex = 0; node.style.cursor = 'pointer'; }
     if (m.kind === 9) { node.type = 'checkbox'; node.setAttribute('role', 'switch'); }
     if (m.kind === 10) { node.className = 'ui-spinner'; node.setAttribute('role', 'progressbar'); }
+    if (m.kind === 11) node.style.display = 'none';
+    if (m.kind === 12) { node.className = 'ui-modal'; node.setAttribute('role', 'dialog'); node.setAttribute('aria-modal', 'true'); modals.push(node); }
     nodes.set(m.id, node);
   }
   // Int props: the code in kind, the value in before. Leaf views keep their platform
@@ -136,11 +150,43 @@ export function createHost(root, dispatch) {
       case 17: s.justifyContent = JUSTIFY[value] ?? ''; break;
       case 18: node.checked = value !== 0; node.setAttribute('aria-checked', String(value !== 0)); break;
       case 19: node.dataset.animating = String(value !== 0); node.setAttribute('aria-busy', String(value !== 0)); break;
+      case 20: case 21: break;  // the status bar: nothing to draw in a page
       default: throw new Error(`unknown prop ${code}`);
     }
   }
+  // Commands: 1 an alert (title, message, buttons), 2 open a URL.
+  function command(c) {
+    if (c.command === 1) {
+      const [title, message, ...buttons] = c.strings;
+      const dialog = document.createElement('dialog');
+      dialog.className = 'ui-alert';
+      const heading = document.createElement('strong');
+      heading.textContent = title;
+      const text = document.createElement('p');
+      text.textContent = message;
+      const row = document.createElement('div');
+      let answered = false;
+      const answer = index => {
+        if (answered) return;
+        answered = true;
+        dialog.close(); dialog.remove();
+        dispatch(c.request, 0, 6, null, index);
+      };
+      buttons.forEach((name, index) => {
+        const button = document.createElement('button');
+        button.textContent = name;
+        button.addEventListener('click', () => answer(index));
+        row.appendChild(button);
+      });
+      dialog.addEventListener('cancel', () => answer(-1));
+      dialog.append(heading, text, row);
+      document.body.appendChild(dialog);
+      dialog.showModal();
+    } else if (c.command === 2) window.open(c.strings[0], '_blank', 'noopener');
+  }
   return {
     nodes,
+    command,
     apply(mutation) { pending.push(mutation); },
     commit() {
       for (const m of pending) {
@@ -162,7 +208,10 @@ export function createHost(root, dispatch) {
           if (m.text) node.setAttribute(name, m.text); else node.removeAttribute(name);
         } else if (m.op === 4 || m.op === 5) {
           parentNode(m.parent).insertBefore(node, m.before ? nodes.get(m.before) : null);
-        } else if (m.op === 6) { node.remove(); nodes.delete(m.id); }
+        } else if (m.op === 6) {
+          node.remove(); nodes.delete(m.id);
+          if (modals.includes(node)) modals.splice(modals.indexOf(node), 1);
+        }
         else if (m.op === 7 || m.op === 8) {
           node.dataset.listening = String(m.op === 7);
           if (m.op === 7 && kindOf(node) === 6 && typeof requestAnimationFrame === 'function') {

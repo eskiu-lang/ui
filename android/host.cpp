@@ -3,6 +3,7 @@
 #include "../hosts/ui_commit.h"
 #include <algorithm>
 #include <unordered_map>
+#include <vector>
 #include <cstdint>
 #include <cstdlib>
 
@@ -12,6 +13,9 @@ extern "C" void ui_dispatch_text(int, int, const char *);
 extern "C" void ui_dispatch_focus(int, int, int);
 extern "C" void ui_dispatch_toggle(int, int, int);
 extern "C" void ui_dispatch_scroll(int, int, int, int);
+extern "C" void ui_dispatch_alert(int, int);
+extern "C" int ui_report_back();
+extern "C" void ui_report_link(const char *);
 extern "C" void ui_report_window(int, int, int);
 extern "C" int ui_edge_to_edge();
 extern "C" void ui_report_insets(int, int, int, int, int);
@@ -23,10 +27,13 @@ extern "C" void ui_stop();
 static JNIEnv *env;
 static jobject activity;
 static jmethodID applyMethod, measureMethod, placeMethod, widthMethod, heightMethod, scaleMethod;
-static jmethodID scheduleMethod, cancelMethod, committedMethod, contentMethod;
+static jmethodID scheduleMethod, cancelMethod, committedMethod, contentMethod, commandMethod, screenWidthMethod,
+    screenHeightMethod;
 static YGNodeRef root;
 static std::unordered_map<int, YGNodeRef> nodes;
 static std::unordered_map<int, int> scrolls;
+// Modals: each its own layout root, laid out over the whole screen.
+static std::vector<int> modals;
 
 static void checked() { if (env->ExceptionCheck()) { env->ExceptionDescribe(); std::abort(); } }
 static YGSize measure(YGNodeConstRef node, float width, YGMeasureMode wm, float height, YGMeasureMode hm) {
@@ -64,9 +71,12 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         nodes[id] = node;
         YGNodeSetContext(node, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
         // Measured leaves: text, button, input, image, switch, activity indicator.
-        if (kind >= 3 && kind != 6 && kind != 8) YGNodeSetMeasureFunc(node, measure);
+        bool measured = kind == 3 || kind == 4 || kind == 5 || kind == 7 || kind == 9 || kind == 10;
+        if (measured) YGNodeSetMeasureFunc(node, measure);
         else YGNodeStyleSetFlexDirection(node, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
         if (kind == 6) { YGNodeStyleSetOverflow(node, YGOverflowScroll); scrolls[id] = 1; }
+        if (kind == 11) YGNodeStyleSetDisplay(node, YGDisplayNone);
+        if (kind == 12) modals.push_back(id);
     } else if (nodes.count(id)) {
         YGNodeRef node = nodes.at(id);
         // Props: the code in kind (1 gap, 2 padding), the value in before.
@@ -89,7 +99,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             }
         }
         else if (op == 3) YGNodeMarkDirty(node);
-        else if (op == 4 || op == 5) {
+        else if ((op == 4 || op == 5) && std::find(modals.begin(), modals.end(), id) != modals.end()) {
+            // A modal stays out of its parent's layout.
+        } else if (op == 4 || op == 5) {
             YGNodeRef owner = nodes.count(parent) ? nodes.at(parent) : root;
             if (YGNodeGetParent(node)) YGNodeRemoveChild(YGNodeGetParent(node), node);
             size_t index = 0;
@@ -98,6 +110,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         } else if (op == 6) {
             if (YGNodeGetParent(node)) YGNodeRemoveChild(YGNodeGetParent(node), node);
             YGNodeFree(node); nodes.erase(id); scrolls.erase(id);
+            modals.erase(std::remove(modals.begin(), modals.end(), id), modals.end());
         }
     }
     jstring value = text ? env->NewStringUTF(text) : nullptr;
@@ -106,13 +119,31 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
     checked();
 }
 extern "C" void ui_host_ready();
+// Commands (alerts, URLs) go to the activity with their strings.
+static void ui_host_command(int request, int command, int count, const char **strings) {
+    jobjectArray values = env->NewObjectArray(count, env->FindClass("java/lang/String"), nullptr);
+    for (int i = 0; i < count; i++) {
+        jstring value = env->NewStringUTF(strings[i]);
+        env->SetObjectArrayElement(values, i, value);
+        env->DeleteLocalRef(value);
+    }
+    env->CallVoidMethod(activity, commandMethod, request, command, values);
+    env->DeleteLocalRef(values);
+    checked();
+}
+static void layoutModals() {
+    float width = env->CallFloatMethod(activity, screenWidthMethod), height = env->CallFloatMethod(activity, screenHeightMethod);
+    checked();
+    for (int id : modals) { YGNodeCalculateLayout(nodes.at(id), width, height, YGDirectionLTR); place(nodes.at(id)); }
+}
 extern "C" void ui_host_commit(const uint8_t *data, int len) {
-    ui_commit_each(data, len, ui_host_apply);
+    ui_commit_each(data, len, ui_host_apply, ui_host_command);
     ui_host_ready();
 }
 extern "C" void ui_host_ready() {
     YGNodeCalculateLayout(root, env->CallFloatMethod(activity, widthMethod), env->CallFloatMethod(activity, heightMethod), YGDirectionLTR);
     checked(); place(root);
+    layoutModals();
     env->CallVoidMethod(activity, committedMethod); checked();
 }
 
@@ -130,6 +161,9 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeS
     scheduleMethod = env->GetMethodID(cls, "schedule", "()V"); cancelMethod = env->GetMethodID(cls, "cancel", "()V");
     committedMethod = env->GetMethodID(cls, "committed", "()V");
     contentMethod = env->GetMethodID(cls, "content", "(IFF)V");
+    commandMethod = env->GetMethodID(cls, "command", "(II[Ljava/lang/String;)V");
+    screenWidthMethod = env->GetMethodID(cls, "screenWidth", "()F");
+    screenHeightMethod = env->GetMethodID(cls, "screenHeight", "()F");
     env->DeleteLocalRef(cls); checked();
     root = YGNodeNew();
     YGNodeStyleSetFlexDirection(root, YGFlexDirectionColumn);
@@ -170,7 +204,19 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeW
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeTick(JNIEnv *current, jobject) { env = current; ui_tick(); }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeLayout(JNIEnv *current, jobject, jfloat width, jfloat height) {
-    env = current; YGNodeCalculateLayout(root, width, height, YGDirectionLTR); place(root);
+    env = current; YGNodeCalculateLayout(root, width, height, YGDirectionLTR); place(root); layoutModals();
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeAlert(JNIEnv *current, jobject, jint request, jint choice) {
+    env = current; ui_dispatch_alert(request, choice);
+}
+extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeBack(JNIEnv *current, jobject) {
+    env = current; return ui_report_back();
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeLink(JNIEnv *current, jobject, jstring url) {
+    env = current;
+    const char *chars = env->GetStringUTFChars(url, nullptr);
+    ui_report_link(chars);
+    env->ReleaseStringUTFChars(url, chars);
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeStop(JNIEnv *current, jobject) {
     env = current; ui_stop(); YGNodeFree(root); env->DeleteGlobalRef(activity); activity = nullptr;

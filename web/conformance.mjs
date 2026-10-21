@@ -42,6 +42,27 @@ export async function runConformance(app, root) {
   root.querySelector('[aria-label="Press"]').click();
   root.querySelector('[aria-label="Toggle"]').click();
   await frame();
+  // The alert: answer its second button. The modal: open it, measure, close it from inside.
+  [...root.querySelectorAll('button')].find(b => b.textContent === 'Ask').click();
+  await frame(); await frame();
+  const alert = document.querySelector('dialog.ui-alert');
+  if (!alert) throw new Error('no alert dialog');
+  alert.querySelectorAll('button')[1].click();
+  [...root.querySelectorAll('button')].find(b => b.textContent === 'Open sheet').click();
+  await frame(); await frame();
+  const overlay = root.querySelector('[data-kind="12"]');
+  if (!overlay) throw new Error('no modal');
+  const cover = overlay.getBoundingClientRect();
+  const sheetBox = overlay.querySelector('[aria-label="Sheet"]').getBoundingClientRect();
+  const modal = {cover: [cover.left, cover.top, cover.width, cover.height], window: [innerWidth, innerHeight],
+    sheet: [sheetBox.left, sheetBox.top, sheetBox.width, sheetBox.height]};
+  [...overlay.querySelectorAll('button')].find(b => b.textContent === 'Close').click();
+  await frame(); await frame();
+  // Escape with the modal open closes it (the web's way).
+  [...root.querySelectorAll('button')].find(b => b.textContent === 'Open sheet').click();
+  await frame(); await frame();
+  document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+  await frame(); await frame();
   // Scroll the feed: rows near 2000 points mount, rows from the top go.
   const feed = root.querySelector('[aria-label="Feed"]');
   feed.scrollTop = 2000;
@@ -52,5 +73,5 @@ export async function runConformance(app, root) {
     const r = row.getBoundingClientRect();
     scrolled[row.getAttribute('aria-label')] = [r.left - base.left, r.top - base.top, r.width, r.height].map(v => Math.round(v * 10) / 10);
   }
-  return {status: 'DONE', frames, roles, styles, scrolled, log: app.ccall('ui_conformance_log', 'string', [], [])};
+  return {status: 'DONE', frames, roles, styles, scrolled, modal, log: app.ccall('ui_conformance_log', 'string', [], [])};
 }

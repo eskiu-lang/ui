@@ -43,8 +43,8 @@ EXPECTED_FRAMES = {
 EXPECTED_ROLES = {"Suite": "group", "Boxes": "group", "Fixed": "group", "Grow": "group", "List": "scroll",
                   "Item 0": "group", "Item 1": "group", "Item 2": "group", "Logo": "image",
                   "Field": "textfield", "Tap": "button", "Press": "button", "Toggle": "switch",
-                  "Busy": "progressbar", "Painted": "group", "Title": "text", "Feed": "scroll"}
-EXPECTED_LOG = "tap,tap,text:abc,press,switch:1"
+                  "Busy": "progressbar", "Painted": "group", "Title": "text", "Feed": "scroll", "Ask": "button"}
+EXPECTED_LOG = "tap,tap,text:abc,press,switch:1,alert:1,close"
 # What the host drew: colors as rrggbbaa, sizes in points, opacity 0 to 1.
 EXPECTED_STYLES = {
     "Painted": {"background": "ff0000ff", "radius": 8, "border": 2, "borderColor": "000000ff", "opacity": 0.5},
@@ -52,7 +52,11 @@ EXPECTED_STYLES = {
 }
 
 
-def differences(report):
+# Each platform's own way to ask a modal to close, tried after the shared script.
+EXTRA_LOG = {"android": ",close", "web": ",close"}
+
+
+def differences(report, host=""):
     out = []
     for label, expected in EXPECTED_FRAMES.items():
         got = report["frames"].get(label)
@@ -81,12 +85,23 @@ def differences(report):
     else:
         if abs(scrolled["Row 50"][1] - scrolled["Feed"][1]) > TOLERANCE:
             out.append(f"feed: row 50 at y {scrolled['Row 50'][1]}, expected the feed's top {scrolled['Feed'][1]}")
+    # The modal: a layer over the whole window, holding the 200 by 100 sheet.
+    modal = report.get("modal")
+    if not modal:
+        out.append("modal: not reported")
+    else:
+        cover, window = modal["cover"], modal["window"]
+        if any(abs(a - b) > TOLERANCE for a, b in zip(cover, [0, 0, window[0], window[1]])):
+            out.append(f"modal: covers {cover}, expected the window {window}")
+        if any(abs(a - b) > TOLERANCE for a, b in zip(modal["sheet"][2:], [200, 100])):
+            out.append(f"modal: sheet {modal['sheet']}, expected 200 by 100")
     if "Row 0" in scrolled:
         out.append("feed: row 0 still mounted after scrolling")
     if len(rows) > 30:
         out.append(f"feed: {len(rows)} rows mounted, expected a window")
-    if report.get("log") != EXPECTED_LOG:
-        out.append(f"log: {report.get('log')!r}, expected {EXPECTED_LOG!r}")
+    expected_log = EXPECTED_LOG + EXTRA_LOG.get(host, "")
+    if report.get("log") != expected_log:
+        out.append(f"log: {report.get('log')!r}, expected {expected_log!r}")
     return out
 
 
@@ -167,7 +182,7 @@ def main():
             print(f"{name}: SKIPPED ({skipped})")
             results[name] = {"skipped": skipped}
             continue
-        diff = differences(report)
+        diff = differences(report, name)
         failed = failed or bool(diff)
         print(f"{name}: {'PASS' if not diff else 'FAIL'}")
         for line in diff:

@@ -16,6 +16,8 @@ extern "C" void ui_dispatch_text(int id, int generation, const char *text);
 extern "C" void ui_dispatch_focus(int id, int generation, int focused);
 extern "C" void ui_dispatch_toggle(int id, int generation, int on);
 extern "C" void ui_dispatch_scroll(int id, int generation, int offset, int viewport);
+extern "C" void ui_dispatch_alert(int request, int choice);
+extern "C" void ui_report_link(const char *url);
 extern "C" void ui_report_window(int width, int height, int scale);
 extern "C" int ui_edge_to_edge(void);
 extern "C" void ui_report_insets(int top, int right, int bottom, int left, int keyboard);
@@ -31,6 +33,7 @@ extern "C" void ui_stop(void);
 @property(nonatomic) CGFloat fontSize;
 @property(nonatomic) int fontWeight;
 @property(nonatomic) bool listening;
+@property(nonatomic) int kind;
 @property(nonatomic) CGFloat reportedViewport;
 @end
 @implementation UiHostNode
@@ -57,6 +60,14 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
 }
 
 static void relayout(void);
+// Modals: their views sit over the whole controller view, each laid out as its own root.
+static NSMutableArray<UiHostNode *> *modals;
+// The status bar the app asked for (BarStyle), read by the controller.
+static int barStyle;
+static bool barHidden;
+// The alert on screen and how to answer it (also used by the conformance run).
+static UIAlertController *shownAlert;
+static void (^answerAlert)(int);
 
 // An RGBA color from the core (0: the platform's default, nil here).
 static UIColor *colorOf(int value) {
@@ -191,6 +202,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
     if (op == 1) {
         UiHostNode *node = [UiHostNode new];
         node.generation = generation;
+        node.kind = kind;
         node.yoga = YGNodeNew();
         if (kind == 4) {
             UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -233,6 +245,15 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view = toggle;
         } else if (kind == 10) {
             node.view = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        } else if (kind == 11) {
+            node.view = [UIView new];
+            node.view.hidden = YES;
+            YGNodeStyleSetDisplay(node.yoga, YGDisplayNone);
+        } else if (kind == 12) {
+            node.view = [UIView new];
+            node.view.backgroundColor = [UIColor colorWithWhite:0 alpha:0.4];
+            node.view.accessibilityViewIsModal = YES;
+            YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
         } else if (kind == 6) {
             UIScrollView *scroll = [UIScrollView new];
             scroll.tag = id;
@@ -284,6 +305,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         else if (kind == 19) {
             UIActivityIndicatorView *spinner = (UIActivityIndicatorView *)node.view;
             if (before) [spinner startAnimating]; else [spinner stopAnimating];
+        } else if (kind == 20 || kind == 21) {
+            if (kind == 20) barStyle = before; else barHidden = before != 0;
+            [rootView.window.rootViewController setNeedsStatusBarAppearanceUpdate];
         }
     } else if (op == 9) {
         NSString *value = text && text[0] ? [NSString stringWithUTF8String:text] : nil;
@@ -298,6 +322,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         } else if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).text = value;
         else [(UIButton *)node.view setTitle:value forState:UIControlStateNormal];
         YGNodeMarkDirty(node.yoga);
+    } else if ((op == 4 || op == 5) && node.kind == 12) {
+        // Over everything, outside the parent's layout.
+        [node.view removeFromSuperview];
+        [rootView.superview addSubview:node.view];
+        if (![modals containsObject:node]) [modals addObject:node];
     } else if (op == 4 || op == 5) {
         UiHostNode *parentNode = nodes[@(parent)];
         UIView *parentView = parentNode ? parentNode.view : rootView;
@@ -321,6 +350,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         if (parentYoga) YGNodeRemoveChild(parentYoga, node.yoga);
         [node.view removeFromSuperview];
         YGNodeFree(node.yoga);
+        [modals removeObject:node];
         [nodes removeObjectForKey:@(id)];
     } else if (op == 7 || op == 8) {
         if ([node.view isKindOfClass:UIScrollView.class]) node.listening = op == 7;
@@ -330,20 +360,54 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
 }
 
 extern "C" void ui_host_ready(void);
+// Commands: 1 an alert (title, message, buttons), 2 open a URL.
+static void ui_host_command(int request, int command, int count, const char **strings) {
+    if (command == 1 && count >= 2) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@(strings[0]) message:@(strings[1])
+                                                                 preferredStyle:UIAlertControllerStyleAlert];
+        __block bool answered = false;
+        void (^answer)(int) = ^(int index) {
+            if (answered) return;
+            answered = true;
+            shownAlert = nil; answerAlert = nil;
+            ui_dispatch_alert(request, index);
+        };
+        for (int i = 2; i < count; i++) {
+            int index = i - 2;
+            [alert addAction:[UIAlertAction actionWithTitle:@(strings[i]) style:UIAlertActionStyleDefault
+                                                    handler:^(UIAlertAction *) { answer(index); }]];
+        }
+        shownAlert = alert;
+        answerAlert = answer;
+        // Presented after the commit: the controller may be mid-layout now.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [rootView.window.rootViewController presentViewController:alert animated:NO completion:nil];
+        });
+    } else if (command == 2 && count >= 1) {
+        NSURL *url = [NSURL URLWithString:@(strings[0])];
+        if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
+    }
+}
+
 extern "C" void ui_host_commit(const uint8_t *data, int len) {
-    ui_commit_each(data, len, ui_host_apply);
+    ui_commit_each(data, len, ui_host_apply, ui_host_command);
     ui_host_ready();
 }
 
 static void relayout(void) {
     YGNodeCalculateLayout(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
     place(rootYoga, rootView);
+    for (UiHostNode *modal in modals) {
+        CGRect screen = rootView.superview.bounds;
+        modal.view.frame = screen;
+        YGNodeCalculateLayout(modal.yoga, screen.size.width, screen.size.height, YGDirectionLTR);
+        place(modal.yoga, modal.view);
+    }
 }
 
 extern "C" void ui_host_ready(void) {
     auto start = std::chrono::steady_clock::now();
-    YGNodeCalculateLayout(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
-    place(rootYoga, rootView);
+    relayout();
     commitTime += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     commitCount++;
     if (testCompletion) {
@@ -397,6 +461,10 @@ static void runTodoTest(void) {
 @property(nonatomic) CGFloat keyboard;
 @end
 @implementation UiController
+- (UIStatusBarStyle)preferredStatusBarStyle {
+    return barStyle == 1 ? UIStatusBarStyleLightContent : barStyle == 2 ? UIStatusBarStyleDarkContent : UIStatusBarStyleDefault;
+}
+- (BOOL)prefersStatusBarHidden { return barHidden; }
 - (void)viewDidLoad {
     [super viewDidLoad];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardChanged:)
@@ -495,6 +563,27 @@ static void runConformance(void) {
         [toggle sendActionsForControlEvents:UIControlEventValueChanged];
         UIScrollView *feed = nil;
         for (UiHostNode *node in nodes.allValues) if ([node.view.accessibilityLabel isEqualToString:@"Feed"]) feed = (UIScrollView *)node.view;
+        UIButton *ask = (UIButton *)findView(UIButton.class, @"Ask");
+        UIButton *openSheet = (UIButton *)findView(UIButton.class, @"Open sheet");
+        __block NSDictionary *modalReport = nil;
+        [ask sendActionsForControlEvents:UIControlEventTouchUpInside];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 400 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        // The alert: answer its second button.
+        if (shownAlert) { [shownAlert dismissViewControllerAnimated:NO completion:nil]; answerAlert(1); }
+        [openSheet sendActionsForControlEvents:UIControlEventTouchUpInside];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        UiHostNode *modal = modals.lastObject;
+        UIView *sheet = nil;
+        for (UiHostNode *node in nodes.allValues) if ([node.view.accessibilityLabel isEqualToString:@"Sheet"]) sheet = node.view;
+        if (modal && sheet) {
+            CGRect cover = [modal.view convertRect:modal.view.bounds toView:nil];
+            CGRect box = [sheet convertRect:sheet.bounds toView:nil];
+            CGSize window = rootView.window.bounds.size;
+            modalReport = @{@"cover": @[@(cover.origin.x), @(cover.origin.y), @(cover.size.width), @(cover.size.height)],
+                            @"window": @[@(window.width), @(window.height)],
+                            @"sheet": @[@(box.origin.x), @(box.origin.y), @(box.size.width), @(box.size.height)]};
+        }
+        [(UIButton *)findView(UIButton.class, @"Close") sendActionsForControlEvents:UIControlEventTouchUpInside];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
         // Scroll the feed: rows near 2000 points mount, rows from the top go.
         [feed setContentOffset:CGPointMake(0, 2000) animated:NO];
@@ -509,13 +598,15 @@ static void runConformance(void) {
                 scrolled[label] = @[round1(r.origin.x), round1(r.origin.y), round1(r.size.width), round1(r.size.height)];
             }
             NSDictionary *result = @{@"status": @"DONE", @"frames": frames, @"roles": roles, @"styles": styles,
-                                     @"scrolled": scrolled,
+                                     @"scrolled": scrolled, @"modal": modalReport ?: [NSNull null],
                                      @"log": [NSString stringWithUTF8String:ui_conformance_log()]};
             NSData *json = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingSortedKeys error:nil];
             printf("CONFORMANCE %s\n", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
             fflush(stdout);
             ui_stop();
             exit(0);
+        });
+        });
         });
         });
     });
@@ -533,8 +624,12 @@ static void runConformance(void) {
 @implementation UiSceneDelegate
 - (void)sceneDidBecomeActive:(UIScene *)scene { ui_report_active(1); }
 - (void)sceneWillResignActive:(UIScene *)scene { ui_report_active(0); }
+- (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)contexts {
+    ui_report_link(contexts.anyObject.URL.absoluteString.UTF8String);
+}
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     nodes = [NSMutableDictionary new];
+    modals = [NSMutableArray new];
     events = [UiEvents new];
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     UiController *controller = [UiController new];

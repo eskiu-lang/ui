@@ -38,6 +38,26 @@ void ui_dispatch_scroll(int id, int generation, int offset, int viewport) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+void ui_dispatch_alert(int request, int choice) {
+    if (!app_active) { return; }
+    ui_event_alert(request, choice);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+// Android's back press: 1 when the app handled it.
+int ui_report_back() {
+    if (!app_active) { return 0; }
+    bool handled = ui_back();
+    if (ui_needs_frame()) { ui_host_schedule(); }
+    return handled ? 1 : 0;
+}
+
+void ui_report_link(string url) {
+    if (!app_active) { return; }
+    ui_set_link(url);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 void ui_dispatch_toggle(int id, int generation, int on) {
     if (!app_active) { return; }
     ui_event_toggle(id, generation, on != 0);

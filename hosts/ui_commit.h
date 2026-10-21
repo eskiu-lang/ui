@@ -6,6 +6,9 @@
 
 typedef void (*ui_commit_fn)(int op, int id, int generation, int parent, int before,
                              int kind, const char *text);
+// A command (op 10): its request id, the command (1 alert: title, message, buttons; 2 open
+// a URL) and its strings.
+typedef void (*ui_command_fn)(int request, int command, int count, const char **strings);
 
 static inline int ui_commit_u32(const uint8_t *p) {
     return (int)((uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
@@ -14,7 +17,7 @@ static inline int ui_commit_u32(const uint8_t *p) {
 
 // Props arrive as op 2 with the prop code in `kind` and its value in `before`; string props
 // (op 9) with the prop code in `kind` and the value in `text`.
-static inline void ui_commit_each(const uint8_t *data, int len, ui_commit_fn apply) {
+static inline void ui_commit_each(const uint8_t *data, int len, ui_commit_fn apply, ui_command_fn command) {
     int at = 0;
     while (at < len) {
         int op = data[at];
@@ -30,6 +33,17 @@ static inline void ui_commit_each(const uint8_t *data, int len, ui_commit_fn app
             at += 4 + n + 1;
         } else if (op == 4 || op == 5) {
             parent = ui_commit_u32(data + at); before = ui_commit_u32(data + at + 4); at += 8;
+        } else if (op == 10) {
+            int which = data[at], count = data[at + 1];
+            at += 2;
+            const char *strings[32];
+            for (int i = 0; i < count; i++) {
+                int n = ui_commit_u32(data + at);
+                if (i < 32) strings[i] = (const char *)(data + at + 4);
+                at += 4 + n + 1;
+            }
+            command(id, which, count < 32 ? count : 32, strings);
+            continue;
         } else if (op == 9) {
             kind = data[at];
             int n = ui_commit_u32(data + at + 1);
