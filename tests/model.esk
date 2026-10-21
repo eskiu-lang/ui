@@ -447,6 +447,38 @@ void large_lists() {
     ui_shutdown(); balanced("large unkeyed leak");
 }
 
+// Many readers of one signal: each subscribes once per run, however often it reads, and
+// a removed reader is unsubscribed.
+void shared_subscriptions() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    *Signal<int> shared = signal_new<int>(0);
+    ui_mount(void() {
+        a = use_signal<int>(12);
+        int count = a.get();
+        Column(Style{}, void() {
+            for (i in 0..count) {
+                Row(Style{key: key(i)}, void() {
+                    *Signal<int> doubled = use_memo<int>(int() { return shared.get() * 2; });
+                    text_number(shared.get() + doubled.get() + shared.get());
+                });
+            }
+        });
+    });
+    ui_frame();
+    check(shared.source.readers.size == 24, "one edge per row and per memo");
+    shared.set(1); ui_frame();
+    for (i in 0..12) { check(keyed(i).runs == 2 && text_is(keyed(i).children.data[0], 4), "each row once"); }
+    a.set(6); ui_frame();
+    check(shared.source.readers.size == 12, "removed rows unsubscribed");
+    shared.set(2); ui_frame();
+    for (i in 0..6) { check(keyed(i).runs == 4 && text_is(keyed(i).children.data[0], 8), "remaining rows"); }
+    ui_shutdown();
+    check(shared.source.readers.size == 0, "shutdown unsubscribes everything");
+    shared.free();
+    balanced("shared subscriptions leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -457,6 +489,7 @@ int main() {
     cleanup_lifetime(); printf("PASS cleanup state lifetime\n");
     identity(); printf("PASS identity\n");
     large_lists(); printf("PASS large lists\n");
+    shared_subscriptions(); printf("PASS shared subscriptions\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");
