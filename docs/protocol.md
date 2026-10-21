@@ -74,6 +74,7 @@ it into `Mutation` records for tests and tools.
 | | | 37 | scale (percent) |
 | | | 38 | rotate (degrees) |
 | | | 39, 40 | transition (ms; 0 none), easing (`Easing`); sent before the props they animate |
+| | | 41 | pan listener (1: report drags on the node) |
 
 A text input's value is its text (op 3). Sizes are points.
 
@@ -113,6 +114,7 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_layout(id, gen, x, y, width, height)` | a listened node's frame changed (points, relative to its parent) |
 | `ui_dispatch_fetch(request, status, body, headers)` | a fetch finished (status 0: `body` is the error) |
 | `ui_dispatch_answer(request, text)` | the text a request asked for (a paste) |
+| `ui_dispatch_pan(id, gen, phase, dx, dy, vx, vy)` | a drag on a node with a pan handler |
 | `ui_dispatch_value(id, gen, value)` | the user moved a slider |
 | `ui_dispatch_hover(id, gen, inside)` | a pointer entered (1) or left (0) a node with a hover handler |
 | `ui_dispatch_timer(token)` | a timer the core armed fired |

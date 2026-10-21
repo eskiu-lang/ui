@@ -79,6 +79,19 @@ Column(Style{opacity: open.get() ? 100 : 0, translate_y: open.get() ? 0 : 24, tr
              easing: EaseOut}, void() { ... });
 ```
 
+A drag moves an element through its transforms, with no transition while the finger is down
+and one when it lets go:
+
+```eskiu
+*Signal<int> dx = use_signal<int>(0);
+*Signal<bool> held = use_signal<bool>(false);
+ui_on_pan(void(Pan p) {
+    held.set(p.phase == PanBegan || p.phase == PanMoved);
+    dx.set(held.get() ? p.dx : 0);
+});
+Row(Style{translate_x: dx.get(), transition_ms: held.get() ? 0 : 250, easing: EaseSpring}, void() { ... });
+```
+
 The transforms are drawn, not laid out: the element keeps its place and its siblings do not
 move. Layout changes (a size, a position from the flow) are not animated yet.
 
