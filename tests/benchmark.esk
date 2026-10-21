@@ -1,4 +1,5 @@
-import "../examples/components.esk";
+import "../examples/todo/src/todo.esk";
+import "../examples/counter/src/counter.esk";
 extern double ui_clock_ms();
 
 void host(*uint8 data, int len) { ui_complete(ui.sequence); }

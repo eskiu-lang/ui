@@ -1,6 +1,10 @@
 // Native modules and views: code the app ships per platform.
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
+// A native module is code the app ships per platform (native/ios, native/android,
+// native/web: tools/ui builds them in). Eskiu calls it through `extern`; it answers
+// through events on a channel, which reach use_native_event handlers on the UI thread.
+
 struct NativePair { string name; string value; }
 
 struct NativeHandler { string channel; fn(string)->void handler; bool removed; }

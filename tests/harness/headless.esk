@@ -1,4 +1,5 @@
-import "components.esk";
+// The counter with no screen: a renderer that prints the texts it receives.
+import "../../examples/counter/src/counter.esk";
 
 int main() {
     Ui runtime;

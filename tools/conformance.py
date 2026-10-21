@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The conformance suite: the scene in examples/conformance.esk on every available host,
+"""The conformance suite: the scene in tests/harness/conformance.esk on every available host,
 each compared with the frames, roles and event log the scene must produce.
 
 Hosts: ios (a booted simulator), android (a booted device or emulator), web (the shared
@@ -153,7 +153,7 @@ def run_web():
     subprocess.run([sys.executable, HERE / "tools/build_web.py"], check=True, timeout=300, capture_output=True)
     binary = BUILD / "desktop/EskiuDesktop"
     binary.parent.mkdir(exist_ok=True)
-    subprocess.run(["xcrun", "clang", "-fobjc-arc", HERE / "desktop/host.m", "-framework", "Cocoa",
+    subprocess.run(["xcrun", "clang", "-fobjc-arc", HERE / "hosts/macos/host.m", "-framework", "Cocoa",
                     "-framework", "WebKit", "-o", binary], check=True, timeout=60)
     class Quiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *args):

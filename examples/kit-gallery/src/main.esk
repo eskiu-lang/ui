@@ -1,0 +1,8 @@
+// The app: `ui run web` (or macos, ios, android) builds it with the hosts.
+import "gallery.esk";
+
+void ui_app_start(int which) {
+    ui_mount(void() { KitGallery(); });
+}
+
+void ui_app_stop() {}

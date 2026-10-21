@@ -1,4 +1,4 @@
-import "../src/kit.esk";
+import <ui/kit>;
 
 // Every <ui/kit> component, with state, on one scrolling page.
 void KitGallery() {

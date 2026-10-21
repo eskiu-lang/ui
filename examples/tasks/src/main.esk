@@ -1,0 +1,9 @@
+// The app: `ui run web` (or macos, ios, android) builds it with the hosts.
+import "tasks.esk";
+
+void ui_app_start(int which) {
+    tasks_seed(&task_store);
+    ui_mount(void() { TasksApp(&task_store); });
+}
+
+void ui_app_stop() { task_store.free(); }

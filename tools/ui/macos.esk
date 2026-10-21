@@ -1,0 +1,16 @@
+// macOS: the web build in a WKWebView window.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// ---- macOS ----
+
+string build_macos(Project* p) {
+    build_web(p);
+    string out = p.out("macos");
+    string binary = join(out, p.name.data);
+    Cmd cmd;
+    defer cmd.free();
+    cmd.add("xcrun"); cmd.add("clang"); cmd.add("-fobjc-arc"); cmd.add(join(p.ui.data, "hosts/macos/host.m"));
+    cmd.add("-framework"); cmd.add("Cocoa"); cmd.add("-framework"); cmd.add("WebKit"); cmd.add("-o"); cmd.add(binary);
+    cmd.must(null);
+    return binary;
+}

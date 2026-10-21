@@ -1,22 +1,6 @@
-import "../src/ui.esk";
+// A TODO list: keyed rows with their own state, a model-owned signal, a text field.
 import <string>;
-
-// Text takes finished text; formatting goes through <string>, which -Wformat checks.
-void NumberText(string label, int value) {
-    String text;
-    defer String_free(&text);
-    String_format(&text, "%s%d", label, value);
-    Text(text.data);
-}
-
-void Counter() {
-    Column(Style{padding: 16}, void() {
-        *Signal<int> count = use_signal<int>(0);
-        Text("Eskiu counter");
-        NumberText("Count: ", count.get());
-        Button("Increment", void() { count.set(count.get() + 1); });
-    });
-}
+import <ui>;
 
 struct Todo { int id; bool done; string title; }
 // The model owns its signal, so it outlives any mount of the view that reads it.
@@ -63,7 +47,10 @@ void TodoApp(*Store store) {
         });
         int pending = 0;
         for (i in 0..store.items.size) { if (!store.items.data[i].done) { pending++; } }
-        NumberText("Pending: ", pending);
+        String count;
+        defer String_free(&count);
+        String_format(&count, "Pending: %d", pending);
+        Text(count.data);
         // The rows scroll when there are more than fit.
         Scroll(Style{height: 320}, void() {
             for (i in 0..store.items.size) {

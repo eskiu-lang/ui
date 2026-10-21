@@ -1,7 +1,7 @@
 import "../src/ui.esk";
 
-// The bridge between a host (hosts/ui_commit.h, web/ui-library.js, the iOS, Android and
-// desktop hosts) and an app. The app defines what to mount and what to free:
+// The bridge between a host (hosts/commit.h, hosts/web/ui-library.js, the iOS, Android and
+// macOS hosts) and an app. The app defines what to mount and what to free:
 //
 //   void ui_app_start(int which) { ui_mount(void() { App(); }); }
 //   void ui_app_stop() {}

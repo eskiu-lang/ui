@@ -38,9 +38,9 @@ def main():
     with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
         list(pool.map(compile_one, zip(sources, objects)))
     host = BUILD / "host.o"
-    run([*common, "-std=c++17", "-c", HERE / "android/host.cpp", "-o", host])
+    run([*common, "-std=c++17", "-c", HERE / "hosts/android/host.cpp", "-o", host])
     esk = BUILD / "app.o"
-    run([find_compiler(), HERE / "examples/app.esk", "--target",
+    run([find_compiler(), HERE / "tests/harness/app.esk", "--target",
          "aarch64-linux-android24", "-O2", "-o", esk])
     library = BUILD / "libeskiu_ui.so"
     run([clang, "-shared", "-static-libstdc++", "-Wl,-z,max-page-size=16384", host, esk, *objects, "-llog", "-o", library])
@@ -48,10 +48,10 @@ def main():
     dex = BUILD / "dex"
     classes.mkdir(exist_ok=True); dex.mkdir(exist_ok=True)
     bootclasspath = str(tools / "core-lambda-stubs.jar") + os.pathsep + str(platform)
-    run(["javac", "-source", "8", "-target", "8", "-bootclasspath", bootclasspath, "-d", classes, HERE / "android/UiActivity.java"])
+    run(["javac", "-source", "8", "-target", "8", "-bootclasspath", bootclasspath, "-d", classes, HERE / "hosts/android/UiActivity.java"])
     run([tools / "d8", "--min-api", "24", "--lib", platform, "--output", dex, *sorted(classes.rglob("*.class"))])
     unsigned = BUILD / "unsigned.apk"
-    run([tools / "aapt", "package", "-f", "-M", HERE / "android/AndroidManifest.xml", "-A", HERE / "assets",
+    run([tools / "aapt", "package", "-f", "-M", HERE / "hosts/android/AndroidManifest.xml", "-A", HERE / "tests/harness/assets",
          "-I", platform, "-F", unsigned])
     with zipfile.ZipFile(unsigned, "a") as apk:
         apk.write(dex / "classes.dex", "classes.dex")

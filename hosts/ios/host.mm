@@ -2,7 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CADisplayLink.h>
 #include <yoga/Yoga.h>
-#include "../hosts/ui_commit.h"
+#include "../commit.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>

@@ -1,0 +1,91 @@
+// Running commands, paths, the compiler and ESKIU_HOME.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+const string kUiGit = "https://github.com/eskiu-lang/ui";
+
+const string kYogaGit = "https://github.com/react/yoga.git";
+
+const string kYogaTag = "v3.2.1";
+
+void fail(string message) {
+    println_err(message);
+    exit(1);
+}
+
+// A command line: its parts are copies, so temporaries can be passed.
+struct Cmd { List<String> parts; }
+
+void Cmd_add(Cmd* self, string part) {
+    String copy;
+    String_from(&copy, part);
+    self.parts.push(copy);
+}
+
+void Cmd_free(Cmd* self) {
+    for (i in 0..self.parts.size) { String_free(&self.parts.data[i]); }
+    self.parts.free();
+}
+
+// Run it in `cwd` (null: here) with its output on ours; the exit code.
+int Cmd_run(Cmd* self, string cwd) {
+    List<string> argv;
+    defer argv.free();
+    for (i in 0..self.parts.size) { argv.push(self.parts.data[i].data); }
+    ProcessOptions options = ProcessOptions{cwd: cwd, inherit_stdout: true, inherit_stderr: true};
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    if (process_run(&argv, &options, &result) != 0) { return -1; }
+    return result.exit_code;
+}
+
+// Run it and stop the tool if it fails.
+void Cmd_must(Cmd* self, string cwd) {
+    if (self.run(cwd) != 0) {
+        String line;
+        for (i in 0..self.parts.size) {
+            if (i > 0) { String_append(&line, " "); }
+            String_append(&line, self.parts.data[i].data);
+        }
+        print_err("ui: failed: ");
+        fail(line.data);
+    }
+}
+
+// Run it and keep its standard output, trimmed; false if it failed.
+bool Cmd_output(Cmd* self, String* out) {
+    List<string> argv;
+    defer argv.free();
+    for (i in 0..self.parts.size) { argv.push(self.parts.data[i].data); }
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    if (process_run(&argv, null, &result) != 0 || result.exit_code != 0) { return false; }
+    String_from(out, result.stdout.data == null ? "" : result.stdout.data);
+    String_trim(out);
+    return true;
+}
+
+// `a/b` into a fresh string the caller frees.
+string join(string a, string b) {
+    String out;
+    path_join(&out, a, b);
+    return out.data;
+}
+
+string eskiu_home() {
+    string home = env_get("ESKIU_HOME");
+    if (home != null && home[0] != 0) { return home; }
+    return join(env_get("HOME"), ".eskiu");
+}
+
+string eskiuc() {
+    string path = env_get("ESKIUC");
+    return path != null && path[0] != 0 ? path : "eskiuc";
+}
+
+bool newer(string source, string target) {
+    FileStat a;
+    FileStat b;
+    if (fs_stat(target, &b) != 0) { return true; }
+    if (fs_stat(source, &a) != 0) { return true; }
+    return a.mtime > b.mtime;
+}

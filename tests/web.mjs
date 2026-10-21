@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {performance} from 'node:perf_hooks';
 import {writeFileSync} from 'node:fs';
 import createApp from '../build/web/app.mjs';
-import {createHost, uiDispatch} from '../web/renderer.mjs';
-import {createFrameScheduler} from '../web/scheduler.mjs';
+import {createHost, uiDispatch} from '../hosts/web/renderer.mjs';
+import {createFrameScheduler} from '../hosts/web/scheduler.mjs';
 
 function fakeFrames(tick) {
   let sequence = 0;

@@ -13,7 +13,7 @@ BUILD.mkdir(exist_ok=True)
 shots = HERE / "build/screenshots"  # test captures; the README's come from tools/screenshots.py
 shots.mkdir(parents=True, exist_ok=True)
 binary = BUILD / "EskiuDesktop"
-subprocess.run(["xcrun", "clang", "-fobjc-arc", HERE / "desktop/host.m", "-framework", "Cocoa",
+subprocess.run(["xcrun", "clang", "-fobjc-arc", HERE / "hosts/macos/host.m", "-framework", "Cocoa",
                 "-framework", "WebKit", "-o", binary], check=True, timeout=60)
 handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(HERE / "build/web"))
 server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)

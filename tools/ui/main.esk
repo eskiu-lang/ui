@@ -1,0 +1,87 @@
+// ui: create an app on the ui package and build or run it on the web, macOS, iOS or Android.
+//
+//   eskiuc tools/ui/main.esk -o ~/.eskiu/bin/ui   # install (any directory on the PATH)
+//   ui new myapp                                 # a project that depends on ui
+//   cd myapp && ui run ios                       # web | macos | ios | android
+//
+// Inside a project, the ui package is the one eskiu.lock names; its hosts (hosts/) are built
+// around the app. Yoga, for the native hosts, is fetched and compiled once into
+// $ESKIU_HOME/cache. Its parts: common, project, web, macos, yoga, ios, android, new.
+import <io>;
+import <string>;
+import <list>;
+import <fs>;
+import <process>;
+import <env>;
+import <path>;
+import <net>;
+import <time>;
+
+import "common.esk";
+import "project.esk";
+import "web.esk";
+import "macos.esk";
+import "yoga.esk";
+import "ios.esk";
+import "android.esk";
+import "new.esk";
+
+void usage() {
+    println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|ios|android\n       ui run web|macos|ios|android");
+    exit(2);
+}
+
+// The server runs on a thread while the macOS window is open.
+string macos_root;
+
+int macos_port;
+
+int main(int argc, string* argv) {
+    if (argc < 3) { usage(); }
+    String command;
+    String_from(&command, argv[1]);
+    if (String_eq_cstr(&command, "new") == 1) {
+        string ui_path = null;
+        if (argc >= 5 && strcmp(argv[3], "--ui") == 0) { ui_path = argv[4]; }
+        create(argv[2], ui_path);
+        return 0;
+    }
+    bool run = String_eq_cstr(&command, "run") == 1;
+    if (!run && String_eq_cstr(&command, "build") != 1) { usage(); }
+    Project p;
+    p.find();
+    String target;
+    String_from(&target, argv[2]);
+    if (String_eq_cstr(&target, "web") == 1) {
+        string out = build_web(&p);
+        printf("Built %s\n", out);
+        if (run) {
+            String url;
+            String_appendf(&url, "http://127.0.0.1:%d/", port());
+            printf("Serving %s (Ctrl+C to stop)\n", url.data);
+            open_url(url.data);
+            serve(out, port());
+        }
+    } else if (String_eq_cstr(&target, "macos") == 1) {
+        string binary = build_macos(&p);
+        printf("Built %s\n", binary);
+        if (run) {
+            macos_root = join(p.root.data, "build/ui/web");
+            macos_port = port();
+            thread_create(void() { serve(macos_root, macos_port); });
+            time_sleep_ms(200);
+            String url;
+            String_appendf(&url, "http://127.0.0.1:%d/", macos_port);
+            Cmd window;
+            window.add(binary); window.add(url.data);
+            int code = window.run(null);
+            window.free();
+            exit(code);
+        }
+    } else if (String_eq_cstr(&target, "ios") == 1) {
+        if (run) { run_ios(&p); } else { printf("Built %s\n", build_ios(&p)); }
+    } else if (String_eq_cstr(&target, "android") == 1) {
+        if (run) { run_android(&p); } else { printf("Built %s\n", build_android(&p)); }
+    } else { usage(); }
+    return 0;
+}

@@ -1,0 +1,8 @@
+// The app: `ui run web` (or macos, ios, android) builds it with the hosts.
+import "counter.esk";
+
+void ui_app_start(int which) {
+    ui_mount(void() { Counter(); });
+}
+
+void ui_app_stop() {}

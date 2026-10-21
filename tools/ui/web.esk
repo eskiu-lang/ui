@@ -1,0 +1,119 @@
+// The web: the wasm build, and a static server for `ui run web`.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// ---- web ----
+
+string build_web(Project* p) {
+    string out = p.out("web");
+    Cmd cmd;
+    defer cmd.free();
+    cmd.add(eskiuc()); cmd.add(p.entry()); cmd.add("--target"); cmd.add("wasm32-unknown-emscripten");
+    cmd.add("-O2"); cmd.add("-o"); cmd.add(join(out, "app.mjs"));
+    String library;
+    defer String_free(&library);
+    String_appendf(&library, "--link-arg=%s", join(p.ui.data, "hosts/web/ui-library.js"));
+    cmd.add("--link-arg=--js-library"); cmd.add(library.data);
+    cmd.add("--link-arg=-sMODULARIZE=1"); cmd.add("--link-arg=-sEXPORT_ES6=1");
+    cmd.add("--link-arg=-sALLOW_MEMORY_GROWTH=1"); cmd.add("--link-arg=-sINVOKE_RUN=0");
+    cmd.add("--link-arg=--no-entry");
+    cmd.add("--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_dispatch_text,_ui_dispatch_focus,"
+            "_ui_dispatch_toggle,_ui_dispatch_scroll,_ui_dispatch_alert,_ui_dispatch_refresh,_ui_report_back,"
+            "_ui_report_link,_ui_report_window,_ui_tick,_ui_stop,_ui_conformance_log");
+    cmd.add("--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall");
+    cmd.must(null);
+    fs_copy(join(p.ui.data, "hosts/web/renderer.mjs"), join(out, "renderer.mjs"));
+    fs_copy(join(p.ui.data, "hosts/web/scheduler.mjs"), join(out, "scheduler.mjs"));
+    String page;
+    defer String_free(&page);
+    fs_read_text(join(p.ui.data, "hosts/web/app.html"), &page);
+    String_replace_all(&page, "{{name}}", p.name.data);
+    fs_write_text(join(out, "index.html"), page.data);
+    p.copy_assets(out);
+    return out;
+}
+
+// A static file server for build/ui/web: one connection at a time is plenty for a page.
+string serve_root;
+
+string content_type(string path) {
+    String name;
+    defer String_free(&name);
+    String_from(&name, path);
+    if (String_ends_with(&name, ".html") == 1) { return "text/html; charset=utf-8"; }
+    if (String_ends_with(&name, ".mjs") == 1 || String_ends_with(&name, ".js") == 1) { return "text/javascript"; }
+    if (String_ends_with(&name, ".wasm") == 1) { return "application/wasm"; }
+    if (String_ends_with(&name, ".png") == 1) { return "image/png"; }
+    if (String_ends_with(&name, ".jpg") == 1 || String_ends_with(&name, ".jpeg") == 1) { return "image/jpeg"; }
+    if (String_ends_with(&name, ".svg") == 1) { return "image/svg+xml"; }
+    if (String_ends_with(&name, ".css") == 1) { return "text/css"; }
+    if (String_ends_with(&name, ".json") == 1) { return "application/json"; }
+    return "application/octet-stream";
+}
+
+void serve_one(int client) {
+    char[8192] request;
+    int64 got = 0;
+    while (got < 8191) {
+        int64 n = net_recv(client, &request[got], 8191 - got);
+        if (n <= 0) { break; }
+        got += n;
+        request[got] = 0;
+        if (strstr((string)&request[0], "\r\n\r\n") != null) { break; }
+    }
+    request[got] = 0;
+    // "GET /path?query HTTP/1.1"
+    String path;
+    defer String_free(&path);
+    int at = 0;
+    while (at < got && request[at] != ' ') { at++; }
+    at++;
+    while (at < got && request[at] != ' ' && request[at] != '?') {
+        char[2] one;
+        one[0] = request[at]; one[1] = 0;
+        String_append(&path, (string)&one[0]);
+        at++;
+    }
+    if (path.len == 0 || String_eq_cstr(&path, "/") == 1) { String_from(&path, "/index.html"); }
+    String header;
+    defer String_free(&header);
+    int64 size = 0;
+    *uint8 body = null;
+    if (String_contains(&path, "..") != 1) { body = fs_read_all(join(serve_root, &path.data[1]), &size); }
+    if (body == null) {
+        net_send_str(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    } else {
+        String_appendf(&header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\n"
+            "Cache-Control: no-store\r\nConnection: close\r\n\r\n", content_type(path.data), size);
+        net_send_str(client, header.data);
+        int64 sent = 0;
+        while (sent < size) {
+            int64 n = net_send(client, &body[sent], size - sent);
+            if (n <= 0) { break; }
+            sent += n;
+        }
+        free(body);
+    }
+    net_close(client);
+}
+
+void serve(string root, int port) {
+    serve_root = root;
+    int listener = net_tcp_listen((uint16)port);
+    if (listener < 0) { fail("ui: cannot listen on the port (set UI_PORT to another one)"); }
+    while (true) {
+        int client = net_accept(listener);
+        if (client >= 0) { serve_one(client); }
+    }
+}
+
+int port() {
+    string value = env_get("UI_PORT");
+    return value != null && value[0] != 0 ? atoi(value) : 8765;
+}
+
+void open_url(string url) {
+    Cmd cmd;
+    defer cmd.free();
+    cmd.add("open"); cmd.add(url);
+    if (cmd.run(null) != 0) { printf("Open %s\n", url); }
+}

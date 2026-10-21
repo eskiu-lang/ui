@@ -41,14 +41,14 @@ def main():
     with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
         list(pool.map(compile_one, zip(sources, objects)))
     host = BUILD / "host.o"
-    run([*common, "-std=c++17", "-fobjc-arc", "-c", HERE / "ios/host.mm", "-o", host])
+    run([*common, "-std=c++17", "-fobjc-arc", "-c", HERE / "hosts/ios/host.mm", "-o", host])
     esk = BUILD / "app.o"
-    run([find_compiler(), HERE / "examples/app.esk", "--target", target,
+    run([find_compiler(), HERE / "tests/harness/app.esk", "--target", target,
          "-O2", "-o", esk])
     bundle = BUILD / "EskiuUI.app"
     bundle.mkdir(exist_ok=True)
-    shutil.copyfile(HERE / "ios/Info.plist", bundle / "Info.plist")
-    for asset in (HERE / "assets").iterdir():
+    shutil.copyfile(HERE / "hosts/ios/Info.plist", bundle / "Info.plist")
+    for asset in (HERE / "tests/harness/assets").iterdir():
         shutil.copyfile(asset, bundle / asset.name)
     run([*common, host, esk, *objects, "-framework", "UIKit", "-framework", "Foundation",
          "-framework", "CoreGraphics", "-framework", "QuartzCore", "-o", bundle / "EskiuUI"])

@@ -20,10 +20,10 @@ for case in "1:render loop" "2:hook kind/type changed" "3:duplicate key" "4:memo
     grep -q "$message" build/rejection.txt || { cat build/rejection.txt; exit 1; }
     echo "PASS rejection: $message"
 done
-eskiuc examples/counter.esk -o build/counter
+eskiuc tests/harness/headless.esk -o build/counter
 build/counter
 # The ui tool builds, and `ui new` makes a project on this checkout.
-eskiuc tools/ui.esk -o build/ui
+eskiuc tools/ui/main.esk -o build/ui
 rm -rf build/newapp
 (cd build && ./ui new newapp --ui "$PWD/..")
 test -f build/newapp/src/main.esk && grep -q "ui	path" build/newapp/eskiu.lock

@@ -1,0 +1,20 @@
+// A counter: one signal, one text, one button.
+import <string>;
+import <ui>;
+
+// Text takes finished text; formatting goes through <string>, which -Wformat checks.
+void NumberText(string label, int value) {
+    String text;
+    defer String_free(&text);
+    String_format(&text, "%s%d", label, value);
+    Text(text.data);
+}
+
+void Counter() {
+    Column(Style{padding: 16}, void() {
+        *Signal<int> count = use_signal<int>(0);
+        Text("Eskiu counter");
+        NumberText("Count: ", count.get());
+        Button("Increment", void() { count.set(count.get() + 1); });
+    });
+}

@@ -1,0 +1,114 @@
+// The project: its root, name, app id, the ui package from eskiu.lock, the entry file.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// The project: its root (where eskiu.toml is), its name, and the ui package's root.
+struct Project { String root; String name; String ui; String id; }
+
+// The value of `key = "..."` on its own line in a TOML file, or "".
+void toml_value(string text, string key, String* out) {
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String all;
+    defer String_free(&all);
+    String_from(&all, text);
+    String_lines(&all, &lines);
+    for (i in 0..lines.size) {
+        String* line = &lines.data[i];
+        String_trim(line);
+        if (String_starts_with(line, key) != 1) { continue; }
+        int64 quote = String_index_of(line, '"');
+        if (quote < 0) { continue; }
+        String_clear(out);
+        for (int64 j = quote + 1; j < line.len && line.data[j] != '"'; j++) {
+            char[2] one;
+            one[0] = line.data[j]; one[1] = 0;
+            String_append(out, (string)&one[0]);
+        }
+        return;
+    }
+}
+
+void Project_find(Project* self) {
+    String dir;
+    fs_cwd(&dir);
+    while (true) {
+        string toml = join(dir.data, "eskiu.toml");
+        if (fs_exists(toml) == 1) { free(toml); break; }
+        free(toml);
+        String parent;
+        path_dirname(&parent, dir.data);
+        if (String_eq_cstr(&parent, dir.data) == 1) { fail("ui: no eskiu.toml here or above; run ui new NAME first"); }
+        String_free(&dir);
+        dir = parent;
+    }
+    self.root = dir;
+    String text;
+    defer String_free(&text);
+    fs_read_text(join(dir.data, "eskiu.toml"), &text);
+    toml_value(text.data, "name", &self.name);
+    if (self.name.len == 0) { String_from(&self.name, "app"); }
+    // org.eskiu.app.NAME: lowercase letters and digits, others as "_".
+    String_from(&self.id, "org.eskiu.app.");
+    for (i in 0..self.name.len) {
+        char c = self.name.data[i];
+        if (c >= 'A' && c <= 'Z') { c = (char)(c + 32); }
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) { c = '_'; }
+        char[2] one;
+        one[0] = c; one[1] = 0;
+        String_append(&self.id, (string)&one[0]);
+    }
+    // The ui package: the lock's entry (NAME git URL REV COMMIT, or NAME path DIR).
+    String lock;
+    defer String_free(&lock);
+    if (fs_read_text(join(dir.data, "eskiu.lock"), &lock) != 0) {
+        fail("ui: no eskiu.lock: run eskiuc build or eskiuc fetch once");
+    }
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&lock, &lines);
+    for (i in 0..lines.size) {
+        List<String> fields;
+        String_split(&lines.data[i], '\t', &fields);
+        if (fields.size >= 3 && String_eq_cstr(&fields.data[0], "ui") == 1) {
+            if (String_eq_cstr(&fields.data[1], "git") == 1 && fields.size >= 5) {
+                string pkgs = join(eskiu_home(), "pkgs/ui");
+                String_from(&self.ui, join(pkgs, fields.data[4].data));
+            } else if (String_eq_cstr(&fields.data[1], "path") == 1) {
+                if (fields.data[2].data[0] == '/') { String_from(&self.ui, fields.data[2].data); }
+                else { String_from(&self.ui, join(dir.data, fields.data[2].data)); }
+            }
+        }
+        fs_list_free(&fields);
+    }
+    if (self.ui.len == 0) { fail("ui: eskiu.lock has no ui package: eskiuc add ui --git https://github.com/eskiu-lang/ui"); }
+}
+
+// build/ui/TARGET, created.
+string Project_out(Project* self, string target) {
+    string out = join(join(self.root.data, "build/ui"), target);
+    fs_mkdir_p(out);
+    return out;
+}
+
+// The file every host build compiles: the app and the bridge to the hosts.
+string Project_entry(Project* self) {
+    string build = join(self.root.data, "build/ui");
+    fs_mkdir_p(build);
+    String text;
+    defer String_free(&text);
+    String_appendf(&text, "// Made by ui: the app and the bridge to the hosts.\nimport \"%s\";\nimport \"%s\";\n",
+        join(self.root.data, "src/main.esk"), join(self.ui.data, "hosts/bridge.esk"));
+    string entry = join(build, "entry.esk");
+    fs_write_text(entry, text.data);
+    return entry;
+}
+
+// The project's assets (images and other files the app loads by name) into `dir`.
+void Project_copy_assets(Project* self, string dir) {
+    string assets = join(self.root.data, "assets");
+    if (fs_is_dir(assets) != 1) { return; }
+    List<String> names;
+    defer fs_list_free(&names);
+    fs_list_dir(assets, &names);
+    for (i in 0..names.size) { fs_copy(join(assets, names.data[i].data), join(dir, names.data[i].data)); }
+}

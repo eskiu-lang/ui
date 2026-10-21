@@ -1,7 +1,8 @@
 import "../src/ui.esk";
-import "../examples/components.esk";
-import "../examples/tasks.esk";
-import "../examples/kit_gallery.esk";
+import "../examples/counter/src/counter.esk";
+import "../examples/todo/src/todo.esk";
+import "../examples/tasks/src/tasks.esk";
+import "../examples/kit-gallery/src/gallery.esk";
 extern int64 ui_live_allocations();
 extern bool ui_allocations_counted();
 extern double ui_clock_ms();

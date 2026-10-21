@@ -1,0 +1,45 @@
+// Yoga for the native hosts, fetched and compiled once per toolchain.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// ---- Yoga, for the native hosts ----
+
+string yoga_source() {
+    string dir = join(eskiu_home(), "cache/yoga-3.2.1");
+    if (fs_is_dir(join(dir, "yoga")) != 1) {
+        fs_mkdir_p(join(eskiu_home(), "cache"));
+        Cmd cmd;
+        defer cmd.free();
+        cmd.add("git"); cmd.add("clone"); cmd.add("--depth"); cmd.add("1"); cmd.add("--branch"); cmd.add(kYogaTag);
+        cmd.add(kYogaGit); cmd.add(dir);
+        cmd.must(null);
+    }
+    return dir;
+}
+
+// Yoga's objects for one toolchain, compiled once into `cache` (only what changed after).
+void yoga_objects(List<string>* compiler, string cache, List<String>* objects) {
+    string source = yoga_source();
+    fs_mkdir_p(cache);
+    List<String> files;
+    defer fs_list_free(&files);
+    fs_glob(join(source, "yoga/**/*.cpp"), &files);
+    for (i in 0..files.size) {
+        String name;
+        String_from(&name, &files.data[i].data[strlen(source) + 1]);
+        String_replace_all(&name, "/", "_");
+        String_append(&name, ".o");
+        string object = join(cache, name.data);
+        if (newer(files.data[i].data, object)) {
+            Cmd cmd;
+            for (j in 0..compiler.size) { cmd.add(compiler.data[j]); }
+            // Upstream Yoga needs C++20; the hosts use C++17.
+            cmd.add("-std=c++20"); cmd.add("-I"); cmd.add(source); cmd.add("-c"); cmd.add(files.data[i].data);
+            cmd.add("-o"); cmd.add(object);
+            cmd.must(null);
+            cmd.free();
+        }
+        String path;
+        String_from(&path, object);
+        objects.push(path);
+    }
+}

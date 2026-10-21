@@ -20,12 +20,6 @@ void ui_release_int(escaping fn(int)->void callback) { free_closure(callback); }
 
 void ui_release_string(escaping fn(string)->void callback) { free_closure(callback); }
 
-// ---- native modules and views ----
-//
-// A native module is code the app ships per platform (native/ios, native/android,
-// native/web: tools/ui.esk builds them in). Eskiu calls it through `extern`; it answers
-// through events on a channel, which reach use_native_event handlers on the UI thread.
-
 void ui_release_view(escaping fn(string, string)->void callback) { free_closure(callback); }
 
 void ui_release_payload(escaping fn(string)->void callback) { free_closure(callback); }

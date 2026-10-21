@@ -1,0 +1,136 @@
+// iOS: a simulator app bundle; booting, installing and launching it.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// ---- iOS (the simulator) ----
+
+string ios_arch() {
+    Cmd cmd;
+    defer cmd.free();
+    cmd.add("uname"); cmd.add("-m");
+    String out;
+    cmd.output(&out);
+    return out.data;
+}
+
+string build_ios(Project* p) {
+    string out = p.out("ios");
+    Cmd find;
+    find.add("xcrun"); find.add("--sdk"); find.add("iphonesimulator"); find.add("--show-sdk-path");
+    String sdk;
+    if (!find.output(&sdk)) { fail("ui: no iOS simulator SDK (install Xcode)"); }
+    find.free();
+    Cmd tool;
+    tool.add("xcrun"); tool.add("--sdk"); tool.add("iphonesimulator"); tool.add("--find"); tool.add("clang++");
+    String clang;
+    tool.output(&clang);
+    tool.free();
+    String target;
+    String_appendf(&target, "%s-apple-ios15.0-simulator", ios_arch());
+    List<string> compiler;
+    compiler.push(clang.data); compiler.push("-target"); compiler.push(target.data);
+    compiler.push("-isysroot"); compiler.push(sdk.data); compiler.push("-O2");
+    List<String> objects;
+    yoga_objects(&compiler, join(eskiu_home(), join("cache/yoga-ios", ios_arch())), &objects);
+    string host = join(out, "host.o");
+    Cmd cmd;
+    for (i in 0..compiler.size) { cmd.add(compiler.data[i]); }
+    cmd.add("-std=c++17"); cmd.add("-fobjc-arc"); cmd.add("-I"); cmd.add(yoga_source());
+    cmd.add("-c"); cmd.add(join(p.ui.data, "hosts/ios/host.mm")); cmd.add("-o"); cmd.add(host);
+    cmd.must(null);
+    cmd.free();
+    string app = join(out, "app.o");
+    Cmd esk;
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add("-O2");
+    esk.add("-o"); esk.add(app);
+    esk.must(null);
+    esk.free();
+    String bundle_name;
+    String_appendf(&bundle_name, "%s.app", p.name.data);
+    string bundle = join(out, bundle_name.data);
+    fs_mkdir_p(bundle);
+    String plist;
+    String_appendf(&plist, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\n"
+        "<key>CFBundleIdentifier</key><string>%s</string>\n<key>CFBundleName</key><string>%s</string>\n"
+        "<key>CFBundleDisplayName</key><string>%s</string>\n<key>CFBundleExecutable</key><string>%s</string>\n"
+        "<key>CFBundlePackageType</key><string>APPL</string>\n<key>CFBundleVersion</key><string>1</string>\n"
+        "<key>CFBundleShortVersionString</key><string>0.1.0</string>\n<key>LSRequiresIPhoneOS</key><true/>\n"
+        "<key>UILaunchScreen</key><dict/>\n<key>UIApplicationSceneManifest</key><dict>\n"
+        "<key>UIApplicationSupportsMultipleScenes</key><false/>\n<key>UISceneConfigurations</key><dict>\n"
+        "<key>UIWindowSceneSessionRoleApplication</key><array><dict>\n"
+        "<key>UISceneConfigurationName</key><string>Default</string>\n"
+        "<key>UISceneDelegateClassName</key><string>UiSceneDelegate</string>\n</dict></array></dict></dict>\n"
+        "<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>\n</dict></plist>\n",
+        p.id.data, p.name.data, p.name.data, p.name.data);
+    fs_write_text(join(bundle, "Info.plist"), plist.data);
+    p.copy_assets(bundle);
+    Cmd link;
+    for (i in 0..compiler.size) { link.add(compiler.data[i]); }
+    link.add(host); link.add(app);
+    for (i in 0..objects.size) { link.add(objects.data[i].data); }
+    link.add("-framework"); link.add("UIKit"); link.add("-framework"); link.add("Foundation");
+    link.add("-framework"); link.add("CoreGraphics"); link.add("-framework"); link.add("QuartzCore");
+    link.add("-o"); link.add(join(bundle, p.name.data));
+    link.must(null);
+    link.free();
+    Cmd sign;
+    sign.add("codesign"); sign.add("--force"); sign.add("--sign"); sign.add("-"); sign.add(bundle);
+    sign.must(null);
+    sign.free();
+    return bundle;
+}
+
+// A booted simulator, booting the first available iPhone when none is.
+void ios_simulator() {
+    Cmd list;
+    list.add("xcrun"); list.add("simctl"); list.add("list"); list.add("devices"); list.add("available");
+    String devices;
+    list.output(&devices);
+    list.free();
+    if (String_contains(&devices, "(Booted)") == 1) { return; }
+    List<String> lines;
+    String_lines(&devices, &lines);
+    for (i in 0..lines.size) {
+        String* line = &lines.data[i];
+        if (String_contains(line, "iPhone") != 1) { continue; }
+        // "    iPhone 18 Pro (UUID) (Shutdown)": the UUID is the first group of 36 characters.
+        int64 open = String_index_of(line, '(');
+        if (open < 0 || open + 37 > line.len) { continue; }
+        String uuid;
+        for (int64 j = open + 1; j < open + 37; j++) {
+            char[2] one;
+            one[0] = line.data[j]; one[1] = 0;
+            String_append(&uuid, (string)&one[0]);
+        }
+        printf("Booting %s\n", line.data);
+        Cmd boot;
+        boot.add("xcrun"); boot.add("simctl"); boot.add("boot"); boot.add(uuid.data);
+        boot.must(null);
+        boot.free();
+        return;
+    }
+    fail("ui: no iPhone simulator; add one in Xcode");
+}
+
+void run_ios(Project* p) {
+    string bundle = build_ios(p);
+    ios_simulator();
+    // Simulator.app lives inside Xcode, where `open -a` does not always find it by name.
+    Cmd developer;
+    developer.add("xcode-select"); developer.add("-p");
+    String dir;
+    developer.output(&dir);
+    developer.free();
+    Cmd show;
+    show.add("open"); show.add("-a"); show.add(join(dir.data, "Applications/Simulator.app"));
+    show.run(null);
+    show.free();
+    Cmd install;
+    install.add("xcrun"); install.add("simctl"); install.add("install"); install.add("booted"); install.add(bundle);
+    install.must(null);
+    install.free();
+    Cmd launch;
+    launch.add("xcrun"); launch.add("simctl"); launch.add("launch"); launch.add("--terminate-running-process");
+    launch.add("booted"); launch.add(p.id.data);
+    launch.must(null);
+    launch.free();
+}

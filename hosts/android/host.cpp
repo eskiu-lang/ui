@@ -1,6 +1,6 @@
 #include <jni.h>
 #include <yoga/Yoga.h>
-#include "../hosts/ui_commit.h"
+#include "../commit.h"
 #include <algorithm>
 #include <unordered_map>
 #include <vector>

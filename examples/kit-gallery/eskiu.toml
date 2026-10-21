@@ -1,0 +1,7 @@
+[package]
+name = "kit_gallery"
+version = "0.1.0"
+main = "src/main.esk"
+
+[deps]
+ui = { path = "../.." }

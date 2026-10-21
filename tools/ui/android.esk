@@ -1,0 +1,183 @@
+// Android: an APK from the SDK tools, no Gradle; a device or an emulator to run it.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// ---- Android ----
+
+string android_sdk() {
+    string sdk = env_get("ANDROID_HOME");
+    if (sdk != null && sdk[0] != 0) { return sdk; }
+    return join(env_get("HOME"), "Library/Android/sdk");
+}
+
+// The last entry (by name) of a directory: the newest NDK, build tools, platform.
+string newest(string dir, string prefix) {
+    List<String> names;
+    defer fs_list_free(&names);
+    if (fs_list_dir(dir, &names) != 0) { return null; }
+    string best = null;
+    for (i in 0..names.size) {
+        if (String_starts_with(&names.data[i], prefix) == 1) { best = join(dir, names.data[i].data); }
+    }
+    return best;
+}
+
+string build_android(Project* p) {
+    string out = p.out("android");
+    string sdk = android_sdk();
+    string ndk = env_get("ANDROID_NDK_HOME");
+    if (ndk == null || ndk[0] == 0) { ndk = newest(join(sdk, "ndk"), ""); }
+    string tools = newest(join(sdk, "build-tools"), "");
+    string platform = newest(join(sdk, "platforms"), "android-");
+    if (ndk == null || tools == null || platform == null) {
+        fail("ui: no Android SDK with an NDK, build tools and a platform (ANDROID_HOME, ANDROID_NDK_HOME)");
+    }
+    string jar = join(platform, "android.jar");
+    string clang = join(ndk, "toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang++");
+    List<string> compiler;
+    compiler.push(clang); compiler.push("-fPIC"); compiler.push("-O2");
+    List<String> objects;
+    yoga_objects(&compiler, join(eskiu_home(), "cache/yoga-android-arm64"), &objects);
+    string host = join(out, "host.o");
+    Cmd cmd;
+    cmd.add(clang); cmd.add("-fPIC"); cmd.add("-O2"); cmd.add("-std=c++17"); cmd.add("-I"); cmd.add(yoga_source());
+    cmd.add("-c"); cmd.add(join(p.ui.data, "hosts/android/host.cpp")); cmd.add("-o"); cmd.add(host);
+    cmd.must(null);
+    cmd.free();
+    string app = join(out, "app.o");
+    Cmd esk;
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add("aarch64-linux-android24"); esk.add("-O2");
+    esk.add("-o"); esk.add(app);
+    esk.must(null);
+    esk.free();
+    string libs = join(out, "lib/arm64-v8a");
+    fs_mkdir_p(libs);
+    Cmd link;
+    link.add(clang); link.add("-shared"); link.add("-static-libstdc++"); link.add("-Wl,-z,max-page-size=16384");
+    link.add(host); link.add(app);
+    for (i in 0..objects.size) { link.add(objects.data[i].data); }
+    link.add("-llog"); link.add("-o"); link.add(join(libs, "libeskiu_ui.so"));
+    link.must(null);
+    link.free();
+    string classes = join(out, "classes");
+    fs_mkdir_p(classes);
+    String bootclasspath;
+    String_appendf(&bootclasspath, "%s:%s", join(tools, "core-lambda-stubs.jar"), jar);
+    Cmd javac;
+    javac.add("javac"); javac.add("-nowarn"); javac.add("-source"); javac.add("8"); javac.add("-target"); javac.add("8");
+    javac.add("-bootclasspath"); javac.add(bootclasspath.data); javac.add("-d"); javac.add(classes);
+    javac.add(join(p.ui.data, "hosts/android/UiActivity.java"));
+    javac.must(null);
+    javac.free();
+    List<String> class_files;
+    fs_glob(join(classes, "**/*.class"), &class_files);
+    Cmd d8;
+    d8.add(join(tools, "d8")); d8.add("--min-api"); d8.add("24"); d8.add("--lib"); d8.add(jar);
+    d8.add("--output"); d8.add(out);
+    for (i in 0..class_files.size) { d8.add(class_files.data[i].data); }
+    d8.must(null);
+    d8.free();
+    // The app's id and label; the activity keeps the class the JNI names are built from.
+    String manifest;
+    String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" package=\"%s\">\n"
+        "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n"
+        "  <application android:label=\"%s\" android:theme=\"@android:style/Theme.Material.Light.NoActionBar\""
+        " android:debuggable=\"true\">\n"
+        "    <activity android:name=\"org.eskiu.ui.prototype.UiActivity\" android:exported=\"true\">\n"
+        "      <intent-filter><action android:name=\"android.intent.action.MAIN\"/>"
+        "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n"
+        "    </activity>\n  </application>\n</manifest>\n", p.id.data, p.name.data);
+    fs_write_text(join(out, "AndroidManifest.xml"), manifest.data);
+    string assets = join(out, "assets");
+    fs_mkdir_p(assets);
+    p.copy_assets(assets);
+    string unsigned_apk = join(out, "unsigned.apk");
+    Cmd aapt;
+    aapt.add(join(tools, "aapt")); aapt.add("package"); aapt.add("-f"); aapt.add("-M"); aapt.add(join(out, "AndroidManifest.xml"));
+    aapt.add("-A"); aapt.add(assets); aapt.add("-I"); aapt.add(jar); aapt.add("-F"); aapt.add(unsigned_apk);
+    aapt.must(null);
+    aapt.free();
+    Cmd add;
+    add.add(join(tools, "aapt")); add.add("add"); add.add("unsigned.apk"); add.add("classes.dex");
+    add.add("lib/arm64-v8a/libeskiu_ui.so");
+    add.must(out);
+    add.free();
+    string aligned = join(out, "aligned.apk");
+    Cmd align;
+    align.add(join(tools, "zipalign")); align.add("-f"); align.add("-p"); align.add("4"); align.add(unsigned_apk); align.add(aligned);
+    align.must(null);
+    align.free();
+    string keystore = join(eskiu_home(), "ui-debug.keystore");
+    if (fs_exists(keystore) != 1) {
+        Cmd key;
+        key.add("keytool"); key.add("-genkeypair"); key.add("-keystore"); key.add(keystore);
+        key.add("-storepass"); key.add("android"); key.add("-keypass"); key.add("android"); key.add("-alias"); key.add("debug");
+        key.add("-keyalg"); key.add("RSA"); key.add("-validity"); key.add("10000"); key.add("-dname"); key.add("CN=Eskiu debug");
+        key.add("-noprompt");
+        key.must(null);
+        key.free();
+    }
+    String apk_name;
+    String_appendf(&apk_name, "%s.apk", p.name.data);
+    string apk = join(out, apk_name.data);
+    Cmd sign;
+    sign.add(join(tools, "apksigner")); sign.add("sign"); sign.add("--ks"); sign.add(keystore);
+    sign.add("--ks-pass"); sign.add("pass:android"); sign.add("--out"); sign.add(apk); sign.add(aligned);
+    sign.must(null);
+    sign.free();
+    return apk;
+}
+
+string adb() { return join(android_sdk(), "platform-tools/adb"); }
+
+// A device, starting the first emulator when none is attached.
+void android_device() {
+    Cmd list;
+    list.add(adb()); list.add("devices");
+    String devices;
+    list.output(&devices);
+    list.free();
+    List<String> lines;
+    String_lines(&devices, &lines);
+    for (i in 1..lines.size) {
+        if (String_ends_with(&lines.data[i], "\tdevice") == 1) { return; }
+    }
+    string emulator = join(android_sdk(), "emulator/emulator");
+    Cmd avds;
+    avds.add(emulator); avds.add("-list-avds");
+    String names;
+    if (!avds.output(&names) || names.len == 0) { fail("ui: no Android device or emulator (create one in Android Studio)"); }
+    avds.free();
+    List<String> avd;
+    String_lines(&names, &avd);
+    printf("Starting the emulator %s\n", avd.data[0].data);
+    List<string> argv;
+    argv.push(emulator); argv.push("-avd"); argv.push(avd.data[0].data); argv.push("-no-snapshot-save");
+    Process emulator_process;
+    ProcessOptions options;
+    if (process_spawn(&argv, &options, &emulator_process) != 0) { fail("ui: could not start the emulator"); }
+    // Wait for it to boot.
+    while (true) {
+        time_sleep_ms(2000);
+        Cmd prop;
+        prop.add(adb()); prop.add("shell"); prop.add("getprop"); prop.add("sys.boot_completed");
+        String booted;
+        bool ok = prop.output(&booted);
+        prop.free();
+        if (ok && String_eq_cstr(&booted, "1") == 1) { return; }
+    }
+}
+
+void run_android(Project* p) {
+    string apk = build_android(p);
+    android_device();
+    Cmd install;
+    install.add(adb()); install.add("install"); install.add("-r"); install.add(apk);
+    install.must(null);
+    install.free();
+    String activity;
+    String_appendf(&activity, "%s/org.eskiu.ui.prototype.UiActivity", p.id.data);
+    Cmd start;
+    start.add(adb()); start.add("shell"); start.add("am"); start.add("start"); start.add("-n"); start.add(activity.data);
+    start.must(null);
+    start.free();
+}

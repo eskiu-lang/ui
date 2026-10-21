@@ -1,8 +1,11 @@
-import "components.esk";
+// The test app every host runs: the examples, the conformance scene and a scheduler probe,
+// picked by the number the host was started with.
+import "../../examples/counter/src/counter.esk";
+import "../../examples/todo/src/todo.esk";
+import "../../examples/tasks/src/tasks.esk";
+import "../../examples/kit-gallery/src/gallery.esk";
 import "conformance.esk";
-import "tasks.esk";
-import "kit_gallery.esk";
-import "../hosts/bridge.esk";
+import "../../hosts/bridge.esk";
 
 // The examples behind one host app: `which` picks one (0 counter, 1 TODO, 2 a scheduler
 // probe, 3 the conformance scene, 4 the Tasks showcase, 5 the kit gallery).

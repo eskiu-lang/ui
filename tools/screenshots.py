@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The README's screenshots: the Tasks showcase (examples/tasks.esk) on the web, the iOS
+"""The README's screenshots: the Tasks showcase (examples/tasks) on the web, the iOS
 simulator, the Android emulator and macOS. A host that is not available is skipped.
 Metadata chunks (eXIf, tEXt, iTXt, zTXt, tIME) are dropped from every PNG."""
 import functools
@@ -62,7 +62,7 @@ def shoot_web(server):
 def shoot_macos(server):
     binary = BUILD / "desktop/EskiuDesktop"
     binary.parent.mkdir(exist_ok=True)
-    subprocess.run(["xcrun", "clang", "-fobjc-arc", HERE / "desktop/host.m", "-framework", "Cocoa", "-framework", "WebKit",
+    subprocess.run(["xcrun", "clang", "-fobjc-arc", HERE / "hosts/macos/host.m", "-framework", "Cocoa", "-framework", "WebKit",
                     "-o", binary], check=True, timeout=60)
     url = f"http://127.0.0.1:{server.server_port}/?example=tasks&shot=1"
     result = subprocess.run([binary, url, SHOTS / "tasks-macos.png", "430x880"], capture_output=True, text=True, timeout=60)

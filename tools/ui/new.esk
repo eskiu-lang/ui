@@ -1,0 +1,44 @@
+// `ui new`: a project with an app to start from.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// ---- new ----
+
+void create(string name, string ui_path) {
+    Cmd make;
+    make.add(eskiuc()); make.add("new"); make.add(name);
+    make.must(null);
+    make.free();
+    String main;
+    defer String_free(&main);
+    String_appendf(&main,
+"import <string>;\n"
+"import <ui>;\n"
+"\n"
+"// The root component.\n"
+"void App() {\n"
+"    Column(Style{grow: 1, padding: 24, gap: 16, background: rgb(245, 246, 250), justify: JustifyCenter,\n"
+"                 align: AlignCenter}, void() {\n"
+"        *Signal<int> count = use_signal<int>(0);\n"
+"        TextWith(Style{font_size: 28, font_weight: 700, color: rgb(17, 24, 39)}, \"%s\");\n"
+"        String label;\n"
+"        defer String_free(&label);\n"
+"        String_format(&label, \"Pressed %%d times\", count.get());\n"
+"        TextWith(Style{font_size: 16, color: rgb(107, 114, 128)}, label.data);\n"
+"        ButtonWith(Style{background: rgb(79, 70, 229), color: rgb(255, 255, 255), radius: 12, padding: 12,\n"
+"                         font_size: 16, font_weight: 600}, \"Press me\", void() { count.set(count.get() + 1); });\n"
+"    });\n"
+"}\n"
+"\n"
+"// The hosts call these: mount the app, and free what it owns when it stops.\n"
+"void ui_app_start(int which) { ui_mount(void() { App(); }); }\n"
+"void ui_app_stop() {}\n", name);
+    fs_write_text(join(name, "src/main.esk"), main.data);
+    fs_mkdir_p(join(name, "assets"));
+    Cmd add;
+    add.add(eskiuc()); add.add("add"); add.add("ui");
+    if (ui_path != null) { add.add("--path"); add.add(ui_path); }
+    else { add.add("--git"); add.add(kUiGit); add.add("--rev"); add.add("main"); }
+    add.must(name);
+    add.free();
+    printf("\nCreated %s. Next:\n  cd %s\n  ui run web      # or macos, ios, android\n", name, name);
+}
