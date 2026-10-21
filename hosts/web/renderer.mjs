@@ -26,6 +26,8 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
 // 7 image, 8 pressable, 9 switch, 10 activity indicator, 11 status bar, 12 modal, 13 native
 // view, 14 screen.
 const TAGS = {3: 'span', 4: 'button', 5: 'input', 7: 'img', 9: 'input', 15: 'input'};
+// The Easing members as CSS timing functions; spring overshoots a little, as the native hosts'.
+const EASINGS = ['ease-in-out', 'ease-out', 'ease-in', 'linear', 'cubic-bezier(0.34, 1.56, 0.64, 1)'];
 // An edge offset that is not set (kUnset in src/core/state.esk).
 const UNSET = -1000000;
 const CONTAINERS = new Set([0, 1, 2, 6, 8, 12, 14]);
@@ -221,6 +223,23 @@ export function createHost(root, dispatch, views = {}) {
       case 22: refresh(node, value !== 0); break;
       case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
       case 31: hover(node, value !== 0); break;
+      case 35: case 36: case 37: case 38: {
+        // Transforms: translate in points, scale in percent, rotate in degrees.
+        const t = node.uiTransform ??= {35: 0, 36: 0, 37: 100, 38: 0};
+        t[code] = value;
+        const identity = !t[35] && !t[36] && t[37] === 100 && !t[38];
+        s.transform = identity ? '' : `translate(${t[35]}px, ${t[36]}px) scale(${t[37] / 100}) rotate(${t[38]}deg)`;
+        break;
+      }
+      case 39: case 40: {
+        // A transition for opacity, the transforms and the colors.
+        const m = node.uiMotion ??= {39: 0, 40: 0};
+        m[code] = value;
+        const ease = EASINGS[m[40]] ?? EASINGS[0];
+        s.transition = m[39] ? ['opacity', 'transform', 'background-color', 'color', 'border-color']
+          .map(p => `${p} ${m[39]}ms ${ease}`).join(', ') : '';
+        break;
+      }
       case 32: if (node.value !== String(value)) node.value = String(value); break;
       case 33: node.min = String(value); break;
       case 34: node.max = String(value); break;

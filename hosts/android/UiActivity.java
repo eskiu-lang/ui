@@ -135,6 +135,34 @@ public final class UiActivity extends Activity {
     }
     // A slider's range: SeekBar counts from 0, so its progress is the value minus the minimum.
     private final HashMap<Integer, int[]> sliderRanges = new HashMap<>();
+    // Each node's transforms (translate x, y in points, scale in percent, rotate in degrees)
+    // and transition (ms, Easing).
+    private final HashMap<Integer, int[]> transforms = new HashMap<>();
+    private final HashMap<Integer, int[]> motions = new HashMap<>();
+    private android.animation.TimeInterpolator interpolator(int easing) {
+        if (easing == 1) return new android.view.animation.DecelerateInterpolator();
+        if (easing == 2) return new android.view.animation.AccelerateInterpolator();
+        if (easing == 3) return new android.view.animation.LinearInterpolator();
+        if (easing == 4) return new android.view.animation.OvershootInterpolator(1.2f);
+        return new android.view.animation.AccelerateDecelerateInterpolator();
+    }
+    // The node's transition, when it has one and its view is on screen.
+    private int[] motionOf(int id, View view) {
+        int[] motion = motions.get(id);
+        return motion != null && motion[0] > 0 && view.isAttachedToWindow() ? motion : null;
+    }
+    private void applyTransform(int id, View view) {
+        int[] t = transforms.get(id);
+        float d = density();
+        int[] motion = motionOf(id, view);
+        if (motion == null) {
+            view.setTranslationX(t[0] * d); view.setTranslationY(t[1] * d);
+            view.setScaleX(t[2] / 100f); view.setScaleY(t[2] / 100f); view.setRotation(t[3]);
+            return;
+        }
+        view.animate().translationX(t[0] * d).translationY(t[1] * d).scaleX(t[2] / 100f).scaleY(t[2] / 100f)
+            .rotation(t[3]).setDuration(motion[0]).setInterpolator(interpolator(motion[1])).start();
+    }
     // Timers for use_interval and use_timeout, on the UI thread, by token.
     private final HashMap<Integer, Runnable> timers = new HashMap<>();
     public void timerStart(int token, int ms, boolean repeat) {
@@ -416,7 +444,20 @@ public final class UiActivity extends Activity {
             int p = Math.round(value * d);
             if (value > 0) view.setPadding(p, p, p, p);
         }
-        else if (code == 8) paintOf(id, view).setColor(value == 0 ? 0 : argb(value));
+        else if (code == 8) {
+            GradientDrawable paint = paintOf(id, view);
+            int to = value == 0 ? 0 : argb(value);
+            int[] motion = motionOf(id, view);
+            android.content.res.ColorStateList from = paint.getColor();
+            if (motion == null || from == null) paint.setColor(to);
+            else {
+                android.animation.ValueAnimator fade = android.animation.ValueAnimator.ofArgb(from.getDefaultColor(), to);
+                fade.setDuration(motion[0]);
+                fade.setInterpolator(interpolator(motion[1]));
+                fade.addUpdateListener(a -> paint.setColor((int)a.getAnimatedValue()));
+                fade.start();
+            }
+        }
         else if (code == 9 && view instanceof TextView) {
             if (value != 0) ((TextView)view).setTextColor(argb(value));
             // A field's placeholder: its text color, faded.
@@ -430,7 +471,16 @@ public final class UiActivity extends Activity {
             border[code - 12] = value;
             paintOf(id, view).setStroke(Math.round(border[0] * d), border[1] == 0 ? 0xff000000 : argb(border[1]));
         } else if (code == 14) paintOf(id, view).setCornerRadius(value * d);
-        else if (code == 15) view.setAlpha(value / 100f);
+        else if (code == 15) {
+            int[] motion = motionOf(id, view);
+            if (motion == null) view.setAlpha(value / 100f);
+            else view.animate().alpha(value / 100f).setDuration(motion[0]).setInterpolator(interpolator(motion[1])).start();
+        }
+        else if (code >= 35 && code <= 38) {
+            transforms.computeIfAbsent(id, k -> new int[] {0, 0, 100, 0})[code - 35] = value;
+            applyTransform(id, view);
+        }
+        else if (code == 39 || code == 40) motions.computeIfAbsent(id, k -> new int[] {0, 0})[code - 39] = value;
         else if (code == 20 || code == 21) applyStatusBar(code, value);
         else if (code == 22 && view instanceof ScrollView) refresh(id, (ScrollView)view, value != 0);
         else if (code == 18 && view instanceof Switch) {
@@ -702,7 +752,7 @@ public final class UiActivity extends Activity {
             activeScreens.remove(id);
             nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
             modalIds.remove(id); refreshers.remove(id); nativeViews.remove(id); nativeTypes.remove(id);
-            shownScreens.remove(id); sliderRanges.remove(id);
+            shownScreens.remove(id); sliderRanges.remove(id); transforms.remove(id); motions.remove(id);
             scrollViewports.remove(id);
         } else if (op == 7 || op == 8) {
             if (view instanceof ScrollView) { if (op == 7) scrollViewports.put(id, -1); else scrollViewports.remove(id); }
@@ -838,8 +888,10 @@ public final class UiActivity extends Activity {
         TextView title = null;
         Switch toggle = null;
         android.widget.SeekBar volume = null;
+        View moved = null;
         for (View view : nodes.values()) {
             if ("Volume".contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) volume = (android.widget.SeekBar)view;
+            if ("Moved".contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) moved = view;
             String label = view.getContentDescription() == null ? "" : view.getContentDescription().toString();
             if (label.equals("Painted")) painted = view;
             if (label.equals("Title")) title = (TextView)view;
@@ -853,7 +905,9 @@ public final class UiActivity extends Activity {
             "\",\"radius\":" + round1(paint.getCornerRadius() / d) + ",\"border\":" + border[0] +
             ",\"borderColor\":\"" + hex(argb(border[1])) + "\",\"opacity\":" + round1(painted.getAlpha()) +
             "},\"Title\":{\"color\":\"" + hex(title.getCurrentTextColor()) + "\",\"fontSize\":" +
-            round1(title.getTextSize() / d) + ",\"fontWeight\":" + (Build.VERSION.SDK_INT >= 28 ? title.getTypeface().getWeight() : 0) + "}}";
+            round1(title.getTextSize() / d) + ",\"fontWeight\":" + (Build.VERSION.SDK_INT >= 28 ? title.getTypeface().getWeight() : 0) +
+            "},\"Moved\":{\"translateX\":" + round1(moved.getTranslationX() / d) + ",\"translateY\":" + round1(moved.getTranslationY() / d) +
+            ",\"scale\":" + round1(moved.getScaleX()) + ",\"rotate\":" + round1(moved.getRotation()) + "}}";
         tap.performClick();
         tap.performClick();
         field.setText("abc");

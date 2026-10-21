@@ -61,6 +61,9 @@ extern "C" void ui_dispatch_view(int id, int generation, const char *name, const
 @property(nonatomic) int nodeId;
 // A slider's value as last shown or reported, in whole steps.
 @property(nonatomic) int sliderValue;
+// Transforms (translate in points, scale in percent, rotate in degrees) and the transition
+// that animates changes (ms, Easing).
+@property(nonatomic) int translateX, translateY, scalePercent, rotateDegrees, transitionMs, easing;
 @property(nonatomic) CGRect reportedFrame;
 @end
 @implementation UiHostNode
@@ -94,6 +97,32 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
 }
 
 static void relayout(void);
+
+// A change animated by the node's transition, when it has one and is on screen.
+static void animated(UiHostNode *node, void (^change)(void)) {
+    if (node.transitionMs <= 0 || !node.view.window) { change(); return; }
+    NSTimeInterval duration = node.transitionMs / 1000.0;
+    if (node.easing == 4) {
+        [UIView animateWithDuration:duration delay:0 usingSpringWithDamping:0.7 initialSpringVelocity:0
+                            options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState
+                         animations:change completion:nil];
+        return;
+    }
+    const UIViewAnimationOptions curves[] = {UIViewAnimationOptionCurveEaseInOut, UIViewAnimationOptionCurveEaseOut,
+                                             UIViewAnimationOptionCurveEaseIn, UIViewAnimationOptionCurveLinear};
+    [UIView animateWithDuration:duration delay:0
+                        options:curves[std::min(3, std::max(0, node.easing))] | UIViewAnimationOptionAllowUserInteraction |
+                                UIViewAnimationOptionBeginFromCurrentState
+                     animations:change completion:nil];
+}
+
+static void applyTransform(UiHostNode *node) {
+    CGAffineTransform t = CGAffineTransformMakeTranslation(node.translateX, node.translateY);
+    t = CGAffineTransformScale(t, node.scalePercent / 100.0, node.scalePercent / 100.0);
+    t = CGAffineTransformRotate(t, node.rotateDegrees * M_PI / 180.0);
+    UIView *view = node.view;
+    animated(node, ^{ view.transform = t; });
+}
 // An edge offset that is not set (kUnset in src/core/state.esk).
 static const int kUnset = -1000000;
 
@@ -275,8 +304,13 @@ static void place(YGNodeRef yoga, UIView *parent) {
         // A hidden screen keeps its frame (it stays under a push's slide).
         if (YGNodeStyleGetDisplay(child) == YGDisplayNone) continue;
         UiHostNode *node = (__bridge UiHostNode *)YGNodeGetContext(child);
-        node.view.frame = CGRectMake(YGNodeLayoutGetLeft(child), YGNodeLayoutGetTop(child),
-                                     YGNodeLayoutGetWidth(child), YGNodeLayoutGetHeight(child));
+        // Bounds and center, not frame, which a transform makes undefined.
+        CGFloat w = YGNodeLayoutGetWidth(child), h = YGNodeLayoutGetHeight(child);
+        // Only the size: a scroll view's bounds origin is its scroll offset.
+        CGRect bounds = node.view.bounds;
+        bounds.size = CGSizeMake(w, h);
+        node.view.bounds = bounds;
+        node.view.center = CGPointMake(YGNodeLayoutGetLeft(child) + w / 2, YGNodeLayoutGetTop(child) + h / 2);
         if (node.layoutListening) {
             CGRect frame = CGRectMake(std::lround(YGNodeLayoutGetLeft(child)), std::lround(YGNodeLayoutGetTop(child)),
                                       std::lround(YGNodeLayoutGetWidth(child)), std::lround(YGNodeLayoutGetHeight(child)));
@@ -405,6 +439,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
     if (op == 1) {
         UiHostNode *node = [UiHostNode new];
         node.nodeId = id;
+        node.scalePercent = 100;
         node.generation = generation;
         node.kind = kind;
         node.yoga = YGNodeNew();
@@ -506,14 +541,22 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (before) YGNodeStyleSetHeight(node.yoga, before); else YGNodeStyleSetHeightAuto(node.yoga);
         } else if (kind == 6) YGNodeStyleSetFlexGrow(node.yoga, before);
         else if (kind == 7) YGNodeStyleSetFlexWrap(node.yoga, before ? YGWrapWrap : YGWrapNoWrap);
-        else if (kind == 8) node.view.backgroundColor = colorOf(before);
+        else if (kind == 8) { UIView *view = node.view; UIColor *color = colorOf(before); animated(node, ^{ view.backgroundColor = color; }); }
         else if (kind == 9) applyColor(node, colorOf(before));
         else if (kind == 10) { node.fontSize = before; applyFont(node); }
         else if (kind == 11) { node.fontWeight = before; applyFont(node); }
         else if (kind == 12) { node.view.layer.borderWidth = before; YGNodeStyleSetBorder(node.yoga, YGEdgeAll, before); }
         else if (kind == 13) node.view.layer.borderColor = colorOf(before).CGColor;
         else if (kind == 14) { node.view.layer.cornerRadius = before; node.view.clipsToBounds = before > 0; }
-        else if (kind == 15) node.view.alpha = before / 100.0;
+        else if (kind == 15) { UIView *view = node.view; animated(node, ^{ view.alpha = before / 100.0; }); }
+        else if (kind >= 35 && kind <= 38) {
+            if (kind == 35) node.translateX = before;
+            else if (kind == 36) node.translateY = before;
+            else if (kind == 37) node.scalePercent = before;
+            else node.rotateDegrees = before;
+            applyTransform(node);
+        } else if (kind == 39) node.transitionMs = before;
+        else if (kind == 40) node.easing = before;
         else if (kind == 16) {
             const YGAlign aligns[] = {YGAlignStretch, YGAlignFlexStart, YGAlignCenter, YGAlignFlexEnd, YGAlignStretch};
             YGNodeStyleSetAlignItems(node.yoga, aligns[std::min(4, std::max(0, before))]);
@@ -906,8 +949,10 @@ static void runConformance(void) {
         UIControl *press = nil;
         UISwitch *toggle = nil;
         UISlider *volume = nil;
+        UIView *moved = nil;
         for (UiHostNode *node in nodes.allValues) {
             if ([node.view.accessibilityLabel isEqualToString:@"Volume"]) volume = (UISlider *)node.view;
+            if ([node.view.accessibilityLabel isEqualToString:@"Moved"]) moved = node.view;
             NSString *label = node.view.accessibilityLabel;
             if ([label isEqualToString:@"Painted"]) painted = node.view;
             if ([label isEqualToString:@"Title"]) title = (UILabel *)node.view;
@@ -925,6 +970,9 @@ static void runConformance(void) {
                           @"borderColor": hex([UIColor colorWithCGColor:painted.layer.borderColor]),
                           @"opacity": @(std::round(painted.alpha * 100) / 100)},
             @"Title": @{@"color": hex(title.textColor), @"fontSize": @(title.font.pointSize), @"fontWeight": @(weightValue)},
+            @"Moved": @{@"translateX": @(moved.transform.tx), @"translateY": @(moved.transform.ty),
+                        @"scale": @(std::round(std::hypot(moved.transform.a, moved.transform.b) * 100) / 100),
+                        @"rotate": @(std::round(std::atan2(moved.transform.b, moved.transform.a) * 180 / M_PI))},
         };
         [tap sendActionsForControlEvents:UIControlEventTouchUpInside];
         [tap sendActionsForControlEvents:UIControlEventTouchUpInside];
