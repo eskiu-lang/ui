@@ -29,6 +29,11 @@ each one shows. `route_match(pattern, route, &params)` matches a route against a
 segment by segment: a `:name` segment takes any one segment into `params`, a `*` takes the
 rest, and the query is ignored. `route_params_free` frees what it put there.
 
+Free them after the screen's call, so a screen that is handed a param as a string must not
+keep it: its blocks run after the navigator's block returns, when the params are gone. Hand
+it a number (`atoi`), a copy it owns, or a pointer into the route itself, which the router
+keeps while the screen is on the stack (`&route[strlen("/packages/")]`).
+
 ## The router
 
 `router_new(root)` makes a router with one route, owned by the app's model like
