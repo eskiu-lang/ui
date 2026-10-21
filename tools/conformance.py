@@ -116,6 +116,12 @@ def differences(report, host=""):
     if len(rows) > 30:
         out.append(f"feed: {len(rows)} rows mounted, expected a window")
     expected_log = EXPECTED_LOG + EXTRA_LOG.get(host, "") + ",refresh"
+    # The fetch answers when the network does: present once, anywhere in the log.
+    entries = (report.get("log") or "").split(",")
+    fetches = [entry for entry in entries if entry.startswith("fetch:")]
+    if fetches != ["fetch:200:pong"]:
+        out.append(f"fetch: {fetches}, expected ['fetch:200:pong']")
+    report = {**report, "log": ",".join(entry for entry in entries if not entry.startswith("fetch:"))}
     # Pulling the feed shows the platform's indicator; "Loaded" hides it.
     if report.get("refresh") != [True, False]:
         out.append(f"refresh indicator after pull and after loading: {report.get('refresh')}, expected [True, False]")
@@ -191,7 +197,22 @@ def run_web():
         server.shutdown()
 
 
+class Ping(http.server.BaseHTTPRequestHandler):
+    """The scene's fetch: "pong", readable from any page."""
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(b"pong")
+
+    def log_message(self, *args):
+        pass
+
+
 def main():
+    ping = http.server.ThreadingHTTPServer(("127.0.0.1", 8899), Ping)
+    threading.Thread(target=ping.serve_forever, daemon=True).start()
     wanted = sys.argv[1:] or ["ios", "android", "web"]
     hosts = {"ios": run_ios, "android": run_android, "web": run_web}
     results, failed = {}, False

@@ -32,6 +32,15 @@ void Conformance() {
             defer String_free(&entry);
             String_appendf(&entry, "store:%s", ui_storage_get("conformance"));
             conformance_note(entry.data);
+            // The network: tools/conformance.py serves "pong" on the host's port 8899, which the
+            // Android emulator reaches as 10.0.2.2.
+            string ping = ui_platform() == PlatformAndroid ? "http://10.0.2.2:8899/ping" : "http://127.0.0.1:8899/ping";
+            ui_fetch(FetchRequest{url: ping}, void(FetchResult r) {
+                String answer;
+                defer String_free(&answer);
+                String_appendf(&answer, "fetch:%d:%s", r.status, r.status == 0 ? r.error : r.body);
+                conformance_note(answer.data);
+            });
         });
         Row(Style{gap: 10, height: 50, label: "Boxes"}, void() {
             Row(Style{width: 100, height: 50, label: "Fixed"}, void() {});
