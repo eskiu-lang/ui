@@ -4,11 +4,11 @@
 void independent() {
     Ui runtime;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         a = use_signal<int>(0); b = use_signal<int>(0);
-        Row(Style{key: key(1)}, void() { text_number(a.get()); });
-        Row(Style{key: key(2)}, void() { text_number(b.get()); });
-    });
+        Row(Style{key: key(1)}) { text_number(a.get()); }
+        Row(Style{key: key(2)}) { text_number(b.get()); }
+    }
     check(ui_frame(), "mount frame");
     int parent_runs = ui.root.runs;
     *Node row = keyed(1);
@@ -23,14 +23,14 @@ void independent() {
 void parent_child() {
     Ui runtime;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         a = use_signal<int>(0); b = use_signal<int>(0);
         int capture = a.get();
-        Row(Style{key: key(0)}, void() {
+        Row(Style{key: key(0)}) {
             *Signal<int> local = use_signal<int>(41);
             text_number(capture + b.get() + local.get());
-        });
-    });
+        }
+    }
     ui_frame();
     *Node row = keyed(0);
     int id = row.id;
@@ -47,13 +47,13 @@ void deferred_write() {
     Ui runtime;
     observed = -1;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         a = use_signal<int>(0);
         int value = a.get();
-        Row(Style{key: key(1)}, void() {
+        Row(Style{key: key(1)}) {
             if (value == 0) { a.set(1); observed = a.get(); }
-        });
-    });
+        }
+    }
     ui_frame();
     check(observed == 0 && a.get() == 1 && ui.root.next, "render snapshot and next queue");
     ui_frame();
@@ -66,23 +66,23 @@ void memos_and_effects() {
     Ui runtime;
     effects = 0; cleanups = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         a = use_signal<int>(0);
         show = use_signal<bool>(true);
         memo_value = use_memo<int>(int() { return a.get() % 2; });
         *Signal<int> chained = use_memo<int>(int() { return memo_value.get() + 10; });
-        Row(Style{key: key(1)}, void() { text_number(chained.get()); });
-        Row(Style{key: key(2)}, void() { text_number(chained.get()); });
+        Row(Style{key: key(1)}) { text_number(chained.get()); }
+        Row(Style{key: key(2)}) { text_number(chained.get()); }
         if (show.get()) {
-            Row(Style{key: key(3)}, void() {
-                use_effect(void() {
+            Row(Style{key: key(3)}) {
+                use_effect() {
                     effects++;
-                    on_cleanup(void() { cleanups++; });
+                    on_cleanup() { cleanups++; }
                     show.set(false);
-                });
-            });
+                }
+            }
         }
-    });
+    }
     ui_frame();
     check(effects == 1 && cleanups == 0, "effect after mount");
     ui_frame();
@@ -102,15 +102,15 @@ void hook_captures() {
     Ui runtime;
     observed = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         a = use_signal<int>(1);
         int capture = a.get();
-        Row(Style{key: key(1)}, void() {
+        Row(Style{key: key(1)}) {
             captured_memo = use_memo<int>(int() { return capture * 2; });
             text_number(captured_memo.get());
-            use_effect(void() { observed = capture; });
-        });
-    });
+            use_effect() { observed = capture; }
+        }
+    }
     ui_frame(); a.set(7); ui_frame();
     check(observed == 7 && captured_memo.get() == 14, "hook closures replaced");
     ui_shutdown(); balanced("hook capture leak");
@@ -120,11 +120,11 @@ void effect_order() {
     Ui runtime;
     observed = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
-        Row(Style{}, void() { use_effect(void() { observed = observed * 10 + 2; }); });
+    ui_mount() {
+        Row(Style{}) { use_effect(void() { observed = observed * 10 + 2; }); }
         // Registration order differs from tree order.
-        use_effect(void() { observed = observed * 10 + 1; });
-    });
+        use_effect() { observed = observed * 10 + 1; }
+    }
     ui_frame();
     check(observed == 12, "effects execute parent before child");
     ui_shutdown(); balanced("effect order leak");
@@ -134,12 +134,12 @@ void cleanup_lifetime() {
     Ui runtime;
     observed = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         // The signal is registered AFTER the effect. Reverse slot disposal alone
         // would free it before the cleanup reads it.
-        use_effect(void() { on_cleanup(void() { observed = a.get(); }); });
+        use_effect() { on_cleanup(void() { observed = a.get(); }); }
         a = use_signal<int>(73);
-    });
+    }
     ui_frame();
     ui_shutdown();
     check(observed == 73, "cleanup reads live state regardless of hook order");
@@ -153,19 +153,19 @@ void mount_lifetime() {
     Ui runtime;
     mounts = 0; unmounts = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         a = use_signal<int>(1);
         if (a.get() > 0) {
-            Scope("Sensor", Key{}, void() {
+            Scope("Sensor", Key{}) {
                 // Read in the scope, so each change renders it again.
                 String text;
                 defer String_free(&text);
                 String_format(&text, "%d", a.get());
                 use_mount(void() { mounts++; }, void() { unmounts++; });
                 Text(text.data);
-            });
+            }
         }
-    });
+    }
     ui_frame();
     a.set(2); ui_frame();
     a.set(3); ui_frame();
@@ -180,11 +180,11 @@ void commit_lifetime() {
     Ui runtime;
     async_apply = true; observed = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         a = use_signal<int>(1);
         int capture = a.get();
-        Button("click", void() { observed = capture; });
-    });
+        Button("click") { observed = capture; }
+    }
     ui_frame();
     check(ui.in_flight, "async commit in flight");
     ui_complete(ui.sequence);
@@ -209,7 +209,7 @@ void model_signal() {
     for (round in 0..2) {
         Ui runtime;
         ui_init(&runtime, record);
-        ui_mount(void() { Row(Style{key: key(1)}, void() { text_number(count.get()); }); });
+        ui_mount() { Row(Style{key: key(1)}, void() { text_number(count.get()); }); }
         ui_frame();
         int runs = keyed(1).runs;
         count.set(count.get() + 1);
@@ -226,11 +226,11 @@ void queued_events() {
     Ui runtime;
     async_apply = true; observed = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         a = use_signal<int>(1);
         int capture = a.get();
-        Button("click", void() { observed = observed * 10 + capture; });
-    });
+        Button("click") { observed = observed * 10 + capture; }
+    }
     ui_frame();
     ui_complete(ui.sequence);
     int button_id = ui.root.children.data[0].id;

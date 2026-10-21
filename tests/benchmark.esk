@@ -11,7 +11,7 @@ void benchmark(int rows, int frames) {
     for (i in 0..rows) { store.add("Task"); }
     Ui runtime;
     ui_init(&runtime, host);
-    ui_mount(void() { TodoApp(store); });
+    ui_mount() { TodoApp(store); }
     ui_frame();
     double[100] times;
     for (i in 0..frames) {
@@ -37,7 +37,7 @@ void scaling(int rows) {
     Ui runtime;
     ui_init(&runtime, host);
     double start = ui_clock_ms();
-    ui_mount(void() { TodoApp(store); });
+    ui_mount() { TodoApp(store); }
     ui_frame();
     double mounted = ui_clock_ms();
     for (int i = 0; i < rows / 2; i++) {
@@ -66,16 +66,16 @@ void shared_reader(int rows) {
     *Signal<int> selected = signal_new<int>(0);
     Ui runtime;
     ui_init(&runtime, host);
-    ui_mount(void() {
-        Column(Style{}, void() {
+    ui_mount() {
+        Column(Style{}) {
             for (i in 0..rows) {
                 int id = i;
-                Row(Style{key: key(id)}, void() {
+                Row(Style{key: key(id)}) {
                     Text(selected.get() == id ? "selected" : "row");
-                });
+                }
             }
-        });
-    });
+        }
+    }
     ui_frame();
     double start = ui_clock_ms();
     selected.set(rows / 2); ui_frame();
@@ -91,7 +91,7 @@ void virtual_list(int rows) {
     Ui runtime;
     ui_init(&runtime, host);
     double start = ui_clock_ms();
-    ui_mount(void() { FlatList(Style{height: 800}, rows, 40, void(int i) { NumberText("Row ", i); }); });
+    ui_mount() { FlatList(Style{height: 800}, rows, 40, void(int i) { NumberText("Row ", i); }); }
     ui_frame();
     double mounted = ui_clock_ms();
     *Node list = ui.root.children.data[0];

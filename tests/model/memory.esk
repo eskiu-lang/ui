@@ -11,7 +11,7 @@ void leak_gate() {
         store.add("first");
         store.add("second");
         ui_init(&runtime, record);
-        ui_mount(void() { TodoApp(store); });
+        ui_mount() { TodoApp(store); }
         ui_frame();
         ui_shutdown();
         store.free();
@@ -25,7 +25,7 @@ void leak_gate() {
     store.add("first");
     store.add("second");
     ui_init(&runtime, record);
-    ui_mount(void() { TodoApp(store); });
+    ui_mount() { TodoApp(store); }
     ui_frame();
     store.changed(); ui_frame();
     int64 baseline = ui_live_allocations();
@@ -46,18 +46,18 @@ void owned_strings() {
     Ui runtime;
     observed = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         owned = use_string("before");
         // This callback deliberately does not subscribe to owned: it holds a snapshot.
-        Row(Style{key: key(1)}, void() {
+        Row(Style{key: key(1)}) {
             held = owned.snapshot();
             *UiString capture = held;
             Button_owned("Read snapshot", void() {
                 check(strcmp(capture.text, "before") == 0, "old snapshot survives set");
                 observed++;
-            }, void() { capture.release(); });
-        });
-    });
+            }) { capture.release(); }
+        }
+    }
     ui_frame();
     int button = keyed(1).children.data[0].id;
     // Change the owned value, retain the old snapshot beyond replacement and commit.

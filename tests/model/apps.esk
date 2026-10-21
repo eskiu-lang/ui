@@ -8,7 +8,7 @@ void tasks_app() {
     tasks_seed(store);
     Ui runtime;
     ui_init(&runtime, record);
-    ui_mount(void() { TasksApp(store); });
+    ui_mount() { TasksApp(store); }
     ui_frame();
     check(find_label(ui.root, "Tasks").row_count == 7, "seven tasks");
     *Node active = find_label(ui.root, "Active");
@@ -35,7 +35,7 @@ void tasks_app() {
 void kit_gallery() {
     Ui runtime;
     ui_init(&runtime, record);
-    ui_mount(void() { KitGallery(); });
+    ui_mount() { KitGallery(); }
     ui_frame();
     press_label("Weekly summary");
     check(find_label(ui.root, "Weekly summary").children.data[0].children.data[0].props[8] == kit.primary,

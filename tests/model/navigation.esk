@@ -42,13 +42,13 @@ void nav_press(string text) {
 *Signal<int> nav_tick;
 
 void NavNote(string name) {
-    Column(Style{}, void() {
+    Column(Style{}) {
         nav_tick.get();
         String title;
         defer String_free(&title);
         String_format(&title, "Note %s", name);
         Text(title.data);
-    });
+    }
 }
 
 void nav_app() {
@@ -66,12 +66,12 @@ void nav_app() {
             defer String_free(&title);
             String_format(&title, "Task %s", params.data[0].data);
             Text(title.data);
-            Button("Back", void() { nav_router.back(); });
+            Button("Back") { nav_router.back(); }
         } else {
             *Signal<int> taps = use_signal<int>(0);
             text_number(taps.get());
-            Button("Tap", void() { taps.set(taps.get() + 1); });
-            Button("Open", void() { nav_router.push("/tasks/42"); });
+            Button("Tap") { taps.set(taps.get() + 1); }
+            Button("Open") { nav_router.push("/tasks/42"); }
         }
     });
 }
@@ -95,7 +95,7 @@ void navigation() {
     Ui runtime;
     ui_init(&runtime, record);
     nav_router = router_new("/");
-    ui_mount(void() { nav_app(); });
+    ui_mount() { nav_app(); }
     ui_frame();
     check(mutation_ops[mutation_count - 1] == 10 && mutation_kinds[mutation_count - 1] == 3 &&
           strcmp(mutation_texts[mutation_count - 1], "reset") == 0, "the URL follows the first navigator");

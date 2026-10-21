@@ -17,28 +17,28 @@ void ui_app_start(int example) {
     else if (example == 5) { ui_mount(void() { KitGallery(); }); }
     else if (example == 4) {
         tasks_seed(&task_store);
-        ui_mount(void() { TasksApp(&task_store); });
+        ui_mount() { TasksApp(&task_store); }
     }
     else if (example == 3) {
         conformance_reset();
-        ui_mount(void() { Conformance(); });
+        ui_mount() { Conformance(); }
     }
     else if (example == 2) {
         // Scheduler probe: effects must advance without another user event.
-        ui_mount(void() {
+        ui_mount() {
             *Signal<int> progress = use_signal<int>(0);
             NumberText("Progress: ", progress.get());
-            use_effect(void() {
+            use_effect() {
                 int value = progress.get();
                 if (value < 2) { progress.set(value + 1); }
-            });
-        });
+            }
+        }
     }
     else {
         todo_store.init();
         todo_store.add("Try Eskiu UI");
         todo_store.add("Reorder without losing state");
-        ui_mount(void() { TodoApp(&todo_store); });
+        ui_mount() { TodoApp(&todo_store); }
     }
 }
 

@@ -9,7 +9,7 @@ int main(int argc, string* argv) {
     mode = argv[1][0] - '0';
     Ui runtime;
     ui_init(&runtime, host);
-    ui_mount(void() {
+    ui_mount() {
         revision = use_signal<int>(0);
         int version = revision.get();
         if (mode == 1) { revision.set(version + 1); }
@@ -18,16 +18,16 @@ int main(int argc, string* argv) {
             else { use_signal<bool>(true); }
         }
         if (mode == 3) {
-            Row(Style{key: key(0)}, void() {});
-            Row(Style{key: key(0)}, void() {});
+            Row(Style{key: key(0)}) {}
+            Row(Style{key: key(0)}) {}
         }
         if (mode == 5 || mode == 6) { throw 7; }
         if (mode == 8) {
-            Column(Style{}, void() {
-                Scope("TodoRow", key(3), void() {
+            Column(Style{}) {
+                Scope("TodoRow", key(3)) {
                     if (revision.get() == 0) { use_signal<int>(1); } else { use_memo<int>(int() { return 1; }); }
-                });
-            });
+                }
+            }
         }
         if (mode == 9) { RefreshControl(false, void() {}); Text("not a scroll"); }
         if (mode == 7) {
@@ -37,7 +37,7 @@ int main(int argc, string* argv) {
             cyclic = use_memo<int>(int() { return cyclic.get(); });
             cyclic.get();
         }
-    });
+    }
     if (mode == 6) {
         try { ui_frame(); } catch (int e) {}
     }

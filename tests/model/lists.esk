@@ -7,9 +7,9 @@ void flat_list() {
     Ui runtime;
     rendered_rows = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         FlatList(Style{height: 400}, 10000, 40, void(int i) { rendered_rows++; text_number(i); });
-    });
+    }
     ui_frame();
     *Node list = ui.root.children.data[0];
     check(list.kind == 6 && list.virtual, "a flat list is a virtual scroll");
@@ -35,11 +35,11 @@ void section_list() {
     Ui runtime;
     sections.push(3); sections.push(100); sections.push(2);
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         SectionList(Style{height: 200}, &sections, 30, 40, void(int section, int item) {
             text_number(item < 0 ? 1000 + section : item);
         });
-    });
+    }
     ui_frame();
     *Node list = ui.root.children.data[0];
     check(text_is(list.children.data[0].children.data[0], 1000), "section 0's header first");
@@ -61,11 +61,11 @@ void refresh_control() {
     Ui runtime;
     refreshes = 0;
     ui_init(&runtime, record);
-    ui_mount(void() {
+    ui_mount() {
         loading = use_signal<bool>(false);
-        RefreshControl(loading.get(), void() { refreshes++; loading.set(true); });
+        RefreshControl(loading.get()) { refreshes++; loading.set(true); }
         FlatList(Style{height: 200}, 50, 40, void(int i) { text_number(i); });
-    });
+    }
     ui_frame();
     *Node list = ui.root.children.data[0];
     check(count_prop(2, 22) == 1 && prop_value(2, 22) == 0, "the list says it can refresh");
