@@ -30,7 +30,8 @@ void Popover(bool open, escaping fn()->void on_dismiss, escaping fn()->void trig
             // Hidden until measured, so it never shows on the wrong side.
             Column(Style{absolute: true, left: left, top: top, min_width: aw.get() > 180 ? aw.get() : 180, padding: 6, gap: 2,
                          max_width: window.width - 16, radius: kit.radius,
-                         background: kit.surface, border_width: 1, border_color: kit.line, opacity: panel.get() > 0 ? 100 : 0,
+                         background: kit.surface, border_width: 1, border_color: kit.line, shadow: 12,
+                         opacity: panel.get() > 0 ? 100 : 0,
                          translate_y: panel.get() > 0 ? 0 : -6, transition_ms: 150, easing: EaseOut}, void() { content(); });
         });
     });
@@ -168,7 +169,7 @@ void ToastHost() {
         Row(Style{absolute: true, left: 24, right: 24, bottom: 24 + ui_insets().bottom, justify: JustifyCenter,
                   opacity: visible.get() ? 100 : 0, translate_y: visible.get() ? 0 : 16, transition_ms: 250,
                   easing: EaseOut}, void() {
-            Row(Style{padding: 14, radius: 14, background: kit.ink, label: message.get()}, void() {
+            Row(Style{padding: 14, radius: 14, background: kit.ink, shadow: 8, label: message.get()}, void() {
                 TextWith(Style{font_size: 15, font_weight: 600, color: kit.page}, message.get());
             });
         });

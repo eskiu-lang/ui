@@ -36,7 +36,8 @@ string kit_month_name(int month) {
 }
 
 // A month's days, weeks from Sunday, with arrows to the months around it; `selected` is
-// circled, and on_select gets the day pressed.
+// circled, and on_select gets the day pressed. The seven columns share the width it gets, at
+// least 280 points.
 void Calendar(Date selected, escaping fn(Date)->void on_select) {
     ui_own(void() { kit_release_date(on_select); });
     Scope("Calendar", Key{}, void() {
@@ -44,7 +45,7 @@ void Calendar(Date selected, escaping fn(Date)->void on_select) {
         *Signal<int> shown = use_signal<int>(selected.year * 12 + selected.month - 1);
         int year = shown.get() / 12;
         int month = shown.get() % 12 + 1;
-        Column(Style{gap: 8, width: 280}, void() {
+        Column(Style{gap: 8, min_width: 280}, void() {
             Row(Style{align: AlignCenter, gap: 4}, void() {
                 String title;
                 defer String_free(&title);
@@ -56,9 +57,13 @@ void Calendar(Date selected, escaping fn(Date)->void on_select) {
             Row(Style{gap: 0}, void() {
                 string names = "SMTWTFS";
                 for (i in 0..7) {
-                    char[2] one;
-                    one[0] = names[i]; one[1] = 0;
-                    TextWith(Style{width: 40, font_size: 12, font_weight: 600, color: kit.muted}, (string)&one[0]);
+                    String letter;
+                    defer String_free(&letter);
+                    String_push(&letter, names[i]);
+                    string text = letter.data;
+                    Row(Style{width: 1, grow: 1, justify: JustifyCenter}, void() {
+                        TextWith(Style{font_size: 12, font_weight: 600, color: kit.muted}, text);
+                    });
                 }
             });
             int first = kit_weekday(year, month, 1);
@@ -69,19 +74,21 @@ void Calendar(Date selected, escaping fn(Date)->void on_select) {
                     for (i in 0..7) {
                         int day = week * 7 + i - first + 1;
                         if (day < 1 || day > days) {
-                            Row(Style{key: key(i), width: 40, height: 40}, void() {});
+                            Row(Style{key: key(i), width: 1, grow: 1, height: 40}, void() {});
                             continue;
                         }
                         bool on = selected.year == year && selected.month == month && selected.day == day;
                         String number;
                         defer String_free(&number);
                         String_format(&number, "%d", day);
-                        Pressable(Style{key: key(i), width: 40, height: 40, radius: 20, align: AlignCenter, justify: JustifyCenter,
-                                        background: on ? kit.primary : -1, label: number.data},
-                            void() { on_select(Date{year, month, day}); }, void() {
-                                TextWith(Style{font_size: 15, font_weight: on ? 700 : 400, color: on ? kit.on_primary : kit.ink},
-                                    number.data);
-                            });
+                        Row(Style{key: key(i), width: 1, grow: 1, justify: JustifyCenter}, void() {
+                            Pressable(Style{width: 40, height: 40, radius: 20, align: AlignCenter, justify: JustifyCenter,
+                                            background: on ? kit.primary : -1, label: number.data},
+                                void() { on_select(Date{year, month, day}); }, void() {
+                                    TextWith(Style{font_size: 15, font_weight: on ? 700 : 400, color: on ? kit.on_primary : kit.ink},
+                                        number.data);
+                                });
+                        });
                     }
                 });
             }
