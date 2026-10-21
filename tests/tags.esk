@@ -1,0 +1,10 @@
+extern int printf(string fmt, ...);
+extern void abort();
+type Integer = int;
+*void tag<T>() { static int value; return &value; }
+int main() {
+    if (tag<int>() == tag<bool>() || tag<int>() == tag<string>() || tag<int>() != tag<int>()) { abort(); }
+    if (tag<Integer>() != tag<int>()) { abort(); }
+    printf("PASS generic static tags\n");
+    return 0;
+}

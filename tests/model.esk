@@ -1,0 +1,396 @@
+import "../src/ui.esk";
+import "../src/owned_string.esk";
+import "../examples/components.esk";
+extern int64 ui_live_allocations();
+extern bool ui_allocations_counted();
+extern double ui_clock_ms();
+extern int strcmp(string a, string b);
+
+*Signal<int> a;
+*Signal<int> b;
+*Signal<int> memo_value;
+*Signal<int> captured_memo;
+*Signal<bool> show;
+int effects;
+int cleanups;
+int observed;
+int mutation_count;
+int[9] ops;
+int[128] mutation_ops;
+int[128] mutation_ids;
+int[128] mutation_befores;
+bool async_apply;
+
+void record(*Mutation mutations, int count) {
+    mutation_count = count;
+    for (i in 0..9) { ops[i] = 0; }
+    ui_require(count <= 128, "recording capacity");
+    for (i in 0..count) {
+        ops[mutations[i].op]++;
+        mutation_ops[i] = mutations[i].op;
+        mutation_ids[i] = mutations[i].id;
+        mutation_befores[i] = mutations[i].before;
+    }
+    if (!async_apply) { ui_complete(ui.sequence); }
+}
+
+void check(bool ok, string label) { ui_require(ok, label); }
+void balanced(string label) { check(ui_live_allocations() == 0, label); }
+
+*Node keyed(int64 value) {
+    for (i in 0..ui.nodes.size) {
+        *Node node = ui.nodes.data[i];
+        if (node.key.set && node.key.value == value) { return node; }
+    }
+    abort(); return null;
+}
+
+void text_number(int value) {
+    char[32] buffer;
+    snprintf(&buffer[0], 32, "%d", value);
+    Text((string)&buffer[0]);
+}
+extern int snprintf(*char buffer, size_t n, string fmt, ...);
+
+void independent() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(0); b = use_signal<int>(0);
+        Row(Style{key: key(1)}, void() { text_number(a.get()); });
+        Row(Style{key: key(2)}, void() { text_number(b.get()); });
+    });
+    check(ui_frame(), "mount frame");
+    int parent_runs = ui.root.runs;
+    *Node row = keyed(1);
+    a.set(1);
+    check(ui_frame(), "signal frame");
+    check(ui.root.runs == parent_runs && row.runs == 2, "only reader reruns");
+    check(mutation_count == 1 && ops[3] == 1, "exact set_text mutation");
+    check(!ui_frame(), "no idle work");
+    ui_shutdown(); balanced("independent leak");
+}
+
+void parent_child() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(0); b = use_signal<int>(0);
+        int capture = a.get();
+        Row(Style{key: key(0)}, void() {
+            *Signal<int> local = use_signal<int>(41);
+            text_number(capture + b.get() + local.get());
+        });
+    });
+    ui_frame();
+    *Node row = keyed(0);
+    int id = row.id;
+    a.set(2); b.set(3);
+    ui_frame();
+    check(ui.root.runs == 2 && row.runs == 2, "parent and child once");
+    check(keyed(0).id == id, "key zero preserved");
+    check(strcmp(row.children.data[0].text, "46") == 0, "capture updated and slot preserved");
+    check(ops[3] == 1, "capture text mutation");
+    ui_shutdown(); balanced("parent child leak");
+}
+
+void deferred_write() {
+    Ui runtime;
+    observed = -1;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(0);
+        int value = a.get();
+        Row(Style{key: key(1)}, void() {
+            if (value == 0) { a.set(1); observed = a.get(); }
+        });
+    });
+    ui_frame();
+    check(observed == 0 && a.get() == 1 && ui.root.next, "render snapshot and next queue");
+    ui_frame();
+    check(ui.root.runs == 2 && keyed(1).runs == 2, "child invalidates running parent");
+    check(!ui_frame(), "deferred write settles");
+    ui_shutdown(); balanced("deferred write leak");
+}
+
+void memos_and_effects() {
+    Ui runtime;
+    effects = 0; cleanups = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(0);
+        show = use_signal<bool>(true);
+        memo_value = use_memo<int>(int() { return a.get() % 2; });
+        *Signal<int> chained = use_memo<int>(int() { return memo_value.get() + 10; });
+        Row(Style{key: key(1)}, void() { text_number(chained.get()); });
+        Row(Style{key: key(2)}, void() { text_number(chained.get()); });
+        if (show.get()) {
+            Row(Style{key: key(3)}, void() {
+                use_effect(void() {
+                    effects++;
+                    on_cleanup(void() { cleanups++; });
+                    show.set(false);
+                });
+            });
+        }
+    });
+    ui_frame();
+    check(effects == 1 && cleanups == 0, "effect after mount");
+    ui_frame();
+    check(effects == 1 && cleanups == 1, "effect unmount cleanup once");
+    int first_runs = keyed(1).runs;
+    a.set(2);
+    check(!ui_frame(), "equal memo produces no frame");
+    check(keyed(1).runs == first_runs, "equal memo skips consumers");
+    a.set(3); ui_frame();
+    check(keyed(1).runs == first_runs + 1 && keyed(2).runs == first_runs + 1,
+        "memo chain wakes both consumers");
+    check(ops[3] == 2, "memo chain text mutations");
+    ui_shutdown(); balanced("memo effect leak");
+}
+
+void hook_captures() {
+    Ui runtime;
+    observed = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(1);
+        int capture = a.get();
+        Row(Style{key: key(1)}, void() {
+            captured_memo = use_memo<int>(int() { return capture * 2; });
+            text_number(captured_memo.get());
+            use_effect(void() { observed = capture; });
+        });
+    });
+    ui_frame(); a.set(7); ui_frame();
+    check(observed == 7 && captured_memo.get() == 14, "hook closures replaced");
+    ui_shutdown(); balanced("hook capture leak");
+}
+
+void effect_order() {
+    Ui runtime;
+    observed = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        Row(Style{}, void() { use_effect(void() { observed = observed * 10 + 2; }); });
+        // Registration order differs from tree order.
+        use_effect(void() { observed = observed * 10 + 1; });
+    });
+    ui_frame();
+    check(observed == 12, "effects execute parent before child");
+    ui_shutdown(); balanced("effect order leak");
+}
+
+void cleanup_lifetime() {
+    Ui runtime;
+    observed = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        // The signal is registered AFTER the effect. Reverse slot disposal alone
+        // would free it before the cleanup reads it.
+        use_effect(void() { on_cleanup(void() { observed = a.get(); }); });
+        a = use_signal<int>(73);
+    });
+    ui_frame();
+    ui_shutdown();
+    check(observed == 73, "cleanup reads live state regardless of hook order");
+    balanced("cleanup state lifetime leak");
+}
+
+void identity() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(0);
+        int version = a.get();
+        Column(Style{}, void() {
+            Text("unkeyed");
+            for (i in 0..3) {
+                int id = version == 0 ? i : 2 - i;
+                if (version != 2 || id != 1) {
+                    Row(Style{key: key(id)}, void() {
+                        *Signal<int> editing = use_signal<int>(id + 40);
+                        text_number(editing.get());
+                        Button("Edit", void() { editing.set(editing.get() + 1); });
+                    });
+                }
+            }
+        });
+    });
+    ui_frame();
+    int zero_id = keyed(0).id;
+    *Node row = keyed(1);
+    int row_id = row.id;
+    int button_id = row.children.data[1].id;
+    check(ui_event(button_id, 1), "handler dispatch"); ui_frame();
+    a.set(1); ui_frame();
+    check(keyed(0).id == zero_id && keyed(1).id == row_id, "keyed ids survive reorder");
+    check(strcmp(keyed(1).children.data[0].text, "42") == 0, "state survives reorder");
+    *Node column = ui.root.children.data[0];
+    check(column.children.data[1] == keyed(2) && column.children.data[3] == keyed(0), "new sibling order");
+    check(ops[5] == 2, "reverse list needs two moves");
+    a.set(2); ui_frame();
+    check(!ui_event(button_id, 1), "removed event dropped");
+    check(!ui_event(zero_id, 999), "stale generation dropped");
+    ui_shutdown(); balanced("identity leak");
+}
+
+void commit_lifetime() {
+    Ui runtime;
+    async_apply = true; observed = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(1);
+        int capture = a.get();
+        Button("click", void() { observed = capture; });
+    });
+    ui_frame();
+    check(ui.in_flight, "async commit in flight");
+    ui_complete(ui.sequence);
+    int button_id = ui.root.children.data[0].id;
+    a.set(2);
+    int64 before = ui_live_allocations();
+    ui_frame();
+    check(ui.in_flight && ui.retired.size > 0 &&
+        (!ui_allocations_counted() || ui_live_allocations() > before),
+        "old handler retained until ack");
+    ui_complete(ui.sequence);
+    ui_event(button_id, 1);
+    check(observed == 2, "queued event uses current handler");
+    async_apply = false;
+    ui_shutdown(); balanced("commit lifetime leak");
+}
+
+void leak_gate() {
+    double start = ui_clock_ms();
+    for (iteration in 0..10000) {
+        Ui runtime;
+        Store model;
+        *Store store = &model;
+        store.init();
+        store.items.push(Todo{0, false, "first"});
+        store.items.push(Todo{1, false, "second"});
+        store.next_id = 2;
+        ui_init(&runtime, record);
+        ui_mount(void() { TodoApp(store); });
+        ui_frame();
+        ui_shutdown();
+        store.free();
+        balanced("mount unmount leak gate");
+    }
+    printf("mount/unmount 10000: %.3f ms\n", ui_clock_ms() - start);
+    Ui runtime;
+    Store model;
+    *Store store = &model;
+    store.init();
+    store.items.push(Todo{0, false, "first"});
+    store.items.push(Todo{1, false, "second"});
+    store.next_id = 2;
+    ui_init(&runtime, record);
+    ui_mount(void() { TodoApp(store); });
+    ui_frame();
+    store.changed(); ui_frame();
+    int64 baseline = ui_live_allocations();
+    start = ui_clock_ms();
+    for (i in 1..10001) {
+        store.changed(); ui_frame();
+        check(ui_live_allocations() == baseline, "handler replacement baseline");
+    }
+    printf("handler replacement 10000: %.3f ms\n", ui_clock_ms() - start);
+    ui_shutdown(); store.free(); balanced("replacement shutdown leak");
+}
+
+*StringState owned;
+*UiString held;
+void owned_strings() {
+    Ui runtime;
+    observed = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        owned = use_string("before");
+        // This callback deliberately does not subscribe to owned: it holds a snapshot.
+        Row(Style{key: key(1)}, void() {
+            held = owned.snapshot();
+            *UiString capture = held;
+            Button_owned("Read snapshot", void() {
+                check(strcmp(capture.text, "before") == 0, "old snapshot survives set");
+                observed++;
+            }, void() { capture.release(); });
+        });
+    });
+    ui_frame();
+    int button = keyed(1).children.data[0].id;
+    // Change the owned value, retain the old snapshot beyond replacement and commit.
+    owned.set("after");
+    ui_event(button, 1);
+    check(observed == 1, "retained capture callable after set");
+    // New handler sees the updated value. Stop before rerunning the assertion callback.
+    ui_frame();
+    check(strcmp(held.text, "after") == 0, "new handler gets new snapshot");
+    ui_shutdown(); balanced("owned string leak");
+}
+
+void model_signal() {
+    *Signal<int> count = signal_new<int>(5);
+    count.set(6);
+    check(count.get() == 6, "model signal works with no runtime");
+    for (round in 0..2) {
+        Ui runtime;
+        ui_init(&runtime, record);
+        ui_mount(void() { Row(Style{key: key(1)}, void() { text_number(count.get()); }); });
+        ui_frame();
+        int runs = keyed(1).runs;
+        count.set(count.get() + 1);
+        check(ui_frame() && keyed(1).runs == runs + 1, "model signal wakes its reader");
+        ui_shutdown();
+    }
+    count.set(42);
+    check(count.get() == 42, "model signal outlives the mounts");
+    count.free();
+    balanced("model signal leak");
+}
+
+void queued_events() {
+    Ui runtime;
+    async_apply = true; observed = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(1);
+        int capture = a.get();
+        Button("click", void() { observed = observed * 10 + capture; });
+    });
+    ui_frame();
+    ui_complete(ui.sequence);
+    int button_id = ui.root.children.data[0].id;
+    a.set(2);
+    ui_frame();
+    check(ui.in_flight, "commit in flight");
+    check(ui_event(button_id, 1) && ui_event(button_id, 1), "events queued while in flight");
+    check(observed == 0, "queued events wait for completion");
+    ui_complete(ui.sequence);
+    check(observed == 22, "queued events run in order with the current handler");
+    a.set(3);
+    ui_frame();
+    check(ui_event(button_id, 999), "stale event queued");
+    ui_complete(ui.sequence);
+    check(observed == 22, "stale queued event dropped at dispatch");
+    async_apply = false;
+    ui_shutdown(); balanced("queued events leak");
+}
+
+int main() {
+    independent(); printf("PASS independent\n");
+    parent_child(); printf("PASS parent-child\n");
+    deferred_write(); printf("PASS render snapshot\n");
+    memos_and_effects(); printf("PASS memos/effects\n");
+    hook_captures(); printf("PASS hook captures\n");
+    effect_order(); printf("PASS effect order\n");
+    cleanup_lifetime(); printf("PASS cleanup state lifetime\n");
+    identity(); printf("PASS identity\n");
+    commit_lifetime(); printf("PASS async commit\n");
+    queued_events(); printf("PASS queued events\n");
+    model_signal(); printf("PASS model signal\n");
+    owned_strings(); printf("PASS owned snapshots\n");
+    leak_gate(); printf("PASS leak gates\n");
+    return 0;
+}

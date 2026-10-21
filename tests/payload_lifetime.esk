@@ -1,0 +1,11 @@
+import "../src/ui.esk";
+string borrowed;
+void receive(string text) { borrowed = text; }
+int main() {
+    string payload = ui_copy("payload");
+    receive(payload);
+    free(payload);
+    // Negative ASan control: mimics retaining event text without making a copy.
+    printf("%c\n", borrowed[0]);
+    return 0;
+}

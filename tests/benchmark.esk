@@ -1,0 +1,30 @@
+import "../examples/components.esk";
+extern double ui_clock_ms();
+
+void host(*Mutation items, int n) { ui_complete(ui.sequence); }
+
+void benchmark(int rows, int frames) {
+    Store model;
+    *Store store = &model;
+    store.init();
+    for (i in 0..rows) { store.items.push(Todo{i, false, "Task"}); }
+    Ui runtime;
+    ui_init(&runtime, host);
+    ui_mount(void() { TodoApp(store); });
+    ui_frame();
+    double[100] times;
+    for (i in 0..frames) {
+        double start = ui_clock_ms();
+        store.changed(); ui_frame();
+        times[i] = ui_clock_ms() - start;
+    }
+    for (i in 0..frames) {
+        for (int j = i + 1; j < frames; j++) {
+            if (times[j] < times[i]) { double temporary = times[i]; times[i] = times[j]; times[j] = temporary; }
+        }
+    }
+    printf("rows=%d frames=%d p50_ms=%.3f p95_ms=%.3f\n", rows, frames, times[frames / 2], times[frames * 95 / 100]);
+    ui_shutdown(); store.free();
+}
+
+int main() { benchmark(10, 100); benchmark(100, 100); benchmark(1000, 20); return 0; }

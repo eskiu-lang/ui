@@ -1,0 +1,38 @@
+import "../src/ui.esk";
+*Signal<int> revision;
+int mode;
+*Signal<int> cyclic;
+void host(*Mutation items, int n) { ui_complete(ui.sequence); }
+
+int main(int argc, string* argv) {
+    ui_require(argc == 2, "expected rejection mode");
+    mode = argv[1][0] - '0';
+    Ui runtime;
+    ui_init(&runtime, host);
+    ui_mount(void() {
+        revision = use_signal<int>(0);
+        int version = revision.get();
+        if (mode == 1) { revision.set(version + 1); }
+        if (mode == 2) {
+            if (version == 0) { use_signal<int>(1); }
+            else { use_signal<bool>(true); }
+        }
+        if (mode == 3) {
+            Row(Style{key: key(0)}, void() {});
+            Row(Style{key: key(0)}, void() {});
+        }
+        if (mode == 5 || mode == 6) { throw 7; }
+        if (mode == 4) {
+            cyclic = use_memo<int>(int() { return cyclic.get(); });
+            cyclic.get();
+        }
+    });
+    if (mode == 6) {
+        try { ui_frame(); } catch (int e) {}
+    }
+    ui_frame();
+    if (mode == 2) { revision.set(1); ui_frame(); }
+    if (mode == 1) { for (i in 0..101) { ui_frame(); } }
+    ui_shutdown();
+    return 0;
+}
