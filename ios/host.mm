@@ -51,6 +51,17 @@ static void place(YGNodeRef yoga, UIView *parent) {
                                      YGNodeLayoutGetWidth(child), YGNodeLayoutGetHeight(child));
         place(child, node.view);
     }
+    // A scroll view's content is as tall as its lowest child.
+    UiHostNode *owner = (__bridge UiHostNode *)YGNodeGetContext(yoga);
+    if (owner && [owner.view isKindOfClass:UIScrollView.class]) {
+        CGFloat bottom = 0;
+        for (size_t i = 0; i < YGNodeGetChildCount(yoga); ++i) {
+            YGNodeRef child = YGNodeGetChild(yoga, i);
+            bottom = std::max(bottom, (CGFloat)(YGNodeLayoutGetTop(child) + YGNodeLayoutGetHeight(child)));
+        }
+        ((UIScrollView *)owner.view).contentSize =
+            CGSizeMake(YGNodeLayoutGetWidth(yoga), bottom + YGNodeLayoutGetPadding(yoga, YGEdgeBottom));
+    }
 }
 
 @interface UiEvents : NSObject
@@ -118,13 +129,18 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             label.numberOfLines = 0;
             label.font = [UIFont systemFontOfSize:18];
             node.view = label;
+        } else if (kind == 6) {
+            node.view = [UIScrollView new];
+            YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
+            YGNodeStyleSetOverflow(node.yoga, YGOverflowScroll);
+            YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
         } else {
             node.view = [UIView new];
             YGNodeStyleSetFlexDirection(node.yoga, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
         }
         YGNodeSetContext(node.yoga, (__bridge void *)node);
-        if (kind >= 3) YGNodeSetMeasureFunc(node.yoga, measure);
+        if (kind >= 3 && kind <= 5) YGNodeSetMeasureFunc(node.yoga, measure);
         nodes[@(id)] = node;
         return;
     }
@@ -136,7 +152,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         else if (kind == 2) YGNodeStyleSetPadding(node.yoga, YGEdgeAll, before);
         else if (kind == 3) {
             if (before) [node.view becomeFirstResponder]; else [node.view resignFirstResponder];
-        }
+        } else if (kind == 4) {
+            if (before) YGNodeStyleSetWidth(node.yoga, before); else YGNodeStyleSetWidthAuto(node.yoga);
+        } else if (kind == 5) {
+            if (before) YGNodeStyleSetHeight(node.yoga, before); else YGNodeStyleSetHeightAuto(node.yoga);
+        } else if (kind == 6) YGNodeStyleSetFlexGrow(node.yoga, before);
     } else if (op == 9) {
         NSString *value = text && text[0] ? [NSString stringWithUTF8String:text] : nil;
         if (kind == 1) node.view.accessibilityLabel = value;
@@ -155,11 +175,17 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         YGNodeRef parentYoga = parentNode ? parentNode.yoga : rootYoga;
         YGNodeRef oldParent = YGNodeGetParent(node.yoga);
         if (oldParent) YGNodeRemoveChild(oldParent, node.yoga);
-        NSUInteger index = before ? [parentView.subviews indexOfObject:nodes[@(before)].view] : parentView.subviews.count;
         [node.view removeFromSuperview];
-        // Recompute the index after removal when moving within a parent.
-        index = before ? [parentView.subviews indexOfObject:nodes[@(before)].view] : parentView.subviews.count;
-        [parentView insertSubview:node.view atIndex:index];
+        // Yoga's index counts only our nodes; a UIScrollView also holds its indicators, so
+        // the view goes below its next sibling rather than at the same index.
+        UiHostNode *next = before ? nodes[@(before)] : nil;
+        size_t index = YGNodeGetChildCount(parentYoga);
+        if (next) {
+            for (size_t i = 0; i < YGNodeGetChildCount(parentYoga); ++i) {
+                if (YGNodeGetChild(parentYoga, i) == next.yoga) { index = i; break; }
+            }
+            [parentView insertSubview:node.view belowSubview:next.view];
+        } else [parentView addSubview:node.view];
         YGNodeInsertChild(parentYoga, node.yoga, index);
     } else if (op == 6) {
         YGNodeRef parentYoga = YGNodeGetParent(node.yoga);

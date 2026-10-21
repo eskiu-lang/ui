@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <yoga/Yoga.h>
 #include "../hosts/ui_commit.h"
+#include <algorithm>
 #include <unordered_map>
 #include <cstdint>
 #include <cstdlib>
@@ -15,9 +16,10 @@ extern "C" void ui_stop();
 static JNIEnv *env;
 static jobject activity;
 static jmethodID applyMethod, measureMethod, placeMethod, widthMethod, heightMethod, scaleMethod;
-static jmethodID scheduleMethod, cancelMethod, committedMethod;
+static jmethodID scheduleMethod, cancelMethod, committedMethod, contentMethod;
 static YGNodeRef root;
 static std::unordered_map<int, YGNodeRef> nodes;
+static std::unordered_map<int, int> scrolls;
 
 static void checked() { if (env->ExceptionCheck()) { env->ExceptionDescribe(); std::abort(); } }
 static YGSize measure(YGNodeConstRef node, float width, YGMeasureMode wm, float height, YGMeasureMode hm) {
@@ -34,6 +36,17 @@ static void place(YGNodeRef parent) {
         env->CallVoidMethod(activity, placeMethod, id, YGNodeLayoutGetLeft(node), YGNodeLayoutGetTop(node),
                             YGNodeLayoutGetWidth(node), YGNodeLayoutGetHeight(node));
         checked(); place(node);
+        // A scroll view's content is as tall as its lowest child.
+        if (scrolls.count(id)) {
+            float bottom = 0;
+            for (size_t j = 0; j < YGNodeGetChildCount(node); j++) {
+                YGNodeRef child = YGNodeGetChild(node, j);
+                bottom = std::max(bottom, YGNodeLayoutGetTop(child) + YGNodeLayoutGetHeight(child));
+            }
+            env->CallVoidMethod(activity, contentMethod, id, YGNodeLayoutGetWidth(node),
+                                bottom + YGNodeLayoutGetPadding(node, YGEdgeBottom));
+            checked();
+        }
     }
 }
 extern "C" void ui_host_schedule() { env->CallVoidMethod(activity, scheduleMethod); checked(); }
@@ -43,14 +56,18 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         YGNodeRef node = YGNodeNew();
         nodes[id] = node;
         YGNodeSetContext(node, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
-        if (kind >= 3) YGNodeSetMeasureFunc(node, measure);
+        if (kind >= 3 && kind != 6) YGNodeSetMeasureFunc(node, measure);
         else YGNodeStyleSetFlexDirection(node, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
+        if (kind == 6) { YGNodeStyleSetOverflow(node, YGOverflowScroll); scrolls[id] = 1; }
     } else if (nodes.count(id)) {
         YGNodeRef node = nodes.at(id);
         // Props: the code in kind (1 gap, 2 padding), the value in before.
         if (op == 2) {
             if (kind == 1) YGNodeStyleSetGap(node, YGGutterAll, before);
             else if (kind == 2) YGNodeStyleSetPadding(node, YGEdgeAll, before);
+            else if (kind == 4) { if (before) YGNodeStyleSetWidth(node, before); else YGNodeStyleSetWidthAuto(node); }
+            else if (kind == 5) { if (before) YGNodeStyleSetHeight(node, before); else YGNodeStyleSetHeightAuto(node); }
+            else if (kind == 6) YGNodeStyleSetFlexGrow(node, before);
         }
         else if (op == 3) YGNodeMarkDirty(node);
         else if (op == 4 || op == 5) {
@@ -61,7 +78,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             YGNodeInsertChild(owner, node, index);
         } else if (op == 6) {
             if (YGNodeGetParent(node)) YGNodeRemoveChild(YGNodeGetParent(node), node);
-            YGNodeFree(node); nodes.erase(id);
+            YGNodeFree(node); nodes.erase(id); scrolls.erase(id);
         }
     }
     jstring value = text ? env->NewStringUTF(text) : nullptr;
@@ -93,6 +110,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeS
     scaleMethod = env->GetMethodID(cls, "scale", "()F");
     scheduleMethod = env->GetMethodID(cls, "schedule", "()V"); cancelMethod = env->GetMethodID(cls, "cancel", "()V");
     committedMethod = env->GetMethodID(cls, "committed", "()V");
+    contentMethod = env->GetMethodID(cls, "content", "(IFF)V");
     env->DeleteLocalRef(cls); checked();
     root = YGNodeNew();
     YGNodeStyleSetFlexDirection(root, YGFlexDirectionColumn);

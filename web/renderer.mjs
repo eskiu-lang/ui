@@ -51,10 +51,11 @@ export function createHost(root, dispatch) {
           node.dataset.uiId = m.id;
           node.dataset.generation = m.generation;
           node.dataset.kind = m.kind;
-          if (m.kind <= 2) {
+          if (m.kind <= 2 || m.kind === 6) {
             node.style.display = 'flex';
             node.style.flexDirection = m.kind === 2 ? 'row' : 'column';
             node.style.gap = '8px';
+            if (m.kind === 6) { node.style.overflow = 'auto'; node.style.minHeight = '0'; }
           }
           nodes.set(m.id, node);
           continue;
@@ -74,11 +75,17 @@ export function createHost(root, dispatch) {
           parentNode(m.parent).insertBefore(node, m.before ? nodes.get(m.before) : null);
         } else if (m.op === 6) { node.remove(); nodes.delete(m.id); }
         else if (m.op === 7 || m.op === 8) node.dataset.listening = String(m.op === 7);
-        // Props: the code in kind (1 gap, 2 padding), the value in before.
-        else if (m.op === 2 && node.dataset.kind <= 2) {
-          if (m.kind === 1) node.style.gap = `${m.before}px`;
-          else if (m.kind === 2) node.style.padding = `${m.before}px`;
-        } else if (m.op === 2) { /* Leaf views keep their platform control padding. */ }
+        // Props: the code in kind, the value in before. Leaf views keep their platform
+        // control padding and gap.
+        else if (m.op === 2) {
+          const container = Number(node.dataset.kind) <= 2 || Number(node.dataset.kind) === 6;
+          const px = value => value ? `${value}px` : '';
+          if (m.kind === 1 && container) node.style.gap = `${m.before}px`;
+          else if (m.kind === 2 && container) node.style.padding = `${m.before}px`;
+          else if (m.kind === 4) node.style.width = px(m.before);
+          else if (m.kind === 5) node.style.height = px(m.before);
+          else if (m.kind === 6) node.style.flexGrow = m.before ? String(m.before) : '';
+        }
         else throw new Error(`unknown operation ${m.op}`);
       }
       pending.length = 0;

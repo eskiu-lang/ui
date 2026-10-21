@@ -47,8 +47,8 @@ void scaling(int rows) {
     store.changed(); ui_frame();
     double reversed = ui_clock_ms();
     // The last row's "Done" button: the deepest, last-created handler.
-    *Node column = ui.root.children.data[0];
-    *Node row = column.children.data[2 + rows - 1];
+    *Node list = ui.root.children.data[0].children.data[2];
+    *Node row = list.children.data[rows - 1];
     ui_event(row.children.data[1].id, row.children.data[1].generation);
     ui_frame();
     double dispatched = ui_clock_ms();

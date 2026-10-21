@@ -9,6 +9,7 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.HashMap;
 import java.io.File;
@@ -46,8 +47,11 @@ public final class UiActivity extends Activity {
     };
 
     private final class YogaGroup extends ViewGroup {
+        // The size Yoga gave a scroll view's content; 0 for every other group.
+        int contentWidth, contentHeight;
         YogaGroup() { super(UiActivity.this); }
         @Override protected void onMeasure(int width, int height) {
+            if (contentHeight > 0) { setMeasuredDimension(contentWidth, contentHeight); return; }
             setMeasuredDimension(MeasureSpec.getSize(width), MeasureSpec.getSize(height));
         }
         @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
@@ -111,6 +115,11 @@ public final class UiActivity extends Activity {
                     if (active && generations.containsKey(id)) nativeFocus(id, generations.get(id), focused ? 1 : 0);
                 });
                 view = field;
+            } else if (kind == 6) {
+                // A ScrollView holds one child: the group its children go into.
+                ScrollView scroll = new ScrollView(this);
+                scroll.addView(new YogaGroup());
+                view = scroll;
             } else view = new YogaGroup();
             view.setId(View.generateViewId());
             nodes.put(id, view); generations.put(id, generation);
@@ -136,6 +145,7 @@ public final class UiActivity extends Activity {
         }
         else if (op == 4 || op == 5) {
             ViewGroup group = nodes.containsKey(parent) ? (ViewGroup)nodes.get(parent) : root;
+            if (group instanceof ScrollView) group = (ViewGroup)group.getChildAt(0);
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
             group.addView(view, before == 0 ? group.getChildCount() : group.indexOfChild(nodes.get(before)));
         } else if (op == 6) {
@@ -157,6 +167,14 @@ public final class UiActivity extends Activity {
         int w = Math.round(width * density()), h = Math.round(height * density());
         view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
         view.layout(l, t, l + w, t + h);
+    }
+    public void content(int id, float width, float height) {
+        YogaGroup content = (YogaGroup)((ScrollView)nodes.get(id)).getChildAt(0);
+        content.contentWidth = Math.round(width * density());
+        content.contentHeight = Math.max(1, Math.round(height * density()));
+        content.measure(View.MeasureSpec.makeMeasureSpec(content.contentWidth, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(content.contentHeight, View.MeasureSpec.EXACTLY));
+        content.layout(0, 0, content.contentWidth, content.contentHeight);
     }
     public float width() { return root.getWidth() / density(); }
     public float height() { return root.getHeight() / density(); }
