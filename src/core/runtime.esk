@@ -6,8 +6,9 @@
 // answered (the id is the request, value the button's index, -1 dismissed), 7 refresh
 // (the user pulled a scroll's RefreshControl), 8 native module event (name the channel, text
 // the payload; no node), 9 native view event (name and text from the view), 10 route (the
-// browser went to `text`, at history index `value`; no node).
-struct Event { int id; int generation; int kind; int value; string text; int extra; string name; }
+// browser went to `text`, at history index `value`; no node), 11 layout (the node's frame:
+// value x, extra y, width and height, relative to its parent).
+struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height; }
 
 // What the host reports about the screen, in points: the system bars and display cutouts
 // on each side, and the software keyboard over the bottom.
@@ -69,6 +70,9 @@ struct Ui {
     // the next Screen is the top one.
     *Router router;
     bool next_active;
+    // The layout handler of the next element (ui_on_layout).
+    fn(Frame)->void next_layout;
+    bool has_next_layout;
     // Destructors for the next element (ui_own).
     List<fn()->void> next_owned;
     // The RefreshControl for the next Scroll or FlatList.
@@ -290,6 +294,11 @@ bool ui_event_toggle(int id, int generation, bool on) {
 }
 
 // A scroll view moved: its offset and viewport height, in points.
+// The host laid a node out at a new frame (in points, relative to its parent).
+bool ui_event_layout(int id, int generation, int x, int y, int width, int height) {
+    return ui_post(Event{id, generation, 11, x, null, y, null, width, height});
+}
+
 bool ui_event_scroll(int id, int generation, int offset, int viewport) {
     return ui_post(Event{id, generation, 5, offset, null, viewport});
 }
@@ -341,6 +350,10 @@ bool ui_dispatch_event(*Event event) {
     }
     if (event.kind == 7 && node.kind == 6) { node.handler(); return true; }
     if (event.kind == 9 && node.kind == 13) { node.on_view(event.name, event.text); return true; }
+    if (event.kind == 11 && node.has_on_layout) {
+        node.on_layout(Frame{event.value, event.extra, event.width, event.height});
+        return true;
+    }
     if (event.kind == 5 && node.kind == 6) {
         if (!node.virtual) { return true; }
         // A new window only after the view moved a row's height or was resized: the overscan
@@ -381,6 +394,7 @@ void ui_shutdown() {
     ui.dirty_memos.free(); ui.dirty_effects.free();
     ui.commit.free(); ui.writes.free(); ui.retired.free(); ui.commands.free();
     for (i in 0..ui.alerts.size) { ui_release_choice(ui.alerts.data[i].on_choice); }
+    if (ui.has_next_layout) { ui_release_frame(ui.next_layout); }
     ui.alerts.free(); ui.back_handlers.free(); ui.modals.free(); ui.next_owned.free();
     free(ui.link);
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }

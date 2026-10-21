@@ -46,6 +46,14 @@ void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// A node with a layout listener (ui_on_layout) was laid out at a new frame, in points
+// relative to its parent.
+void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height) {
+    if (!app_active) { return; }
+    ui_event_layout(id, generation, x, y, width, height);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 void ui_dispatch_scroll(int id, int generation, int offset, int viewport) {
     if (!app_active) { return; }
     ui_event_scroll(id, generation, offset, viewport);

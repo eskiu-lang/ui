@@ -1,5 +1,16 @@
-// Containers: Column, Row, Scope, Scroll, Pressable.
+// Containers: Column, Row, Scope, Scroll, Pressable; the frames the host lays them out at.
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// An element's frame, in points, relative to its parent.
+struct Frame { int x; int y; int width; int height; }
+
+// For the element right after it: `handler` gets its frame after each layout that changes
+// it (React Native's onLayout).
+void ui_on_layout(escaping fn(Frame)->void handler) {
+    if (ui.has_next_layout) { ui_release_frame(ui.next_layout); }
+    ui.next_layout = handler;
+    ui.has_next_layout = true;
+}
 
 void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
 

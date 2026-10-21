@@ -70,6 +70,9 @@ struct Node {
     // A native view: the named props last sent and its event handler.
     List<NativePair> native_props;
     fn(string, string)->void on_view;
+    // ui_on_layout's handler, told the node's frame after the host lays it out.
+    fn(Frame)->void on_layout;
+    bool has_on_layout;
     int focused;
     string text;
 }
@@ -320,6 +323,7 @@ void ui_unmount(*Node node) {
         free(node.text); free(node.label); free(node.placeholder); free(node.source);
         ui_free_pairs(&node.native_props);
         ui_release_view(node.on_view);
+        if (node.has_on_layout) { ui_release_frame(node.on_layout); }
         node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
         free(node);
     });
@@ -435,6 +439,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             fn(string, string)->void old_view = node.on_view;
             ui_retire(void() { ui_release_view(old_view); });
         }
+        if (node.has_on_layout) {
+            fn(Frame)->void old_layout = node.on_layout;
+            ui_retire(void() { ui_release_frame(old_layout); });
+        }
         if (node.virtual) {
             fn(int)->void old_item = node.on_item;
             fn(int, int)->void old_cell = node.on_cell;
@@ -478,6 +486,11 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 28, style.bottom, kUnset);
     ui_prop(node, fresh, 29, (int)(style.aspect_ratio * 1000.0 + 0.5), 0);
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
+    // A layout handler from ui_on_layout, and whether the host reports this node's frame.
+    node.has_on_layout = ui.has_next_layout;
+    node.on_layout = ui.next_layout;
+    ui.has_next_layout = false;
+    ui_prop(node, fresh, 30, node.has_on_layout ? 1 : 0, 0);
     // What the caller gave this element to free with its block.
     for (i in 0..ui.next_owned.size) { node.owned.push(ui.next_owned.data[i]); }
     ui.next_owned.size = 0;

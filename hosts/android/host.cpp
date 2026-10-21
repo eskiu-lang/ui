@@ -4,6 +4,8 @@
 #include "ui_native.h"
 #include <string>
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <unordered_map>
 #include <vector>
 #include <cstdint>
@@ -28,6 +30,7 @@ extern "C" void ui_tick();
 extern "C" void ui_stop();
 extern "C" void ui_dispatch_native(const char *, const char *);
 extern "C" void ui_dispatch_view(int, int, const char *, const char *);
+extern "C" void ui_dispatch_layout(int, int, int, int, int, int);
 
 static JNIEnv *env;
 static jobject activity;
@@ -39,6 +42,10 @@ static std::unordered_map<int, YGNodeRef> nodes;
 static std::unordered_map<int, int> scrolls;
 // Modals: each its own layout root, laid out over the whole screen.
 static std::vector<int> modals;
+// Each node's generation, and the frames last reported for the nodes the app listens to
+// (ui_on_layout): x, y, width, height in points, relative to the parent.
+static std::unordered_map<int, int> generations;
+static std::unordered_map<int, std::array<int, 4>> layouts;
 
 // An edge offset that is not set (kUnset in src/core/state.esk).
 static const int kUnset = -1000000;
@@ -63,6 +70,17 @@ static void place(YGNodeRef parent) {
         env->CallVoidMethod(activity, placeMethod, id, YGNodeLayoutGetLeft(node), YGNodeLayoutGetTop(node),
                             YGNodeLayoutGetWidth(node), YGNodeLayoutGetHeight(node));
         checked(); place(node);
+        auto listening = layouts.find(id);
+        if (listening != layouts.end()) {
+            std::array<int, 4> frame = {static_cast<int>(std::lround(YGNodeLayoutGetLeft(node))),
+                                        static_cast<int>(std::lround(YGNodeLayoutGetTop(node))),
+                                        static_cast<int>(std::lround(YGNodeLayoutGetWidth(node))),
+                                        static_cast<int>(std::lround(YGNodeLayoutGetHeight(node)))};
+            if (frame != listening->second) {
+                listening->second = frame;
+                ui_dispatch_layout(id, generations[id], frame[0], frame[1], frame[2], frame[3]);
+            }
+        }
         // A scroll view's content is as tall as its lowest child.
         if (scrolls.count(id)) {
             float bottom = 0;
@@ -90,6 +108,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         if (kind == 6) { YGNodeStyleSetOverflow(node, YGOverflowScroll); scrolls[id] = 1; }
         if (kind == 11) YGNodeStyleSetDisplay(node, YGDisplayNone);
         if (kind == 12) modals.push_back(id);
+        generations[id] = generation;
     } else if (nodes.count(id)) {
         YGNodeRef node = nodes.at(id);
         // Props: the code in kind (1 gap, 2 padding), the value in before.
@@ -104,6 +123,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             else if ((kind == 10 || kind == 11) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
             else if (kind == 12) YGNodeStyleSetBorder(node, YGEdgeAll, before);
             else if (kind == 23) YGNodeStyleSetDisplay(node, before ? YGDisplayFlex : YGDisplayNone);
+            else if (kind == 30) { if (before) layouts[id] = {-1, -1, -1, -1}; else layouts.erase(id); }
             else if (kind == 24) YGNodeStyleSetPositionType(node, before ? YGPositionTypeAbsolute : YGPositionTypeRelative);
             else if (kind >= 25 && kind <= 28) {
                 const YGEdge edges[] = {YGEdgeLeft, YGEdgeTop, YGEdgeRight, YGEdgeBottom};
@@ -129,7 +149,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             YGNodeInsertChild(owner, node, index);
         } else if (op == 6) {
             if (YGNodeGetParent(node)) YGNodeRemoveChild(YGNodeGetParent(node), node);
-            YGNodeFree(node); nodes.erase(id); scrolls.erase(id);
+            YGNodeFree(node); nodes.erase(id); scrolls.erase(id); generations.erase(id); layouts.erase(id);
             modals.erase(std::remove(modals.begin(), modals.end(), id), modals.end());
         }
     }

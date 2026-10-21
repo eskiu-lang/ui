@@ -1,14 +1,16 @@
 // Events back into the wasm app: 1 press, 2 change (text), 3 focus (1 or 0), 4 toggle
 // (1 or 0), 5 scroll (the offset in value, the viewport height in extra), 6 alert, 7 refresh,
 // 9 a native view's event (the payload in text, its name in extra), 10 the browser went to a
-// route (the route in text, its history index in value).
-export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0) {
+// route (the route in text, its history index in value), 11 a node's frame (x in value, y in
+// extra, then width and height).
+export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
   else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
   else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
   else if (kind === 6) app._ui_dispatch_alert(id, value);
+  else if (kind === 11) app._ui_dispatch_layout(id, generation, value, extra, width, height);
   else if (kind === 10) app.ccall('ui_dispatch_route', null, ['string', 'number'], [text, value]);
   else if (kind === 9) app.ccall('ui_dispatch_view', null, ['number', 'number', 'string', 'string'], [id, generation, extra, text]);
   else app._ui_dispatch_refresh(id, generation);
@@ -53,6 +55,19 @@ export function createHost(root, dispatch, views = {}) {
   const nodes = new Map();
   // A native view's instance by node id.
   const natives = new Map();
+  // The nodes whose frame the app listens to (ui_on_layout), with the frame last reported.
+  const layouts = new Map();
+  function reportLayouts() {
+    for (const [id, last] of layouts) {
+      const node = nodes.get(id);
+      if (!node || node.offsetWidth === undefined) continue;
+      const frame = [node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight];
+      if (last && frame.every((v, i) => v === last[i])) continue;
+      layouts.set(id, frame);
+      dispatch(...ids(node), 11, null, ...frame);
+    }
+  }
+  if (typeof addEventListener === 'function') addEventListener('resize', () => reportLayouts());
   function mountNative(node, type) {
     natives.get(Number(node.dataset.uiId))?.dispose?.();
     node.replaceChildren();
@@ -184,6 +199,7 @@ export function createHost(root, dispatch, views = {}) {
       case 20: case 21: break;  // the status bar: nothing to draw in a page
       case 22: refresh(node, value !== 0); break;
       case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
+      case 30: if (value) layouts.set(Number(node.dataset.uiId), null); else layouts.delete(Number(node.dataset.uiId)); break;
       case 24: s.position = value ? 'absolute' : ''; break;
       case 25: s.left = value === UNSET ? '' : `${value}px`; break;
       case 26: s.top = value === UNSET ? '' : `${value}px`; break;
@@ -308,7 +324,7 @@ export function createHost(root, dispatch, views = {}) {
         } else if (m.op === 4 || m.op === 5) {
           parentNode(m.parent).insertBefore(node, m.before ? nodes.get(m.before) : null);
         } else if (m.op === 6) {
-          natives.get(m.id)?.dispose?.(); natives.delete(m.id);
+          natives.get(m.id)?.dispose?.(); natives.delete(m.id); layouts.delete(m.id);
           node.remove(); nodes.delete(m.id);
           if (modals.includes(node)) modals.splice(modals.indexOf(node), 1);
         }
@@ -321,6 +337,7 @@ export function createHost(root, dispatch, views = {}) {
         else throw new Error(`unknown operation ${m.op}`);
       }
       pending.length = 0;
+      if (layouts.size) reportLayouts();
     }
   };
 }

@@ -157,6 +157,34 @@ void positions() {
     ui_shutdown(); balanced("positions leak");
 }
 
+*Signal<int> layout_version;
+
+Frame laid_out;
+
+void layouts() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        layout_version = use_signal<int>(0);
+        int v = layout_version.get();
+        if (v < 2) { ui_on_layout(void(Frame f) { laid_out = f; }); }
+        Row(Style{key: key(1), width: 120}, void() {});
+        Row(Style{key: key(2)}, void() {});
+    });
+    ui_frame();
+    check(count_prop(2, 30) == 1 && prop_value(2, 30) == 1, "only the listening element asks for its frame");
+    *Node row = keyed(1);
+    check(ui_event_layout(row.id, row.generation, 10, 20, 120, 30), "a layout event");
+    check(laid_out.x == 10 && laid_out.y == 20 && laid_out.width == 120 && laid_out.height == 30, "the frame");
+    layout_version.set(1); ui_frame();
+    check(count_prop(2, 30) == 0, "a new handler is not a new listener");
+    layout_version.set(2); ui_frame();
+    check(count_prop(2, 30) == 1 && prop_value(2, 30) == 0, "no handler: the host stops reporting");
+    check(!ui_event_layout(row.id, row.generation, 0, 0, 1, 1), "nothing to tell");
+    ui_on_layout(void(Frame f) {});
+    ui_shutdown(); balanced("layout leak");
+}
+
 *Signal<bool> switch_on;
 
 bool accept_toggle;

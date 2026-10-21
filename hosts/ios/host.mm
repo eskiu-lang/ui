@@ -29,6 +29,7 @@ extern "C" void ui_tick(void);
 extern "C" void ui_stop(void);
 extern "C" void ui_dispatch_native(const char *channel, const char *payload);
 extern "C" int ui_report_back(void);
+extern "C" void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height);
 extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
 
 @interface UiHostNode : NSObject
@@ -46,6 +47,10 @@ extern "C" void ui_dispatch_view(int id, int generation, const char *name, const
 // A screen (kind 14): whether it was ever on top, and whether it slides in after layout.
 @property(nonatomic) bool wasActive;
 @property(nonatomic) bool slideIn;
+// Whether the app listens to this node's frame (ui_on_layout), and the frame last reported.
+@property(nonatomic) bool layoutListening;
+@property(nonatomic) int nodeId;
+@property(nonatomic) CGRect reportedFrame;
 @end
 @implementation UiHostNode
 @end
@@ -261,6 +266,15 @@ static void place(YGNodeRef yoga, UIView *parent) {
         UiHostNode *node = (__bridge UiHostNode *)YGNodeGetContext(child);
         node.view.frame = CGRectMake(YGNodeLayoutGetLeft(child), YGNodeLayoutGetTop(child),
                                      YGNodeLayoutGetWidth(child), YGNodeLayoutGetHeight(child));
+        if (node.layoutListening) {
+            CGRect frame = CGRectMake(std::lround(YGNodeLayoutGetLeft(child)), std::lround(YGNodeLayoutGetTop(child)),
+                                      std::lround(YGNodeLayoutGetWidth(child)), std::lround(YGNodeLayoutGetHeight(child)));
+            if (!CGRectEqualToRect(frame, node.reportedFrame)) {
+                node.reportedFrame = frame;
+                ui_dispatch_layout(node.nodeId, node.generation, (int)frame.origin.x, (int)frame.origin.y,
+                                   (int)frame.size.width, (int)frame.size.height);
+            }
+        }
         place(child, node.view);
     }
     // A scroll view's content is as tall as its lowest child.
@@ -345,6 +359,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
                                int before, int kind, const char *text) {
     if (op == 1) {
         UiHostNode *node = [UiHostNode new];
+        node.nodeId = id;
         node.generation = generation;
         node.kind = kind;
         node.yoga = YGNodeNew();
@@ -471,6 +486,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (before && !scroll.refreshControl.refreshing) [scroll.refreshControl beginRefreshing];
             else if (!before && scroll.refreshControl.refreshing) [scroll.refreshControl endRefreshing];
         } else if (kind == 23) screenActive(node, before);
+        else if (kind == 30) { node.layoutListening = before != 0; node.reportedFrame = CGRectNull; }
         else if (kind == 24) YGNodeStyleSetPositionType(node.yoga, before ? YGPositionTypeAbsolute : YGPositionTypeRelative);
         else if (kind >= 25 && kind <= 28) {
             const YGEdge edges[] = {YGEdgeLeft, YGEdgeTop, YGEdgeRight, YGEdgeBottom};

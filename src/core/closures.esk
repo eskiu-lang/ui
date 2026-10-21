@@ -26,4 +26,6 @@ void ui_release_payload(escaping fn(string)->void callback) { free_closure(callb
 
 void ui_release_back(escaping fn()->bool callback) { free_closure(callback); }
 
+void ui_release_frame(escaping fn(Frame)->void callback) { free_closure(callback); }
+
 void ui_release_choice(escaping fn(int)->void callback) { free_closure(callback); }
