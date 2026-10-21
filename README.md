@@ -97,17 +97,22 @@ share.
 | `Scope(string name, Key, fn()->void)` | A component's own scope (state and identity); `name` appears in diagnostics. |
 | `Text(string)` | A text node. The text is copied. Format it with `<string>`'s `String_format`, which `-Wformat` checks. |
 | `Button(string, fn()->void)` | A button and its handler. `Button_owned` adds a cleanup, run when the handler is replaced or unmounted. |
+| `TextWith(Style, string)`, `ButtonWith(Style, string, fn()->void)` | Text and a button with a style (color, font, background...). |
+| `Pressable(Style, fn()->void on_press, fn()->void block)` | A container that takes a press anywhere in it. |
+| `Switch(Style, bool, fn(bool)->void)` | A controlled on/off switch. |
+| `ActivityIndicator(Style, bool animating)` | The platform's busy indicator. |
 | `TextInput(Input, fn(string)->void)` | A controlled text field: `Input{value, placeholder, label, focused}`; the handler gets each edit (borrowed for the call). `TextInput_focus` adds a focus handler. |
 | `Image(Style, string source)` | An image from an http(s) URL or a bundled file; give it a width and height. |
 | `Style{key, gap, padding, label, width, height, grow, wrap}`, `key(int64)` | Layout props and the accessible name (`label`: ARIA label, `accessibilityLabel`, `contentDescription`, an image's alt text); `key` sets identity among siblings. |
-| `ui_insets()`, `ui_is_active()` | The system bars, cutouts and keyboard (`Insets`, in points) and whether the app is in the foreground; reading them subscribes. |
+| `Style{background, color, font_size, font_weight, border_width, border_color, radius, opacity, align, justify}` | The visual props (StyleSheet's role): colors from `rgb(r, g, b)` / `rgba(...)`, `align` / `justify` from the `Align` / `Justify` members; a prop left at its default is not sent. |
+| `ui_insets()`, `ui_is_active()`, `ui_window()` | The system bars, cutouts and keyboard (`Insets`, in points), whether the app is in the foreground, and the window size and scale; reading them subscribes. |
 | `use_signal<T>(T)` | State owned by the current scope, by call order. |
 | `signal_new<T>(T)`, `Signal_free` | State owned by the app's model: it outlives mounts and works with no runtime. |
 | `Signal_get`, `Signal_set` | Read (and subscribe), write. A write during render applies after the render phase. |
 | `use_memo<T>(fn()->T)` | A derived value, computed lazily; readers wake only when its value changes. |
 | `use_effect(fn()->void)`, `on_cleanup(fn()->void)` | Work after each commit of its scope, parents first; the cleanup runs before the next run and at unmount. |
 | `ui_init`, `ui_mount`, `ui_frame`, `ui_complete`, `ui_needs_frame`, `ui_shutdown` | The host's side: create, render a frame, report a commit complete. |
-| `ui_event`, `ui_event_text`, `ui_event_focus`, `ui_set_insets`, `ui_set_active` | Events and environment from the host; an event during a commit is queued, its text copied. |
+| `ui_event`, `ui_event_text`, `ui_event_focus`, `ui_event_toggle`, `ui_set_insets`, `ui_set_active`, `ui_set_window` | Events and environment from the host; an event during a commit is queued, its text copied. A refused edit or toggle is sent back, so inputs and switches are truly controlled. |
 | `ui_decode(*uint8, int, List<Mutation>*)` | A commit as records, for tests and tools. Native hosts use `hosts/ui_commit.h`. |
 | `ui.lenient` | Release behavior: a duplicate key warns and the later child is unkeyed instead of stopping. |
 
@@ -144,7 +149,8 @@ CSS flexbox with Yoga's defaults (border-box sizes, no shrinking, zero minimum s
 
 **Conformance.** `examples/conformance.esk` is one scene every renderer draws; each reports
 the frame and accessibility role of every labeled element and the handler log after a fixed
-script (two taps, typing "abc"). `tools/conformance.py` compares them with the frames the
+script (two taps, typing "abc", a press and a toggle), plus the colors, radius, border,
+opacity and font a styled box and a title were drawn with. `tools/conformance.py` compares them with the frames the
 scene must have (within one point) on iOS, Android and the web; all three pass.
 
 ## Measurements
