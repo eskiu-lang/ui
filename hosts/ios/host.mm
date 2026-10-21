@@ -39,6 +39,8 @@ static void ui_core_error(const char *message) { fprintf(stderr, "ui: %s\n", mes
 // Transforms (translate in points, scale in percent, rotate in degrees) and the transition
 // that animates changes (ms, Easing).
 @property(nonatomic) int translateX, translateY, scalePercent, rotateDegrees, transitionMs, easing;
+// The radius the app asked for; the layer's is at most half the shorter side (place).
+@property(nonatomic) int radius;
 @property(nonatomic) CGRect reportedFrame;
 @property(nonatomic) CGPoint reportedWindow;
 @end
@@ -301,6 +303,8 @@ static void place(YGNodeRef yoga, UIView *parent) {
         CGRect bounds = node.view.bounds;
         bounds.size = CGSizeMake(w, h);
         node.view.bounds = bounds;
+        // A radius past half the shorter side draws nothing on iOS: a pill asks for 999.
+        if (node.radius > 0) node.view.layer.cornerRadius = std::min<CGFloat>(node.radius, std::min(w, h) / 2);
         node.view.center = CGPointMake(YGNodeLayoutGetLeft(child) + w / 2, YGNodeLayoutGetTop(child) + h / 2);
         if (node.layoutListening) {
             CGRect frame = CGRectMake(std::lround(YGNodeLayoutGetLeft(child)), std::lround(YGNodeLayoutGetTop(child)),
@@ -592,7 +596,12 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         else if (kind == 11) { node.fontWeight = before; applyFont(node); }
         else if (kind == 12) { node.view.layer.borderWidth = before; YGNodeStyleSetBorder(node.yoga, YGEdgeAll, before); }
         else if (kind == 13) node.view.layer.borderColor = colorOf(before).CGColor;
-        else if (kind == 14) { node.view.layer.cornerRadius = before; node.view.clipsToBounds = before > 0 && !node.view.layer.shadowOpacity; }
+        else if (kind == 14) {
+            node.radius = before;
+            CGSize size = node.view.bounds.size;
+            node.view.layer.cornerRadius = std::min<CGFloat>(before, std::min(size.width, size.height) / 2);
+            node.view.clipsToBounds = before > 0 && !node.view.layer.shadowOpacity;
+        }
         else if (kind == 46) {
             // A shadow draws outside the bounds, so a raised view does not clip to its radius.
             CALayer *layer = node.view.layer;
