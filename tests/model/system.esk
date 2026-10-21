@@ -1,0 +1,174 @@
+// The platform: environment, window, commands, links, status bar, back, modals, native modules.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+int env_top;
+
+bool env_active;
+
+void environment() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        Row(Style{key: key(1)}, void() { env_top = ui_insets().top; });
+        Row(Style{key: key(2)}, void() { env_active = ui_is_active(); });
+    });
+    ui_frame();
+    check(env_top == 0 && env_active, "defaults");
+    ui_set_insets(Insets{top: 47, bottom: 34});
+    check(ui_needs_frame(), "an inset change schedules a frame");
+    ui_frame();
+    check(env_top == 47 && keyed(1).runs == 2, "readers see the insets");
+    ui_set_insets(Insets{top: 47, bottom: 34});
+    check(!ui_needs_frame(), "the same insets change nothing");
+    ui_set_active(false); ui_frame();
+    check(!env_active, "background");
+    ui_shutdown(); balanced("environment leak");
+}
+
+int seen_width;
+
+void window_size() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() { Row(Style{key: key(1)}, void() { seen_width = ui_window().width; }); });
+    ui_frame();
+    ui_set_window(Window{390, 844, 300});
+    ui_frame();
+    check(seen_width == 390 && keyed(1).runs == 2, "window size reaches readers");
+    ui_shutdown(); balanced("window leak");
+}
+
+int alert_choice;
+
+void commands() {
+    Ui runtime;
+    alert_choice = -9;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        Button("Delete", void() {
+            Alert("Delete?", "It cannot be undone.", "Cancel\nDelete", void(int choice) { alert_choice = choice; });
+        });
+    });
+    ui_frame();
+    *Node button = ui.root.children.data[0];
+    ui_event(button.id, button.generation);
+    check(ui_needs_frame(), "an alert needs a frame to reach the host");
+    ui_frame();
+    check(mutation_count == 1 && mutation_ops[0] == 10 && mutation_kinds[0] == 1 && mutation_befores[0] == 4,
+        "one alert command: title, message and two buttons");
+    check(strcmp(mutation_texts[0], "Delete?") == 0, "its title");
+    check(ui_event_alert(mutation_ids[0], 1) && alert_choice == 1 && ui.alerts.size == 0, "the answer");
+    ui_open_url("https://eskiu-lang.org");
+    ui_frame();
+    check(mutation_ops[0] == 10 && mutation_kinds[0] == 2 && strcmp(mutation_texts[0], "https://eskiu-lang.org") == 0,
+        "open a URL");
+    // An unanswered alert is freed at shutdown.
+    ui_event(button.id, button.generation);
+    ui_frame();
+    ui_shutdown(); balanced("commands leak");
+}
+
+string seen_link;
+
+*Signal<int> bar_version;
+
+void links_and_status_bar() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        bar_version = use_signal<int>(0);
+        StatusBar(BarLight, bar_version.get() > 0);
+        Row(Style{key: key(1)}, void() { seen_link = ui_link(); });
+    });
+    ui_frame();
+    check(count_prop(2, 20) == 1 && prop_value(2, 20) == 1 && count_prop(2, 21) == 1, "status bar style and visibility");
+    bar_version.set(1); ui_frame();
+    check(count_prop(2, 20) == 0 && count_prop(2, 21) == 1 && prop_value(2, 21) == 1, "only the change");
+    ui_set_link("eskiu://todo/3");
+    ui_frame();
+    check(seen_link != null && strcmp(seen_link, "eskiu://todo/3") == 0, "the link reaches readers");
+    ui_shutdown(); balanced("links leak");
+}
+
+*Signal<bool> show_details;
+
+*Signal<bool> modal_open;
+
+bool consume_back;
+
+int closes;
+
+void back_and_modal() {
+    Ui runtime;
+    closes = 0;
+    consume_back = true;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        show_details = use_signal<bool>(true);
+        modal_open = use_signal<bool>(false);
+        if (show_details.get()) {
+            Scope("Details", Key{}, void() { use_back(bool() { return consume_back; }); });
+        }
+        Modal(modal_open.get(), void() { closes++; modal_open.set(false); }, void() { Text("Sheet"); });
+    });
+    ui_frame();
+    check(ui_back(), "the handler takes the back press");
+    consume_back = false;
+    check(!ui_back(), "a handler that declines lets the platform go back");
+    modal_open.set(true); ui_frame();
+    check(ui.modals.size == 1 && ui.root.children.data[1].kind == 12, "the modal is open");
+    check(ui_back() && closes == 1, "back asks the modal to close first");
+    ui_frame();
+    check(ui.modals.size == 0, "the modal closed");
+    show_details.set(false); ui_frame();
+    check(ui.back_handlers.size == 0, "an unmounted scope's handler is gone");
+    ui_shutdown(); balanced("back and modal leak");
+}
+
+int ticks;
+
+string last_tap;
+
+*Signal<int> map_zoom;
+
+bool show_map;
+
+void native_modules() {
+    Ui runtime;
+    ticks = 0;
+    show_map = true;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        map_zoom = use_signal<int>(3);
+        use_native_event("ticker", void(string payload) { ticks += atoi(payload); });
+        if (show_map) {
+            String zoom;
+            defer String_free(&zoom);
+            String_format(&zoom, "%d", map_zoom.get());
+            ui_native_prop("zoom", zoom.data);
+            if (map_zoom.get() < 5) { ui_native_prop("style", "satellite"); }
+            NativeView(Style{width: 200, height: 120, label: "Map"}, "MapView", void(string name, string payload) {
+                last_tap = ui_copy(payload);
+            });
+        }
+    });
+    ui_frame();
+    check(count_prop(9, 4) == 1 && ops[11] == 2, "the type once, then both named props");
+    check(ui_event_native("ticker", "2") && ui_event_native("ticker", "3") && ticks == 5, "channel events");
+    check(!ui_event_native("other", "1"), "no handler for another channel");
+    map_zoom.set(4); ui_frame();
+    check(ops[11] == 1 && strcmp(mutation_names[0], "zoom") == 0 && strcmp(mutation_texts[0], "4") == 0,
+        "only the changed prop");
+    map_zoom.set(6); ui_frame();
+    check(ops[11] == 2, "the zoom and the style removed (sent empty)");
+    *Node map = find_label(ui.root, "Map");
+    check(ui_event_view(map.id, map.generation, "tap", "19.4,-99.1") && strcmp(last_tap, "19.4,-99.1") == 0,
+        "a view's event reaches its handler");
+    free(last_tap);
+    show_map = false;
+    map_zoom.set(7); ui_frame();
+    check(ops[6] == 1, "the view is removed");
+    ui_shutdown();
+    check(ui == null, "shut down");
+    balanced("native modules leak");
+}

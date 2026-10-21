@@ -52,7 +52,7 @@ shots = HERE / "build/screenshots"  # test captures; the README's come from tool
 shots.mkdir(parents=True, exist_ok=True)
 # Exercise the same allocation-counted runtime on the Android target as well.
 compiler = find_compiler()
-ir = subprocess.check_output([compiler, HERE / "tests/model.esk", "--target", "aarch64-linux-android24",
+ir = subprocess.check_output([compiler, HERE / "tests/model/main.esk", "--target", "aarch64-linux-android24",
                               "--test-codegen", "-O2"], text=True)
 ir = ir[ir.index("; ModuleID"):].split("\n========================================================")[0]
 for symbol in ("malloc", "calloc", "free"):

@@ -1,0 +1,209 @@
+// Identity: keys, minimal moves, subscriptions, id reuse, siblings that come and go.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+void identity() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(0);
+        int version = a.get();
+        Column(Style{}, void() {
+            Text("unkeyed");
+            for (i in 0..3) {
+                int id = version == 0 ? i : 2 - i;
+                if (version != 2 || id != 1) {
+                    Row(Style{key: key(id)}, void() {
+                        *Signal<int> editing = use_signal<int>(id + 40);
+                        text_number(editing.get());
+                        Button("Edit", void() { editing.set(editing.get() + 1); });
+                    });
+                }
+            }
+        });
+    });
+    ui_frame();
+    int zero_id = keyed(0).id;
+    *Node row = keyed(1);
+    int row_id = row.id;
+    int button_id = row.children.data[1].id;
+    check(ui_event(button_id, 1), "handler dispatch"); ui_frame();
+    a.set(1); ui_frame();
+    check(keyed(0).id == zero_id && keyed(1).id == row_id, "keyed ids survive reorder");
+    check(strcmp(keyed(1).children.data[0].text, "42") == 0, "state survives reorder");
+    *Node column = ui.root.children.data[0];
+    check(column.children.data[1] == keyed(2) && column.children.data[3] == keyed(0), "new sibling order");
+    check(ops[5] == 2, "reverse list needs two moves");
+    a.set(2); ui_frame();
+    check(!ui_event(button_id, 1), "removed event dropped");
+    check(!ui_event(zero_id, 999), "stale generation dropped");
+    ui_shutdown(); balanced("identity leak");
+}
+
+// Lists past the scan threshold: keyed tables, minimal moves, unkeyed positions.
+int[64] order;
+
+int order_size;
+
+void large_lists() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    order_size = 20;
+    for (i in 0..20) { order[i] = i; }
+    ui_mount(void() {
+        a = use_signal<int>(0);
+        a.get();
+        Column(Style{}, void() {
+            for (i in 0..order_size) {
+                int id = order[i];
+                Row(Style{key: key(id)}, void() {
+                    *Signal<int> state = use_signal<int>(id + 100);
+                    text_number(state.get());
+                });
+            }
+        });
+    });
+    ui_frame();
+    int[20] ids;
+    for (i in 0..20) { ids[i] = keyed(i).id; }
+    for (i in 0..20) { order[i] = 19 - i; }
+    a.set(1); ui_frame();
+    check(ops[5] == 19 && ops[1] == 0 && ops[6] == 0, "reverse of 20 moves 19, creates and removes none");
+    for (i in 0..20) {
+        check(keyed(i).id == ids[i], "keyed node survives the reverse");
+        check(text_is(keyed(i).children.data[0], i + 100), "row keeps its state");
+    }
+    *Node column = ui.root.children.data[0];
+    for (i in 0..20) { check(column.children.data[i] == keyed(19 - i), "new order"); }
+    // Rotate: the last row to the front is one move.
+    int first = order[19];
+    for (int i = 19; i > 0; i--) { order[i] = order[i - 1]; }
+    order[0] = first;
+    a.set(2); ui_frame();
+    check(ops[5] == 1, "rotation is one move");
+    // Remove one, add one new key: one remove, one row created, no moves.
+    for (i in 0..20) { if (order[i] == 5) { order[i] = 40; } }
+    a.set(3); ui_frame();
+    check(ops[5] == 0 && ops[6] == 2, "replace a row: its row and text removed, nothing moves");
+    check(text_is(keyed(40).children.data[0], 140), "the new row starts with fresh state");
+    ui_shutdown(); balanced("large keyed leak");
+
+    ui_init(&runtime, record);
+    order_size = 12;
+    ui_mount(void() {
+        a = use_signal<int>(0);
+        int count = order_size - a.get();
+        Column(Style{}, void() { for (i in 0..count) { text_number(i); } });
+    });
+    ui_frame();
+    *Node list = ui.root.children.data[0];
+    int keep = list.children.data[3].id;
+    a.set(2); ui_frame();
+    check(ops[6] == 2 && ops[5] == 0 && ops[3] == 0, "unkeyed shrink removes the tail only");
+    check(ui.root.children.data[0].children.data[3].id == keep, "unkeyed positions keep their nodes");
+    ui_shutdown(); balanced("large unkeyed leak");
+}
+
+// Many readers of one signal: each subscribes once per run, however often it reads, and
+// a removed reader is unsubscribed.
+void shared_subscriptions() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    *Signal<int> shared = signal_new<int>(0);
+    ui_mount(void() {
+        a = use_signal<int>(12);
+        int count = a.get();
+        Column(Style{}, void() {
+            for (i in 0..count) {
+                Row(Style{key: key(i)}, void() {
+                    *Signal<int> doubled = use_memo<int>(int() { return shared.get() * 2; });
+                    text_number(shared.get() + doubled.get() + shared.get());
+                });
+            }
+        });
+    });
+    ui_frame();
+    check(shared.source.readers.size == 24, "one edge per row and per memo");
+    shared.set(1); ui_frame();
+    for (i in 0..12) { check(keyed(i).runs == 2 && text_is(keyed(i).children.data[0], 4), "each row once"); }
+    a.set(6); ui_frame();
+    check(shared.source.readers.size == 12, "removed rows unsubscribed");
+    shared.set(2); ui_frame();
+    for (i in 0..6) { check(keyed(i).runs == 4 && text_is(keyed(i).children.data[0], 8), "remaining rows"); }
+    ui_shutdown();
+    check(shared.source.readers.size == 0, "shutdown unsubscribes everything");
+    shared.free();
+    balanced("shared subscriptions leak");
+}
+
+// Ids come back after the removing commit completes, with a new generation.
+void id_reuse() {
+    Ui runtime;
+    async_apply = true;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(1);
+        // Different kinds in each branch, so switching replaces the nodes.
+        if (a.get() > 0) { Button("old", void() { observed = 1; }); }
+        else { Text("gap"); Pressable(Style{}, void() { observed = 2; }, void() {}); }
+    });
+    ui_frame(); ui_complete(ui.sequence);
+    *Node old = ui.root.children.data[0];
+    int id = old.id;
+    int generation = old.generation;
+    a.set(0); ui_frame();
+    check(ui.free_ids.size == 0, "a removed id waits for its commit");
+    ui_complete(ui.sequence);
+    a.set(2); ui_frame(); ui_complete(ui.sequence);
+    a.set(0); ui_frame(); ui_complete(ui.sequence);
+    *Node button = ui.root.children.data[1];
+    check(button.id <= 4, "ids are reused");
+    observed = 0;
+    check(!ui_event(id, generation) || observed != 2, "an old generation never reaches a new node");
+    check(ui_event(button.id, button.generation) && observed == 2, "the current generation dispatches");
+    int size = ui.by_id.size;
+    for (i in 0..1000) { a.set(i % 2 + 1); ui_frame(); ui_complete(ui.sequence); a.set(0); ui_frame(); ui_complete(ui.sequence); }
+    check(ui.by_id.size == size, "churn does not grow the id table");
+    async_apply = false;
+    ui_shutdown(); balanced("id reuse leak");
+}
+
+// Release behavior: a duplicate key warns and the later child is unkeyed.
+void lenient_keys() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui.lenient = true;
+    ui_mount(void() {
+        Row(Style{key: key(1)}, void() { Text("a"); });
+        Row(Style{key: key(1)}, void() { Text("b"); });
+        Row(Style{key: key(2)}, void() { Text("c"); });
+    });
+    ui_frame();
+    check(ui.root.children.size == 3, "every child renders");
+    check(!ui.root.children.data[1].key.set, "the duplicate is unkeyed");
+    ui_shutdown(); balanced("lenient keys leak");
+}
+
+*Signal<bool> banner;
+
+// An element that comes and goes does not move its siblings of other kinds.
+void conditional_siblings() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        banner = use_signal<bool>(false);
+        if (banner.get()) { Text("Saved"); }
+        Row(Style{}, void() { *Signal<int> kept = use_signal<int>(7); text_number(kept.get()); });
+        Scroll(Style{}, void() {});
+    });
+    ui_frame();
+    *Node row = ui.root.children.data[0];
+    *Node scroll = ui.root.children.data[1];
+    *Signal<int> kept = (*Signal<int>)row.slots.data[0].data;
+    kept.set(8); ui_frame();
+    banner.set(true); ui_frame();
+    check(ui.root.children.data[1] == row && ui.root.children.data[2] == scroll, "row and scroll keep their nodes");
+    check(text_is(row.children.data[0], 8), "and the row its state");
+    banner.set(false); ui_frame();
+    check(ui.root.children.data[0] == row, "and when the text goes away");
+    ui_shutdown(); balanced("conditional siblings leak");
+}

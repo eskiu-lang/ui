@@ -1,0 +1,55 @@
+// The model tests: the runtime against a recording renderer, every case ending with no
+// allocation left (tools/check.py counts them; under ASan and with the self-host too).
+import "../../src/ui.esk";
+import "../../examples/counter/src/counter.esk";
+import "../../examples/todo/src/todo.esk";
+import "../../examples/tasks/src/tasks.esk";
+import "../../examples/kit-gallery/src/gallery.esk";
+
+import "support.esk";
+import "scheduler.esk";
+import "memory.esk";
+import "identity.esk";
+import "elements.esk";
+import "lists.esk";
+import "system.esk";
+import "apps.esk";
+
+int main() {
+    independent(); printf("PASS independent\n");
+    parent_child(); printf("PASS parent-child\n");
+    deferred_write(); printf("PASS render snapshot\n");
+    memos_and_effects(); printf("PASS memos/effects\n");
+    hook_captures(); printf("PASS hook captures\n");
+    effect_order(); printf("PASS effect order\n");
+    cleanup_lifetime(); printf("PASS cleanup state lifetime\n");
+    identity(); printf("PASS identity\n");
+    large_lists(); printf("PASS large lists\n");
+    conditional_siblings(); printf("PASS conditional siblings\n");
+    shared_subscriptions(); printf("PASS shared subscriptions\n");
+    id_reuse(); printf("PASS id reuse\n");
+    lenient_keys(); printf("PASS lenient keys\n");
+    text_input(); printf("PASS text input\n");
+    labels(); printf("PASS labels\n");
+    sizes(); printf("PASS sizes\n");
+    images(); printf("PASS images\n");
+    environment(); printf("PASS environment\n");
+    visual_styles(); printf("PASS visual styles\n");
+    controls(); printf("PASS controls\n");
+    window_size(); printf("PASS window\n");
+    flat_list(); printf("PASS flat list\n");
+    section_list(); printf("PASS section list\n");
+    commands(); printf("PASS commands\n");
+    links_and_status_bar(); printf("PASS links, status bar\n");
+    back_and_modal(); printf("PASS back, modal\n");
+    refresh_control(); printf("PASS refresh\n");
+    tasks_app(); printf("PASS tasks app\n");
+    kit_gallery(); printf("PASS kit gallery\n");
+    native_modules(); printf("PASS native modules\n");
+    commit_lifetime(); printf("PASS async commit\n");
+    queued_events(); printf("PASS queued events\n");
+    model_signal(); printf("PASS model signal\n");
+    owned_strings(); printf("PASS owned snapshots\n");
+    leak_gate(); printf("PASS leak gates\n");
+    return 0;
+}

@@ -22,7 +22,7 @@ def run(args, **kwargs):
 def build_model(compiler, name, opt, asan=False):
     # Rename allocator references in generated test IR only. The C shim calls libc,
     # counting ALL Eskiu allocations, including compiler-created closure envs.
-    args = [compiler, HERE / "tests/model.esk", "--test-codegen", opt]
+    args = [compiler, HERE / "tests/model/main.esk", "--test-codegen", opt]
     if asan:
         args += ["--asan"]
     raw = run(args, capture_output=True, text=True).stdout
@@ -49,7 +49,7 @@ def main():
     BUILD.mkdir(exist_ok=True)
     measurements = {"recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "host": os.uname().machine}
     # Front-end and backend validation are separate, as required by AGENTS.md.
-    run([ESKIUC, HERE / "tests/model.esk", "--test-typechecker"])
+    run([ESKIUC, HERE / "tests/model/main.esk", "--test-typechecker"])
     for name, opt, asan in [("model-O0", "-O0", False), ("model-O2", "-O2", False), ("model-asan", "-O1", True)]:
         measurements[name] = build_model(ESKIUC, name, opt, asan)
     selfhost = Path(find_compiler("ESKIUC_SELF", "eskiuc-esk"))

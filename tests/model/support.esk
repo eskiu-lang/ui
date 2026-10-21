@@ -1,0 +1,120 @@
+// The recording renderer, checks and lookups the model tests share.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+extern int64 ui_live_allocations();
+
+extern bool ui_allocations_counted();
+
+extern double ui_clock_ms();
+
+extern int strcmp(string a, string b);
+
+*Signal<int> a;
+
+*Signal<int> b;
+
+*Signal<int> memo_value;
+
+*Signal<int> captured_memo;
+
+*Signal<bool> show;
+
+int effects;
+
+int cleanups;
+
+int observed;
+
+int mutation_count;
+
+int[16] ops;
+
+int[1024] mutation_ops;
+
+int[1024] mutation_ids;
+
+int[1024] mutation_befores;
+
+int[1024] mutation_kinds;
+
+string[1024] mutation_texts;
+
+string[1024] mutation_names;
+
+bool async_apply;
+
+void record(*uint8 data, int len) {
+    List<Mutation> decoded;
+    ui_decode(data, len, &decoded);
+    *Mutation mutations = decoded.data;
+    int count = decoded.size;
+    mutation_count = count;
+    for (i in 0..16) { ops[i] = 0; }
+    ui_require(count <= 1024, "recording capacity");
+    for (i in 0..count) {
+        ops[mutations[i].op]++;
+        mutation_ops[i] = mutations[i].op;
+        mutation_ids[i] = mutations[i].id;
+        mutation_befores[i] = mutations[i].before;
+        mutation_kinds[i] = mutations[i].kind;
+        mutation_texts[i] = mutations[i].text;
+        mutation_names[i] = mutations[i].name;
+    }
+    decoded.free();
+    if (!async_apply) { ui_complete(ui.sequence); }
+}
+
+void check(bool ok, string label) { ui_require(ok, label); }
+
+void balanced(string label) { check(ui_live_allocations() == 0, label); }
+
+*Node keyed(int64 value) {
+    for (i in 0..ui.by_id.size) {
+        *Node node = ui.by_id.data[i];
+        if (node != null && node.key.set && node.key.value == value) { return node; }
+    }
+    abort(); return null;
+}
+
+void text_number(int value) {
+    char[32] buffer;
+    snprintf(&buffer[0], 32, "%d", value);
+    Text((string)&buffer[0]);
+}
+
+extern int snprintf(*char buffer, size_t n, string fmt, ...);
+
+bool text_is(*Node node, int value) {
+    String expected;
+    defer String_free(&expected);
+    String_format(&expected, "%d", value);
+    return strcmp(node.text, expected.data) == 0;
+}
+
+int count_prop(int op, int prop) {
+    int n = 0;
+    for (i in 0..mutation_count) { if (mutation_ops[i] == op && mutation_kinds[i] == prop) { n++; } }
+    return n;
+}
+
+int prop_value(int op, int prop) {
+    for (i in 0..mutation_count) { if (mutation_ops[i] == op && mutation_kinds[i] == prop) { return mutation_befores[i]; } }
+    return -12345;
+}
+
+*Node find_label(*Node node, string label) {
+    if (node.label != null && strcmp(node.label, label) == 0) { return node; }
+    for (i in 0..node.children.size) {
+        *Node found = find_label(node.children.data[i], label);
+        if (found != null) { return found; }
+    }
+    return null;
+}
+
+void press_label(string label) {
+    *Node node = find_label(ui.root, label);
+    if (node == null) { print_err("missing: "); println_err(label); }
+    check(node != null, "a labeled element to press");
+    ui_event(node.id, node.generation);
+    ui_frame();
+}

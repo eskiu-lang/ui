@@ -1,0 +1,185 @@
+// Elements: text input, labels, sizes, images, visual styles, controls.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+*StringState draft;
+
+*Signal<int> want_focus;
+
+int focus_calls;
+
+bool last_focus;
+
+// A controlled input: edits reach the handler, the value goes back as the input's text,
+// focus is a prop, and a queued edit keeps its own copy of the text.
+void text_input() {
+    Ui runtime;
+    focus_calls = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        draft = use_string("");
+        want_focus = use_signal<int>(1);
+        TextInput_focus(Input{value: draft.get(), placeholder: "New task", label: "Task", focused: want_focus.get()},
+            void(string text) { draft.set(text); },
+            void(bool focused) { focus_calls++; last_focus = focused; });
+    });
+    ui_frame();
+    check(count_prop(2, 3) == 1 && count_prop(9, 2) == 1 && count_prop(9, 1) == 1,
+        "mount sends focus, placeholder and label once");
+    *Node input = ui.root.children.data[0];
+    check(ui_event_text(input.id, input.generation, "Buy milk"), "edit dispatched");
+    check(strcmp(draft.get(), "Buy milk") == 0, "the handler got the text");
+    ui_frame();
+    check(ops[3] == 0 && count_prop(2, 3) == 0 && count_prop(9, 1) == 0,
+        "the typed text is already shown: nothing is sent back");
+    // The renderer moved focus away: the handler hears it, and focused: 1 is a change again.
+    ui_event_focus(input.id, input.generation, false);
+    check(focus_calls == 1 && !last_focus, "focus handler");
+    want_focus.set(1); ui_frame();
+    check(!ui_frame() || count_prop(2, 3) == 0, "no frame without a change");
+    draft.set("x"); ui_frame();
+    check(count_prop(2, 3) == 1, "focused: 1 after a blur refocuses");
+    // An edit queued while a commit is in flight keeps its own copy of the text.
+    async_apply = true;
+    draft.set("y"); ui_frame();
+    char[16] buffer;
+    buffer[0] = 'a'; buffer[1] = 'b'; buffer[2] = 0;
+    ui_event_text(input.id, input.generation, (string)&buffer[0]);
+    buffer[0] = 'z';
+    ui_complete(ui.sequence);
+    check(strcmp(draft.get(), "ab") == 0, "queued text was copied on receipt");
+    async_apply = false;
+    ui_shutdown(); balanced("text input leak");
+}
+
+*Signal<int> label_version;
+
+void labels() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        label_version = use_signal<int>(0);
+        int v = label_version.get();
+        Row(Style{label: v == 0 ? "Close" : v == 1 ? "Close" : v == 2 ? "Dismiss" : null}, void() {});
+        Row(Style{}, void() {});
+    });
+    ui_frame();
+    check(count_prop(9, 1) == 1, "only the labeled row sends a label");
+    label_version.set(1); ui_frame();
+    check(count_prop(9, 1) == 0, "an unchanged label sends nothing");
+    label_version.set(2); ui_frame();
+    check(count_prop(9, 1) == 1, "a changed label is sent");
+    label_version.set(3); ui_frame();
+    check(count_prop(9, 1) == 1, "a removed label is sent as empty");
+    ui_shutdown(); balanced("labels leak");
+}
+
+*Signal<int> size_version;
+
+void sizes() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        size_version = use_signal<int>(0);
+        int v = size_version.get();
+        Scroll(Style{height: v == 0 ? 300 : 200, grow: 1}, void() { Row(Style{}, void() {}); });
+    });
+    ui_frame();
+    *Node scroll = ui.root.children.data[0];
+    check(scroll.kind == 6 && count_prop(2, 5) == 1 && count_prop(2, 6) == 1 && count_prop(2, 4) == 0,
+        "a scroll sends its height and grow, not an unset width");
+    size_version.set(1); ui_frame();
+    check(count_prop(2, 5) == 1 && count_prop(2, 6) == 0, "only the changed height");
+    ui_shutdown(); balanced("sizes leak");
+}
+
+*Signal<int> image_version;
+
+void images() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        image_version = use_signal<int>(0);
+        int v = image_version.get();
+        Image(Style{width: 64, height: 64, label: "Eskiu"}, v < 2 ? "logo.png" : "https://eskiu-lang.org/logo.png");
+    });
+    ui_frame();
+    check(count_prop(9, 3) == 1 && count_prop(9, 1) == 1 && count_prop(2, 4) == 1, "source, alt text and size");
+    image_version.set(1); ui_frame();
+    check(count_prop(9, 3) == 0, "an unchanged source sends nothing");
+    image_version.set(2); ui_frame();
+    check(count_prop(9, 3) == 1, "a new source is sent");
+    ui_shutdown(); balanced("images leak");
+}
+
+*Signal<int> style_version;
+
+void visual_styles() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        style_version = use_signal<int>(0);
+        int v = style_version.get();
+        Row(Style{background: v < 2 ? rgb(255, 0, 0) : -1, radius: 8, border_width: 2, border_color: rgb(0, 0, 0),
+                  opacity: 50, align: AlignCenter, justify: JustifyBetween}, void() {
+            TextWith(Style{color: rgb(0, 0, 255), font_size: 24, font_weight: 700}, "Title");
+        });
+        Row(Style{}, void() {});
+    });
+    ui_frame();
+    for (code in 8..18) { check(count_prop(2, code) == 1, "each visual prop sent once"); }
+    check(prop_value(2, 8) == (int)0xFF0000FF && prop_value(2, 16) == 2 && prop_value(2, 17) == 4, "values");
+    style_version.set(1); ui_frame();
+    for (code in 8..18) { check(count_prop(2, code) == 0, "unchanged styles send nothing"); }
+    style_version.set(2); ui_frame();
+    check(count_prop(2, 8) == 1 && prop_value(2, 8) == 0, "a cleared background is 0");
+    ui_shutdown(); balanced("visual styles leak");
+}
+
+*Signal<bool> switch_on;
+
+bool accept_toggle;
+
+int presses;
+
+*StringState strict_draft;
+
+void controls() {
+    Ui runtime;
+    presses = 0;
+    accept_toggle = false;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        switch_on = use_signal<bool>(false);
+        strict_draft = use_string("");
+        Pressable(Style{width: 100, height: 40}, void() { presses++; }, void() { Text("Press"); });
+        Switch(Style{}, switch_on.get(), void(bool on) { if (accept_toggle) { switch_on.set(on); } });
+        ActivityIndicator(Style{}, !switch_on.get());
+        // Accepts only digits.
+        TextInput(Input{value: strict_draft.get()}, void(string text) {
+            if (text[0] >= '0' && text[0] <= '9') { strict_draft.set(text); }
+        });
+    });
+    ui_frame();
+    check(count_prop(2, 18) == 1 && prop_value(2, 18) == 0 && prop_value(2, 19) == 1, "switch off, spinner on");
+    check(ops[7] == 3, "pressable, switch and input listen");
+    *Node pressable = ui.root.children.data[0];
+    *Node toggle = ui.root.children.data[1];
+    *Node input = ui.root.children.data[3];
+    check(ui_event(pressable.id, pressable.generation) && presses == 1, "a press reaches the pressable");
+    // Refused toggle: the switch is sent back to off.
+    ui_event_toggle(toggle.id, toggle.generation, true);
+    ui_frame();
+    check(count_prop(2, 18) == 1 && prop_value(2, 18) == 0, "a refused toggle is reverted");
+    accept_toggle = true;
+    ui_event_toggle(toggle.id, toggle.generation, true);
+    ui_frame();
+    check(count_prop(2, 18) == 0 && prop_value(2, 19) == 0, "an accepted toggle is not resent; the spinner stops");
+    // Refused edit: the input gets its value back.
+    ui_event_text(input.id, input.generation, "abc");
+    ui_frame();
+    check(ops[3] == 1 && strcmp(input.text, "") == 0, "a refused edit is reverted");
+    ui_event_text(input.id, input.generation, "42");
+    ui_frame();
+    check(ops[3] == 0 && strcmp(strict_draft.get(), "42") == 0, "an accepted edit is not resent");
+    ui_shutdown(); balanced("controls leak");
+}

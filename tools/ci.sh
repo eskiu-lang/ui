@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/.."
 mkdir -p build
 cc -c tests/heap.c -o build/heap.o
-eskiuc tests/model.esk -O2 --link-arg build/heap.o -o build/model
+eskiuc tests/model/main.esk -O2 --link-arg build/heap.o -o build/model
 build/model
 eskiuc tests/tags.esk -o build/tags
 build/tags

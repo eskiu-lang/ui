@@ -1,0 +1,71 @@
+// Ownership: allocations back to zero, owned strings and snapshots.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+void leak_gate() {
+    double start = ui_clock_ms();
+    for (iteration in 0..10000) {
+        Ui runtime;
+        Store model;
+        *Store store = &model;
+        store.init();
+        store.add("first");
+        store.add("second");
+        ui_init(&runtime, record);
+        ui_mount(void() { TodoApp(store); });
+        ui_frame();
+        ui_shutdown();
+        store.free();
+        balanced("mount unmount leak gate");
+    }
+    printf("mount/unmount 10000: %.3f ms\n", ui_clock_ms() - start);
+    Ui runtime;
+    Store model;
+    *Store store = &model;
+    store.init();
+    store.add("first");
+    store.add("second");
+    ui_init(&runtime, record);
+    ui_mount(void() { TodoApp(store); });
+    ui_frame();
+    store.changed(); ui_frame();
+    int64 baseline = ui_live_allocations();
+    start = ui_clock_ms();
+    for (i in 1..10001) {
+        store.changed(); ui_frame();
+        check(ui_live_allocations() == baseline, "handler replacement baseline");
+    }
+    printf("handler replacement 10000: %.3f ms\n", ui_clock_ms() - start);
+    ui_shutdown(); store.free(); balanced("replacement shutdown leak");
+}
+
+*StringState owned;
+
+*UiString held;
+
+void owned_strings() {
+    Ui runtime;
+    observed = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        owned = use_string("before");
+        // This callback deliberately does not subscribe to owned: it holds a snapshot.
+        Row(Style{key: key(1)}, void() {
+            held = owned.snapshot();
+            *UiString capture = held;
+            Button_owned("Read snapshot", void() {
+                check(strcmp(capture.text, "before") == 0, "old snapshot survives set");
+                observed++;
+            }, void() { capture.release(); });
+        });
+    });
+    ui_frame();
+    int button = keyed(1).children.data[0].id;
+    // Change the owned value, retain the old snapshot beyond replacement and commit.
+    owned.set("after");
+    ui_event(button, 1);
+    check(observed == 1, "retained capture callable after set");
+    // New handler sees the updated value. Stop before rerunning the assertion callback.
+    ui_frame();
+    check(strcmp(held.text, "after") == 0, "new handler gets new snapshot");
+    ui_shutdown(); balanced("owned string leak");
+}

@@ -1,0 +1,78 @@
+// Virtual lists and pull to refresh.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+int rendered_rows;
+
+void flat_list() {
+    Ui runtime;
+    rendered_rows = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        FlatList(Style{height: 400}, 10000, 40, void(int i) { rendered_rows++; text_number(i); });
+    });
+    ui_frame();
+    *Node list = ui.root.children.data[0];
+    check(list.kind == 6 && list.virtual, "a flat list is a virtual scroll");
+    check(list.children.size == 17, "16 rows (a viewport and the overscan) and the bottom spacer");
+    check(text_is(list.children.data[0].children.data[0], 0), "row 0 first");
+    int mounted = rendered_rows;
+    ui_event_scroll(list.id, list.generation, 20, 400);
+    check(!ui_frame(), "a move under one row renders nothing");
+    ui_event_scroll(list.id, list.generation, 4000, 400);
+    ui_frame();
+    check(list.children.size == 23 && prop_value(2, 5) == 95 * 40, "rows 95 to 115 between two spacers");
+    check(text_is(list.children.data[1].children.data[0], 95), "the window starts at row 95");
+    int live = 0;
+    for (i in 0..ui.by_id.size) { if (ui.by_id.data[i] != null) { live++; } }
+    check(live < 80, "nodes stay bounded for 10,000 rows");
+    check(rendered_rows - mounted < 40, "only the new rows are rendered");
+    ui_shutdown(); balanced("flat list leak");
+}
+
+List<int> sections;
+
+void section_list() {
+    Ui runtime;
+    sections.push(3); sections.push(100); sections.push(2);
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        SectionList(Style{height: 200}, &sections, 30, 40, void(int section, int item) {
+            text_number(item < 0 ? 1000 + section : item);
+        });
+    });
+    ui_frame();
+    *Node list = ui.root.children.data[0];
+    check(text_is(list.children.data[0].children.data[0], 1000), "section 0's header first");
+    check(text_is(list.children.data[4].children.data[0], 1001), "then its 3 rows, then section 1's header");
+    ui_event_scroll(list.id, list.generation, 2000, 200);
+    ui_frame();
+    check(list.children.data[0].key.value == -1 && list.children.data[0].kind == 2, "a top spacer");
+    bool header0 = false;
+    for (i in 0..list.children.size) { if (list.children.data[i].key.value == 0) { header0 = true; } }
+    check(!header0, "section 0 is scrolled away");
+    ui_shutdown(); sections.free(); balanced("section list leak");
+}
+
+*Signal<bool> loading;
+
+int refreshes;
+
+void refresh_control() {
+    Ui runtime;
+    refreshes = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        loading = use_signal<bool>(false);
+        RefreshControl(loading.get(), void() { refreshes++; loading.set(true); });
+        FlatList(Style{height: 200}, 50, 40, void(int i) { text_number(i); });
+    });
+    ui_frame();
+    *Node list = ui.root.children.data[0];
+    check(count_prop(2, 22) == 1 && prop_value(2, 22) == 0, "the list says it can refresh");
+    check(ui_event_refresh(list.id, list.generation) && refreshes == 1, "a pull runs on_refresh");
+    ui_frame();
+    check(count_prop(2, 22) == 1 && prop_value(2, 22) == 1, "the indicator shows");
+    loading.set(false); ui_frame();
+    check(prop_value(2, 22) == 0, "and goes away");
+    ui_shutdown(); balanced("refresh leak");
+}

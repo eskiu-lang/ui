@@ -1,0 +1,55 @@
+// Whole apps: the Tasks showcase and the kit gallery.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+// The showcase app: filters, toggling, adding; no leaks.
+void tasks_app() {
+    TaskStore model;
+    *TaskStore store = &model;
+    tasks_seed(store);
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() { TasksApp(store); });
+    ui_frame();
+    check(find_label(ui.root, "Tasks").row_count == 7, "seven tasks");
+    *Node active = find_label(ui.root, "Active");
+    ui_event(active.id, active.generation); ui_frame();
+    check(store.visible.size == 3 && find_label(ui.root, "Tasks").row_count == 3, "three active");
+    *Node row = find_label(ui.root, "Book flights to Mexico City");
+    *Node toggle = row.children.data[0];
+    ui_event(toggle.id, toggle.generation); ui_frame();
+    check(store.visible.size == 2, "marking one done leaves two active");
+    *Node all = find_label(ui.root, "All");
+    ui_event(all.id, all.generation); ui_frame();
+    *Node field = find_label(ui.root, "New task");
+    ui_event_text(field.id, field.generation, "Plan the launch"); ui_frame();
+    *Node add = field.parent.children.data[1];
+    ui_event(add.id, add.generation); ui_frame();
+    check(store.tasks.size == 8 && find_label(ui.root, "Plan the launch") != null, "a typed task is added");
+    ui_shutdown();
+    store.free();
+    balanced("tasks app leak");
+}
+
+// The kit: each control changes its state, closures passed in are freed (ui_own) however
+// often the page renders.
+void kit_gallery() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() { KitGallery(); });
+    ui_frame();
+    press_label("Weekly summary");
+    check(find_label(ui.root, "Weekly summary").children.data[0].children.data[0].props[8] == kit.primary,
+        "the checkbox is checked");
+    press_label("Team");
+    press_label("Month");
+    press_label("Settings");
+    press_label("What is Eskiu?");
+    check(find_label(ui.root, "What is Eskiu?").parent.children.size == 2, "the section opened");
+    int64 live = ui_live_allocations();
+    for (i in 0..500) {
+        press_label(i % 2 == 0 ? "Secondary" : "Ghost");
+        press_label(i % 2 == 0 ? "Pro" : "Free");
+    }
+    check(ui_live_allocations() <= live + 8, "renders do not leak the closures components were given");
+    ui_shutdown(); balanced("kit gallery leak");
+}
