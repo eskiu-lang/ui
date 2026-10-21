@@ -194,7 +194,7 @@ public final class UiActivity extends Activity {
     private void prop(int id, View view, int code, int value) {
         float d = density();
         if (code == 3) { if (value != 0) view.requestFocus(); else view.clearFocus(); }
-        else if (code == 2 && view instanceof EditText) {
+        else if (code == 2 && (view instanceof EditText || (view instanceof Button && !(view instanceof Switch)))) {
             int p = Math.round(value * d);
             if (value > 0) view.setPadding(p, p, p, p);
         }

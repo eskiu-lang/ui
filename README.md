@@ -87,6 +87,25 @@ tasks, a virtual list of task cards with tags); `examples/components.esk` has th
 a TODO list with keyed rows, per-row state and a model-owned signal. `examples/app.esk` is
 the entry point the web, iOS and Android hosts share.
 
+## Start an app
+
+`tools/ui.esk` makes a project and builds or runs it on each platform:
+
+```bash
+git clone https://github.com/eskiu-lang/ui && eskiuc ui/tools/ui.esk -o ~/.eskiu/bin/ui
+ui new myapp && cd myapp       # depends on github.com/eskiu-lang/ui (--ui PATH for a checkout)
+ui run web                     # serves build/ui/web and opens the browser
+ui run macos                   # a WKWebView window
+ui run ios                     # the simulator (boots an iPhone if none is)
+ui run android                 # a device or the first emulator
+```
+
+`src/main.esk` holds the app; `ui_app_start` mounts it and `ui_app_stop` frees what it owns.
+Files in `assets/` ship with the app (an `Image` loads them by name). `ui build TARGET`
+builds without running; everything goes to `build/ui/`. Yoga is fetched and compiled once
+into `$ESKIU_HOME/cache`. iOS needs Xcode, Android the SDK with an NDK, build tools and a
+platform (`ANDROID_HOME`), the web emscripten.
+
 ## Modules
 
 ### `<ui>`
