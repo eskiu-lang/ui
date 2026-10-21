@@ -175,7 +175,8 @@ string android_manifest(Project* p, string setup_classes, bool package) {
     String manifest;
     String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"%s>\n"
         "%s%s"
-        "  <application android:label=\"%s\" android:theme=\"@android:style/Theme.Material.Light.NoActionBar\"%s>\n"
+        "  <application android:label=\"%s\" android:theme=\"@android:style/Theme.Material.Light.NoActionBar\"%s"
+        " android:usesCleartextTraffic=\"true\">\n"
         "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\" android:launchMode=\"singleTask\"\n"
         "      android:configChanges=\"uiMode|locale|layoutDirection|fontScale|orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|density\" >\n"
         "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n"
@@ -229,10 +230,11 @@ string android_scheme(Project* p) {
     return out.data;
 }
 
-// The ui.toml [android] permissions as uses-permission lines.
+// The ui.toml [android] permissions as uses-permission lines, with the network's (ui_fetch).
 string android_permissions(Project* p) {
     List<string> permissions;
     defer permissions.free();
+    permissions.push("android.permission.INTERNET");
     p.config.all("android.permissions", &permissions);
     String out;
     for (i in 0..permissions.size) {

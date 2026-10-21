@@ -3,7 +3,8 @@
 // 9 a native view's event (the payload in text, its name in extra), 10 the browser went to a
 // route (the route in text, its history index in value), 11 a node's frame (x in value, y in
 // extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value,
-// 15 an answer (the request in id, its text).
+// 15 an answer (the request in id, its text), 16 a fetch's answer (status in value, the body
+// in text, the headers in extra).
 export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
@@ -13,6 +14,7 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 6) app._ui_dispatch_alert(id, value);
   else if (kind === 13) app._ui_dispatch_hover(id, generation, value);
   else if (kind === 14) app._ui_dispatch_value(id, generation, value);
+  else if (kind === 16) app.ccall('ui_dispatch_fetch', null, ['number', 'number', 'string', 'string'], [id, value, text, extra]);
   else if (kind === 15) app.ccall('ui_dispatch_answer', null, ['number', 'string'], [id, text]);
   else if (kind === 11) app._ui_dispatch_layout(id, generation, value, extra, width, height);
   else if (kind === 10) app.ccall('ui_dispatch_route', null, ['string', 'number'], [text, value]);
@@ -299,6 +301,22 @@ export function createHost(root, dispatch, views = {}) {
       else answer(copied);
     } else if (c.command === 8) navigator.vibrate?.([10, 15, 25, 40, 20, 30, 40][Number(c.strings[0])] ?? 10);
     else if (c.command === 9) announce(c.strings[0]);
+    else if (c.command === 10) {
+      // A fetch through the browser; the answer comes back as an event.
+      const [url, method, headerText, body, timeout, hasBody] = c.strings;
+      const headers = {};
+      for (const line of headerText.split('\n')) {
+        const colon = line.indexOf(':');
+        if (colon > 0) headers[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+      }
+      const options = {method, headers, body: hasBody === '1' ? body : undefined};
+      if (Number(timeout) > 0 && typeof AbortSignal !== 'undefined' && AbortSignal.timeout) options.signal = AbortSignal.timeout(Number(timeout));
+      fetch(url, options).then(async response => {
+        const text = await response.text();
+        const names = [...response.headers].map(([name, value]) => `${name}: ${value}`).join('\n');
+        dispatch(c.request, 0, 16, text, response.status, names);
+      }, error => dispatch(c.request, 0, 16, String(error), 0, ''));
+    }
     else if (c.command === 3) navigate(c.strings);
   }
   // The page's URL follows the app's first Navigator: routes are paths under the page's

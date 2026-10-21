@@ -16,5 +16,6 @@
 <key>UISceneConfigurationName</key><string>Default</string>
 <key>UISceneDelegateClassName</key><string>UiSceneDelegate</string>
 </dict></array></dict></dict>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
 </dict></plist>

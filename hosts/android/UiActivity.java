@@ -91,6 +91,48 @@ public final class UiActivity extends Activity {
     private native void nativeValue(int id, int generation, int value);
     private native void nativeAnswer(int request, String text);
     private native void nativeDataDir(String path);
+    private native void nativeFetch(int request, int status, String body, String headers);
+    // A fetch through HttpURLConnection on its own thread; the answer comes back on the UI thread.
+    private void fetch(int request, String[] strings) {
+        new Thread(() -> {
+            int status = 0;
+            String body;
+            StringBuilder headers = new StringBuilder();
+            try {
+                java.net.HttpURLConnection connection = (java.net.HttpURLConnection)new java.net.URL(strings[0]).openConnection();
+                connection.setRequestMethod(strings[1]);
+                for (String line : strings[2].split("\n")) {
+                    int colon = line.indexOf(':');
+                    if (colon > 0) connection.setRequestProperty(line.substring(0, colon).trim(), line.substring(colon + 1).trim());
+                }
+                int timeout = Integer.parseInt(strings[4]);
+                if (timeout > 0) { connection.setConnectTimeout(timeout); connection.setReadTimeout(timeout); }
+                if (strings[5].equals("1")) {
+                    connection.setDoOutput(true);
+                    connection.getOutputStream().write(strings[3].getBytes(StandardCharsets.UTF_8));
+                }
+                status = connection.getResponseCode();
+                java.io.InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                if (stream != null) {
+                    byte[] buffer = new byte[16384];
+                    for (int n; (n = stream.read(buffer)) > 0; ) bytes.write(buffer, 0, n);
+                    stream.close();
+                }
+                body = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+                for (java.util.Map.Entry<String, java.util.List<String>> header : connection.getHeaderFields().entrySet()) {
+                    if (header.getKey() != null) headers.append(header.getKey()).append(": ").append(String.join(", ", header.getValue())).append('\n');
+                }
+                connection.disconnect();
+            } catch (Exception error) {
+                status = 0;
+                body = error.toString();
+            }
+            final int code = status;
+            final String text = body;
+            mainThread.post(() -> { if (active) nativeFetch(request, code, text, headers.toString()); });
+        }).start();
+    }
     // A slider's range: SeekBar counts from 0, so its progress is the value minus the minimum.
     private final HashMap<Integer, int[]> sliderRanges = new HashMap<>();
     // Timers for use_interval and use_timeout, on the UI thread, by token.
@@ -502,6 +544,8 @@ public final class UiActivity extends Activity {
             root.performHapticFeedback(feedback[kind]);
         } else if (command == 9 && strings.length >= 1) {
             root.announceForAccessibility(strings[0]);
+        } else if (command == 10 && strings.length >= 6) {
+            fetch(request, strings);
         }
     }
     public float screenWidth() { return findViewById(android.R.id.content).getWidth() / density(); }

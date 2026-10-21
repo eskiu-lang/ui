@@ -38,6 +38,7 @@ extern "C" void ui_dispatch_hover(int id, int generation, int inside);
 extern "C" void ui_dispatch_value(int id, int generation, int value);
 extern "C" void ui_dispatch_answer(int request, const char *text);
 extern "C" void ui_report_data_dir(const char *path);
+extern "C" void ui_dispatch_fetch(int request, int status, const char *body, const char *headers);
 extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
 
 @interface UiHostNode : NSObject
@@ -665,6 +666,34 @@ static void ui_host_command(int request, int command, int count, const char **st
         }
     } else if (command == 9 && count >= 1) {
         UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @(strings[0]));
+    } else if (command == 10 && count >= 6) {
+        // A fetch through NSURLSession; the answer comes back on the main queue.
+        NSURL *url = [NSURL URLWithString:@(strings[0])];
+        if (!url) { ui_dispatch_fetch(request, 0, "invalid URL", ""); return; }
+        NSMutableURLRequest *call = [NSMutableURLRequest requestWithURL:url];
+        call.HTTPMethod = @(strings[1]);
+        for (NSString *line in [@(strings[2]) componentsSeparatedByString:@"\n"]) {
+            NSRange colon = [line rangeOfString:@":"];
+            if (colon.location == NSNotFound) continue;
+            NSString *name = [[line substringToIndex:colon.location] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+            NSString *value = [[line substringFromIndex:colon.location + 1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+            [call setValue:value forHTTPHeaderField:name];
+        }
+        if (strings[5][0] == '1') call.HTTPBody = [@(strings[3]) dataUsingEncoding:NSUTF8StringEncoding];
+        int timeout = atoi(strings[4]);
+        if (timeout > 0) call.timeoutInterval = timeout / 1000.0;
+        [[NSURLSession.sharedSession dataTaskWithRequest:call completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            NSString *body = error ? error.localizedDescription
+                                   : ([[NSString alloc] initWithData:data ?: [NSData data] encoding:NSUTF8StringEncoding] ?: @"");
+            int status = error ? 0 : (int)((NSHTTPURLResponse *)response).statusCode;
+            NSMutableString *headers = [NSMutableString new];
+            if (!error) {
+                [((NSHTTPURLResponse *)response).allHeaderFields enumerateKeysAndObjectsUsingBlock:^(id name, id value, BOOL *stop) {
+                    [headers appendFormat:@"%@: %@\n", name, value];
+                }];
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{ ui_dispatch_fetch(request, status, body.UTF8String, headers.UTF8String); });
+        }] resume];
     }
 }
 

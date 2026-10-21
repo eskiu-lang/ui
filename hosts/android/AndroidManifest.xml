@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.eskiu.ui.prototype">
   <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35"/>
-  <application android:label="Eskiu UI" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:debuggable="true">
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <application android:usesCleartextTraffic="true" android:label="Eskiu UI" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:debuggable="true">
     <activity android:name="org.eskiu.ui.UiActivity" android:exported="true" android:configChanges="uiMode|locale|layoutDirection|fontScale|orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|density">
       <meta-data android:name="org.eskiu.ui.native" android:value="org.eskiu.examples.Slider"/>
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>

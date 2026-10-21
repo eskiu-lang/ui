@@ -39,6 +39,7 @@ extern "C" void ui_dispatch_hover(int, int, int);
 extern "C" void ui_dispatch_value(int, int, int);
 extern "C" void ui_dispatch_answer(int, const char *);
 extern "C" void ui_report_data_dir(const char *);
+extern "C" void ui_dispatch_fetch(int, int, const char *, const char *);
 
 static JNIEnv *env;
 static jobject activity;
@@ -359,4 +360,10 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeDataDir(JNI
     const char *value = current->GetStringUTFChars(path, nullptr);
     ui_report_data_dir(value);
     current->ReleaseStringUTFChars(path, value);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeFetch(JNIEnv *current, jobject, jint request, jint status, jstring body, jstring headers) {
+    env = current;
+    const char *text = env->GetStringUTFChars(body, nullptr), *names = env->GetStringUTFChars(headers, nullptr);
+    ui_dispatch_fetch(request, status, text, names);
+    env->ReleaseStringUTFChars(body, text); env->ReleaseStringUTFChars(headers, names);
 }

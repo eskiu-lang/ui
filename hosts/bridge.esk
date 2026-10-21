@@ -49,6 +49,13 @@ void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// A fetch finished: its status (0 when it failed, `body` the error), body and headers.
+void ui_dispatch_fetch(int request, int status, string body, string headers) {
+    if (!app_active) { return; }
+    ui_event_fetch(request, status, body == null ? "" : body, headers);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 // The app's data directory (ui_data_dir); hosts report it before ui_start.
 void ui_report_data_dir(string path) { ui_set_data_dir(path); }
 

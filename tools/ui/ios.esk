@@ -117,6 +117,7 @@ string ios_plist(Project* p, string classes, bool family) {
         "<key>UIWindowSceneSessionRoleApplication</key><array><dict>\n"
         "<key>UISceneConfigurationName</key><string>Default</string>\n"
         "<key>UISceneDelegateClassName</key><string>UiSceneDelegate</string>\n</dict></array></dict></dict>\n"
+        "<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>\n"
         "%s<key>UiNativeClasses</key><array>%s</array>\n%s</dict></plist>\n",
         p.id.data, p.name.data, xml_escape(p.display.data), p.name.data,
         family ? "<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>\n" : "",
