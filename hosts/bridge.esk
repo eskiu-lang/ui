@@ -49,6 +49,13 @@ void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// A pointer entered (1) or left (0) a node with a hover handler.
+void ui_dispatch_hover(int id, int generation, int inside) {
+    if (!app_active) { return; }
+    ui_event_hover(id, generation, inside != 0);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 // A timer the app armed fired.
 void ui_dispatch_timer(int token) {
     if (!app_active) { return; }

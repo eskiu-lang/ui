@@ -32,6 +32,7 @@ extern "C" void ui_dispatch_native(const char *, const char *);
 extern "C" void ui_dispatch_view(int, int, const char *, const char *);
 extern "C" void ui_dispatch_layout(int, int, int, int, int, int);
 extern "C" void ui_dispatch_timer(int);
+extern "C" void ui_dispatch_hover(int, int, int);
 
 static JNIEnv *env;
 static jobject activity;
@@ -327,4 +328,7 @@ extern "C" void ui_native_emit(const char *channel, const char *payload) {
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeTimer(JNIEnv *current, jobject, jint token) {
     env = current; ui_dispatch_timer(token);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeHover(JNIEnv *current, jobject, jint id, jint generation, jint inside) {
+    env = current; ui_dispatch_hover(id, generation, inside);
 }

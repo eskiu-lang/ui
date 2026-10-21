@@ -67,6 +67,7 @@ public final class UiActivity extends Activity {
     private native void nativeWindow(int width, int height, int scale);
     private native void nativeModuleEvent(String channel, String payload);
     private native void nativeTimer(int token);
+    private native void nativeHover(int id, int generation, int inside);
     // Timers for use_interval and use_timeout, on the UI thread, by token.
     private final HashMap<Integer, Runnable> timers = new HashMap<>();
     public void timerStart(int token, int ms, boolean repeat) {
@@ -294,6 +295,18 @@ public final class UiActivity extends Activity {
 
     private void prop(int id, View view, int code, int value) {
         float d = density();
+        if (code == 31) {
+            // A pointer (a mouse, a stylus) entering and leaving the view.
+            view.setOnHoverListener(value == 0 ? null : (v, e) -> {
+                int action = e.getActionMasked();
+                if (active && generations.containsKey(id) && (action == android.view.MotionEvent.ACTION_HOVER_ENTER ||
+                    action == android.view.MotionEvent.ACTION_HOVER_EXIT)) {
+                    nativeHover(id, generations.get(id), action == android.view.MotionEvent.ACTION_HOVER_ENTER ? 1 : 0);
+                }
+                return false;
+            });
+            return;
+        }
         if (code == 23) {
             // A screen under the top is hidden, after a push's slide it stays under.
             activeScreens.put(id, value != 0);

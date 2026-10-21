@@ -31,6 +31,7 @@ extern "C" void ui_dispatch_native(const char *channel, const char *payload);
 extern "C" int ui_report_back(void);
 extern "C" void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height);
 extern "C" void ui_dispatch_timer(int token);
+extern "C" void ui_dispatch_hover(int id, int generation, int inside);
 extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
 
 @interface UiHostNode : NSObject
@@ -300,6 +301,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
 
 @interface UiEvents : NSObject <UIScrollViewDelegate>
 - (void)press:(UIControl *)sender;
+- (void)hover:(UIHoverGestureRecognizer *)gesture;
 - (void)edit:(UITextField *)sender;
 - (void)toggle:(UISwitch *)sender;
 - (void)refresh:(UIRefreshControl *)sender;
@@ -308,6 +310,14 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)frame:(CADisplayLink *)sender;
 @end
 @implementation UiEvents
+// A pointer (an iPad's, a Mac's) entering and leaving a node with a hover handler.
+- (void)hover:(UIHoverGestureRecognizer *)gesture {
+    UiHostNode *node = nodes[@(gesture.view.tag)];
+    if (!node) return;
+    if (gesture.state == UIGestureRecognizerStateBegan) ui_dispatch_hover((int)gesture.view.tag, node.generation, 1);
+    else if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled)
+        ui_dispatch_hover((int)gesture.view.tag, node.generation, 0);
+}
 - (void)press:(UIControl *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
     if (node) ui_dispatch((int)sender.tag, node.generation);
@@ -503,7 +513,15 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (before && !scroll.refreshControl.refreshing) [scroll.refreshControl beginRefreshing];
             else if (!before && scroll.refreshControl.refreshing) [scroll.refreshControl endRefreshing];
         } else if (kind == 23) screenActive(node, before);
-        else if (kind == 30) { node.layoutListening = before != 0; node.reportedFrame = CGRectNull; }
+        else if (kind == 31) {
+            for (UIGestureRecognizer *g in node.view.gestureRecognizers.copy) {
+                if ([g isKindOfClass:UIHoverGestureRecognizer.class]) [node.view removeGestureRecognizer:g];
+            }
+            if (before) {
+                node.view.tag = id;
+                [node.view addGestureRecognizer:[[UIHoverGestureRecognizer alloc] initWithTarget:events action:@selector(hover:)]];
+            }
+        } else if (kind == 30) { node.layoutListening = before != 0; node.reportedFrame = CGRectNull; }
         else if (kind == 24) YGNodeStyleSetPositionType(node.yoga, before ? YGPositionTypeAbsolute : YGPositionTypeRelative);
         else if (kind >= 25 && kind <= 28) {
             const YGEdge edges[] = {YGEdgeLeft, YGEdgeTop, YGEdgeRight, YGEdgeBottom};

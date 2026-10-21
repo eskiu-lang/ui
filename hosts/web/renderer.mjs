@@ -2,7 +2,7 @@
 // (1 or 0), 5 scroll (the offset in value, the viewport height in extra), 6 alert, 7 refresh,
 // 9 a native view's event (the payload in text, its name in extra), 10 the browser went to a
 // route (the route in text, its history index in value), 11 a node's frame (x in value, y in
-// extra, then width and height).
+// extra, then width and height), 13 hover (1 entered, 0 left).
 export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
@@ -10,6 +10,7 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
   else if (kind === 6) app._ui_dispatch_alert(id, value);
+  else if (kind === 13) app._ui_dispatch_hover(id, generation, value);
   else if (kind === 11) app._ui_dispatch_layout(id, generation, value, extra, width, height);
   else if (kind === 10) app.ccall('ui_dispatch_route', null, ['string', 'number'], [text, value]);
   else if (kind === 9) app.ccall('ui_dispatch_view', null, ['number', 'number', 'string', 'string'], [id, generation, extra, text]);
@@ -57,6 +58,18 @@ export function createHost(root, dispatch, views = {}) {
   const natives = new Map();
   // The nodes whose frame the app listens to (ui_on_layout), with the frame last reported.
   const layouts = new Map();
+  // Hover listeners (ui_on_hover): a pointer entering and leaving the node.
+  function hover(node, on) {
+    if (on && !node.uiHover) {
+      node.uiHover = [() => dispatch(...ids(node), 13, null, 1), () => dispatch(...ids(node), 13, null, 0)];
+      node.addEventListener('mouseenter', node.uiHover[0]);
+      node.addEventListener('mouseleave', node.uiHover[1]);
+    } else if (!on && node.uiHover) {
+      node.removeEventListener?.('mouseenter', node.uiHover[0]);
+      node.removeEventListener?.('mouseleave', node.uiHover[1]);
+      node.uiHover = null;
+    }
+  }
   function reportLayouts() {
     for (const [id, last] of layouts) {
       const node = nodes.get(id);
@@ -199,6 +212,7 @@ export function createHost(root, dispatch, views = {}) {
       case 20: case 21: break;  // the status bar: nothing to draw in a page
       case 22: refresh(node, value !== 0); break;
       case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
+      case 31: hover(node, value !== 0); break;
       case 30: if (value) layouts.set(Number(node.dataset.uiId), null); else layouts.delete(Number(node.dataset.uiId)); break;
       case 24: s.position = value ? 'absolute' : ''; break;
       case 25: s.left = value === UNSET ? '' : `${value}px`; break;
