@@ -2,7 +2,7 @@
 
 An app moves between screens on the phone and between pages on the web with the same code:
 a `Router` holds a stack of routes, and a `Navigator` draws it. `examples/navigation` is a
-list of places, each place's page and its notes.
+travel app: a list of places, each place's page and a plan for the trip.
 
 ```eskiu
 *Router router;
@@ -24,7 +24,7 @@ void ui_app_stop() { router.free(); }
 
 ## Routes
 
-A route is a path: `"/"`, `"/places/2"`, `"/places/2/notes?tab=photos"`. The app decides what
+A route is a path: `"/"`, `"/places/2"`, `"/places/2/plan?budget=comfort"`. The app decides what
 each one shows. `route_match(pattern, route, &params)` matches a route against a pattern
 segment by segment: a `:name` segment takes any one segment into `params`, a `*` takes the
 rest, and the query is ignored. `route_params_free` frees what it put there.
