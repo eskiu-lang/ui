@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/eskiu-lang/ui/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/version-0.0.0-6448d4" alt="Version 0.0.0">
-  <img src="https://img.shields.io/badge/status-phase%200%20prototype-orange" alt="Status: phase 0 prototype">
+  <img src="https://img.shields.io/badge/status-phase%201%20core-orange" alt="Status: phase 1 core">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
 </p>
 
@@ -27,11 +27,11 @@ component code draws UIKit views on iOS and `android.view` views on Android, bot
 by Yoga, and DOM elements on the web through WebAssembly; the desktop runs the web renderer
 in a webview.
 
-This is the **phase 0 prototype** of the UI plan (`docs/dev/ui-plan.md` in the
-[compiler repository](https://github.com/eskiu-lang/eskiu)): it settles the runtime model
-(scheduler, ownership, identity, renderer protocol) against executable tests before the core
-is written. Views use explicit lambdas, the form the planned trailing blocks will produce;
-the compiler is unchanged.
+It follows the UI plan (`docs/dev/ui-plan.md` in the
+[compiler repository](https://github.com/eskiu-lang/eskiu)). Phase 0 settled the runtime
+model (scheduler, ownership, identity, renderer protocol) against executable tests; phase 1,
+in progress, makes the core linear in the size of what changed. Views use explicit lambdas,
+the form the planned trailing blocks will produce; the compiler is unchanged.
 
 - **Fine-grained updates.** Each element's block records the signals it reads; when one
   changes, only that block runs again and its children are diffed.
@@ -40,8 +40,14 @@ the compiler is unchanged.
 - **Commits.** A frame's mutations reach the renderer as one commit. Old handlers, nodes and
   strings are freed only after the renderer completes it, synchronously or later, and events
   that arrive meanwhile are queued.
+- **Linear updates.** Children are matched through key tables, a reorder moves only the
+  children outside the longest run that kept its order, and subscriptions are removed in
+  O(1): 10,000 rows mount, reverse or unmount in under 10 ms.
+- **One buffer per frame.** A commit is a single byte buffer the renderer decodes; the web
+  renderer reads it from wasm memory in one call.
 - **Checked rules.** Hooks are checked by count, kind and concrete type. Render loops,
-  duplicate keys and memo cycles stop the program with a message.
+  duplicate keys and memo cycles stop the program with a message that says where:
+  `in Column[0] > TodoRow[key 3]`.
 
 ```eskiu
 import <string>;
@@ -87,7 +93,7 @@ share.
 | Name | What it does |
 |---|---|
 | `Column(Style, fn()->void)`, `Row(...)` | A container; its block emits the children. |
-| `Scope(Key, fn()->void)` | A container that gives its block a scope (state and identity). |
+| `Scope(string name, Key, fn()->void)` | A component's own scope (state and identity); `name` appears in diagnostics. |
 | `Text(string)` | A text node. The text is copied. Format it with `<string>`'s `String_format`, which `-Wformat` checks. |
 | `Button(string, fn()->void)` | A button and its handler. `Button_owned` adds a cleanup, run when the handler is replaced or unmounted. |
 | `Style{key, gap, padding}`, `key(int64)` | Layout props; `key` sets identity among siblings. |
@@ -97,6 +103,11 @@ share.
 | `use_memo<T>(fn()->T)` | A derived value, computed lazily; readers wake only when its value changes. |
 | `use_effect(fn()->void)`, `on_cleanup(fn()->void)` | Work after each commit of its scope, parents first; the cleanup runs before the next run and at unmount. |
 | `ui_init`, `ui_mount`, `ui_frame`, `ui_complete`, `ui_event`, `ui_needs_frame`, `ui_shutdown` | The host's side: create, render a frame, report a commit complete, deliver events. |
+| `ui_decode(*uint8, int, List<Mutation>*)` | A commit as records, for tests and tools. Native hosts use `hosts/ui_commit.h`. |
+| `ui.lenient` | Release behavior: a duplicate key warns and the later child is unkeyed instead of stopping. |
+
+Node ids are reused once the commit that removed them completes, each time with a new
+generation, so an event for a removed node never reaches the node that took its id.
 
 Values in `use_signal<T>` need built-in equality (scalars and pointers); pointers stored in
 it are borrowed. A throw out of a block, handler or effect is not caught: the program stops
@@ -132,11 +143,22 @@ Arm64 Mac (Mac16,8), Eskiu 0.12.0, LLVM 22.1.8:
 |---|---|
 | 10,000 TODO mounts and unmounts, native `-O2` | about 40 ms |
 | 10,000 renders replacing every handler, native `-O2` | about 12 ms |
-| Recording renderer, 10 / 100 / 1,000 rows | p95 0.009 / 0.069 / 2.1 ms per frame |
-| wasm module (counter and TODO) | 48,769 bytes; the build fails above 128 KiB |
+| Recording renderer, 10 / 100 / 1,000 rows | p95 0.010 / 0.058 / 0.61 ms per frame |
+| wasm module (counter and TODO) | 62,208 bytes; the build fails above 128 KiB |
 | Chromium, counter / TODO, 120 frames | render and forced layout p95 1.1 / 8.3 ms |
 | iPhone simulator, 100 taps | batched into one frame of 0.13 ms |
 | Android emulator, 100 taps | batched into one frame of 1.4 ms |
+
+Whole-list operations on 10,000 rows (`tests/benchmark.esk`, `-O2`), before and after
+phase 1's indexing (the shared-signal row was measured once the other fixes were in):
+
+| Operation | Before | Now |
+|---|---|---|
+| Mount | 124 ms | 8.1 ms |
+| Reverse (every row moves) | 256 ms | 5.9 ms |
+| One event and its frame | 230 ms | 5.4 ms |
+| Unmount | 4,133 ms | 6.8 ms |
+| A signal read by every row changes | 92 ms | 1.2 ms |
 
 These are first baselines, not presentation-time or physical-device numbers;
 `build/*-results.json` holds the latest machine-readable results.
