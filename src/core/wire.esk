@@ -15,7 +15,9 @@
 //  11 named prop  (a native view's) name: length u32, the bytes, a NUL; value: the same
 //  10 command  (the id is a request id, not a node) command u8 (1 alert: title, message,
 //              then the buttons; 2 open a URL; 3 history, on the web: "push" path,
-//              "replace" path, "back", "reset" paths...), u8 count, then that many strings, each a
+//              "replace" path, "back", "reset" paths...; 4 hide the keyboard; 5 share: text,
+//              URL; 6 copy: text; 7 paste (answered by event 15); 8 haptic: its kind;
+//              9 announce: text), u8 count, then that many strings, each a
 //              length u32, the bytes and a NUL
 // Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow,
 // 7 wrap (1 or 0), 8 background and 9 text color (RGBA, 0: platform default), 10 font size,

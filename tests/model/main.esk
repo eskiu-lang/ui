@@ -41,6 +41,7 @@ int main() {
     hovers(); printf("PASS hovers\n");
     sliders(); printf("PASS sliders\n");
     environment_apis(); printf("PASS environment apis\n");
+    actions(); printf("PASS actions\n");
     timers(); printf("PASS timers\n");
     controls(); printf("PASS controls\n");
     window_size(); printf("PASS window\n");

@@ -9,7 +9,8 @@
 // browser went to `text`, at history index `value`; no node), 11 layout (the node's frame:
 // value x, extra y, width and height, relative to its parent), 12 timer (the id is the
 // timer's token), 13 hover (value 1 when a pointer enters the node, 0 when it leaves),
-// 14 value (a Slider moved to `value`).
+// 14 value (a Slider moved to `value`), 15 answer (the text a request asked for: the id is
+// the request).
 struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height; }
 
 // What the host reports about the screen, in points: the system bars and display cutouts
@@ -94,6 +95,8 @@ struct Ui {
     // commit; the alerts waiting for an answer.
     Commit commands;
     List<Pending> alerts;
+    // The requests waiting for text (ui_clipboard_get).
+    List<PendingText> text_requests;
     int next_request;
     // Back handlers by registration order, and the modals open, by opening order.
     List<*BackEntry> back_handlers;
@@ -342,6 +345,7 @@ bool ui_dispatch_event(*Event event) {
     }
     if (event.kind == 10) { ui_dispatch_route_event(event); return ui.router != null; }
     if (event.kind == 12) { return ui_dispatch_timer_event(event); }
+    if (event.kind == 15) { return ui_dispatch_answer_event(event); }
     if (event.kind == 6) {
         for (i in 0..ui.alerts.size) {
             Pending pending = ui.alerts.data[i];
@@ -435,7 +439,9 @@ void ui_shutdown() {
     if (ui.has_next_hover) { ui_release_bool(ui.next_hover); }
     ui.timers.free();
     if (ui.has_timer_host) { ui_release_timer_start(ui.timer_start); ui_release_int(ui.timer_stop); }
-    ui.alerts.free(); ui.back_handlers.free(); ui.modals.free(); ui.next_owned.free();
+    ui.alerts.free(); ui.back_handlers.free();
+    for (i in 0..ui.text_requests.size) { ui_release_string(ui.text_requests.data[i].on_text); }
+    ui.text_requests.free(); ui.modals.free(); ui.next_owned.free();
     free(ui.link);
     free(ui.locale);
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }

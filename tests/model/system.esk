@@ -241,3 +241,31 @@ void environment_apis() {
     kit = kit_light();
     ui_shutdown(); balanced("environment apis leak");
 }
+
+string pasted;
+
+void actions() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() { Row(Style{}, void() {}); });
+    ui_frame();
+    ui_clipboard_set("eskiu");
+    ui_clipboard_get(void(string text) { pasted = ui_copy(text); });
+    ui_haptic(HapticSuccess);
+    ui_share("Look", null);
+    ui_keyboard_dismiss();
+    ui_announce("Saved");
+    check(ui_needs_frame(), "commands need a frame");
+    ui_frame();
+    check(mutation_count == 6 && mutation_ops[0] == 10 && mutation_kinds[0] == 6 && strcmp(mutation_texts[0], "eskiu") == 0,
+        "copy");
+    check(mutation_kinds[1] == 7 && mutation_befores[1] == 0, "paste, with no strings");
+    check(mutation_kinds[2] == 8 && strcmp(mutation_texts[2], "4") == 0, "a haptic by kind");
+    check(mutation_kinds[3] == 5 && mutation_befores[3] == 2, "share: text and an empty URL");
+    check(mutation_kinds[4] == 4 && mutation_kinds[5] == 9, "keyboard, announce");
+    check(ui_event_answer(mutation_ids[1], "eskiu") && strcmp(pasted, "eskiu") == 0, "the paste answered");
+    check(!ui_event_answer(mutation_ids[1], "again"), "once");
+    free(pasted);
+    ui_clipboard_get(void(string text) {});
+    ui_shutdown(); balanced("actions leak");
+}

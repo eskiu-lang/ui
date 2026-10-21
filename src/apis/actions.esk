@@ -1,0 +1,61 @@
+// What the app asks the system to do: hide the keyboard, share, copy and paste, haptics, and
+// announcements for a screen reader. Each is a command sent with the next commit.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// Commands 4 to 9 (src/core/wire.esk).
+void ui_command_strings(int request, int command, string a, string b) {
+    List<string> strings;
+    if (a != null) { strings.push(a); }
+    if (b != null) { strings.push(b); }
+    ui_command(request, command, &strings);
+    strings.free();
+}
+
+// Hide the software keyboard (the focused field loses focus).
+void ui_keyboard_dismiss() { ui_command_strings(0, 4, null, null); }
+
+// The system's share sheet with `text` and an optional `url` (null or "": none). The web uses
+// navigator.share, or copies the text where there is none.
+void ui_share(string text, string url) {
+    ui_command_strings(0, 5, text == null ? "" : text, url == null ? "" : url);
+}
+
+// The clipboard: put text in it, or get what it holds; `on_text` gets it ("" for nothing),
+// as an event.
+void ui_clipboard_set(string text) { ui_command_strings(0, 6, text == null ? "" : text, null); }
+
+struct PendingText { int id; fn(string)->void on_text; }
+
+void ui_clipboard_get(escaping fn(string)->void on_text) {
+    int request = ++ui.next_request;
+    ui.text_requests.push(PendingText{request, on_text});
+    ui_command_strings(request, 7, null, null);
+}
+
+// A touch of feedback from the device (a vibration on the web).
+enum Haptic { HapticSelection, HapticLight, HapticMedium, HapticHeavy, HapticSuccess, HapticWarning, HapticError }
+
+void ui_haptic(int kind) {
+    String text;
+    defer String_free(&text);
+    String_appendf(&text, "%d", kind);
+    ui_command_strings(0, 8, text.data, null);
+}
+
+// Read `text` aloud with the screen reader, if one runs.
+void ui_announce(string text) { ui_command_strings(0, 9, text == null ? "" : text, null); }
+
+// The host's side: the text a request asked for (event 15).
+bool ui_event_answer(int request, string text) { return ui_post(Event{request, 0, 15, 0, text}); }
+
+bool ui_dispatch_answer_event(*Event event) {
+    for (i in 0..ui.text_requests.size) {
+        PendingText pending = ui.text_requests.data[i];
+        if (pending.id != event.id) { continue; }
+        ui.text_requests.remove(i);
+        pending.on_text(event.text == null ? "" : event.text);
+        ui_release_string(pending.on_text);
+        return true;
+    }
+    return false;
+}
