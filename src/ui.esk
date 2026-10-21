@@ -122,8 +122,8 @@ struct Node {
     // conditional element of another kind does not shift them. old_unkeyed holds the old
     // ones grouped by kind (from kind_start), kind_emitted counts the new ones per kind.
     List<*Node> old_unkeyed;
-    int[14] kind_start;
-    int[13] kind_emitted;
+    int[17] kind_start;
+    int[16] kind_emitted;
     KeyTable old_keys;
     KeyTable new_keys;
     List<Slot> slots;
@@ -163,7 +163,11 @@ struct Node {
     bool has_on_bool;
     string label;
     string placeholder;
+    // An image's source, or a native view's type.
     string source;
+    // A native view: the named props last sent and its event handler.
+    List<NativePair> native_props;
+    fn(string, string)->void on_view;
     int focused;
     string text;
 }
@@ -176,7 +180,9 @@ struct Node {
 //   5 move     parent u32, before u32
 //   6 remove   (nothing)
 //   7 listen, 8 unlisten
-//   9 string prop  prop u8 (1 label, 2 placeholder, 3 image source), length u32, the bytes, a NUL
+//   9 string prop  prop u8 (1 label, 2 placeholder, 3 image source, 4 native view type),
+//                  length u32, the bytes, a NUL
+//  11 named prop  (a native view's) name: length u32, the bytes, a NUL; value: the same
 //  10 command  (the id is a request id, not a node) command u8 (1 alert: title, message,
 //              then the buttons; 2 open a URL), u8 count, then that many strings, each a
 //              length u32, the bytes and a NUL
@@ -189,7 +195,8 @@ struct Node {
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal
-// (a column on a layer over the whole screen, laid out on its own).
+// (a column on a layer over the whole screen, laid out on its own), 13 native view (a view
+// the app registered with the host, by type).
 // The renderer reads it during apply and copies what it keeps.
 struct Commit { *uint8 data; int len; int cap; }
 
@@ -222,7 +229,7 @@ void Commit_u32(*Commit self, int value) {
 void Commit_free(*Commit self) { free(self.data); *self = Commit{}; }
 
 // A decoded record, for tests and tools; `text` points into the buffer.
-struct Mutation { int op; int id; int generation; int parent; int before; int kind; string text; }
+struct Mutation { int op; int id; int generation; int parent; int before; int kind; string text; string name; }
 
 int ui_read_u32(*uint8 p) {
     return (int)((uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24));
@@ -239,6 +246,14 @@ void ui_decode(*uint8 data, int len, List<Mutation>* out) {
             int n = ui_read_u32(&data[at]);
             m.text = (string)&data[at + 4];
             at += 4 + n + 1;
+        } else if (m.op == 11) {
+            // A named prop: name in `name`, value in `text`.
+            int n = ui_read_u32(&data[at]);
+            m.name = (string)&data[at + 4];
+            at += 4 + n + 1;
+            int v = ui_read_u32(&data[at]);
+            m.text = (string)&data[at + 4];
+            at += 4 + v + 1;
         } else if (m.op == 10) {
             // A command: kind is the command, before the number of strings, text the first.
             m.kind = (int)data[at];
@@ -263,8 +278,9 @@ void ui_decode(*uint8 data, int len, List<Mutation>* out) {
 // Event kinds: 1 press, 2 change (text), 3 focus (value 1 focused, 0 blurred), 4 toggle
 // (value 1 on, 0 off), 5 scroll (value the offset, extra the viewport height), 6 alert
 // answered (the id is the request, value the button's index, -1 dismissed), 7 refresh
-// (the user pulled a scroll's RefreshControl).
-struct Event { int id; int generation; int kind; int value; string text; int extra; }
+// (the user pulled a scroll's RefreshControl), 8 native module event (name the channel, text
+// the payload; no node), 9 native view event (name and text from the view).
+struct Event { int id; int generation; int kind; int value; string text; int extra; string name; }
 // What the host reports about the screen, in points: the system bars and display cutouts
 // on each side, and the software keyboard over the bottom.
 struct Insets { int top; int right; int bottom; int left; int keyboard; }
@@ -315,6 +331,11 @@ struct Ui {
     *ListExtra next_list;
     int next_bar_style;
     bool next_bar_hidden;
+    // The handlers of native modules' events, by registration order.
+    List<*NativeHandler> native_handlers;
+    // The next NativeView's named props and type.
+    List<NativePair> next_native_props;
+    string next_view_type;
     // Destructors for the next element (ui_own).
     List<fn()->void> next_owned;
     // The RefreshControl for the next Scroll or FlatList.
@@ -337,8 +358,11 @@ struct Ui {
 *Ui ui;
 int64 ui_epochs;
 const int kSmall = 8;
+// Room for the element kinds (0 to 13 today); kind_start and kind_emitted are sized by it.
+const int kKinds = 16;
 
 string ui_kind_name(int kind) {
+    if (kind == 13) { return "NativeView"; }
     if (kind == 12) { return "Modal"; }
     if (kind == 11) { return "StatusBar"; }
     if (kind == 10) { return "ActivityIndicator"; }
@@ -616,6 +640,7 @@ string ui_hook_name(int kind) {
     if (kind == 1) { return "use_memo"; }
     if (kind == 2) { return "use_effect"; }
     if (kind == 4) { return "use_back"; }
+    if (kind == 5) { return "use_native_event"; }
     return "use_string";
 }
 
@@ -785,18 +810,18 @@ void ui_run(*Node node) {
             if (child.key.set) { node.old_keys.put(child.key.value, child); }
         }
     }
-    for (k in 0..13) { node.kind_emitted[k] = 0; }
+    for (k in 0..kKinds) { node.kind_emitted[k] = 0; }
     if (node.indexed) {
         // Group the old unkeyed children by kind, keeping their order (a counting sort).
-        for (k in 0..14) { node.kind_start[k] = 0; }
+        for (k in 0..kKinds + 1) { node.kind_start[k] = 0; }
         int unkeyed = 0;
         for (i in 0..node.children.size) {
             *Node child = node.children.data[i];
             if (!child.key.set) { node.kind_start[child.kind + 1]++; unkeyed++; }
         }
-        for (k in 1..14) { node.kind_start[k] += node.kind_start[k - 1]; }
-        int[13] fill;
-        for (k in 0..13) { fill[k] = node.kind_start[k]; }
+        for (k in 1..kKinds + 1) { node.kind_start[k] += node.kind_start[k - 1]; }
+        int[16] fill;
+        for (k in 0..kKinds) { fill[k] = node.kind_start[k]; }
         for (i in 0..unkeyed) { node.old_unkeyed.push(null); }
         for (i in 0..node.children.size) {
             *Node child = node.children.data[i];
@@ -876,6 +901,7 @@ void ui_unmount(*Node node) {
     for (i in 0..node.slots.size) {
         Slot slot = node.slots.data[i];
         if (slot.kind == 4) { ui_drop_back((*BackEntry)slot.data); }
+        if (slot.kind == 5) { ui_drop_native((*NativeHandler)slot.data); }
     }
     if (node.kind == 12) { ui_drop_from(&ui.modals, node); }
     ui.by_id.data[node.id] = null;
@@ -910,6 +936,8 @@ void ui_unmount(*Node node) {
         ui_release_item(node.on_item);
         ui_release_cell(node.on_cell);
         free(node.text); free(node.label); free(node.placeholder); free(node.source);
+        ui_free_pairs(&node.native_props);
+        ui_release_view(node.on_view);
         node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
         free(node);
     });
@@ -917,6 +945,8 @@ void ui_unmount(*Node node) {
 
 struct SwitchExtra { bool value; fn(bool)->void on_change; }
 struct Pending { int id; fn(int)->void on_choice; }
+struct NativePair { string name; string value; }
+struct NativeHandler { string channel; fn(string)->void handler; bool removed; }
 struct RefreshExtra { bool refreshing; fn()->void on_refresh; }
 struct BackEntry { fn()->bool handler; bool removed; }
 struct ListExtra { int count; int item_height; int header_height; *List<int> sizes;
@@ -1021,6 +1051,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             ui_retire(void() { ui_finish_owned(old_owned); });
         }
         ui_retire(void() { ui_release_closure(old_handler); old_cleanup(); ui_release_closure(old_cleanup); });
+        if (kind == 13) {
+            fn(string, string)->void old_view = node.on_view;
+            ui_retire(void() { ui_release_view(old_view); });
+        }
         if (node.virtual) {
             fn(int)->void old_item = node.on_item;
             fn(int, int)->void old_cell = node.on_cell;
@@ -1103,6 +1137,7 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         ui_prop(node, fresh, 21, ui.next_bar_hidden ? 1 : 0, -1);
     }
     if (kind == 12 && fresh) { ui.modals.push(node); }
+    if (kind == 13) { ui_native_view_props(node, fresh); }
     if (kind == 6 && ui.next_list != null) {
         *ListExtra list = ui.next_list;
         ui.next_list = null;
@@ -1266,6 +1301,117 @@ void ui_finish_owned(List<fn()->void> owned) {
 void ui_release_bool(escaping fn(bool)->void callback) { free_closure(callback); }
 void ui_release_int(escaping fn(int)->void callback) { free_closure(callback); }
 void ui_release_string(escaping fn(string)->void callback) { free_closure(callback); }
+
+// ---- native modules and views ----
+//
+// A native module is code the app ships per platform (native/ios, native/android,
+// native/web: tools/ui.esk builds them in). Eskiu calls it through `extern`; it answers
+// through events on a channel, which reach use_native_event handlers on the UI thread.
+
+void ui_release_view(escaping fn(string, string)->void callback) { free_closure(callback); }
+void ui_release_payload(escaping fn(string)->void callback) { free_closure(callback); }
+
+void ui_free_pairs(List<NativePair>* pairs) {
+    for (i in 0..pairs.size) { free(pairs.data[i].name); free(pairs.data[i].value); }
+    pairs.free();
+}
+
+// A handler for a native channel's events while the scope is mounted; the payload is
+// borrowed for the call.
+void use_native_event(string channel, escaping fn(string)->void handler) {
+    static int tag;
+    *Slot slot = ui_slot(5, &tag);
+    *NativeHandler entry = (*NativeHandler)slot.data;
+    if (entry == null) {
+        entry = alloc<NativeHandler>(1);
+        entry.channel = ui_copy(channel);
+        slot.data = entry;
+        ui.native_handlers.push(entry);
+        slot.dispose = void() {
+            ui_drop_native(entry); ui_release_payload(entry.handler); free(entry.channel); free(entry);
+        };
+    } else { ui_release_payload(entry.handler); }
+    entry.handler = handler;
+}
+
+void ui_drop_native(*NativeHandler entry) {
+    if (entry.removed) { return; }
+    entry.removed = true;
+    for (int i = ui.native_handlers.size - 1; i >= 0; i--) {
+        if (ui.native_handlers.data[i] == entry) { ui.native_handlers.remove(i); break; }
+    }
+}
+
+// The host's side: a native module posted `payload` on `channel` (both read during the call).
+bool ui_event_native(string channel, string payload) {
+    return ui_post(Event{0, 0, 8, 0, payload, 0, channel});
+}
+
+// A named prop for the NativeView right after it.
+void ui_native_prop(string name, string value) {
+    ui.next_native_props.push(NativePair{ui_copy(name), ui_copy(value == null ? "" : value)});
+}
+
+// A view the app registered with each host under `type` (see the hosts' registries). It is
+// a leaf: give it a size. on_event gets the events the view sends (name and payload).
+void NativeView(Style style, string type, escaping fn(string, string)->void on_event) {
+    ui.next_view_type = type;
+    ui_element(13, style, null, void() {}, void() {}, void() {});
+    *Node node = ui.builder.emitted.data[ui.builder.emitted.size - 1];
+    node.on_view = on_event;
+}
+
+void ui_emit_named(*Node node, string name, string value) {
+    *Commit c = &ui.commit;
+    c.u8(11); c.u32(node.id);
+    for (k in 0..2) {
+        string text = k == 0 ? name : value;
+        int n = (int)strlen(text);
+        c.u32(n);
+        c.room(n + 1);
+        memcpy(&c.data[c.len], text, (size_t)(n + 1));
+        c.len += n + 1;
+    }
+}
+
+// Send the type once, then each named prop that is new or changed; one no longer given is
+// sent empty.
+void ui_native_view_props(*Node node, bool fresh) {
+    string type = ui.next_view_type;
+    ui.next_view_type = null;
+    if (ui_update_string(&node.source, type)) { ui_emit_string_prop(node, 4, node.source); }
+    List<NativePair> given = ui.next_native_props;
+    ui.next_native_props = List<NativePair>{};
+    for (i in 0..given.size) {
+        NativePair pair = given.data[i];
+        int at = -1;
+        for (j in 0..node.native_props.size) {
+            if (strcmp(node.native_props.data[j].name, pair.name) == 0) { at = j; break; }
+        }
+        if (at < 0) {
+            ui_emit_named(node, pair.name, pair.value);
+            node.native_props.push(NativePair{ui_copy(pair.name), ui_copy(pair.value)});
+        } else if (strcmp(node.native_props.data[at].value, pair.value) != 0) {
+            ui_emit_named(node, pair.name, pair.value);
+            free(node.native_props.data[at].value);
+            node.native_props.data[at].value = ui_copy(pair.value);
+        }
+    }
+    for (int j = node.native_props.size - 1; j >= 0; j--) {
+        bool kept = false;
+        for (i in 0..given.size) { if (strcmp(given.data[i].name, node.native_props.data[j].name) == 0) { kept = true; } }
+        if (!kept) {
+            ui_emit_named(node, node.native_props.data[j].name, "");
+            free(node.native_props.data[j].name); free(node.native_props.data[j].value);
+            node.native_props.remove(j);
+        }
+    }
+    ui_free_pairs(&given);
+}
+
+bool ui_event_view(int id, int generation, string name, string payload) {
+    return ui_post(Event{id, generation, 9, 0, payload, 0, name});
+}
 
 // Pull to refresh for the Scroll or FlatList that comes right after it: on_refresh runs when
 // the user pulls at the top, and the platform's indicator shows while `refreshing`.
@@ -1560,6 +1706,7 @@ void ui_complete(int sequence) {
         Event event = ui.events.data[i];
         ui_dispatch_event(&event);
         free(event.text);
+        free(event.name);
     }
     ui.events.size = 0;
 }
@@ -1646,6 +1793,7 @@ bool ui_frame() {
 bool ui_post(Event event) {
     if (ui.in_flight || ui.phase != 0) {
         if (event.text != null) { event.text = ui_copy(event.text); }
+        if (event.name != null) { event.name = ui_copy(event.name); }
         ui.events.push(event);
         return true;
     }
@@ -1674,6 +1822,15 @@ bool ui_event_scroll(int id, int generation, int offset, int viewport) {
 }
 
 bool ui_dispatch_event(*Event event) {
+    if (event.kind == 8) {
+        // A native module's event: every handler of the channel, newest first.
+        bool handled = false;
+        for (int i = ui.native_handlers.size - 1; i >= 0; i--) {
+            *NativeHandler entry = ui.native_handlers.data[i];
+            if (strcmp(entry.channel, event.name) == 0) { entry.handler(event.text); handled = true; }
+        }
+        return handled;
+    }
     if (event.kind == 6) {
         for (i in 0..ui.alerts.size) {
             Pending pending = ui.alerts.data[i];
@@ -1709,6 +1866,7 @@ bool ui_dispatch_event(*Event event) {
         return true;
     }
     if (event.kind == 7 && node.kind == 6) { node.handler(); return true; }
+    if (event.kind == 9 && node.kind == 13) { node.on_view(event.name, event.text); return true; }
     if (event.kind == 5 && node.kind == 6) {
         if (!node.virtual) { return true; }
         // A new window only after the view moved a row's height or was resized: the overscan
@@ -1751,7 +1909,8 @@ void ui_shutdown() {
     for (i in 0..ui.alerts.size) { ui_release_choice(ui.alerts.data[i].on_choice); }
     ui.alerts.free(); ui.back_handlers.free(); ui.modals.free(); ui.next_owned.free();
     free(ui.link);
-    for (i in 0..ui.events.size) { free(ui.events.data[i].text); }
+    for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }
+    ui.native_handlers.free(); ui_free_pairs(&ui.next_native_props);
     ui.finalizers.free(); ui.events.free();
     ui = null;
 }

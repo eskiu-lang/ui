@@ -22,6 +22,7 @@ int[1024] mutation_ids;
 int[1024] mutation_befores;
 int[1024] mutation_kinds;
 string[1024] mutation_texts;
+string[1024] mutation_names;
 bool async_apply;
 
 void record(*uint8 data, int len) {
@@ -39,6 +40,7 @@ void record(*uint8 data, int len) {
         mutation_befores[i] = mutations[i].before;
         mutation_kinds[i] = mutations[i].kind;
         mutation_texts[i] = mutations[i].text;
+        mutation_names[i] = mutations[i].name;
     }
     decoded.free();
     if (!async_apply) { ui_complete(ui.sequence); }
@@ -997,6 +999,50 @@ void kit_gallery() {
     ui_shutdown(); balanced("kit gallery leak");
 }
 
+int ticks;
+string last_tap;
+*Signal<int> map_zoom;
+bool show_map;
+void native_modules() {
+    Ui runtime;
+    ticks = 0;
+    show_map = true;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        map_zoom = use_signal<int>(3);
+        use_native_event("ticker", void(string payload) { ticks += atoi(payload); });
+        if (show_map) {
+            String zoom;
+            defer String_free(&zoom);
+            String_format(&zoom, "%d", map_zoom.get());
+            ui_native_prop("zoom", zoom.data);
+            if (map_zoom.get() < 5) { ui_native_prop("style", "satellite"); }
+            NativeView(Style{width: 200, height: 120, label: "Map"}, "MapView", void(string name, string payload) {
+                last_tap = ui_copy(payload);
+            });
+        }
+    });
+    ui_frame();
+    check(count_prop(9, 4) == 1 && ops[11] == 2, "the type once, then both named props");
+    check(ui_event_native("ticker", "2") && ui_event_native("ticker", "3") && ticks == 5, "channel events");
+    check(!ui_event_native("other", "1"), "no handler for another channel");
+    map_zoom.set(4); ui_frame();
+    check(ops[11] == 1 && strcmp(mutation_names[0], "zoom") == 0 && strcmp(mutation_texts[0], "4") == 0,
+        "only the changed prop");
+    map_zoom.set(6); ui_frame();
+    check(ops[11] == 2, "the zoom and the style removed (sent empty)");
+    *Node map = find_label(ui.root, "Map");
+    check(ui_event_view(map.id, map.generation, "tap", "19.4,-99.1") && strcmp(last_tap, "19.4,-99.1") == 0,
+        "a view's event reaches its handler");
+    free(last_tap);
+    show_map = false;
+    map_zoom.set(7); ui_frame();
+    check(ops[6] == 1, "the view is removed");
+    ui_shutdown();
+    check(ui == null, "shut down");
+    balanced("native modules leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -1027,6 +1073,7 @@ int main() {
     refresh_control(); printf("PASS refresh\n");
     tasks_app(); printf("PASS tasks app\n");
     kit_gallery(); printf("PASS kit gallery\n");
+    native_modules(); printf("PASS native modules\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");
