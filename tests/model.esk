@@ -510,6 +510,22 @@ void id_reuse() {
     ui_shutdown(); balanced("id reuse leak");
 }
 
+// Release behavior: a duplicate key warns and the later child is unkeyed.
+void lenient_keys() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui.lenient = true;
+    ui_mount(void() {
+        Row(Style{key: key(1)}, void() { Text("a"); });
+        Row(Style{key: key(1)}, void() { Text("b"); });
+        Row(Style{key: key(2)}, void() { Text("c"); });
+    });
+    ui_frame();
+    check(ui.root.children.size == 3, "every child renders");
+    check(!ui.root.children.data[1].key.set, "the duplicate is unkeyed");
+    ui_shutdown(); balanced("lenient keys leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -522,6 +538,7 @@ int main() {
     large_lists(); printf("PASS large lists\n");
     shared_subscriptions(); printf("PASS shared subscriptions\n");
     id_reuse(); printf("PASS id reuse\n");
+    lenient_keys(); printf("PASS lenient keys\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");

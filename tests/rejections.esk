@@ -22,6 +22,13 @@ int main(int argc, string* argv) {
             Row(Style{key: key(0)}, void() {});
         }
         if (mode == 5 || mode == 6) { throw 7; }
+        if (mode == 8) {
+            Column(Style{}, void() {
+                Scope("TodoRow", key(3), void() {
+                    if (revision.get() == 0) { use_signal<int>(1); } else { use_memo<int>(int() { return 1; }); }
+                });
+            });
+        }
         if (mode == 7) {
             for (i in 0..20) { Row(Style{key: key(i == 15 ? 3 : i)}, void() {}); }
         }
@@ -34,7 +41,7 @@ int main(int argc, string* argv) {
         try { ui_frame(); } catch (int e) {}
     }
     ui_frame();
-    if (mode == 2) { revision.set(1); ui_frame(); }
+    if (mode == 2 || mode == 8) { revision.set(1); ui_frame(); }
     if (mode == 1) { for (i in 0..101) { ui_frame(); } }
     ui_shutdown();
     return 0;
