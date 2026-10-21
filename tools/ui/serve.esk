@@ -117,9 +117,9 @@ bool serve_build(string command, string target) {
     return ok;
 }
 
-// Build again whenever the sources change, until the tool is stopped.
-void serve_watch(Project* p, string command, string target) {
-    uint64 seen = serve_signature(p);
+// Build again whenever the sources differ from `seen` (taken before the first build, so a
+// change made during it is not missed), until the tool is stopped.
+void serve_watch(Project* p, string command, string target, uint64 seen) {
     while (true) {
         time_sleep_ms(300);
         uint64 now = serve_signature(p);
@@ -237,6 +237,8 @@ void serve_page(string path, String* out) {
 // The project the macOS window's watcher builds.
 Project* macos_project;
 
+uint64 macos_seen;
+
 void serve_command(Project* p, string target) {
     Mutex_init(&serve_lock);
     if (strcmp(target, "web") == 0) {
@@ -245,21 +247,23 @@ void serve_command(Project* p, string target) {
         serve_root = join(p.root.data, "build/ui/web");
         serve_port = port();
         serve_listen();
+        uint64 seen = serve_signature(p);
         serve_build("build", "web");
         String url;
         String_appendf(&url, "http://127.0.0.1:%d/", serve_port);
         printf("Serving %s, building again on each change (Ctrl+C to stop)\n", url.data);
         fflush(null);
         open_url(url.data);
-        serve_watch(p, "build", "web");
+        serve_watch(p, "build", "web", seen);
     } else if (strcmp(target, "macos") == 0) {
+        macos_seen = serve_signature(p);
         if (!serve_build("build", "macos")) { exit(1); }
         serve_dev = true;
         serve_root = join(p.root.data, "build/ui/web");
         serve_port = port();
         serve_listen();
         macos_project = p;
-        thread_create(void() { serve_watch(macos_project, "build", "web"); });
+        thread_create(void() { serve_watch(macos_project, "build", "web", macos_seen); });
         String url;
         String_appendf(&url, "http://127.0.0.1:%d/", serve_port);
         printf("Serving %s in a window, building again on each change\n", url.data);
@@ -270,8 +274,9 @@ void serve_command(Project* p, string target) {
         window.free();
         exit(code);
     } else if (strcmp(target, "ios") == 0 || strcmp(target, "android") == 0) {
+        uint64 seen = serve_signature(p);
         serve_build("run", target);
         serve_say("Watching for changes: each one installs and launches the app again (Ctrl+C to stop)");
-        serve_watch(p, "run", target);
+        serve_watch(p, "run", target, seen);
     } else { usage(); }
 }
