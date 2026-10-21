@@ -28,6 +28,7 @@ extern "C" const char *ui_conformance_log(void);
 extern "C" void ui_tick(void);
 extern "C" void ui_stop(void);
 extern "C" void ui_dispatch_native(const char *channel, const char *payload);
+extern "C" int ui_report_back(void);
 extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
 
 @interface UiHostNode : NSObject
@@ -42,6 +43,9 @@ extern "C" void ui_dispatch_view(int id, int generation, const char *name, const
 // A native view's type and the view its factory made (kind 13).
 @property(nonatomic, copy) NSString *nativeType;
 @property(nonatomic, strong) UIView *nativeView;
+// A screen (kind 14): whether it was ever on top, and whether it slides in after layout.
+@property(nonatomic) bool wasActive;
+@property(nonatomic) bool slideIn;
 @end
 @implementation UiHostNode
 @end
@@ -54,6 +58,8 @@ static double commitTime;
 static bool selfTest;
 static bool conformance;
 static bool nativeTest;
+// --link URL: start as if opened with that link (tests and tools).
+static const char *launchLink;
 static int launchExample;
 static std::vector<double> frameTimes;
 static CADisplayLink *frameLink;
@@ -117,6 +123,66 @@ static void mountNative(UiHostNode *node, int id, NSString *type) {
     view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [node.view addSubview:view];
     node.nativeView = view;
+}
+
+// A screen under the top is hidden (after a push's slide, which it stays under); one that
+// comes on top for the first time over a screen that was shown slides in from the right once
+// laid out (a push). A removed top screen slides out (a pop): see removeScreen.
+static const double kSlide = 0.3;
+static void screenActive(UiHostNode *node, int active) {
+    YGNodeStyleSetDisplay(node.yoga, active ? YGDisplayFlex : YGDisplayNone);
+    if (active) {
+        node.view.hidden = NO;
+        if (!node.wasActive) node.slideIn = true;
+        node.wasActive = true;
+    } else if (node.wasActive) {
+        UIView *view = node.view;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSlide * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (YGNodeStyleGetDisplay(node.yoga) == YGDisplayNone) view.hidden = YES;
+        });
+    } else node.view.hidden = YES;
+}
+
+// Screens sliding out: what was inside them stays until they go.
+static NSMutableSet<UIView *> *leaving;
+static bool insideLeaving(UIView *view) {
+    for (UIView *up = view.superview; up; up = up.superview) if ([leaving containsObject:up]) return true;
+    return false;
+}
+
+// A top screen leaving over one that is shown slides out before it goes.
+static bool removeScreen(UiHostNode *node) {
+    if (node.kind != 14 || node.view.hidden || !node.view.superview) return false;
+    bool over = false;
+    for (UiHostNode *other in nodes.allValues) {
+        if (other != node && other.kind == 14 && other.wasActive && other.view.superview == node.view.superview) over = true;
+    }
+    if (!over) return false;
+    UIView *view = node.view;
+    if (!leaving) leaving = [NSMutableSet new];
+    [leaving addObject:view];
+    [view.superview bringSubviewToFront:view];
+    [UIView animateWithDuration:kSlide delay:0 options:UIViewAnimationOptionCurveEaseIn animations:^{
+        view.transform = CGAffineTransformMakeTranslation(view.bounds.size.width, 0);
+    } completion:^(BOOL done) { [view removeFromSuperview]; [leaving removeObject:view]; }];
+    return true;
+}
+
+static void slideScreens(void) {
+    for (UiHostNode *node in nodes.allValues) {
+        if (!node.slideIn) continue;
+        node.slideIn = false;
+        bool over = false;
+        for (UiHostNode *other in nodes.allValues) {
+            if (other != node && other.kind == 14 && other.wasActive && other.view.superview == node.view.superview &&
+                !other.view.hidden) over = true;
+        }
+        if (!over) continue;
+        node.view.transform = CGAffineTransformMakeTranslation(node.view.bounds.size.width, 0);
+        [UIView animateWithDuration:kSlide delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+            node.view.transform = CGAffineTransformIdentity;
+        } completion:nil];
+    }
 }
 
 static void ui_host_named(int id, const char *name, const char *value) {
@@ -185,6 +251,8 @@ static void loadImage(UIImageView *view, YGNodeRef yoga, NSString *source) {
 static void place(YGNodeRef yoga, UIView *parent) {
     for (size_t i = 0; i < YGNodeGetChildCount(yoga); ++i) {
         YGNodeRef child = YGNodeGetChild(yoga, i);
+        // A hidden screen keeps its frame (it stays under a push's slide).
+        if (YGNodeStyleGetDisplay(child) == YGDisplayNone) continue;
         UiHostNode *node = (__bridge UiHostNode *)YGNodeGetContext(child);
         node.view.frame = CGRectMake(YGNodeLayoutGetLeft(child), YGNodeLayoutGetTop(child),
                                      YGNodeLayoutGetWidth(child), YGNodeLayoutGetHeight(child));
@@ -397,7 +465,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             }
             if (before && !scroll.refreshControl.refreshing) [scroll.refreshControl beginRefreshing];
             else if (!before && scroll.refreshControl.refreshing) [scroll.refreshControl endRefreshing];
-        } else if (kind == 20 || kind == 21) {
+        } else if (kind == 23) screenActive(node, before);
+        else if (kind == 20 || kind == 21) {
             if (kind == 20) barStyle = before; else barHidden = before != 0;
             [rootView.window.rootViewController setNeedsStatusBarAppearanceUpdate];
         }
@@ -441,7 +510,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
     } else if (op == 6) {
         YGNodeRef parentYoga = YGNodeGetParent(node.yoga);
         if (parentYoga) YGNodeRemoveChild(parentYoga, node.yoga);
-        [node.view removeFromSuperview];
+        if (!removeScreen(node) && !insideLeaving(node.view)) [node.view removeFromSuperview];
         YGNodeFree(node.yoga);
         [modals removeObject:node];
         [nodes removeObjectForKey:@(id)];
@@ -485,6 +554,7 @@ static void ui_host_command(int request, int command, int count, const char **st
 extern "C" void ui_host_commit(const uint8_t *data, int len) {
     ui_commit_each(data, len, ui_host_apply, ui_host_command, ui_host_named);
     ui_host_ready();
+    slideScreens();
 }
 
 static void relayout(void) {
@@ -590,8 +660,16 @@ static void runNativeTest(void) {
 - (BOOL)prefersStatusBarHidden { return barHidden; }
 - (void)viewDidLoad {
     [super viewDidLoad];
+    // The left edge swipe is back, as Android's back button.
+    UIScreenEdgePanGestureRecognizer *edge = [[UIScreenEdgePanGestureRecognizer alloc] initWithTarget:self
+                                                                                               action:@selector(edgeBack:)];
+    edge.edges = UIRectEdgeLeft;
+    [self.view addGestureRecognizer:edge];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardChanged:)
         name:UIKeyboardWillChangeFrameNotification object:nil];
+}
+- (void)edgeBack:(UIScreenEdgePanGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateEnded) ui_report_back();
 }
 - (void)keyboardChanged:(NSNotification *)note {
     CGRect end = [self.view convertRect:[note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue] fromView:nil];
@@ -770,6 +848,10 @@ static void runConformance(void) {
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     nodes = [NSMutableDictionary new];
     modals = [NSMutableArray new];
+    // A link the app was launched with waits for the app to start (ui_link).
+    NSURL *launchURL = options.URLContexts.anyObject.URL;
+    if (launchURL) ui_report_link(launchURL.absoluteString.UTF8String);
+    else if (launchLink) ui_report_link(launchLink);
     events = [UiEvents new];
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     UiController *controller = [UiController new];
@@ -822,6 +904,7 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--self-test")) selfTest = true;
         if (!strcmp(argv[i], "--conformance")) conformance = true;
         if (!strcmp(argv[i], "--native-test")) nativeTest = true;
+        if (!strcmp(argv[i], "--link") && i + 1 < argc) launchLink = argv[i + 1];
         if (!strcmp(argv[i], "--example") && i + 1 < argc) launchExample = atoi(argv[i + 1]);
     }
     @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(UiDelegate.class)); }
