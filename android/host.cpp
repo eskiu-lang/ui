@@ -13,6 +13,7 @@ extern "C" void ui_dispatch_focus(int, int, int);
 extern "C" int ui_edge_to_edge();
 extern "C" void ui_report_insets(int, int, int, int, int);
 extern "C" void ui_report_active(int);
+extern "C" const char *ui_conformance_log();
 extern "C" void ui_tick();
 extern "C" void ui_stop();
 
@@ -130,6 +131,9 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeT
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeFocus(JNIEnv *current, jobject, jint id, jint generation, jint focused) {
     env = current; ui_dispatch_focus(id, generation, focused);
+}
+extern "C" JNIEXPORT jstring JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeConformanceLog(JNIEnv *current, jobject) {
+    return current->NewStringUTF(ui_conformance_log());
 }
 extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeEdgeToEdge(JNIEnv *, jobject) {
     return ui_edge_to_edge();

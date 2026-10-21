@@ -1,0 +1,39 @@
+import "../src/ui.esk";
+import "../src/owned_string.esk";
+import <string>;
+
+// The conformance scene: one fixed-width column whose fixed-size elements come first, so
+// their frames are known in advance on every renderer (tools/conformance.py has them).
+// Every element a host reports carries a label; handlers append to the log.
+String conformance_log;
+
+string ui_conformance_log() { return conformance_log.data == null ? "" : conformance_log.data; }
+
+void conformance_note(string entry) {
+    if (conformance_log.len > 0) { String_append(&conformance_log, ","); }
+    String_append(&conformance_log, entry);
+}
+
+void Conformance() {
+    Column(Style{width: 320, padding: 10, gap: 10, label: "Suite"}, void() {
+        Row(Style{gap: 10, height: 50, label: "Boxes"}, void() {
+            Row(Style{width: 100, height: 50, label: "Fixed"}, void() {});
+            Row(Style{grow: 1, height: 50, label: "Grow"}, void() {});
+        });
+        Scroll(Style{height: 100, label: "List"}, void() {
+            Row(Style{key: key(0), height: 40, label: "Item 0"}, void() {});
+            Row(Style{key: key(1), height: 40, label: "Item 1"}, void() {});
+            Row(Style{key: key(2), height: 40, label: "Item 2"}, void() {});
+        });
+        Image(Style{width: 48, height: 48, label: "Logo"}, "logo.png");
+        *StringState field = use_string("");
+        TextInput(Input{value: field.get(), label: "Field"}, void(string text) {
+            String entry;
+            defer String_free(&entry);
+            String_appendf(&entry, "text:%s", text);
+            conformance_note(entry.data);
+            field.set(text);
+        });
+        Button("Tap", void() { conformance_note("tap"); });
+    });
+}

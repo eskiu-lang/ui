@@ -1,4 +1,5 @@
 import "components.esk";
+import "conformance.esk";
 // The host applies a whole commit (the format in src/ui.esk) and lays it out.
 extern void ui_host_commit(*uint8 data, int len);
 extern void ui_host_schedule();
@@ -58,6 +59,10 @@ void ui_start(int example) {
         ui_complete(ui.sequence);
     });
     if (example == 0) { ui_mount(void() { Counter(); }); }
+    else if (example == 3) {
+        String_free(&conformance_log);
+        ui_mount(void() { Conformance(); });
+    }
     else if (example == 2) {
         // Scheduler probe: effects must advance without another user event.
         ui_mount(void() {

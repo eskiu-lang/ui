@@ -16,9 +16,10 @@ subprocess.run([compiler, str(HERE / "examples/app.esk"), "--target", "wasm32-un
                 "--link-arg=-sALLOW_MEMORY_GROWTH=1", "--link-arg=-sINVOKE_RUN=0",
                 "--link-arg=--no-entry",
                 "--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_dispatch_text,"
-                "_ui_dispatch_focus,_ui_tick,_ui_stop",
+                "_ui_dispatch_focus,_ui_tick,_ui_stop,_ui_conformance_log",
                 "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall"], check=True)
-for filename in ("index.html", "renderer.mjs", "scheduler.mjs", "benchmark.mjs", "platform-test.mjs"):
+for filename in ("index.html", "renderer.mjs", "scheduler.mjs", "benchmark.mjs", "platform-test.mjs",
+                 "conformance.mjs"):
     shutil.copyfile(HERE / "web" / filename, BUILD / filename)
 for asset in (HERE / "assets").iterdir():
     shutil.copyfile(asset, BUILD / asset.name)

@@ -34,6 +34,7 @@ public final class UiActivity extends Activity {
     private native int nativeEdgeToEdge();
     private native void nativeInsets(int top, int right, int bottom, int left, int keyboard);
     private native void nativeActive(int active);
+    private native String nativeConformanceLog();
     private final HashMap<Integer, View> nodes = new HashMap<>();
     private final HashMap<Integer, Integer> generations = new HashMap<>();
     private YogaGroup root;
@@ -98,8 +99,10 @@ public final class UiActivity extends Activity {
         testing = getIntent().getBooleanExtra("selftest", false);
         root.post(() -> {
             active = true;
-            nativeStart(getIntent().getIntExtra("example", 0));
+            boolean conformance = getIntent().getBooleanExtra("conformance", false);
+            nativeStart(conformance ? 3 : getIntent().getIntExtra("example", 0));
             reportInsets();
+            if (conformance) root.postDelayed(this::runConformance, 400);
             if (testing) {
                 Button button = findButton("Increment");
                 require(button != null, "increment button");
@@ -284,6 +287,54 @@ public final class UiActivity extends Activity {
             }, 300);
         }, 300);
     }
+
+    private static String roleOf(View view) {
+        if (view instanceof Button) return "button";
+        if (view instanceof EditText) return "textfield";
+        if (view instanceof ImageView) return "image";
+        if (view instanceof ScrollView) return "scroll";
+        if (view instanceof TextView) return "text";
+        return "group";
+    }
+
+    // The conformance scene: frames relative to the scene in points, roles, then the
+    // handler log after two taps and typing "abc" (tools/conformance.py compares them).
+    private void runConformance() {
+        View suite = null;
+        for (View view : nodes.values()) if ("Suite".contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) suite = view;
+        int[] base = new int[2];
+        suite.getLocationInWindow(base);
+        StringBuilder frames = new StringBuilder(), roles = new StringBuilder();
+        Button tap = null;
+        EditText field = null;
+        for (View view : nodes.values()) {
+            String label = view instanceof Button ? ((Button)view).getText().toString()
+                : view.getContentDescription() == null ? "" : view.getContentDescription().toString();
+            if (label.isEmpty()) continue;
+            int[] at = new int[2];
+            view.getLocationInWindow(at);
+            float d = density();
+            if (frames.length() > 0) { frames.append(','); roles.append(','); }
+            frames.append('"').append(label).append("\":[").append(round1((at[0] - base[0]) / d)).append(',')
+                .append(round1((at[1] - base[1]) / d)).append(',').append(round1(view.getWidth() / d)).append(',')
+                .append(round1(view.getHeight() / d)).append(']');
+            roles.append('"').append(label).append("\":\"").append(roleOf(view)).append('"');
+            if (label.equals("Tap")) tap = (Button)view;
+            if (label.equals("Field")) field = (EditText)view;
+        }
+        tap.performClick();
+        tap.performClick();
+        field.setText("abc");
+        final String result = "{\"status\":\"DONE\",\"session\":\"" + getIntent().getStringExtra("session") +
+            "\",\"frames\":{" + frames + "},\"roles\":{" + roles + "}";
+        root.postDelayed(() -> {
+            String json = result + ",\"log\":\"" + nativeConformanceLog() + "\"}";
+            try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "conformance.json"))) {
+                out.write(json.getBytes(StandardCharsets.UTF_8));
+            } catch (Exception error) { throw new RuntimeException(error); }
+        }, 300);
+    }
+    private static float round1(float value) { return Math.round(value * 10) / 10f; }
 
     private void writeResult() {
         String result = "{\"status\":\"PASS\",\"session\":\"" + getIntent().getStringExtra("session") + "\",\"events\":100,\"commits\":" + commits +

@@ -4,6 +4,7 @@
 #include <yoga/Yoga.h>
 #include "../hosts/ui_commit.h"
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
@@ -16,6 +17,7 @@ extern "C" void ui_dispatch_focus(int id, int generation, int focused);
 extern "C" int ui_edge_to_edge(void);
 extern "C" void ui_report_insets(int top, int right, int bottom, int left, int keyboard);
 extern "C" void ui_report_active(int active);
+extern "C" const char *ui_conformance_log(void);
 extern "C" void ui_tick(void);
 extern "C" void ui_stop(void);
 
@@ -33,6 +35,7 @@ static YGNodeRef rootYoga;
 static int commitCount;
 static double commitTime;
 static bool selfTest;
+static bool conformance;
 static std::vector<double> frameTimes;
 static CADisplayLink *frameLink;
 static void (^testCompletion)(void);
@@ -321,6 +324,51 @@ static void runTodoTest(void) {
 }
 @end
 
+static NSString *roleOf(UIView *view) {
+    if ([view isKindOfClass:UIButton.class]) return @"button";
+    if ([view isKindOfClass:UITextField.class]) return @"textfield";
+    if ([view isKindOfClass:UIImageView.class]) return @"image";
+    if ([view isKindOfClass:UIScrollView.class]) return @"scroll";
+    if ([view isKindOfClass:UILabel.class]) return @"text";
+    return @"group";
+}
+
+// The conformance scene: frames relative to the scene, roles, then the handler log after
+// two taps and typing "abc" (tools/conformance.py compares them).
+static void runConformance(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 400 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        UIView *suite = nil;
+        for (UiHostNode *node in nodes.allValues) if ([node.view.accessibilityLabel isEqualToString:@"Suite"]) suite = node.view;
+        NSMutableDictionary *frames = [NSMutableDictionary new], *roles = [NSMutableDictionary new];
+        UIButton *tap = nil;
+        UITextField *field = nil;
+        for (UiHostNode *node in nodes.allValues) {
+            UIView *view = node.view;
+            NSString *label = [view isKindOfClass:UIButton.class] ? [(UIButton *)view titleForState:UIControlStateNormal] : view.accessibilityLabel;
+            if (!label.length) continue;
+            CGRect r = [view convertRect:view.bounds toView:suite];
+            auto round1 = [](CGFloat v) { return @(std::round(v * 10) / 10); };
+            frames[label] = @[round1(r.origin.x), round1(r.origin.y), round1(r.size.width), round1(r.size.height)];
+            roles[label] = roleOf(view);
+            if ([label isEqualToString:@"Tap"]) tap = (UIButton *)view;
+            if ([label isEqualToString:@"Field"]) field = (UITextField *)view;
+        }
+        [tap sendActionsForControlEvents:UIControlEventTouchUpInside];
+        [tap sendActionsForControlEvents:UIControlEventTouchUpInside];
+        field.text = @"abc";
+        [field sendActionsForControlEvents:UIControlEventEditingChanged];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            NSDictionary *result = @{@"status": @"DONE", @"frames": frames, @"roles": roles,
+                                     @"log": [NSString stringWithUTF8String:ui_conformance_log()]};
+            NSData *json = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingSortedKeys error:nil];
+            printf("CONFORMANCE %s\n", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
+            fflush(stdout);
+            ui_stop();
+            exit(0);
+        });
+    });
+}
+
 @interface UiDelegate : UIResponder <UIApplicationDelegate>
 @end
 @implementation UiDelegate
@@ -345,7 +393,8 @@ static void runTodoTest(void) {
     [controller.view addSubview:rootView];
     rootYoga = YGNodeNew();
     YGNodeStyleSetFlexDirection(rootYoga, YGFlexDirectionColumn);
-    ui_start(0);
+    ui_start(conformance ? 3 : 0);
+    if (conformance) runConformance();
     if (selfTest) {
         dispatch_async(dispatch_get_main_queue(), ^{
             UIButton *button = nil;
@@ -381,6 +430,9 @@ static void runTodoTest(void) {
 @end
 
 int main(int argc, char **argv) {
-    for (int i = 1; i < argc; ++i) if (!strcmp(argv[i], "--self-test")) selfTest = true;
+    for (int i = 1; i < argc; ++i) {
+        if (!strcmp(argv[i], "--self-test")) selfTest = true;
+        if (!strcmp(argv[i], "--conformance")) conformance = true;
+    }
     @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(UiDelegate.class)); }
 }
