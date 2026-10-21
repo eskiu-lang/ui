@@ -60,6 +60,9 @@ static bool conformance;
 static bool nativeTest;
 // --link URL: start as if opened with that link (tests and tools).
 static const char *launchLink;
+// --press LABEL: press the element with that accessible name or title 1.5 s after launch,
+// then go back 1.5 s later (to watch navigation on a simulator nothing can tap).
+static const char *pressLabel;
 static int launchExample;
 static std::vector<double> frameTimes;
 static CADisplayLink *frameLink;
@@ -865,6 +868,22 @@ static void runConformance(void) {
     ui_start(conformance ? 3 : nativeTest ? 6 : launchExample);
     if (conformance) runConformance();
     if (nativeTest) runNativeTest();
+    if (pressLabel) {
+        NSString *label = @(pressLabel);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            for (UiHostNode *node in nodes.allValues) {
+                if (![node.view isKindOfClass:UIControl.class]) continue;
+                NSString *title = [node.view isKindOfClass:UIButton.class] ? [(UIButton *)node.view titleForState:UIControlStateNormal] : nil;
+                if ([node.view.accessibilityLabel isEqualToString:label] || [title isEqualToString:label]) {
+                    [(UIControl *)node.view sendActionsForControlEvents:UIControlEventTouchUpInside];
+                    break;
+                }
+            }
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                ui_report_back();
+            });
+        });
+    }
     if (selfTest) {
         dispatch_async(dispatch_get_main_queue(), ^{
             UIButton *button = nil;
@@ -905,6 +924,7 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--conformance")) conformance = true;
         if (!strcmp(argv[i], "--native-test")) nativeTest = true;
         if (!strcmp(argv[i], "--link") && i + 1 < argc) launchLink = argv[i + 1];
+        if (!strcmp(argv[i], "--press") && i + 1 < argc) pressLabel = argv[i + 1];
         if (!strcmp(argv[i], "--example") && i + 1 < argc) launchExample = atoi(argv[i + 1]);
     }
     @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(UiDelegate.class)); }
