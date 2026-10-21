@@ -717,7 +717,14 @@ static void runConformance(void) {
 @interface UiDelegate : UIResponder <UIApplicationDelegate>
 @end
 @implementation UiDelegate
-- (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)options { return YES; }
+- (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)options {
+    // Native code without constructors (Swift): the classes `ui build` lists, each one's +setup.
+    for (NSString *name in [NSBundle.mainBundle objectForInfoDictionaryKey:@"UiNativeClasses"]) {
+        Class type = NSClassFromString(name);
+        if ([type respondsToSelector:@selector(setup)]) [type performSelector:@selector(setup)];
+    }
+    return YES;
+}
 @end
 
 @interface UiSceneDelegate : UIResponder <UIWindowSceneDelegate>

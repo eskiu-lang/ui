@@ -26,6 +26,8 @@ void ui_register_view(NSString *type, UIView *(^create)(UiViewEmit emit),
 
 // A function that runs before the app starts, to register views:
 //   UI_NATIVE_SETUP(slider) { ui_register_view(@"slider", ..., ...); }
+// Swift has no such functions: a class @objc(Name) in Name.swift with `@objc static func
+// setup()` is called at launch instead (ui build lists it in Info.plist's UiNativeClasses).
 #define UI_NATIVE_SETUP(name) __attribute__((constructor)) static void ui_native_setup_##name(void)
 
 #endif
