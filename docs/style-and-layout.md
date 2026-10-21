@@ -1,0 +1,58 @@
+# Style and layout
+
+## `Style`
+
+```eskiu
+Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}, void() { ... });
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `key` | none | Identity among siblings: `key(id)`. See [state](state.md). |
+| `gap` | 8 | Space between children, in points. |
+| `padding` | 0 | Space inside the edges, in points. |
+| `label` | none | The accessible name: ARIA label on the web, `accessibilityLabel` on iOS, `contentDescription` on Android, an image's alternative text. |
+| `width`, `height` | 0 | Size in points; 0 lets the content and the parent decide. |
+| `grow` | 0 | How much of the parent's free space along its direction this child takes (flex-grow). |
+| `wrap` | false | A row's children flow onto more lines (flex-wrap). |
+| `background`, `color` | -1 | Background and text color from `rgb`/`rgba`; -1 is the platform's default. |
+| `font_size` | 0 | Points; 0 is the platform's default. |
+| `font_weight` | 0 | 100 to 900; 0 is the default. |
+| `border_width`, `border_color` | 0, -1 | The border, in points. |
+| `radius` | 0 | Corner radius in points; it clips the content. |
+| `opacity` | 100 | Percent. |
+| `align` | `AlignDefault` | Children across the axis: `AlignStart`, `AlignCenter`, `AlignEnd`, `AlignStretch`. |
+| `justify` | `JustifyDefault` | Children along the axis: `JustifyStart`, `JustifyCenter`, `JustifyEnd`, `JustifyBetween`, `JustifyAround`. |
+
+A field left at its default is not sent to the host, and changing one sends only that
+field. Styles are plain values, so shared styles are functions or globals:
+
+```eskiu
+Style card() { return Style{padding: 16, radius: 16, background: kit.surface}; }
+```
+
+## Colors
+
+`rgb(r, g, b)` and `rgba(r, g, b, a)` take channels from 0 to 255 and give an `int64` of
+the form `0xRRGGBBAA`, which can also be written directly (`0x4F46E5FF`). A color with
+alpha 0 is transparent.
+
+## Layout
+
+Layout is flexbox with React Native's rules. On iOS and Android the hosts run Yoga 3.2.1
+over the native views; on the web the renderer sets CSS flexbox with Yoga's defaults:
+
+- a `Column`, `Scroll`, `Pressable` and `Modal` stack their children vertically, a `Row`
+  horizontally;
+- sizes include padding and border (`box-sizing: border-box`);
+- children do not shrink (`flex-shrink: 0`) and have no minimum size, so a long text in a
+  row needs `grow: 1` to take the remaining space and wrap within it;
+- children stretch across the axis unless `align` says otherwise.
+
+Text, buttons, inputs, images, switches and indicators are measured by the platform: their
+size comes from their content unless `width` or `height` is given. A `Modal` is laid out on
+its own over the whole window, and a `NativeView` is a leaf that needs a size.
+
+The root fills the window inside the safe area and above the keyboard. An app that wants
+the whole screen sets the edge-to-edge policy and pads itself from `ui_insets()` (see
+[the platform](platform.md)).
