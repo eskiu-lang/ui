@@ -35,6 +35,7 @@ EXPECTED_FRAMES = {
     "Tap": [10, None, 300, None],
     "Press": [10, None, 100, 40],
     "Toggle": [None, None, None, None],
+    "Volume": [10, None, 300, None],
     "Busy": [10, None, 24, 24],
     "Painted": [10, None, 60, 30],
     "Title": [10, None, None, None],
@@ -48,9 +49,9 @@ RELATIVE_FRAMES = {
 }
 EXPECTED_ROLES = {"Suite": "group", "Boxes": "group", "Fixed": "group", "Grow": "group", "List": "scroll",
                   "Item 0": "group", "Item 1": "group", "Item 2": "group", "Logo": "image",
-                  "Field": "textfield", "Tap": "button", "Press": "button", "Toggle": "switch",
+                  "Field": "textfield", "Tap": "button", "Press": "button", "Toggle": "switch", "Volume": "slider",
                   "Busy": "progressbar", "Painted": "group", "Title": "text", "Feed": "scroll", "Ask": "button"}
-EXPECTED_LOG = "layout:100x50,timer,tap,tap,text:abc,press,switch:1,alert:1,close"
+EXPECTED_LOG = "layout:100x50,timer,tap,tap,text:abc,press,switch:1,slider:70,alert:1,close"
 # What the host drew: colors as rrggbbaa, sizes in points, opacity 0 to 1.
 EXPECTED_STYLES = {
     "Painted": {"background": "ff0000ff", "radius": 8, "border": 2, "borderColor": "000000ff", "opacity": 0.5},

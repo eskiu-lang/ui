@@ -50,6 +50,14 @@ void Conformance() {
             conformance_note(value ? "switch:1" : "switch:0");
             on.set(value);
         });
+        *Signal<int> volume = use_signal<int>(30);
+        Slider(Style{label: "Volume"}, volume.get(), 0, 100, void(int v) {
+            String entry;
+            defer String_free(&entry);
+            String_appendf(&entry, "slider:%d", v);
+            conformance_note(entry.data);
+            volume.set(v);
+        });
         ActivityIndicator(Style{width: 24, height: 24, label: "Busy"}, true);
         Row(Style{width: 60, height: 30, label: "Painted", background: rgb(255, 0, 0), radius: 8,
                   border_width: 2, border_color: rgb(0, 0, 0), opacity: 50}, void() {});

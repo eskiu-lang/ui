@@ -17,7 +17,7 @@ export async function runConformance(app, root) {
     const r = node.getBoundingClientRect();
     frames[label] = [r.left - base.left, r.top - base.top, r.width, r.height].map(v => Math.round(v * 10) / 10);
     roles[label] = {3: 'text', 4: 'button', 5: 'textfield', 6: 'scroll', 7: 'image', 8: 'button', 9: 'switch',
-      10: 'progressbar'}[kind] ?? 'group';
+      10: 'progressbar', 15: 'slider'}[kind] ?? 'group';
   }
   // CSS colors as rrggbbaa.
   const hex = css => {
@@ -41,6 +41,10 @@ export async function runConformance(app, root) {
   await frame();
   root.querySelector('[aria-label="Press"]').click();
   root.querySelector('[aria-label="Toggle"]').click();
+  await frame();
+  const volume = root.querySelector('[aria-label="Volume"]');
+  volume.value = '70';
+  volume.dispatchEvent(new Event('input', {bubbles: true}));
   await frame();
   // The alert: answer its second button. The modal: open it, measure, close it from inside.
   [...root.querySelectorAll('button')].find(b => b.textContent === 'Ask').click();
