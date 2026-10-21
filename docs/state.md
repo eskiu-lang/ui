@@ -40,6 +40,21 @@ use_effect(void() {
 parents first. `on_cleanup` (once per run) is called before the next run and when the scope
 unmounts.
 
+## Saved data
+
+```eskiu
+string theme = ui_storage_get("theme");          // null until it is saved
+ui_storage_set("theme", "dark");
+ui_storage_remove("draft");
+```
+
+`ui_storage_get`, `ui_storage_set` and `ui_storage_remove` keep small text values that outlive
+the app: settings, a draft, the last tab. The store is loaded on first use and written whole
+on each change, in a file in the app's data directory (on the web, the page's
+`localStorage`), so it is for small data. `ui_data_dir()` is that directory (empty on the
+web), reported before the app starts, so `ui_app_start` can read from it; `<fs>` works in it
+for anything larger.
+
 ## Timers
 
 ```eskiu
