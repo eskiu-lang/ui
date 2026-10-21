@@ -8,7 +8,8 @@
 // the payload; no node), 9 native view event (name and text from the view), 10 route (the
 // browser went to `text`, at history index `value`; no node), 11 layout (the node's frame:
 // value x, extra y, width and height, relative to its parent), 12 timer (the id is the
-// timer's token), 13 hover (value 1 when a pointer enters the node, 0 when it leaves).
+// timer's token), 13 hover (value 1 when a pointer enters the node, 0 when it leaves),
+// 14 value (a Slider moved to `value`).
 struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height; }
 
 // What the host reports about the screen, in points: the system bars and display cutouts
@@ -58,6 +59,8 @@ struct Ui {
     // The value and handler of the next Switch, and whether the next ActivityIndicator spins.
     *SwitchExtra next_switch;
     bool next_animating;
+    // The value, range and handler of the next Slider, likewise.
+    *SliderExtra next_slider;
     // The rows and renderer of the next virtual list, likewise.
     *ListExtra next_list;
     int next_bar_style;
@@ -303,6 +306,9 @@ bool ui_event_toggle(int id, int generation, bool on) {
 }
 
 // A scroll view moved: its offset and viewport height, in points.
+// The user moved a Slider to `value`.
+bool ui_event_value(int id, int generation, int value) { return ui_post(Event{id, generation, 14, value, null}); }
+
 // A pointer entered (true) or left (false) a node with a hover handler.
 bool ui_event_hover(int id, int generation, bool inside) {
     return ui_post(Event{id, generation, 13, inside ? 1 : 0, null});
@@ -365,6 +371,14 @@ bool ui_dispatch_event(*Event event) {
     }
     if (event.kind == 7 && node.kind == 6) { node.handler(); return true; }
     if (event.kind == 9 && node.kind == 13) { node.on_view(event.name, event.text); return true; }
+    if (event.kind == 14 && node.kind == 15) {
+        // What the user chose is what the slider shows: a render that keeps another value
+        // sends it back.
+        node.props[32] = event.value;
+        node.on_value(event.value);
+        ui_schedule(node.parent);
+        return true;
+    }
     if (event.kind == 13 && node.has_on_hover) { node.on_hover(event.value != 0); return true; }
     if (event.kind == 11 && node.has_on_layout) {
         node.on_layout(Frame{event.value, event.extra, event.width, event.height});

@@ -26,13 +26,13 @@
 // 24 absolute (1 or 0), 25 left, 26 top, 27 right, 28 bottom (points; kUnset: not set),
 // 29 aspect ratio (width over height, in thousandths; 0: none), 30 layout listener (1: the
 // host reports the node's frame when it changes), 31 hover listener (1: the host reports a
-// pointer entering and leaving).
+// pointer entering and leaving), 32 slider value, 33 slider minimum, 34 slider maximum.
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal
 // (a column on a layer over the whole screen, laid out on its own), 13 native view (a view
 // the app registered with the host, by type), 14 screen (a column filling its navigator; only
-// the active one shows).
+// the active one shows), 15 slider.
 // The renderer reads it during apply and copies what it keeps.
 struct Commit { *uint8 data; int len; int cap; }
 

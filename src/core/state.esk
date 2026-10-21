@@ -11,10 +11,10 @@ int64 ui_epochs;
 // Up to kSmall children are matched by scanning; more get the key tables.
 const int kSmall = 8;
 
-// Room for the element kinds (0 to 14 today); kind_start and kind_emitted are sized by it.
+// Room for the element kinds (0 to 15 today); kind_start and kind_emitted are sized by it.
 const int kKinds = 16;
 
-// Room for the int props (codes 1 to 29 today).
+// Room for the int props (codes 1 to 34 today).
 const int kProps = 40;
 
 // An edge offset (Style's left, top, right, bottom) that is not set.

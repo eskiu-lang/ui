@@ -185,6 +185,28 @@ void layouts() {
     ui_shutdown(); balanced("layout leak");
 }
 
+int slid;
+
+void sliders() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        *Signal<int> volume = use_signal<int>(0);
+        slid = volume.get();
+        Slider(Style{key: key(1)}, volume.get(), 0, 100, void(int v) { if (v <= 80) { volume.set(v); } });
+    });
+    ui_frame();
+    check(prop_value(2, 33) == 0 && prop_value(2, 34) == 100 && prop_value(2, 32) == 0, "range and value, 0 included");
+    *Node slider = keyed(1);
+    check(ui_event_value(slider.id, slider.generation, 64), "a move");
+    ui_frame();
+    check(slid == 64 && count_prop(2, 32) == 0, "taken: nothing to send back");
+    ui_event_value(slider.id, slider.generation, 90);
+    ui_frame();
+    check(slid == 64 && count_prop(2, 32) == 1 && prop_value(2, 32) == 64, "refused: the app's value goes back");
+    ui_shutdown(); balanced("slider leak");
+}
+
 bool hovered;
 
 void hovers() {
