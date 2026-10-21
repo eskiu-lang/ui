@@ -49,7 +49,9 @@ screen that fills the navigator. Only the top one shows; the ones under it stay 
 keep their state, so going back finds the list as it was left.
 
 On iOS and Android a pushed screen slides in from the right over the one below, and a
-popped one slides out. Back comes from:
+popped one slides out. On iOS the swipe from the left edge is interactive: the screen follows
+the finger over the one below and goes back when let go past a third of the width (or
+flicked), as UIKit's navigation does. Back comes from:
 
 - the router (`router.back()`, a Back button the app draws);
 - Android's back button and gesture, and iOS's swipe from the left edge;

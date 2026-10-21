@@ -901,8 +901,48 @@ static void reportSystem(UITraitCollection *traits) {
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(systemChanged:) name:name object:nil];
     }
 }
+// The back swipe, interactive: the top screen follows the finger over the one below; let go
+// past a third of the width (or flicked) and the app goes back (the screen slides out from
+// where it is), short of that it returns. Without screens, a swipe is back as on Android.
+static UiHostNode *swipeTop, *swipeBelow;
 - (void)edgeBack:(UIScreenEdgePanGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateEnded) ui_report_back();
+    UIGestureRecognizerState state = gesture.state;
+    if (state == UIGestureRecognizerStateBegan) {
+        swipeTop = swipeBelow = nil;
+        for (UiHostNode *node in nodes.allValues) {
+            if (node.kind != 14 || !node.wasActive || !node.view.superview) continue;
+            if (!node.view.hidden && YGNodeStyleGetDisplay(node.yoga) != YGDisplayNone) swipeTop = node;
+        }
+        if (swipeTop) {
+            NSArray<UIView *> *siblings = swipeTop.view.superview.subviews;
+            NSUInteger at = [siblings indexOfObject:swipeTop.view];
+            for (UiHostNode *node in nodes.allValues) {
+                if (node.kind != 14 || node == swipeTop || node.view.superview != swipeTop.view.superview) continue;
+                NSUInteger index = [siblings indexOfObject:node.view];
+                if (index < at && (!swipeBelow || index > [siblings indexOfObject:swipeBelow.view])) swipeBelow = node;
+            }
+        }
+        if (!swipeBelow) { swipeTop = nil; return; }
+        swipeBelow.view.hidden = NO;
+        return;
+    }
+    if (!swipeTop) {
+        if (state == UIGestureRecognizerStateEnded) ui_report_back();
+        return;
+    }
+    UIView *top = swipeTop.view, *below = swipeBelow.view;
+    CGFloat x = std::max<CGFloat>(0, [gesture translationInView:top.superview].x);
+    if (state == UIGestureRecognizerStateChanged) {
+        top.transform = CGAffineTransformMakeTranslation(x, 0);
+        return;
+    }
+    bool back = state == UIGestureRecognizerStateEnded &&
+                (x > top.bounds.size.width / 3 || [gesture velocityInView:top.superview].x > 500);
+    swipeTop = swipeBelow = nil;
+    if (back && ui_report_back()) return;
+    [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseOut
+                     animations:^{ top.transform = CGAffineTransformIdentity; }
+                     completion:^(BOOL done) { if (top.superview && !top.hidden) below.hidden = YES; }];
 }
 - (void)keyboardChanged:(NSNotification *)note {
     CGRect end = [self.view convertRect:[note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue] fromView:nil];
