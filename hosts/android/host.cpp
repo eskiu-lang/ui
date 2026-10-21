@@ -123,7 +123,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         bool measured = kind == 3 || kind == 4 || kind == 5 || kind == 7 || kind == 9 || kind == 10 || kind == 15;
         if (measured) YGNodeSetMeasureFunc(node, measure);
         else YGNodeStyleSetFlexDirection(node, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
-        if (kind == 6) { YGNodeStyleSetOverflow(node, YGOverflowScroll); scrolls[id] = 1; }
+        // A scroll shrinks to the space its parent has, as React Native's ScrollView.
+        if (kind == 6) { YGNodeStyleSetOverflow(node, YGOverflowScroll); YGNodeStyleSetFlexShrink(node, 1); scrolls[id] = 1; }
         if (kind == 11) YGNodeStyleSetDisplay(node, YGDisplayNone);
         if (kind == 12) modals.push_back(id);
         generations[id] = generation;
@@ -136,7 +137,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             else if (kind == 2) YGNodeStyleSetPadding(node, YGEdgeAll, YGNodeHasMeasureFunc(node) ? 0 : before);
             else if (kind == 4) { if (before) YGNodeStyleSetWidth(node, before); else YGNodeStyleSetWidthAuto(node); }
             else if (kind == 5) { if (before) YGNodeStyleSetHeight(node, before); else YGNodeStyleSetHeightAuto(node); }
-            else if (kind == 6) YGNodeStyleSetFlexGrow(node, before);
+            else if (kind == 6) {
+                // A growing child also shrinks to its parent, so a scroll under it stays in the window.
+                YGNodeStyleSetFlexGrow(node, before);
+                if (!scrolls.count(id)) YGNodeStyleSetFlexShrink(node, before > 0 ? 1 : 0);
+            }
             else if (kind == 7) YGNodeStyleSetFlexWrap(node, before ? YGWrapWrap : YGWrapNoWrap);
             else if ((kind == 10 || kind == 11) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
             else if (kind == 12) YGNodeStyleSetBorder(node, YGEdgeAll, before);

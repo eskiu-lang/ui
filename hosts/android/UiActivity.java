@@ -817,7 +817,16 @@ public final class UiActivity extends Activity {
                 view = image;
             } else if (kind == 6) {
                 // A ScrollView holds one child: the group its children go into.
-                ScrollView scroll = new ScrollView(this);
+                // It clips its content to the viewport itself: a parent that lets its children
+                // overflow (YogaGroup) turns off the clip the ScrollView relies on.
+                ScrollView scroll = new ScrollView(this) {
+                    @Override protected void dispatchDraw(android.graphics.Canvas canvas) {
+                        int save = canvas.save();
+                        canvas.clipRect(getScrollX(), getScrollY(), getScrollX() + getWidth(), getScrollY() + getHeight());
+                        super.dispatchDraw(canvas);
+                        canvas.restoreToCount(save);
+                    }
+                };
                 scroll.addView(new YogaGroup());
                 scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> reportScroll(id, (ScrollView)v));
                 view = scroll;

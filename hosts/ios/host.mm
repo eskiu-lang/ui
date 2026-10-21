@@ -555,6 +555,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view = scroll;
             YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
             YGNodeStyleSetOverflow(node.yoga, YGOverflowScroll);
+            // Shrinks to the space its parent has, as React Native's ScrollView, or it is as
+            // tall as its content and never scrolls.
+            YGNodeStyleSetFlexShrink(node.yoga, 1);
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
         } else {
             node.view = [UIView new];
@@ -586,7 +589,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (before) YGNodeStyleSetWidth(node.yoga, before); else YGNodeStyleSetWidthAuto(node.yoga);
         } else if (kind == 5) {
             if (before) YGNodeStyleSetHeight(node.yoga, before); else YGNodeStyleSetHeightAuto(node.yoga);
-        } else if (kind == 6) YGNodeStyleSetFlexGrow(node.yoga, before);
+        } else if (kind == 6) {
+            // A growing child also shrinks to its parent, so a scroll under it stays in the window.
+            YGNodeStyleSetFlexGrow(node.yoga, before);
+            if (![node.view isKindOfClass:UIScrollView.class]) YGNodeStyleSetFlexShrink(node.yoga, before > 0 ? 1 : 0);
+        }
         else if (kind == 7) YGNodeStyleSetFlexWrap(node.yoga, before ? YGWrapWrap : YGWrapNoWrap);
         else if (kind == 8) { UIView *view = node.view; UIColor *color = colorOf(before); animated(node, ^{ view.backgroundColor = color; }); }
         else if (kind == 9) applyColor(node, colorOf(before));

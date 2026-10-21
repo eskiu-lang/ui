@@ -232,7 +232,7 @@ export function createHost(root, dispatch, views = {}) {
       node.style.display = 'flex';
       node.style.flexDirection = m.kind === 2 ? 'row' : 'column';
       node.style.gap = '8px';
-      if (m.kind === 6) node.style.overflow = 'auto';
+      if (m.kind === 6) { node.style.overflow = 'auto'; node.style.flexShrink = '1'; }
     }
     if (m.kind === 5) node.type = 'text';
     if (m.kind === 15) { node.type = 'range'; node.step = '1'; }
@@ -256,7 +256,11 @@ export function createHost(root, dispatch, views = {}) {
       case 3: if (value) node.focus(); else node.blur(); break;
       case 4: s.width = px(value); break;
       case 5: s.height = px(value); break;
-      case 6: s.flexGrow = value ? String(value) : ''; break;
+      case 6:
+        // A growing child also shrinks to its parent, so a scroll under it stays in the window.
+        s.flexGrow = value ? String(value) : '';
+        if (kindOf(node) !== 6) s.flexShrink = value ? '1' : '';
+        break;
       case 7: s.flexWrap = value ? 'wrap' : ''; break;
       case 8: s.backgroundColor = cssColor(value); break;
       case 9: s.color = cssColor(value); break;
