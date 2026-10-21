@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eskiu UI · phase 0</title>
+<style>
+  body { margin: 2rem auto; max-width: 900px; padding: 0 1rem; font: 17px system-ui; color: #182235; background: #f3f5f8; }
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+  #app { padding: 1.5rem; background: white; border: 1px solid #d8dfe8; border-radius: 12px; }
+  button { font: inherit; padding: .4rem .7rem; cursor: pointer; }
+  #app button { border: 1px solid #c5cedd; border-radius: 6px; background: #f8faff; color: #182235; }
+  #app button:hover { background: #e9eff9; }
+  #app button:focus-visible { outline: 3px solid #81a9ee; outline-offset: 2px; }
+  aside { margin-top: 1.5rem; padding: 1rem; border: 1px solid #d8dfe8; border-radius: 8px; }
+  output { display: block; margin-top: .75rem; white-space: pre-wrap; font: 14px ui-monospace, monospace; }
+  [data-kind="2"] { align-items: center; flex-wrap: wrap; border-top: 1px solid #e6eaf0; padding-top: .5rem; }
+</style>
+<nav><a href="?example=counter">Counter</a><a href="?example=todo">TODO</a></nav>
+<div id="app" aria-label="Eskiu demo"></div>
+<p id="status">Loading WebAssembly…</p>
+<aside aria-label="Frame measurements">
+  <button id="benchmark" disabled>Measure 120 frames</button>
+  <output id="measurements" aria-live="polite">Browser rendering measurements will appear here.</output>
+</aside>
+<script type="module">
+  import createApp from './app.mjs';
+  import {createHost} from './renderer.mjs';
+  import {createFrameScheduler} from './scheduler.mjs';
+  import {benchmarkFrames} from './benchmark.mjs';
+  const root = document.querySelector('#app');
+  const host = createHost(document.querySelector('#app'), (id, generation) => app._ui_dispatch(id, generation));
+  const scheduler = createFrameScheduler(() => app._ui_tick(), {afterTick: () => root.getBoundingClientRect()});
+  host.schedule = () => scheduler.request();
+  host.cancel = () => scheduler.cancel();
+  const app = await createApp({uiHost: host});
+  const example = new URLSearchParams(location.search).get('example') === 'todo' ? 1 : 0;
+  window.uiDemo = {app, host, scheduler};
+  app._ui_start(example);
+  document.querySelector('#status').textContent = 'Eskiu → WebAssembly → DOM · explicit lambdas';
+  const benchmarkButton = document.querySelector('#benchmark');
+  benchmarkButton.disabled = false;
+  benchmarkButton.addEventListener('click', async () => {
+    benchmarkButton.disabled = true;
+    const output = document.querySelector('#measurements');
+    output.textContent = 'Measuring render and layout across 120 animation frames…';
+    try {
+      const action = [...root.querySelectorAll('button')].find(button => button.textContent === (example ? 'Reverse' : 'Increment'));
+      const result = await benchmarkFrames(action, scheduler);
+      output.textContent = JSON.stringify(result, null, 2);
+      output.dataset.result = JSON.stringify(result);
+    } catch (error) { output.textContent = `Measurement failed: ${error.message}`; }
+    finally { benchmarkButton.disabled = false; }
+  });
+  if (new URLSearchParams(location.search).has('selftest')) {
+    benchmarkButton.disabled = true;
+    let result;
+    try {
+      const {runPlatformChecks} = await import('./platform-test.mjs');
+      result = await runPlatformChecks(app, host, scheduler, root);
+    } catch (error) { result = {status: 'FAIL', error: error.message}; }
+    const output = document.querySelector('#measurements');
+    output.textContent = JSON.stringify(result, null, 2);
+    output.dataset.result = JSON.stringify(result);
+    benchmarkButton.disabled = false;
+    if (window.webkit?.messageHandlers?.results) window.webkit.messageHandlers.results.postMessage(result);
+  }
+</script>
+</html>
