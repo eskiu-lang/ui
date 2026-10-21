@@ -116,6 +116,27 @@ A native alert (`UIAlertController`, `AlertDialog`, a `<dialog>` on the web). Th
 gets the index of the button pressed, or -1 when the alert was dismissed without one. Alerts
 are commands: they reach the host with the next commit.
 
+## System actions
+
+| Call | What it does |
+|---|---|
+| `ui_keyboard_dismiss()` | Hides the software keyboard; the focused field loses focus. |
+| `ui_share(text, url)` | The system's share sheet with the text and an optional URL (`null`: none). The web uses `navigator.share`, or copies the text where there is none. |
+| `ui_clipboard_set(text)` | Puts text in the clipboard. |
+| `ui_clipboard_get(fn(string)->void)` | What the clipboard holds (`""` for nothing), as an event. |
+| `ui_haptic(Haptic)` | A touch of feedback: `HapticSelection`, `HapticLight`, `HapticMedium`, `HapticHeavy`, `HapticSuccess`, `HapticWarning`, `HapticError`. A short vibration on the web, where the device has one. |
+| `ui_announce(text)` | Reads the text aloud with the screen reader, if one runs (a live region on the web). |
+
+Like alerts, these are commands: they reach the host with the next commit.
+
+```eskiu
+Button("Copy link", void() {
+    ui_clipboard_set(link);
+    ui_haptic(HapticSuccess);
+    ui_announce("Link copied");
+});
+```
+
 ## Modals
 
 ```eskiu

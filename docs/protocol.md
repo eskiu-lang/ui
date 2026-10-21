@@ -20,7 +20,7 @@ node id (`u32`):
 | 7 | listen | nothing: the node now has a handler |
 | 8 | unlisten | nothing |
 | 9 | string prop | prop `u8` (1 label, 2 placeholder, 3 image source, 4 native view type), length `u32`, the bytes, a NUL |
-| 10 | command | the id is a request id, not a node: command `u8` (1 alert: title, message, then the buttons; 2 open a URL; 3 the web's history: `push` route, `replace` route, `back`, `reset` routes...), count `u8`, then that many strings, each a length `u32`, the bytes and a NUL |
+| 10 | command | the id is a request id, not a node: command `u8` (1 alert: title, message, then the buttons; 2 open a URL; 3 the web's history: `push` route, `replace` route, `back`, `reset` routes...; 4 hide the keyboard; 5 share: text, URL; 6 copy: text; 7 paste, answered by `ui_dispatch_answer`; 8 haptic: its kind; 9 announce: text), count `u8`, then that many strings, each a length `u32`, the bytes and a NUL |
 | 11 | named prop | a native view's prop: the name (length `u32`, bytes, NUL), then the value (the same) |
 
 A native view gets its type as string prop 4 when it is created (again if it changes), then
@@ -107,6 +107,7 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_native(channel, payload)` | a native module posted an event (`use_native_event`) |
 | `ui_dispatch_view(id, gen, name, payload)` | a native view sent an event (`NativeView`'s `on_event`) |
 | `ui_dispatch_layout(id, gen, x, y, width, height)` | a listened node's frame changed (points, relative to its parent) |
+| `ui_dispatch_answer(request, text)` | the text a request asked for (a paste) |
 | `ui_dispatch_value(id, gen, value)` | the user moved a slider |
 | `ui_dispatch_hover(id, gen, inside)` | a pointer entered (1) or left (0) a node with a hover handler |
 | `ui_dispatch_timer(token)` | a timer the core armed fired |
