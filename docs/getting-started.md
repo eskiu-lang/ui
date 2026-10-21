@@ -62,7 +62,7 @@ import <string>;
 import <ui>;
 
 void App() {
-    Column(Style{grow: 1, padding: 24, gap: 16, justify: JustifyCenter, align: AlignCenter}, void() {
+    Column(Style{grow: 1, padding: 24, gap: 16, justify: JustifyCenter, align: AlignCenter}) {
         *Signal<int> count = use_signal<int>(0);
         TextWith(Style{font_size: 28, font_weight: 700}, "myapp");
         String label;
@@ -70,8 +70,8 @@ void App() {
         String_format(&label, "Pressed %d times", count.get());
         Text(label.data);
         ButtonWith(Style{background: rgb(79, 70, 229), color: rgb(255, 255, 255), radius: 12, padding: 12},
-            "Press me", void() { count.set(count.get() + 1); });
-    });
+            "Press me") { count.set(count.get() + 1); }
+    }
 }
 
 // The hosts call these: mount the app, and free what it owns when it stops.

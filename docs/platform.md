@@ -17,10 +17,10 @@ bars sets the edge-to-edge policy in `ui_app_start` and pads itself:
 ```eskiu
 void ui_app_start(int which) {
     ui_edge_policy = 1;
-    ui_mount(void() {
+    ui_mount() {
         Insets insets = ui_insets();
-        Column(Style{grow: 1, padding: insets.top, background: kit.page}, void() { ... });
-    });
+        Column(Style{grow: 1, padding: insets.top, background: kit.page}) { ... }
+    }
 }
 ```
 
@@ -39,7 +39,7 @@ system asks for, and the root renders again when it changes.
 void App() {
     kit_follow_system();
     StatusBar(kit.dark ? BarLight : BarDark, false);
-    Column(Style{grow: 1, background: kit.page}, void() { ... });
+    Column(Style{grow: 1, background: kit.page}) { ... }
 }
 ```
 
@@ -130,18 +130,18 @@ are commands: they reach the host with the next commit.
 Like alerts, these are commands: they reach the host with the next commit.
 
 ```eskiu
-Button("Copy link", void() {
+Button("Copy link") {
     ui_clipboard_set(link);
     ui_haptic(HapticSuccess);
     ui_announce("Link copied");
-});
+}
 ```
 
 ## The network
 
 ```eskiu
 *Signal<int> status = use_signal<int>(0);
-Button("Refresh", void() {
+Button("Refresh") {
     ui_fetch(FetchRequest{url: "https://api.example.com/today", headers: "Accept: application/json"},
         void(FetchResult r) {
             if (r.status == 0) { println(r.error); return; }
@@ -149,7 +149,7 @@ Button("Refresh", void() {
             JsonValue* doc = json_parse(r.body);   // <json>
             ...
         });
-});
+}
 ```
 
 `ui_fetch(request, on_done)` sends a request through the platform: `NSURLSession` on iOS,
@@ -167,9 +167,9 @@ to another origin needs that server's CORS headers.
 ## Modals
 
 ```eskiu
-Modal(open.get(), void() { open.set(false); }, void() {
-    Column(Style{grow: 1, padding: 24, background: kit.surface}, void() { ... });
-});
+Modal(open.get(), void() { open.set(false); }) {
+    Column(Style{grow: 1, padding: 24, background: kit.surface}) { ... }
+}
 ```
 
 While `visible`, the block is drawn on a layer over the whole window. Back on Android and

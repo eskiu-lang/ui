@@ -5,7 +5,7 @@
 ```eskiu
 *Signal<int> count = use_signal<int>(0);
 Text(count.get() > 9 ? "many" : "few");
-Button("+", void() { count.set(count.get() + 1); });
+Button("+") { count.set(count.get() + 1); }
 ```
 
 `use_signal<T>(initial)` gives the current scope a signal, created on the first render and
@@ -30,10 +30,10 @@ two memos that read each other stop it as a cycle.
 ## Effects
 
 ```eskiu
-use_effect(void() {
+use_effect() {
     int id = start_timer(count.get());
-    on_cleanup(void() { stop_timer(id); });
-});
+    on_cleanup() { stop_timer(id); }
+}
 ```
 
 `use_effect(callback)` runs after each commit of its scope that changed something it read,
@@ -72,8 +72,8 @@ dropped.
 ```eskiu
 *Signal<int> seconds = use_signal<int>(0);
 *Signal<bool> running = use_signal<bool>(true);
-use_interval(running.get() ? 1000 : 0, void() { seconds.set(seconds.get() + 1); });
-use_timeout(3000, void() { hint.set(false); });
+use_interval(running.get() ? 1000 : 0) { seconds.set(seconds.get() + 1); }
+use_timeout(3000) { hint.set(false); }
 ```
 
 `use_interval(ms, handler)` calls `handler` every `ms` milliseconds while the scope is
@@ -101,10 +101,10 @@ explicit and names it in diagnostics:
 
 ```eskiu
 void TodoRow(*Todo todo) {
-    Scope("TodoRow", key(todo.id), void() {
+    Scope("TodoRow", key(todo.id)) {
         *Signal<bool> editing = use_signal<bool>(false);
         ...
-    });
+    }
 }
 ```
 
@@ -130,7 +130,7 @@ State that belongs to the app rather than to a screen is a model signal:
 
 void ui_app_start(int which) {
     total = signal_new<int>(0);
-    ui_mount(void() { App(); });
+    ui_mount() { App(); }
 }
 
 void ui_app_stop() { total.free(); }
@@ -171,7 +171,7 @@ before its first element:
 ```eskiu
 void Checkbox(string label, bool checked, escaping fn(bool)->void on_change) {
     ui_own(void() { ui_release_bool(on_change); });
-    Pressable(Style{label: label}, void() { on_change(!checked); }, void() { ... });
+    Pressable(Style{label: label}, void() { on_change(!checked); }) { ... }
 }
 ```
 

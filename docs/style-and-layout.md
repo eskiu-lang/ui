@@ -3,7 +3,7 @@
 ## `Style`
 
 ```eskiu
-Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}, void() { ... });
+Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}) { ... }
 ```
 
 | Field | Default | Meaning |
@@ -67,10 +67,9 @@ An absolute element is placed against its parent's padding edges and the other c
 laid out as if it were not there, as in React Native; it draws over the siblings before it:
 
 ```eskiu
-Row(Style{height: 160, radius: 16, background: kit.primary}, void() {
-    Row(Style{absolute: true, top: 12, right: 12, padding: 6, radius: 10, background: rgb(255, 255, 255)},
-        void() { Text("New"); });
-});
+Row(Style{height: 160, radius: 16, background: kit.primary}) {
+    Row(Style{absolute: true, top: 12, right: 12, padding: 6, radius: 10, background: rgb(255, 255, 255)}) { Text("New"); }
+}
 ```
 
 ## Motion
@@ -82,7 +81,7 @@ need the core on every frame.
 ```eskiu
 *Signal<bool> open = use_signal<bool>(false);
 Column(Style{opacity: open.get() ? 100 : 0, translate_y: open.get() ? 0 : 24, transition_ms: 250,
-             easing: EaseOut}, void() { ... });
+             easing: EaseOut}) { ... }
 ```
 
 A drag moves an element through its transforms, with no transition while the finger is down
@@ -95,7 +94,7 @@ ui_on_pan(void(Pan p) {
     held.set(p.phase == PanBegan || p.phase == PanMoved);
     dx.set(held.get() ? p.dx : 0);
 });
-Row(Style{translate_x: dx.get(), transition_ms: held.get() ? 0 : 250, easing: EaseSpring}, void() { ... });
+Row(Style{translate_x: dx.get(), transition_ms: held.get() ? 0 : 250, easing: EaseSpring}) { ... }
 ```
 
 For a value the host cannot animate (a number drawn as text, a share of a row),

@@ -34,10 +34,10 @@ its scope is mounted; the payload is a string, borrowed for the call:
 ```eskiu
 *Signal<int> ticks = use_signal<int>(0);
 use_native_event("clock", void(string payload) { ticks.set(ticks.get() + 1); });
-use_effect(void() {
+use_effect() {
     clock_start(1000);
-    on_cleanup(void() { clock_stop(); });
-});
+    on_cleanup() { clock_stop(); }
+}
 ```
 
 A view is a `NativeView` with the type the platforms registered. It is a leaf, so give it a

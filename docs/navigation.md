@@ -9,14 +9,14 @@ travel app: a list of places, each place's page and a plan for the trip.
 
 void ui_app_start(int which) {
     router = router_new("/");
-    ui_mount(void() {
+    ui_mount() {
         Navigator(router, void(string route) {
             List<String> params;
             defer route_params_free(&params);
             if (route_match("/places/:id", route, &params)) { PlacePage(atoi(params.data[0].data)); }
             else { PlaceList(); }
         });
-    });
+    }
 }
 
 void ui_app_stop() { router.free(); }

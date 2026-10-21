@@ -30,14 +30,14 @@ import <string>;
 import <ui>;
 
 void Counter() {
-    Column(Style{padding: 16}, void() {
+    Column(Style{padding: 16}) {
         *Signal<int> count = use_signal<int>(0);
         String label;
         defer String_free(&label);
         String_format(&label, "Count: %d", count.get());
         Text(label.data);
-        Button("Increment", void() { count.set(count.get() + 1); });
-    });
+        Button("Increment") { count.set(count.get() + 1); }
+    }
 }
 ```
 
@@ -61,8 +61,8 @@ void Counter() {
   accordions, menus, selects, tooltips, toasts and date and color pickers, in a light and a
   dark theme, built from the same elements.
 
-Views use explicit lambdas for now; trailing blocks, planned for Eskiu 0.13, will let
-`Column(Style{padding: 16}) { ... }` stand for the same call.
+Views are written with Eskiu's trailing blocks: `Column(Style{padding: 16}) { ... }`
+passes the block as the call's last argument, `Column(Style{padding: 16}, void() { ... })`.
 
 ## Start an app
 

@@ -111,7 +111,7 @@ and radius come from the global `kit` (a `Theme`); change its fields before moun
 void ui_app_start(int which) {
     kit.primary = rgb(13, 148, 136);
     kit.radius = 8;
-    ui_mount(void() { App(); });
+    ui_mount() { App(); }
 }
 ```
 
@@ -170,13 +170,13 @@ list, take what it shows as arguments, and report changes through closures:
 ```eskiu
 void Stepper(string label, int value, escaping fn(int)->void on_change) {
     ui_own(void() { ui_release_int(on_change); });
-    Row(Style{gap: 12, align: AlignCenter, label: label}, void() {
+    Row(Style{gap: 12, align: AlignCenter, label: label}) {
         String text;
         defer String_free(&text);
         String_format(&text, "%s: %d", label, value);
-        Button("-", void() { on_change(value - 1); });
+        Button("-") { on_change(value - 1); }
         Text(text.data);
-        Button("+", void() { on_change(value + 1); });
-    });
+        Button("+") { on_change(value + 1); }
+    }
 }
 ```
