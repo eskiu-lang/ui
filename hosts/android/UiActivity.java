@@ -294,6 +294,40 @@ public final class UiActivity extends Activity {
             activity.requestPermissions(permissions, request);
         });
     }
+    // Another activity for its result (a picker, the camera app), for native code: `done` gets
+    // the result code and the data intent (null when there is none), on the UI thread.
+    public interface ActivityResult { void accept(int code, Intent data); }
+    private final HashMap<Integer, ActivityResult> resultRequests = new HashMap<>();
+    private int nextResultRequest = 1;
+    public static void startForResult(Intent intent, ActivityResult done) {
+        mainThread.post(() -> {
+            UiActivity activity = current;
+            if (activity == null) { done.accept(RESULT_CANCELED, null); return; }
+            int request = 0x4000 + activity.nextResultRequest++;
+            activity.resultRequests.put(request, done);
+            try {
+                activity.startActivityForResult(intent, request);
+            } catch (android.content.ActivityNotFoundException error) {
+                activity.resultRequests.remove(request);
+                done.accept(RESULT_CANCELED, null);
+            }
+        });
+    }
+    @Override protected void onActivityResult(int request, int code, Intent data) {
+        super.onActivityResult(request, code, data);
+        ActivityResult done = resultRequests.remove(request);
+        if (done != null) done.accept(code, data);
+    }
+    // The intents that open the activity, for native code: `listener` gets the one it started
+    // with (when the app starts, after the native setup) and each one after it.
+    private static final java.util.ArrayList<java.util.function.Consumer<Intent>> intentListeners = new java.util.ArrayList<>();
+    public static void onIntent(java.util.function.Consumer<Intent> listener) {
+        intentListeners.add(listener);
+        if (current != null && current.active) listener.accept(current.getIntent());
+    }
+    private void deliverIntent(Intent intent) {
+        for (java.util.function.Consumer<Intent> listener : new java.util.ArrayList<>(intentListeners)) listener.accept(intent);
+    }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         java.util.function.Consumer<Boolean> done = permissionRequests.remove(request);
@@ -438,6 +472,7 @@ public final class UiActivity extends Activity {
             reportInsets();
             reportSystem();
             if (getIntent().getData() != null) nativeLink(getIntent().getData().toString());
+            deliverIntent(getIntent());
             if (conformance) root.postDelayed(this::runConformance, 400);
             if (testing) {
                 Button button = findButton("Increment");
@@ -496,6 +531,8 @@ public final class UiActivity extends Activity {
         super.onNewIntent(intent);
         String reload = intent.getStringExtra("ui_reload");
         if (reload != null) { restartCore(reload); return; }
+        setIntent(intent);
+        if (active) deliverIntent(intent);
         if (active && intent.getData() != null) nativeLink(intent.getData().toString());
     }
     // Back asks the app first: an open modal closes, or a use_back handler takes it.
@@ -767,10 +804,19 @@ public final class UiActivity extends Activity {
     public float screenWidth() { return findViewById(android.R.id.content).getWidth() / density(); }
     public float screenHeight() { return findViewById(android.R.id.content).getHeight() / density(); }
 
-    // A file in the APK's assets, or an http(s) URL fetched off the UI thread.
+    // A file in the APK's assets, a file by its absolute path (or a file:// URL), or an http(s)
+    // URL fetched off the UI thread.
     private void loadImage(ImageView view, String source) {
         view.setImageDrawable(null);
         if (source.isEmpty()) return;
+        if (source.startsWith("/") || source.startsWith("file://")) {
+            String path = source.startsWith("file://") ? source.substring(7) : source;
+            new Thread(() -> {
+                Bitmap bitmap = BitmapFactory.decodeFile(path);
+                runOnUiThread(() -> view.setImageBitmap(bitmap));
+            }).start();
+            return;
+        }
         if (source.startsWith("http://") || source.startsWith("https://")) {
             new Thread(() -> {
                 try (java.io.InputStream in = new java.net.URL(source).openStream()) {

@@ -20,6 +20,10 @@ typedef void (^UiViewEmit)(NSString *name, NSString *payload);
 void ui_register_view(NSString *type, UIView *(^create)(UiViewEmit emit),
                       void (^set)(UIView *view, NSString *name, NSString *value));
 
+// The view controller to present system screens from (a picker, the camera): the app's,
+// or the one it presents on top. Call it on the main thread, once the app has started.
+UIViewController *ui_view_controller(void);
+
 #ifdef __cplusplus
 }
 #endif

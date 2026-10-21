@@ -142,6 +142,11 @@ extern "C" void ui_register_view(NSString *type, UIView *(^create)(UiViewEmit em
     viewTypes()[type] = entry;
 }
 
+extern "C" UIViewController *ui_view_controller(void) {
+    UIViewController *top = rootView.window.rootViewController;
+    while (top.presentedViewController && !top.presentedViewController.isBeingDismissed) top = top.presentedViewController;
+    return top;
+}
 extern "C" void ui_native_emit(const char *channel, const char *payload) {
     NSString *c = [NSString stringWithUTF8String:channel ? channel : ""];
     NSString *p = [NSString stringWithUTF8String:payload ? payload : ""];
@@ -287,7 +292,10 @@ static void loadImage(UIImageView *view, YGNodeRef yoga, NSString *source) {
         }] resume];
         return;
     }
-    view.image = [UIImage imageWithContentsOfFile:[NSBundle.mainBundle pathForResource:source ofType:nil]];
+    // A file by its absolute path (a photo the app saved) or a file:// URL, else a bundled one.
+    NSString *path = [source hasPrefix:@"file://"] ? [NSURL URLWithString:source].path
+                   : [source hasPrefix:@"/"] ? source : [NSBundle.mainBundle pathForResource:source ofType:nil];
+    view.image = [UIImage imageWithContentsOfFile:path];
     YGNodeMarkDirty(yoga);
 }
 

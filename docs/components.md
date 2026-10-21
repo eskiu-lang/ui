@@ -44,7 +44,7 @@ view returns to it.
 
 | Element | What it is |
 |---|---|
-| `Image(Style, string source)` | An image from an `http(s)` URL or a file in `assets/` (by name). Give it a width and height; `label` is its text alternative. |
+| `Image(Style, string source)` | An image from an `http(s)` URL, a file in `assets/` (by name) or a file by its absolute path (a photo the app saved; a `blob:` or `data:` URL on the web). Give it a width and height; `label` is its text alternative. |
 | `ActivityIndicator(Style, bool animating)` | The platform's busy indicator. |
 
 ### Lists
