@@ -58,7 +58,10 @@ void Store_remove(*Store self, int id) {
 void TodoApp(*Store store) {
     Column(Style{padding: 16}, void() {
         store.revision.get();
-        Text("Eskiu TODO");
+        Row(Style{}, void() {
+            Image(Style{width: 48, height: 48, label: "Eskiu"}, "logo.png");
+            Text("Eskiu TODO");
+        });
         int pending = 0;
         for (i in 0..store.items.size) { if (!store.items.data[i].done) { pending++; } }
         NumberText("Pending: ", pending);

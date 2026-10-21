@@ -48,6 +48,8 @@ def main():
     bundle = BUILD / "EskiuUI.app"
     bundle.mkdir(exist_ok=True)
     shutil.copyfile(HERE / "ios/Info.plist", bundle / "Info.plist")
+    for asset in (HERE / "assets").iterdir():
+        shutil.copyfile(asset, bundle / asset.name)
     run([*common, host, esk, *objects, "-framework", "UIKit", "-framework", "Foundation",
          "-framework", "CoreGraphics", "-framework", "QuartzCore", "-o", bundle / "EskiuUI"])
     run(["codesign", "--force", "--sign", "-", bundle])

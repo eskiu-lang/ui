@@ -113,6 +113,8 @@ todoClick('Done');
 assert.equal(todoFind('Pending: 1').length, 1);
 todoClick('Add');
 assert.equal(todoFind('Pending: 1').length, 1, 'Add with an empty draft does nothing');
+const logo = [...todoHost.nodes.values()].find(node => node.tagName === 'img');
+assert(logo && logo.attributes.src === 'logo.png' && logo.attributes.alt === 'Eskiu' && logo.style.width === '48px', 'logo image');
 const field = [...todoHost.nodes.values()].find(node => node.tagName === 'input');
 assert.equal(field.attributes['aria-label'], 'New task');
 assert.equal(field.attributes.placeholder, 'New task');

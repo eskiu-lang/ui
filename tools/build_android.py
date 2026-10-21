@@ -51,7 +51,8 @@ def main():
     run(["javac", "-source", "8", "-target", "8", "-bootclasspath", bootclasspath, "-d", classes, HERE / "android/UiActivity.java"])
     run([tools / "d8", "--min-api", "24", "--lib", platform, "--output", dex, *sorted(classes.rglob("*.class"))])
     unsigned = BUILD / "unsigned.apk"
-    run([tools / "aapt", "package", "-f", "-M", HERE / "android/AndroidManifest.xml", "-I", platform, "-F", unsigned])
+    run([tools / "aapt", "package", "-f", "-M", HERE / "android/AndroidManifest.xml", "-A", HERE / "assets",
+         "-I", platform, "-F", unsigned])
     with zipfile.ZipFile(unsigned, "a") as apk:
         apk.write(dex / "classes.dex", "classes.dex")
         apk.write(library, "lib/arm64-v8a/libeskiu_ui.so")

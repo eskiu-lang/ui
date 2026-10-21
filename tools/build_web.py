@@ -20,6 +20,8 @@ subprocess.run([compiler, str(HERE / "examples/app.esk"), "--target", "wasm32-un
                 "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall"], check=True)
 for filename in ("index.html", "renderer.mjs", "scheduler.mjs", "benchmark.mjs", "platform-test.mjs"):
     shutil.copyfile(HERE / "web" / filename, BUILD / filename)
+for asset in (HERE / "assets").iterdir():
+    shutil.copyfile(asset, BUILD / asset.name)
 if (BUILD / "app.wasm").stat().st_size > 128 * 1024:
     raise SystemExit("phase-0 wasm budget exceeded (128 KiB)")
 print("Built:", BUILD, "wasm bytes:", (BUILD / "app.wasm").stat().st_size)

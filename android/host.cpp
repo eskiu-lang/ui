@@ -56,7 +56,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         YGNodeRef node = YGNodeNew();
         nodes[id] = node;
         YGNodeSetContext(node, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
-        if (kind >= 3 && kind != 6) YGNodeSetMeasureFunc(node, measure);
+        if (kind >= 3 && kind != 6) YGNodeSetMeasureFunc(node, measure);  // text, button, input, image
         else YGNodeStyleSetFlexDirection(node, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
         if (kind == 6) { YGNodeStyleSetOverflow(node, YGOverflowScroll); scrolls[id] = 1; }
     } else if (nodes.count(id)) {

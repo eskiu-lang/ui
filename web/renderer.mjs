@@ -45,7 +45,7 @@ export function createHost(root, dispatch) {
       for (const m of pending) {
         if (m.op === 1) {
           if (nodes.has(m.id)) throw new Error(`duplicate node ${m.id}`);
-          const tag = {3: 'span', 4: 'button', 5: 'input'}[m.kind] ?? 'div';
+          const tag = {3: 'span', 4: 'button', 5: 'input', 7: 'img'}[m.kind] ?? 'div';
           const node = document.createElement(tag);
           if (m.kind === 5) node.type = 'text';
           node.dataset.uiId = m.id;
@@ -67,7 +67,9 @@ export function createHost(root, dispatch) {
         if (m.op === 3 && Number(node.dataset.kind) === 5) { if (node.value !== m.text) node.value = m.text; }
         else if (m.op === 3) node.textContent = m.text;
         else if (m.op === 9) {
-          const name = m.kind === 1 ? 'aria-label' : 'placeholder';
+          // String props: 1 label (an image's alt text), 2 placeholder, 3 image source.
+          const image = Number(node.dataset.kind) === 7;
+          const name = m.kind === 1 ? (image ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';
           if (m.text) node.setAttribute(name, m.text); else node.removeAttribute(name);
         }
         else if (m.op === 2 && m.kind === 3) { if (m.before) node.focus(); else node.blur(); }

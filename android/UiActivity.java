@@ -8,7 +8,10 @@ import android.view.ViewGroup;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.widget.Button;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.HashMap;
@@ -84,6 +87,24 @@ public final class UiActivity extends Activity {
         if (!pending && active) { pending = true; Choreographer.getInstance().postFrameCallback(frame); }
     }
     public void cancel() { Choreographer.getInstance().removeFrameCallback(frame); pending = false; }
+    // A file in the APK's assets, or an http(s) URL fetched off the UI thread.
+    private void loadImage(ImageView view, String source) {
+        view.setImageDrawable(null);
+        if (source.isEmpty()) return;
+        if (source.startsWith("http://") || source.startsWith("https://")) {
+            new Thread(() -> {
+                try (java.io.InputStream in = new java.net.URL(source).openStream()) {
+                    Bitmap bitmap = BitmapFactory.decodeStream(in);
+                    runOnUiThread(() -> view.setImageBitmap(bitmap));
+                } catch (Exception error) { /* a failed load leaves the view empty */ }
+            }).start();
+            return;
+        }
+        try (java.io.InputStream in = getAssets().open(source)) {
+            view.setImageBitmap(BitmapFactory.decodeStream(in));
+        } catch (Exception error) { /* a missing asset leaves the view empty */ }
+    }
+
     private Button findButton(String title) {
         for (View view : nodes.values()) if (view instanceof Button && ((Button)view).getText().toString().equals(title)) return (Button)view;
         return null;
@@ -115,6 +136,10 @@ public final class UiActivity extends Activity {
                     if (active && generations.containsKey(id)) nativeFocus(id, generations.get(id), focused ? 1 : 0);
                 });
                 view = field;
+            } else if (kind == 7) {
+                ImageView image = new ImageView(this);
+                image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                view = image;
             } else if (kind == 6) {
                 // A ScrollView holds one child: the group its children go into.
                 ScrollView scroll = new ScrollView(this);
@@ -140,6 +165,7 @@ public final class UiActivity extends Activity {
             // String props: 1 label, 2 placeholder.
             if (kind == 1) view.setContentDescription(text.isEmpty() ? null : text);
             else if (kind == 2 && view instanceof EditText) ((EditText)view).setHint(text);
+            else if (kind == 3 && view instanceof ImageView) loadImage((ImageView)view, text);
         } else if (op == 2 && kind == 3) {
             if (before != 0) view.requestFocus(); else view.clearFocus();
         }
@@ -214,6 +240,10 @@ public final class UiActivity extends Activity {
                             && ((TextView)view).getText().toString().equals("Write the docs")) added = true;
                     }
                     require(added && typed.getText().length() == 0, "typed task added and draft cleared");
+                    ImageView logo = null;
+                    for (View view : nodes.values()) if (view instanceof ImageView) logo = (ImageView)view;
+                    require(logo != null && logo.getDrawable() != null && "Eskiu".contentEquals(logo.getContentDescription())
+                        && logo.getWidth() == Math.round(48 * density()), "logo image, alt text and size");
                     writeResult();
                 }, 300);
             }, 300);

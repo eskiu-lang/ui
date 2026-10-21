@@ -43,6 +43,27 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
     return {static_cast<float>(size.width), static_cast<float>(size.height)};
 }
 
+static void relayout(void);
+
+// A bundled resource by file name, or an http(s) URL fetched in the background. The image
+// changes the node's measured size, so the layout runs again when it arrives.
+static void loadImage(UIImageView *view, YGNodeRef yoga, NSString *source) {
+    view.image = nil;
+    if (!source) return;
+    if ([source hasPrefix:@"http://"] || [source hasPrefix:@"https://"]) {
+        NSURL *url = [NSURL URLWithString:source];
+        [[NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
+            UIImage *image = data ? [UIImage imageWithData:data] : nil;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                view.image = image; YGNodeMarkDirty(yoga); relayout();
+            });
+        }] resume];
+        return;
+    }
+    view.image = [UIImage imageWithContentsOfFile:[NSBundle.mainBundle pathForResource:source ofType:nil]];
+    YGNodeMarkDirty(yoga);
+}
+
 static void place(YGNodeRef yoga, UIView *parent) {
     for (size_t i = 0; i < YGNodeGetChildCount(yoga); ++i) {
         YGNodeRef child = YGNodeGetChild(yoga, i);
@@ -129,6 +150,12 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             label.numberOfLines = 0;
             label.font = [UIFont systemFontOfSize:18];
             node.view = label;
+        } else if (kind == 7) {
+            UIImageView *image = [UIImageView new];
+            image.contentMode = UIViewContentModeScaleAspectFit;
+            image.isAccessibilityElement = YES;
+            image.accessibilityTraits = UIAccessibilityTraitImage;
+            node.view = image;
         } else if (kind == 6) {
             node.view = [UIScrollView new];
             YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
@@ -140,7 +167,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
         }
         YGNodeSetContext(node.yoga, (__bridge void *)node);
-        if (kind >= 3 && kind <= 5) YGNodeSetMeasureFunc(node.yoga, measure);
+        if ((kind >= 3 && kind <= 5) || kind == 7) YGNodeSetMeasureFunc(node.yoga, measure);
         nodes[@(id)] = node;
         return;
     }
@@ -161,6 +188,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         NSString *value = text && text[0] ? [NSString stringWithUTF8String:text] : nil;
         if (kind == 1) node.view.accessibilityLabel = value;
         else if (kind == 2 && [node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).placeholder = value;
+        else if (kind == 3 && [node.view isKindOfClass:UIImageView.class]) loadImage((UIImageView *)node.view, node.yoga, value);
     } else if (op == 3) {
         NSString *value = [NSString stringWithUTF8String:text ? text : ""];
         if ([node.view isKindOfClass:UITextField.class]) {
@@ -203,6 +231,11 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
     ui_host_ready();
 }
 
+static void relayout(void) {
+    YGNodeCalculateLayout(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
+    place(rootYoga, rootView);
+}
+
 extern "C" void ui_host_ready(void) {
     auto start = std::chrono::steady_clock::now();
     YGNodeCalculateLayout(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
@@ -240,8 +273,11 @@ static void runTodoTest(void) {
             [(UIButton *)findView(UIButton.class, @"Add") sendActionsForControlEvents:UIControlEventTouchUpInside];
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
                 bool added = findView(UILabel.class, @"Write the docs") != nil && field.text.length == 0;
-                bool pass = ok && added;
-                printf("iOS todo: %s label=%d added=%d\n", pass ? "PASS" : "FAIL", ok, added);
+                UIImageView *logo = (UIImageView *)findView(UIImageView.class, nil);
+                bool image = logo.image != nil && [logo.accessibilityLabel isEqualToString:@"Eskiu"] &&
+                             logo.frame.size.width == 48;
+                bool pass = ok && added && image;
+                printf("iOS todo: %s label=%d added=%d image=%d\n", pass ? "PASS" : "FAIL", ok, added, image);
                 fflush(stdout);
                 ui_stop();
                 YGNodeFree(rootYoga);
