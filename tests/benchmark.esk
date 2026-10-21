@@ -85,9 +85,31 @@ void shared_reader(int rows) {
     selected.free();
 }
 
+// A FlatList's cost is its window, not its length.
+void virtual_list(int rows) {
+    Ui runtime;
+    ui_init(&runtime, host);
+    double start = ui_clock_ms();
+    ui_mount(void() { FlatList(Style{height: 800}, rows, 40, void(int i) { NumberText("Row ", i); }); });
+    ui_frame();
+    double mounted = ui_clock_ms();
+    *Node list = ui.root.children.data[0];
+    double worst = 0;
+    for (step in 1..101) {
+        double before = ui_clock_ms();
+        ui_event_scroll(list.id, list.generation, step * 400, 800);
+        ui_frame();
+        double took = ui_clock_ms() - before;
+        if (took > worst) { worst = took; }
+    }
+    printf("virtual rows=%d mount_ms=%.2f worst_scroll_frame_ms=%.3f\n", rows, mounted - start, worst);
+    ui_shutdown();
+}
+
 int main() {
     benchmark(10, 100); benchmark(100, 100); benchmark(1000, 20);
     scaling(1000); scaling(2000); scaling(5000); scaling(10000);
     shared_reader(1000); shared_reader(5000); shared_reader(10000);
+    virtual_list(1000); virtual_list(1000000);
     return 0;
 }
