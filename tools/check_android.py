@@ -31,7 +31,7 @@ if booted != "1":
 run([*adb, "install", "-r", BUILD / "EskiuUI.apk"])
 run([*adb, "shell", "am", "force-stop", "org.eskiu.ui.prototype"])
 session = uuid.uuid4().hex
-run([*adb, "shell", "am", "start", "-W", "-n", "org.eskiu.ui.prototype/.UiActivity",
+run([*adb, "shell", "am", "start", "-W", "-n", "org.eskiu.ui.prototype/org.eskiu.ui.UiActivity",
      "--ez", "selftest", "true", "--es", "session", session])
 report = None
 deadline = time.monotonic() + 30

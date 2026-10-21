@@ -134,7 +134,7 @@ def run_android():
     subprocess.run([*adb, "install", "-r", BUILD / "android/EskiuUI.apk"], check=True, timeout=60, capture_output=True)
     subprocess.run([*adb, "shell", "am", "force-stop", "org.eskiu.ui.prototype"], check=True, timeout=30)
     session = uuid.uuid4().hex
-    subprocess.run([*adb, "shell", "am", "start", "-W", "-n", "org.eskiu.ui.prototype/.UiActivity",
+    subprocess.run([*adb, "shell", "am", "start", "-W", "-n", "org.eskiu.ui.prototype/org.eskiu.ui.UiActivity",
                     "--ez", "conformance", "true", "--es", "session", session], check=True, timeout=60,
                    capture_output=True)
     deadline = time.monotonic() + 30

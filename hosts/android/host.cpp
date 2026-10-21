@@ -1,6 +1,8 @@
 #include <jni.h>
 #include <yoga/Yoga.h>
 #include "../commit.h"
+#include "ui_native.h"
+#include <string>
 #include <algorithm>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +26,8 @@ extern "C" void ui_report_active(int);
 extern "C" const char *ui_conformance_log();
 extern "C" void ui_tick();
 extern "C" void ui_stop();
+extern "C" void ui_dispatch_native(const char *, const char *);
+extern "C" void ui_dispatch_view(int, int, const char *, const char *);
 
 static JNIEnv *env;
 static jobject activity;
@@ -36,6 +40,10 @@ static std::unordered_map<int, int> scrolls;
 // Modals: each its own layout root, laid out over the whole screen.
 static std::vector<int> modals;
 
+static JavaVM *vm;
+static jclass activityClass;
+static jobject classLoader;
+static jmethodID namedMethod, emitMethod, loadClassMethod;
 static void checked() { if (env->ExceptionCheck()) { env->ExceptionDescribe(); std::abort(); } }
 static YGSize measure(YGNodeConstRef node, float width, YGMeasureMode wm, float height, YGMeasureMode hm) {
     int id = static_cast<int>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
@@ -138,8 +146,14 @@ static void layoutModals() {
     checked();
     for (int id : modals) { YGNodeCalculateLayout(nodes.at(id), width, height, YGDirectionLTR); place(nodes.at(id)); }
 }
+static void ui_host_named(int id, const char *name, const char *value) {
+    jstring n = env->NewStringUTF(name), v = env->NewStringUTF(value);
+    env->CallVoidMethod(activity, namedMethod, id, n, v);
+    env->DeleteLocalRef(n); env->DeleteLocalRef(v);
+    checked();
+}
 extern "C" void ui_host_commit(const uint8_t *data, int len) {
-    ui_commit_each(data, len, ui_host_apply, ui_host_command);
+    ui_commit_each(data, len, ui_host_apply, ui_host_command, ui_host_named);
     ui_host_ready();
 }
 extern "C" void ui_host_ready() {
@@ -149,7 +163,7 @@ extern "C" void ui_host_ready() {
     env->CallVoidMethod(activity, committedMethod); checked();
 }
 
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeStart(JNIEnv *current, jobject self, jint example) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStart(JNIEnv *current, jobject self, jint example) {
     env = current;
     // A second start (the self-test's TODO) reuses the activity and the root.
     if (activity) { ui_start(example); return; }
@@ -166,63 +180,111 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeS
     commandMethod = env->GetMethodID(cls, "command", "(II[Ljava/lang/String;)V");
     screenWidthMethod = env->GetMethodID(cls, "screenWidth", "()F");
     screenHeightMethod = env->GetMethodID(cls, "screenHeight", "()F");
+    namedMethod = env->GetMethodID(cls, "named", "(ILjava/lang/String;Ljava/lang/String;)V");
+    emitMethod = env->GetStaticMethodID(cls, "emit", "(Ljava/lang/String;Ljava/lang/String;)V");
+    activityClass = (jclass)env->NewGlobalRef(cls);
+    // The app's class loader, for ui_find_class on threads native code starts.
+    jclass classClass = env->FindClass("java/lang/Class");
+    jobject loader = env->CallObjectMethod(cls, env->GetMethodID(classClass, "getClassLoader", "()Ljava/lang/ClassLoader;"));
+    classLoader = env->NewGlobalRef(loader);
+    jclass loaderClass = env->FindClass("java/lang/ClassLoader");
+    loadClassMethod = env->GetMethodID(loaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+    env->DeleteLocalRef(loader); env->DeleteLocalRef(loaderClass); env->DeleteLocalRef(classClass);
     env->DeleteLocalRef(cls); checked();
     root = YGNodeNew();
     YGNodeStyleSetFlexDirection(root, YGFlexDirectionColumn);
     ui_start(example);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeEvent(JNIEnv *current, jobject, jint id, jint generation) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeEvent(JNIEnv *current, jobject, jint id, jint generation) {
     env = current; ui_dispatch(id, generation);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeText(JNIEnv *current, jobject, jint id, jint generation, jstring text) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeText(JNIEnv *current, jobject, jint id, jint generation, jstring text) {
     env = current;
     const char *chars = env->GetStringUTFChars(text, nullptr);
     ui_dispatch_text(id, generation, chars);
     env->ReleaseStringUTFChars(text, chars);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeFocus(JNIEnv *current, jobject, jint id, jint generation, jint focused) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeFocus(JNIEnv *current, jobject, jint id, jint generation, jint focused) {
     env = current; ui_dispatch_focus(id, generation, focused);
 }
-extern "C" JNIEXPORT jstring JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeConformanceLog(JNIEnv *current, jobject) {
+extern "C" JNIEXPORT jstring JNICALL Java_org_eskiu_ui_UiActivity_nativeConformanceLog(JNIEnv *current, jobject) {
     return current->NewStringUTF(ui_conformance_log());
 }
-extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeEdgeToEdge(JNIEnv *, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_UiActivity_nativeEdgeToEdge(JNIEnv *, jobject) {
     return ui_edge_to_edge();
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeInsets(JNIEnv *current, jobject, jint top, jint right, jint bottom, jint left, jint keyboard) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeInsets(JNIEnv *current, jobject, jint top, jint right, jint bottom, jint left, jint keyboard) {
     env = current; ui_report_insets(top, right, bottom, left, keyboard);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeActive(JNIEnv *current, jobject, jint value) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeActive(JNIEnv *current, jobject, jint value) {
     env = current; ui_report_active(value);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeScroll(JNIEnv *current, jobject, jint id, jint generation, jint offset, jint viewport) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeScroll(JNIEnv *current, jobject, jint id, jint generation, jint offset, jint viewport) {
     env = current; ui_dispatch_scroll(id, generation, offset, viewport);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeToggle(JNIEnv *current, jobject, jint id, jint generation, jint on) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeToggle(JNIEnv *current, jobject, jint id, jint generation, jint on) {
     env = current; ui_dispatch_toggle(id, generation, on);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeWindow(JNIEnv *current, jobject, jint width, jint height, jint scale) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeWindow(JNIEnv *current, jobject, jint width, jint height, jint scale) {
     env = current; ui_report_window(width, height, scale);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeTick(JNIEnv *current, jobject) { env = current; ui_tick(); }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeLayout(JNIEnv *current, jobject, jfloat width, jfloat height) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeTick(JNIEnv *current, jobject) { env = current; ui_tick(); }
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeLayout(JNIEnv *current, jobject, jfloat width, jfloat height) {
     env = current; YGNodeCalculateLayout(root, width, height, YGDirectionLTR); place(root); layoutModals();
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeRefresh(JNIEnv *current, jobject, jint id, jint generation) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeRefresh(JNIEnv *current, jobject, jint id, jint generation) {
     env = current; ui_dispatch_refresh(id, generation);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeAlert(JNIEnv *current, jobject, jint request, jint choice) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeAlert(JNIEnv *current, jobject, jint request, jint choice) {
     env = current; ui_dispatch_alert(request, choice);
 }
-extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeBack(JNIEnv *current, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_UiActivity_nativeBack(JNIEnv *current, jobject) {
     env = current; return ui_report_back();
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeLink(JNIEnv *current, jobject, jstring url) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeLink(JNIEnv *current, jobject, jstring url) {
     env = current;
     const char *chars = env->GetStringUTFChars(url, nullptr);
     ui_report_link(chars);
     env->ReleaseStringUTFChars(url, chars);
 }
-extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeStop(JNIEnv *current, jobject) {
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStop(JNIEnv *current, jobject) {
     env = current; ui_stop(); YGNodeFree(root); env->DeleteGlobalRef(activity); activity = nullptr;
+}
+
+// Native code: events from Java (UiActivity.emit, a view's events) and the C API in
+// ui_native.h.
+extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *loaded, void *) { vm = loaded; return JNI_VERSION_1_6; }
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeModuleEvent(JNIEnv *current, jobject, jstring channel, jstring payload) {
+    env = current;
+    const char *c = env->GetStringUTFChars(channel, nullptr), *p = env->GetStringUTFChars(payload, nullptr);
+    ui_dispatch_native(c, p);
+    env->ReleaseStringUTFChars(channel, c); env->ReleaseStringUTFChars(payload, p);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeViewEvent(JNIEnv *current, jobject, jint id, jint generation, jstring name, jstring payload) {
+    env = current;
+    const char *n = env->GetStringUTFChars(name, nullptr), *p = env->GetStringUTFChars(payload, nullptr);
+    ui_dispatch_view(id, generation, n, p);
+    env->ReleaseStringUTFChars(name, n); env->ReleaseStringUTFChars(payload, p);
+}
+extern "C" JNIEnv *ui_jni_env(void) {
+    JNIEnv *current = nullptr;
+    if (vm->GetEnv(reinterpret_cast<void **>(&current), JNI_VERSION_1_6) == JNI_EDETACHED) vm->AttachCurrentThread(&current, nullptr);
+    return current;
+}
+extern "C" jobject ui_activity(void) { return activity; }
+extern "C" jclass ui_find_class(const char *name) {
+    JNIEnv *current = ui_jni_env();
+    std::string dotted(name);
+    std::replace(dotted.begin(), dotted.end(), '/', '.');
+    jstring text = current->NewStringUTF(dotted.c_str());
+    jclass found = (jclass)current->CallObjectMethod(classLoader, loadClassMethod, text);
+    current->DeleteLocalRef(text);
+    if (current->ExceptionCheck()) { current->ExceptionClear(); return nullptr; }
+    return found;
+}
+extern "C" void ui_native_emit(const char *channel, const char *payload) {
+    JNIEnv *current = ui_jni_env();
+    jstring c = current->NewStringUTF(channel ? channel : ""), p = current->NewStringUTF(payload ? payload : "");
+    current->CallStaticVoidMethod(activityClass, emitMethod, c, p);
+    current->DeleteLocalRef(c); current->DeleteLocalRef(p);
 }

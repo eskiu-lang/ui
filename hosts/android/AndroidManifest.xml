@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.eskiu.ui.prototype">
   <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35"/>
   <application android:label="Eskiu UI" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:debuggable="true">
-    <activity android:name=".UiActivity" android:exported="true">
+    <activity android:name="org.eskiu.ui.UiActivity" android:exported="true">
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
     </activity>
   </application>

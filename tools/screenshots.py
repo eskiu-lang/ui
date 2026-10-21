@@ -91,7 +91,7 @@ def shoot_android():
     subprocess.run([sys.executable, HERE / "tools/build_android.py"], check=True, timeout=600, capture_output=True)
     subprocess.run([*adb, "install", "-r", BUILD / "android/EskiuUI.apk"], check=True, timeout=60, capture_output=True)
     subprocess.run([*adb, "shell", "am", "force-stop", "org.eskiu.ui.prototype"], check=True, timeout=30)
-    subprocess.run([*adb, "shell", "am", "start", "-W", "-n", "org.eskiu.ui.prototype/.UiActivity", "--ei", "example", "4"],
+    subprocess.run([*adb, "shell", "am", "start", "-W", "-n", "org.eskiu.ui.prototype/org.eskiu.ui.UiActivity", "--ei", "example", "4"],
                    check=True, timeout=60, capture_output=True)
     time.sleep(3)
     png = subprocess.run([*adb, "exec-out", "screencap", "-p"], check=True, timeout=60, capture_output=True).stdout

@@ -1,8 +1,13 @@
-package org.eskiu.ui.prototype;
+package org.eskiu.ui;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
+import android.os.Handler;
+import android.os.Looper;
 import android.net.Uri;
 import android.os.Build;
 import android.view.WindowInsetsController;
@@ -60,6 +65,67 @@ public final class UiActivity extends Activity {
     // Scroll views whose offset the core wants (virtual lists), and the viewport last reported.
     private final HashMap<Integer, Integer> scrollViewports = new HashMap<>();
     private native void nativeWindow(int width, int height, int scale);
+    private native void nativeModuleEvent(String channel, String payload);
+    private native void nativeViewEvent(int id, int generation, String name, String payload);
+
+    // Native code (native/android). A view type for NativeView: create makes the view (it
+    // fills the space the layout gives the NativeView), set applies a named prop ("" when the
+    // app stopped giving it).
+    public interface ViewFactory {
+        View create(Context context, ViewEvents events);
+        void set(View view, String name, String value);
+    }
+    // What a native view sends back: an event's name and payload (NativeView's on_event).
+    public interface ViewEvents { void emit(String name, String payload); }
+    private static final HashMap<String, ViewFactory> viewTypes = new HashMap<>();
+    private static final Handler mainThread = new Handler(Looper.getMainLooper());
+    private static UiActivity current;
+    public static void registerView(String type, ViewFactory factory) { viewTypes.put(type, factory); }
+    // Post payload on channel to the app's use_native_event handlers; any thread.
+    public static void emit(String channel, String payload) {
+        String text = payload == null ? "" : payload;
+        mainThread.post(() -> { if (current != null && current.active) current.nativeModuleEvent(channel, text); });
+    }
+    // The running activity, for a Context.
+    public static UiActivity current() { return current; }
+    private final HashMap<Integer, View> nativeViews = new HashMap<>();
+    private final HashMap<Integer, String> nativeTypes = new HashMap<>();
+    // The classes `ui build` lists in the manifest: each one's static setup() runs once.
+    private static boolean setUp;
+    private void setupNative() {
+        if (setUp) return;
+        setUp = true;
+        try {
+            ActivityInfo info = getPackageManager().getActivityInfo(getComponentName(), PackageManager.GET_META_DATA);
+            String names = info.metaData == null ? null : info.metaData.getString("org.eskiu.ui.native");
+            if (names == null) return;
+            for (String name : names.split(",")) {
+                if (name.isEmpty()) continue;
+                java.lang.reflect.Method setup;
+                try { setup = Class.forName(name).getMethod("setup"); } catch (NoSuchMethodException e) { continue; }
+                setup.invoke(null);
+            }
+        } catch (Exception e) { throw new RuntimeException("ui: native setup", e); }
+    }
+    private void mountNative(int id, FrameLayout box, String type) {
+        box.removeAllViews();
+        nativeViews.remove(id);
+        nativeTypes.put(id, type);
+        ViewFactory factory = viewTypes.get(type);
+        if (factory == null) { android.util.Log.w("ui", "no native view registered as " + type); return; }
+        int generation = generations.get(id);
+        View view = factory.create(this, (name, payload) -> {
+            Runnable send = () -> { if (active) nativeViewEvent(id, generation, name, payload == null ? "" : payload); };
+            if (Looper.myLooper() == Looper.getMainLooper()) send.run(); else mainThread.post(send);
+        });
+        box.addView(view, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        nativeViews.put(id, view);
+    }
+    public void named(int id, String name, String value) {
+        View view = nativeViews.get(id);
+        ViewFactory factory = viewTypes.get(nativeTypes.get(id));
+        if (view != null && factory != null) factory.set(view, name, value);
+    }
     // Per view: the drawable that paints background, border and radius, and the font.
     private final HashMap<Integer, GradientDrawable> paints = new HashMap<>();
     private final HashMap<Integer, int[]> borders = new HashMap<>();
@@ -128,6 +194,8 @@ public final class UiActivity extends Activity {
             if (active) reportInsets();
             return insets;
         });
+        current = this;
+        setupNative();
         testing = getIntent().getBooleanExtra("selftest", false);
         root.post(() -> {
             active = true;
@@ -159,6 +227,7 @@ public final class UiActivity extends Activity {
     @Override protected void onPause() { if (active) nativeActive(0); super.onPause(); }
     @Override protected void onDestroy() {
         if (active) { nativeStop(); active = false; }
+        if (current == this) current = null;
         super.onDestroy();
     }
     public void schedule() {
@@ -382,6 +451,8 @@ public final class UiActivity extends Activity {
                 scroll.addView(new YogaGroup());
                 scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> reportScroll(id, (ScrollView)v));
                 view = scroll;
+            } else if (kind == 13) {
+                view = new FrameLayout(this);
             } else view = new YogaGroup();
             view.setId(View.generateViewId());
             nodes.put(id, view); generations.put(id, generation);
@@ -400,7 +471,8 @@ public final class UiActivity extends Activity {
         } else if (op == 3) ((TextView)view).setText(text);
         else if (op == 9) {
             // String props: 1 label, 2 placeholder.
-            if (kind == 1) view.setContentDescription(text.isEmpty() ? null : text);
+            if (kind == 4 && view instanceof FrameLayout) mountNative(id, (FrameLayout)view, text);
+            else if (kind == 1) view.setContentDescription(text.isEmpty() ? null : text);
             else if (kind == 2 && view instanceof EditText) ((EditText)view).setHint(text);
             else if (kind == 3 && view instanceof ImageView) loadImage((ImageView)view, text);
         } else if (op == 2) prop(id, view, kind, before);
@@ -420,7 +492,7 @@ public final class UiActivity extends Activity {
         } else if (op == 6) {
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
             nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
-            modalIds.remove(id); refreshers.remove(id);
+            modalIds.remove(id); refreshers.remove(id); nativeViews.remove(id); nativeTypes.remove(id);
             scrollViewports.remove(id);
         } else if (op == 7 || op == 8) {
             if (view instanceof ScrollView) { if (op == 7) scrollViewports.put(id, -1); else scrollViewports.remove(id); }
