@@ -175,7 +175,10 @@ public final class UiActivity extends Activity {
             paint = new GradientDrawable();
             paint.setColor(0);
             paints.put(id, paint);
+            // setBackground resets the padding to the drawable's: keep the view's.
+            int l = view.getPaddingLeft(), t = view.getPaddingTop(), r = view.getPaddingRight(), b = view.getPaddingBottom();
             view.setBackground(paint);
+            view.setPadding(l, t, r, b);
             view.setClipToOutline(true);
         }
         return paint;
@@ -191,6 +194,10 @@ public final class UiActivity extends Activity {
     private void prop(int id, View view, int code, int value) {
         float d = density();
         if (code == 3) { if (value != 0) view.requestFocus(); else view.clearFocus(); }
+        else if (code == 2 && view instanceof EditText) {
+            int p = Math.round(value * d);
+            if (value > 0) view.setPadding(p, p, p, p);
+        }
         else if (code == 8) paintOf(id, view).setColor(value == 0 ? 0 : argb(value));
         else if (code == 9 && view instanceof TextView) {
             if (value != 0) ((TextView)view).setTextColor(argb(value));

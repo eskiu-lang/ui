@@ -83,7 +83,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         // Props: the code in kind (1 gap, 2 padding), the value in before.
         if (op == 2) {
             if (kind == 1) YGNodeStyleSetGap(node, YGGutterAll, before);
-            else if (kind == 2) YGNodeStyleSetPadding(node, YGEdgeAll, before);
+            // A measured view (an EditText) applies its own padding: Yoga's would count twice.
+            else if (kind == 2) YGNodeStyleSetPadding(node, YGEdgeAll, YGNodeHasMeasureFunc(node) ? 0 : before);
             else if (kind == 4) { if (before) YGNodeStyleSetWidth(node, before); else YGNodeStyleSetWidthAuto(node); }
             else if (kind == 5) { if (before) YGNodeStyleSetHeight(node, before); else YGNodeStyleSetHeightAuto(node); }
             else if (kind == 6) YGNodeStyleSetFlexGrow(node, before);

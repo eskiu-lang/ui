@@ -135,7 +135,7 @@ export function createHost(root, dispatch) {
     const s = node.style;
     switch (code) {
       case 1: if (container) s.gap = `${value}px`; break;
-      case 2: if (container) s.padding = `${value}px`; break;
+      case 2: if (container || kindOf(node) === 5) s.padding = `${value}px`; break;
       case 3: if (value) node.focus(); else node.blur(); break;
       case 4: s.width = px(value); break;
       case 5: s.height = px(value); break;

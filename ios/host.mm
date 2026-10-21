@@ -47,6 +47,7 @@ static int commitCount;
 static double commitTime;
 static bool selfTest;
 static bool conformance;
+static int launchExample;
 static std::vector<double> frameTimes;
 static CADisplayLink *frameLink;
 static void (^testCompletion)(void);
@@ -284,7 +285,15 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
     if (op == 2) {
         // Props: the code in kind (1 gap, 2 padding, 3 focused), the value in before.
         if (kind == 1) YGNodeStyleSetGap(node.yoga, YGGutterAll, before);
-        else if (kind == 2) YGNodeStyleSetPadding(node.yoga, YGEdgeAll, before);
+        else if (kind == 2) {
+            YGNodeStyleSetPadding(node.yoga, YGEdgeAll, before);
+            // A text field draws its text from its left edge: inset it by the padding.
+            if ([node.view isKindOfClass:UITextField.class]) {
+                UITextField *field = (UITextField *)node.view;
+                field.leftView = before ? [[UIView alloc] initWithFrame:CGRectMake(0, 0, before, 1)] : nil;
+                field.leftViewMode = before ? UITextFieldViewModeAlways : UITextFieldViewModeNever;
+            }
+        }
         else if (kind == 3) {
             if (before) [node.view becomeFirstResponder]; else [node.view resignFirstResponder];
         } else if (kind == 4) {
@@ -667,7 +676,7 @@ static void runConformance(void) {
     [controller.view addSubview:rootView];
     rootYoga = YGNodeNew();
     YGNodeStyleSetFlexDirection(rootYoga, YGFlexDirectionColumn);
-    ui_start(conformance ? 3 : 0);
+    ui_start(conformance ? 3 : launchExample);
     if (conformance) runConformance();
     if (selfTest) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -707,6 +716,7 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--self-test")) selfTest = true;
         if (!strcmp(argv[i], "--conformance")) conformance = true;
+        if (!strcmp(argv[i], "--example") && i + 1 < argc) launchExample = atoi(argv[i + 1]);
     }
     @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(UiDelegate.class)); }
 }
