@@ -97,6 +97,12 @@ layout.
 
 Every host draws the same conformance scene and matches its frames within one point.
 
+`examples/navigation`, a travel app with a screen per place, on the three platforms:
+
+<p align="center">
+  <img src="screenshots/explore.png" alt="The Explore app on iOS, Android and the web: a list of places, the page for Oaxaca and the page for Kyoto" width="720">
+</p>
+
 `examples/tasks`, built only from these components:
 
 <p align="center">
