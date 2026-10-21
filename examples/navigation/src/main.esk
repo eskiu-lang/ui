@@ -1,0 +1,11 @@
+// The app: `ui run web` (or macos, ios, android). On the web each screen is a URL.
+import "places.esk";
+
+*Router places_router;
+
+void ui_app_start(int which) {
+    places_router = router_new("/");
+    ui_mount(void() { Places(places_router); });
+}
+
+void ui_app_stop() { places_router.free(); }

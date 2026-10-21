@@ -1,0 +1,91 @@
+// Screens on the phone, pages on the web: a list of places, each one's page, and its notes.
+// The routes are "/", "/places/:id" and "/places/:id/notes"; on the web they are the URL.
+import <string>;
+import <ui>;
+import <ui/kit>;
+
+const int kPlaces = 4;
+
+string place_name(int id) {
+    if (id == 0) { return "Lisbon"; }
+    if (id == 1) { return "Kyoto"; }
+    if (id == 2) { return "Oaxaca"; }
+    return "Reykjavik";
+}
+
+string place_blurb(int id) {
+    if (id == 0) { return "Hills, trams and the Atlantic light."; }
+    if (id == 1) { return "Temples, gardens and quiet streets."; }
+    if (id == 2) { return "Markets, mezcal and seven moles."; }
+    return "Lava fields and long summer days.";
+}
+
+// The id in a route's ":id" part, or -1.
+int place_id(string route, string pattern) {
+    List<String> params;
+    defer route_params_free(&params);
+    if (!route_match(pattern, route, &params)) { return -1; }
+    int id = atoi(params.data[0].data);
+    return id >= 0 && id < kPlaces ? id : -1;
+}
+
+void PlaceList(*Router router) {
+    Column(Style{grow: 1, padding: 16, gap: 12, background: kit.page}, void() {
+        TextWith(Style{font_size: 28, font_weight: 700, color: kit.ink}, "Places");
+        // Kept while a place's page is open: going back finds the same count.
+        *Signal<int> visits = use_signal<int>(0);
+        String line;
+        defer String_free(&line);
+        String_format(&line, "%d places opened", visits.get());
+        TextWith(Style{color: kit.muted}, line.data);
+        for (i in 0..kPlaces) {
+            int id = i;
+            ListItem(place_name(id), place_blurb(id), void() {
+                visits.set(visits.get() + 1);
+                String route;
+                defer String_free(&route);
+                String_format(&route, "/places/%d", id);
+                router.push(route.data);
+            });
+        }
+    });
+}
+
+void PlacePage(*Router router, int id) {
+    Column(Style{grow: 1, background: kit.page, gap: 0}, void() {
+        NavBar(place_name(id), void() { KitButton("Back", VariantGhost, void() { router.back(); }); });
+        Column(Style{padding: 16, gap: 12}, void() {
+            TextWith(Style{font_size: 17, color: kit.ink}, place_blurb(id));
+            KitButton("Notes", VariantPrimary, void() {
+                String route;
+                defer String_free(&route);
+                String_format(&route, "/places/%d/notes", id);
+                router.push(route.data);
+            });
+        });
+    });
+}
+
+void NotesPage(*Router router, int id) {
+    Column(Style{grow: 1, background: kit.page, gap: 0}, void() {
+        String title;
+        defer String_free(&title);
+        String_format(&title, "%s notes", place_name(id));
+        NavBar(title.data, void() { KitButton("Back", VariantGhost, void() { router.back(); }); });
+        Column(Style{padding: 16, gap: 12}, void() {
+            *StringState note = use_string("");
+            TextField(note.get(), "A note", void(string text) { note.set(text); });
+            KitButton("All places", VariantSecondary, void() { router.reset("/"); });
+        });
+    });
+}
+
+void Places(*Router router) {
+    Navigator(router, void(string route) {
+        int notes = place_id(route, "/places/:id/notes");
+        int place = place_id(route, "/places/:id");
+        if (notes >= 0) { NotesPage(router, notes); }
+        else if (place >= 0) { PlacePage(router, place); }
+        else { PlaceList(router); }
+    });
+}
