@@ -61,6 +61,22 @@ void KitGallery() {
                     tab.get() == 0 ? "Everything at a glance." : tab.get() == 1 ? "What changed lately." : "How it works.");
             });
 
+            Card(void() {
+                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Gestures");
+                // Swipe a row left to delete it; each row is keyed, so the others keep their state.
+                *Signal<int> deleted = use_signal<int>(0);
+                for (i in 0..3) {
+                    int row = i;
+                    if ((deleted.get() & (1 << row)) != 0) { continue; }
+                    Column(Style{key: key(row), gap: 0}, void() {
+                        SwipeToDelete("Delete", void() { deleted.set(deleted.get() | (1 << row)); }, void() {
+                            ListItem(row == 0 ? "Inbox" : row == 1 ? "Drafts" : "Archive", "Swipe left to delete", void() {});
+                        });
+                    });
+                }
+                if (deleted.get() == 7) { KitButton("Bring them back", VariantSecondary, void() { deleted.set(0); }); }
+            });
+
             Accordion(void() {
                 Collapsible("What is Eskiu?", void() {
                     TextWith(Style{font_size: 15, color: kit.muted}, "A systems language that compiles through LLVM.");

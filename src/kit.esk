@@ -16,3 +16,4 @@ import "kit/buttons.esk";
 import "kit/forms.esk";
 import "kit/navigation.esk";
 import "kit/disclosure.esk";
+import "kit/swipe.esk";

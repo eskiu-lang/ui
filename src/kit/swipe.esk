@@ -1,0 +1,40 @@
+// Gestures: SwipeToDelete.
+// Part of <ui/kit> (src/kit.esk imports every part).
+
+// A row the user drags left to delete. Past a third of its width, or flicked, it slides out
+// and on_delete runs once it is gone; short of that it springs back. `label` shows on the red
+// band behind it.
+void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->void content) {
+    ui_own(void() { ui_release_closure(on_delete); ui_release_closure(content); });
+    Scope("SwipeToDelete", Key{}, void() {
+        *Signal<int> offset = use_signal<int>(0);
+        *Signal<bool> dragging = use_signal<bool>(false);
+        *Signal<bool> removing = use_signal<bool>(false);
+        *Signal<int> width = use_signal<int>(0);
+        // Gone after the slide out.
+        use_timeout(removing.get() ? 220 : 0, void() { on_delete(); });
+        ui_on_layout(void(Frame f) { width.set(f.width); });
+        Row(Style{radius: kit.radius, background: kit.danger, gap: 0, label: label}, void() {
+            Row(Style{absolute: true, top: 0, bottom: 0, right: 20, align: AlignCenter}, void() {
+                TextWith(Style{font_size: 15, font_weight: 700, color: kit.on_primary}, label);
+            });
+            ui_on_pan(void(Pan p) {
+                if (removing.get()) { return; }
+                if (p.phase == PanMoved) {
+                    dragging.set(true);
+                    offset.set(p.dx < 0 ? p.dx : 0);
+                } else if (p.phase == PanEnded && (p.dx * 3 < -width.get() || p.vx < -800)) {
+                    dragging.set(false);
+                    offset.set(-width.get() - 24);
+                    removing.set(true);
+                } else if (p.phase == PanEnded || p.phase == PanCancelled) {
+                    dragging.set(false);
+                    offset.set(0);
+                }
+            });
+            Column(Style{grow: 1, gap: 0, radius: kit.radius, background: kit.surface, translate_x: offset.get(),
+                         transition_ms: dragging.get() ? 0 : 220, easing: removing.get() ? EaseIn : EaseSpring},
+                void() { content(); });
+        });
+    });
+}
