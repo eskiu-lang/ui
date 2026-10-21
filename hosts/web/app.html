@@ -3,6 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{name}}</title>
+<base href="{{base}}">
 <style>
   html, body { height: 100%; margin: 0; }
   body { font: 16px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #111827; }
@@ -30,13 +31,12 @@
   host.schedule = () => scheduler.request();
   host.cancel = () => scheduler.cancel();
   app = await createApp({uiHost: host, uiEmit: emit});
+  // The page's route is the link the app was opened with (the first Navigator shows it).
+  app.ccall('ui_report_link', null, ['string'], [host.route()]);
   app._ui_start(0);
   const reportWindow = () => app._ui_report_window(innerWidth, innerHeight, Math.round(devicePixelRatio * 100));
   reportWindow();
   addEventListener('resize', reportWindow);
-  const reportLink = () => app.ccall('ui_report_link', null, ['string'], [location.href]);
-  reportLink();
-  addEventListener('hashchange', reportLink);
   if (new URLSearchParams(location.search).has('shot')) {
     const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
     await frame(); await frame(); await frame();

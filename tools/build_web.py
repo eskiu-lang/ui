@@ -20,7 +20,7 @@ subprocess.run([compiler, str(HERE / "tests/harness/app.esk"), "--target", "wasm
                 "_ui_dispatch_focus,_ui_dispatch_toggle,_ui_dispatch_scroll,_ui_dispatch_alert,_ui_dispatch_refresh,"
                 "_ui_report_back,"
                 "_ui_report_link,_ui_report_window,_ui_tick,_ui_stop,"
-                "_ui_conformance_log,_ui_dispatch_native,_ui_dispatch_view",
+                "_ui_conformance_log,_ui_dispatch_native,_ui_dispatch_view,_ui_dispatch_route",
                 "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall"], check=True)
 # The renderer (hosts/web) and the test pages (tests/harness/web) side by side.
 for filename in ("renderer.mjs", "scheduler.mjs"):

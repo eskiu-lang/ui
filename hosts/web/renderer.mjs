@@ -1,6 +1,7 @@
 // Events back into the wasm app: 1 press, 2 change (text), 3 focus (1 or 0), 4 toggle
 // (1 or 0), 5 scroll (the offset in value, the viewport height in extra), 6 alert, 7 refresh,
-// 9 a native view's event (the payload in text, its name in extra).
+// 9 a native view's event (the payload in text, its name in extra), 10 the browser went to a
+// route (the route in text, its history index in value).
 export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
@@ -8,15 +9,16 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
   else if (kind === 6) app._ui_dispatch_alert(id, value);
+  else if (kind === 10) app.ccall('ui_dispatch_route', null, ['string', 'number'], [text, value]);
   else if (kind === 9) app.ccall('ui_dispatch_view', null, ['number', 'number', 'string', 'string'], [id, generation, extra, text]);
   else app._ui_dispatch_refresh(id, generation);
 }
 
 // Kinds (src/ui.esk): 0 scope, 1 column, 2 row, 3 text, 4 button, 5 text input, 6 scroll,
 // 7 image, 8 pressable, 9 switch, 10 activity indicator, 11 status bar, 12 modal, 13 native
-// view.
+// view, 14 screen.
 const TAGS = {3: 'span', 4: 'button', 5: 'input', 7: 'img', 9: 'input'};
-const CONTAINERS = new Set([0, 1, 2, 6, 8, 12]);
+const CONTAINERS = new Set([0, 1, 2, 6, 8, 12, 14]);
 const ALIGN = {1: 'flex-start', 2: 'center', 3: 'flex-end', 4: 'stretch'};
 const JUSTIFY = {1: 'flex-start', 2: 'center', 3: 'flex-end', 4: 'space-between', 5: 'space-around'};
 // The ring turns inside the node, so the node keeps its box for layout.
@@ -176,6 +178,7 @@ export function createHost(root, dispatch, views = {}) {
       case 19: node.dataset.animating = String(value !== 0); node.setAttribute('aria-busy', String(value !== 0)); break;
       case 20: case 21: break;  // the status bar: nothing to draw in a page
       case 22: refresh(node, value !== 0); break;
+      case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
       default: throw new Error(`unknown prop ${code}`);
     }
   }
@@ -233,10 +236,42 @@ export function createHost(root, dispatch, views = {}) {
       document.body.appendChild(dialog);
       dialog.showModal();
     } else if (c.command === 2) window.open(c.strings[0], '_blank', 'noopener');
+    else if (c.command === 3) navigate(c.strings);
+  }
+  // The page's URL follows the app's first Navigator: routes are paths under the page's
+  // <base> ("/tasks/42" is BASE + "tasks/42"), and each history entry keeps its index in the
+  // router's stack, which the browser's back and forward report.
+  const hasHistory = typeof history !== 'undefined' && typeof location !== 'undefined';
+  const base = () => new URL(document.baseURI).pathname;
+  const toURL = route => base() + route.replace(/^\/+/, '');
+  let historyIndex = 0;
+  function route() {
+    if (!hasHistory) return '/';
+    const prefix = base();
+    const path = location.pathname.startsWith(prefix) ? '/' + location.pathname.slice(prefix.length) : location.pathname;
+    return path + location.search;
+  }
+  function navigate([mode, ...routes]) {
+    if (!hasHistory) return;
+    if (mode === 'push') history.pushState({ui: ++historyIndex}, '', toURL(routes[0]));
+    else if (mode === 'replace') history.replaceState({ui: historyIndex}, '', toURL(routes[0]));
+    else if (mode === 'back') history.back();
+    else if (mode === 'reset') {
+      historyIndex = 0;
+      history.replaceState({ui: 0}, '', toURL(routes[0]));
+      for (const next of routes.slice(1)) history.pushState({ui: ++historyIndex}, '', toURL(next));
+    }
+  }
+  if (hasHistory && typeof addEventListener === 'function') {
+    addEventListener('popstate', event => {
+      historyIndex = event.state?.ui ?? 0;
+      dispatch(0, 0, 10, route(), historyIndex);
+    });
   }
   return {
     nodes,
     command,
+    route,
     apply(mutation) { pending.push(mutation); },
     commit() {
       for (const m of pending) {
