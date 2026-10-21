@@ -19,6 +19,7 @@ int[1024] mutation_ops;
 int[1024] mutation_ids;
 int[1024] mutation_befores;
 int[1024] mutation_kinds;
+string[1024] mutation_texts;
 bool async_apply;
 
 void record(*uint8 data, int len) {
@@ -35,6 +36,7 @@ void record(*uint8 data, int len) {
         mutation_ids[i] = mutations[i].id;
         mutation_befores[i] = mutations[i].before;
         mutation_kinds[i] = mutations[i].kind;
+        mutation_texts[i] = mutations[i].text;
     }
     decoded.free();
     if (!async_apply) { ui_complete(ui.sequence); }
@@ -796,6 +798,86 @@ void section_list() {
     ui_shutdown(); sections.free(); balanced("section list leak");
 }
 
+int alert_choice;
+void commands() {
+    Ui runtime;
+    alert_choice = -9;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        Button("Delete", void() {
+            Alert("Delete?", "It cannot be undone.", "Cancel\nDelete", void(int choice) { alert_choice = choice; });
+        });
+    });
+    ui_frame();
+    *Node button = ui.root.children.data[0];
+    ui_event(button.id, button.generation);
+    check(ui_needs_frame(), "an alert needs a frame to reach the host");
+    ui_frame();
+    check(mutation_count == 1 && mutation_ops[0] == 10 && mutation_kinds[0] == 1 && mutation_befores[0] == 4,
+        "one alert command: title, message and two buttons");
+    check(strcmp(mutation_texts[0], "Delete?") == 0, "its title");
+    check(ui_event_alert(mutation_ids[0], 1) && alert_choice == 1 && ui.alerts.size == 0, "the answer");
+    ui_open_url("https://eskiu-lang.org");
+    ui_frame();
+    check(mutation_ops[0] == 10 && mutation_kinds[0] == 2 && strcmp(mutation_texts[0], "https://eskiu-lang.org") == 0,
+        "open a URL");
+    // An unanswered alert is freed at shutdown.
+    ui_event(button.id, button.generation);
+    ui_frame();
+    ui_shutdown(); balanced("commands leak");
+}
+
+string seen_link;
+*Signal<int> bar_version;
+void links_and_status_bar() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        bar_version = use_signal<int>(0);
+        StatusBar(BarLight, bar_version.get() > 0);
+        Row(Style{key: key(1)}, void() { seen_link = ui_link(); });
+    });
+    ui_frame();
+    check(count_prop(2, 20) == 1 && prop_value(2, 20) == 1 && count_prop(2, 21) == 1, "status bar style and visibility");
+    bar_version.set(1); ui_frame();
+    check(count_prop(2, 20) == 0 && count_prop(2, 21) == 1 && prop_value(2, 21) == 1, "only the change");
+    ui_set_link("eskiu://todo/3");
+    ui_frame();
+    check(seen_link != null && strcmp(seen_link, "eskiu://todo/3") == 0, "the link reaches readers");
+    ui_shutdown(); balanced("links leak");
+}
+
+*Signal<bool> show_details;
+*Signal<bool> modal_open;
+bool consume_back;
+int closes;
+void back_and_modal() {
+    Ui runtime;
+    closes = 0;
+    consume_back = true;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        show_details = use_signal<bool>(true);
+        modal_open = use_signal<bool>(false);
+        if (show_details.get()) {
+            Scope("Details", Key{}, void() { use_back(bool() { return consume_back; }); });
+        }
+        Modal(modal_open.get(), void() { closes++; modal_open.set(false); }, void() { Text("Sheet"); });
+    });
+    ui_frame();
+    check(ui_back(), "the handler takes the back press");
+    consume_back = false;
+    check(!ui_back(), "a handler that declines lets the platform go back");
+    modal_open.set(true); ui_frame();
+    check(ui.modals.size == 1 && ui.root.children.data[1].kind == 12, "the modal is open");
+    check(ui_back() && closes == 1, "back asks the modal to close first");
+    ui_frame();
+    check(ui.modals.size == 0, "the modal closed");
+    show_details.set(false); ui_frame();
+    check(ui.back_handlers.size == 0, "an unmounted scope's handler is gone");
+    ui_shutdown(); balanced("back and modal leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -819,6 +901,9 @@ int main() {
     window_size(); printf("PASS window\n");
     flat_list(); printf("PASS flat list\n");
     section_list(); printf("PASS section list\n");
+    commands(); printf("PASS commands\n");
+    links_and_status_bar(); printf("PASS links, status bar\n");
+    back_and_modal(); printf("PASS back, modal\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");

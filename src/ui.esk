@@ -170,13 +170,18 @@ struct Node {
 //   6 remove   (nothing)
 //   7 listen, 8 unlisten
 //   9 string prop  prop u8 (1 label, 2 placeholder, 3 image source), length u32, the bytes, a NUL
+//  10 command  (the id is a request id, not a node) command u8 (1 alert: title, message,
+//              then the buttons; 2 open a URL), u8 count, then that many strings, each a
+//              length u32, the bytes and a NUL
 // Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow,
 // 7 wrap (1 or 0), 8 background and 9 text color (RGBA, 0: platform default), 10 font size,
 // 11 font weight, 12 border width, 13 border color, 14 radius, 15 opacity (percent),
-// 16 align and 17 justify (Align / Justify), 18 switch on (1 or 0), 19 spinning (1 or 0).
+// 16 align and 17 justify (Align / Justify), 18 switch on (1 or 0), 19 spinning (1 or 0),
+// 20 status bar style (BarStyle), 21 status bar hidden (1 or 0).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
-// that takes presses), 9 switch, 10 activity indicator.
+// that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal
+// (a column on a layer over the whole screen, laid out on its own).
 // The renderer reads it during apply and copies what it keeps.
 struct Commit { *uint8 data; int len; int cap; }
 
@@ -226,6 +231,16 @@ void ui_decode(*uint8 data, int len, List<Mutation>* out) {
             int n = ui_read_u32(&data[at]);
             m.text = (string)&data[at + 4];
             at += 4 + n + 1;
+        } else if (m.op == 10) {
+            // A command: kind is the command, before the number of strings, text the first.
+            m.kind = (int)data[at];
+            m.before = (int)data[at + 1];
+            at += 2;
+            for (j in 0..m.before) {
+                int n = ui_read_u32(&data[at]);
+                if (j == 0) { m.text = (string)&data[at + 4]; }
+                at += 4 + n + 1;
+            }
         } else if (m.op == 9) {
             m.kind = (int)data[at];
             int n = ui_read_u32(&data[at + 1]);
@@ -238,7 +253,8 @@ void ui_decode(*uint8 data, int len, List<Mutation>* out) {
     }
 }
 // Event kinds: 1 press, 2 change (text), 3 focus (value 1 focused, 0 blurred), 4 toggle
-// (value 1 on, 0 off), 5 scroll (value the offset, extra the viewport height).
+// (value 1 on, 0 off), 5 scroll (value the offset, extra the viewport height), 6 alert
+// answered (the id is the request, value the button's index, -1 dismissed).
 struct Event { int id; int generation; int kind; int value; string text; int extra; }
 // What the host reports about the screen, in points: the system bars and display cutouts
 // on each side, and the software keyboard over the bottom.
@@ -288,6 +304,18 @@ struct Ui {
     bool next_animating;
     // The rows and renderer of the next virtual list, likewise.
     *ListExtra next_list;
+    int next_bar_style;
+    bool next_bar_hidden;
+    // Commands for the host (alerts, URLs), written between frames and sent with the next
+    // commit; the alerts waiting for an answer.
+    Commit commands;
+    List<Pending> alerts;
+    int next_request;
+    // Back handlers by registration order, and the modals open, by opening order.
+    List<*BackEntry> back_handlers;
+    List<*Node> modals;
+    // The last link the app was opened with (Linking), or null.
+    string link;
     // The window the root is in, in points, and its scale (pixels per point, times 100).
     Window window;
     bool in_flight;
@@ -297,6 +325,8 @@ int64 ui_epochs;
 const int kSmall = 8;
 
 string ui_kind_name(int kind) {
+    if (kind == 12) { return "Modal"; }
+    if (kind == 11) { return "StatusBar"; }
     if (kind == 10) { return "ActivityIndicator"; }
     if (kind == 9) { return "Switch"; }
     if (kind == 8) { return "Pressable"; }
@@ -571,6 +601,7 @@ string ui_hook_name(int kind) {
     if (kind == 0) { return "use_signal"; }
     if (kind == 1) { return "use_memo"; }
     if (kind == 2) { return "use_effect"; }
+    if (kind == 4) { return "use_back"; }
     return "use_string";
 }
 
@@ -809,6 +840,11 @@ void ui_unmount(*Node node) {
             ui_unqueue(hook.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, hook);
         }
     }
+    for (i in 0..node.slots.size) {
+        Slot slot = node.slots.data[i];
+        if (slot.kind == 4) { ui_drop_back((*BackEntry)slot.data); }
+    }
+    if (node.kind == 12) { ui_drop_from(&ui.modals, node); }
     ui.by_id.data[node.id] = null;
     ui.retired_ids.push(node.id);
     // Every unmount cleanup runs while ALL retired state is still alive. A cleanup
@@ -846,6 +882,8 @@ void ui_unmount(*Node node) {
 }
 
 struct SwitchExtra { bool value; fn(bool)->void on_change; }
+struct Pending { int id; fn(int)->void on_choice; }
+struct BackEntry { fn()->bool handler; bool removed; }
 struct ListExtra { int count; int item_height; int header_height; *List<int> sizes;
     fn(int)->void on_item; fn(int, int)->void on_cell; }
 
@@ -999,6 +1037,11 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     if (kind == 10) {
         ui_prop(node, fresh, 19, ui.next_animating ? 1 : 0, -1);
     }
+    if (kind == 11) {
+        ui_prop(node, fresh, 20, ui.next_bar_style, -1);
+        ui_prop(node, fresh, 21, ui.next_bar_hidden ? 1 : 0, -1);
+    }
+    if (kind == 12 && fresh) { ui.modals.push(node); }
     if (kind == 6 && ui.next_list != null) {
         *ListExtra list = ui.next_list;
         ui.next_list = null;
@@ -1010,7 +1053,7 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         node.on_item = list.on_item;
         node.on_cell = list.on_cell;
     }
-    if (kind == 4 || kind == 5 || kind == 8 || kind == 9 || node.virtual) { ui_emit(7, node, 0); }
+    if (kind == 4 || kind == 5 || kind == 8 || kind == 9 || kind == 12 || node.virtual) { ui_emit(7, node, 0); }
     if (text != null && (node.text == null || strcmp(text, node.text) != 0)) {
         string previous = node.text;
         if (previous != null) { ui_retire(void() { free(previous); }); }
@@ -1130,6 +1173,126 @@ void SectionList(Style style, *List<int> sizes, int header_height, int item_heig
     ui.next_list = &list;
     style.gap = 0;
     ui_element(6, style, null, void() { ui_section_rows(ui.builder); }, void() {}, void() {});
+}
+
+// The system status bar: its content style and whether it shows. The last one rendered
+// wins; it has no view.
+enum BarStyle { BarDefault, BarLight, BarDark }
+
+void StatusBar(int bar_style, bool hidden) {
+    ui.next_bar_style = bar_style;
+    ui.next_bar_hidden = hidden;
+    ui_element(11, Style{}, null, void() {}, void() {}, void() {});
+}
+
+// Content over the whole screen while `visible`; `on_request_close` runs when the user
+// asks to leave it (Android's back, Escape on the web).
+void Modal(bool visible, escaping fn()->void on_request_close, escaping fn()->void block) {
+    if (!visible) {
+        ui_release_closure(on_request_close);
+        ui_release_closure(block);
+        return;
+    }
+    ui_element(12, Style{padding: 0}, null, block, on_request_close, void() {});
+}
+
+// A back handler for as long as the scope is mounted (Android's back button, and a modal's
+// request to close goes first). It returns true when it handled the press.
+void use_back(escaping fn()->bool handler) {
+    static int tag;
+    *Slot slot = ui_slot(4, &tag);
+    *BackEntry entry = (*BackEntry)slot.data;
+    if (entry == null) {
+        entry = alloc<BackEntry>(1);
+        slot.data = entry;
+        ui.back_handlers.push(entry);
+        slot.dispose = void() { ui_drop_back(entry); ui_release_back(entry.handler); free(entry); };
+    } else { ui_release_back(entry.handler); }
+    entry.handler = handler;
+}
+
+void ui_release_back(escaping fn()->bool callback) { free_closure(callback); }
+
+void ui_drop_back(*BackEntry entry) {
+    if (entry.removed) { return; }
+    entry.removed = true;
+    for (int i = ui.back_handlers.size - 1; i >= 0; i--) {
+        if (ui.back_handlers.data[i] == entry) { ui.back_handlers.remove(i); break; }
+    }
+}
+
+// The host's back press: the newest modal's request to close, else the back handlers
+// from the newest; false lets the platform go back.
+bool ui_back() {
+    ui_require_consistent();
+    if (ui.modals.size > 0) {
+        ui.modals.data[ui.modals.size - 1].handler();
+        return true;
+    }
+    for (int i = ui.back_handlers.size - 1; i >= 0; i--) {
+        if (ui.back_handlers.data[i].handler()) { return true; }
+    }
+    return false;
+}
+
+void ui_command(int request, int command, List<string>* strings) {
+    *Commit c = &ui.commands;
+    c.u8(10); c.u32(request); c.u8(command); c.u8(strings.size);
+    for (i in 0..strings.size) {
+        string value = strings.data[i] == null ? "" : strings.data[i];
+        int n = (int)strlen(value);
+        c.u32(n);
+        c.room(n + 1);
+        memcpy(&c.data[c.len], value, (size_t)(n + 1));
+        c.len += n + 1;
+    }
+}
+
+// A native alert: `buttons` are separated by newlines; on_choice gets the index of the one
+// pressed, or -1 when the alert was dismissed.
+void Alert(string title, string message, string buttons, escaping fn(int)->void on_choice) {
+    int request = ++ui.next_request;
+    ui.alerts.push(Pending{request, on_choice});
+    List<string> strings;
+    strings.push(title); strings.push(message);
+    String names;
+    String_append(&names, buttons == null ? "OK" : buttons);
+    // Each button is its own string; split at the newlines in a copy.
+    int start = 0;
+    for (int i = 0; i <= names.len; i++) {
+        if (i == names.len || names.data[i] == '\n') {
+            names.data[i] = 0;
+            strings.push((string)&names.data[start]);
+            start = i + 1;
+        }
+    }
+    ui_command(request, 1, &strings);
+    strings.free();
+    String_free(&names);
+}
+
+// Open a URL with the platform (the browser, the app that handles it).
+void ui_open_url(string url) {
+    List<string> strings;
+    strings.push(url);
+    ui_command(0, 2, &strings);
+    strings.free();
+}
+
+void ui_release_choice(escaping fn(int)->void callback) { free_closure(callback); }
+
+// The host's side: the link the app was opened with or was sent, read through ui_link.
+void ui_set_link(string url) {
+    if (ui.link != null && url != null && strcmp(ui.link, url) == 0) { return; }
+    free(ui.link);
+    ui.link = url == null ? null : ui_copy(url);
+    ui.environment.set(ui.environment.value + 1);
+}
+
+string ui_link() { ui.environment.get(); return ui.link; }
+
+bool ui_event_alert(int request, int choice) {
+    return ui_post(Event{request, 0, 6, choice, null});
 }
 
 // A column whose content scrolls when it is taller than the space it gets.
@@ -1318,7 +1481,7 @@ bool ui_frame() {
         if (memo.dirty && memo.output.readers.size > 0) { ui_validate(memo); }
     }
     ui.dirty_memos.size = 0;
-    if (ui.next_nodes.size == 0 && ui.dirty_effects.size == 0) { return false; }
+    if (ui.next_nodes.size == 0 && ui.dirty_effects.size == 0 && ui.commands.len == 0) { return false; }
     List<*Node> due = ui.next_nodes;
     ui.next_nodes = List<*Node>{};
     List<int> depths;
@@ -1354,6 +1517,13 @@ bool ui_frame() {
     }
     ui.render_writes.size = 0;
     ui.phase = 0;
+    // Commands asked for since the last frame go after the tree's mutations.
+    if (ui.commands.len > 0) {
+        ui.commit.room(ui.commands.len);
+        memcpy(&ui.commit.data[ui.commit.len], ui.commands.data, (size_t)ui.commands.len);
+        ui.commit.len += ui.commands.len;
+        ui.commands.len = 0;
+    }
     ui.sequence++;
     ui.in_flight = true;
     ui.apply(ui.commit.data, ui.commit.len);
@@ -1394,6 +1564,18 @@ bool ui_event_scroll(int id, int generation, int offset, int viewport) {
 }
 
 bool ui_dispatch_event(*Event event) {
+    if (event.kind == 6) {
+        for (i in 0..ui.alerts.size) {
+            Pending pending = ui.alerts.data[i];
+            if (pending.id == event.id) {
+                ui.alerts.remove(i);
+                pending.on_choice(event.value);
+                ui_release_choice(pending.on_choice);
+                return true;
+            }
+        }
+        return false;
+    }
     int id = event.id;
     if (id <= 0 || id >= ui.by_id.size) { return false; }
     *Node node = ui.by_id.data[id];
@@ -1438,7 +1620,7 @@ bool ui_dispatch_event(*Event event) {
 
 bool ui_needs_frame() {
     if (ui == null || ui.in_flight) { return false; }
-    return ui.next_nodes.size > 0 || ui.dirty_effects.size > 0 || ui_memo_work();
+    return ui.next_nodes.size > 0 || ui.dirty_effects.size > 0 || ui.commands.len > 0 || ui_memo_work();
 }
 
 void ui_shutdown() {
@@ -1453,7 +1635,10 @@ void ui_shutdown() {
     ui.by_id.free(); ui.generations.free(); ui.retired_ids.free(); ui.free_ids.free();
     ui.next_nodes.free(); ui.render_writes.free(); ui.looping.free();
     ui.dirty_memos.free(); ui.dirty_effects.free();
-    ui.commit.free(); ui.writes.free(); ui.retired.free();
+    ui.commit.free(); ui.writes.free(); ui.retired.free(); ui.commands.free();
+    for (i in 0..ui.alerts.size) { ui_release_choice(ui.alerts.data[i].on_choice); }
+    ui.alerts.free(); ui.back_handlers.free(); ui.modals.free();
+    free(ui.link);
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); }
     ui.finalizers.free(); ui.events.free();
     ui = null;
