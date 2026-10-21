@@ -172,3 +172,45 @@ void native_modules() {
     check(ui == null, "shut down");
     balanced("native modules leak");
 }
+
+// The host's clock, faked: what is armed, and what was stopped.
+List<int> armed_tokens;
+List<int> armed_ms;
+int stopped_token;
+int timer_ticks;
+*Signal<int> timer_period;
+
+void timers() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_set_timer_host(void(int token, int ms, bool repeat) { armed_tokens.push(token); armed_ms.push(repeat ? ms : -ms); },
+        void(int token) { stopped_token = token; });
+    ui_mount(void() {
+        timer_period = use_signal<int>(100);
+        *Signal<int> ticks = use_signal<int>(0);
+        timer_ticks = ticks.get();
+        use_interval(timer_period.get(), void() { ticks.set(ticks.get() + 1); });
+        use_timeout(50, void() { ticks.set(ticks.get() + 100); });
+    });
+    ui_frame();
+    check(armed_tokens.size == 2 && armed_ms.data[0] == 100 && armed_ms.data[1] == -50, "both armed");
+    int interval = armed_tokens.data[0];
+    int timeout = armed_tokens.data[1];
+    check(ui_event_timer(interval) && ui_event_timer(interval), "ticks");
+    ui_frame();
+    check(timer_ticks == 2, "the interval's handler ran twice");
+    check(ui_event_timer(timeout), "the timeout fires");
+    check(!ui_event_timer(timeout), "once");
+    ui_frame();
+    check(timer_ticks == 102, "its handler ran");
+    timer_period.set(0); ui_frame();
+    check(stopped_token == interval && armed_tokens.size == 2, "a period of 0 pauses it");
+    check(!ui_event_timer(interval), "a paused timer does not tick");
+    timer_period.set(200); ui_frame();
+    check(armed_tokens.size == 3 && armed_ms.data[2] == 200, "a new period arms it again");
+    stopped_token = 0;
+    ui_shutdown();
+    check(stopped_token == interval, "unmounting stops it");
+    armed_tokens.free(); armed_ms.free();
+    balanced("timers leak");
+}

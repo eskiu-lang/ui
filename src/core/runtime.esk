@@ -7,7 +7,8 @@
 // (the user pulled a scroll's RefreshControl), 8 native module event (name the channel, text
 // the payload; no node), 9 native view event (name and text from the view), 10 route (the
 // browser went to `text`, at history index `value`; no node), 11 layout (the node's frame:
-// value x, extra y, width and height, relative to its parent).
+// value x, extra y, width and height, relative to its parent), 12 timer (the id is the
+// timer's token).
 struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height; }
 
 // What the host reports about the screen, in points: the system bars and display cutouts
@@ -70,6 +71,12 @@ struct Ui {
     // the next Screen is the top one.
     *Router router;
     bool next_active;
+    // The timers of mounted scopes, the next token, and the host's clock (ui_set_timer_host).
+    List<*UiTimer> timers;
+    int next_timer;
+    fn(int, int, bool)->void timer_start;
+    fn(int)->void timer_stop;
+    bool has_timer_host;
     // The layout handler of the next element (ui_on_layout).
     fn(Frame)->void next_layout;
     bool has_next_layout;
@@ -314,6 +321,7 @@ bool ui_dispatch_event(*Event event) {
         return handled;
     }
     if (event.kind == 10) { ui_dispatch_route_event(event); return ui.router != null; }
+    if (event.kind == 12) { return ui_dispatch_timer_event(event); }
     if (event.kind == 6) {
         for (i in 0..ui.alerts.size) {
             Pending pending = ui.alerts.data[i];
@@ -395,6 +403,8 @@ void ui_shutdown() {
     ui.commit.free(); ui.writes.free(); ui.retired.free(); ui.commands.free();
     for (i in 0..ui.alerts.size) { ui_release_choice(ui.alerts.data[i].on_choice); }
     if (ui.has_next_layout) { ui_release_frame(ui.next_layout); }
+    ui.timers.free();
+    if (ui.has_timer_host) { ui_release_timer_start(ui.timer_start); ui_release_int(ui.timer_stop); }
     ui.alerts.free(); ui.back_handlers.free(); ui.modals.free(); ui.next_owned.free();
     free(ui.link);
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }

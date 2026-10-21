@@ -38,6 +38,7 @@ int main() {
     visual_styles(); printf("PASS visual styles\n");
     positions(); printf("PASS positions\n");
     layouts(); printf("PASS layouts\n");
+    timers(); printf("PASS timers\n");
     controls(); printf("PASS controls\n");
     window_size(); printf("PASS window\n");
     flat_list(); printf("PASS flat list\n");

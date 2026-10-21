@@ -1,0 +1,83 @@
+// Timers: use_interval and use_timeout, kept by the host's timers and run on the UI thread.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A timer while its scope is mounted. The host keeps the clock (ui_set_timer_host); its
+// tick reaches the handler as an event, so the handler may set signals.
+struct UiTimer { int token; int ms; bool repeat; fn()->void handler; bool armed; bool removed; }
+
+// The host's side: start(token, ms, repeat) arms a timer, stop(token) disarms it; each tick
+// comes back as ui_event_timer(token). With none set, timers never fire.
+void ui_set_timer_host(escaping fn(int, int, bool)->void start, escaping fn(int)->void stop) {
+    if (ui.has_timer_host) { ui_release_timer_start(ui.timer_start); ui_release_int(ui.timer_stop); }
+    ui.timer_start = start;
+    ui.timer_stop = stop;
+    ui.has_timer_host = true;
+}
+
+void ui_timer_arm(*UiTimer timer) {
+    if (timer.ms <= 0 || !ui.has_timer_host) { return; }
+    timer.armed = true;
+    ui.timer_start(timer.token, timer.ms, timer.repeat);
+}
+
+void ui_timer_disarm(*UiTimer timer) {
+    if (!timer.armed) { return; }
+    timer.armed = false;
+    if (ui.has_timer_host) { ui.timer_stop(timer.token); }
+}
+
+void ui_drop_timer(*UiTimer timer) {
+    if (timer.removed) { return; }
+    timer.removed = true;
+    ui_timer_disarm(timer);
+    for (int i = ui.timers.size - 1; i >= 0; i--) {
+        if (ui.timers.data[i] == timer) { ui.timers.remove(i); break; }
+    }
+}
+
+void ui_use_timer(int ms, bool repeat, escaping fn()->void handler) {
+    static int tag;
+    *Slot slot = ui_slot(7, &tag);
+    *UiTimer timer = (*UiTimer)slot.data;
+    if (timer == null) {
+        timer = alloc<UiTimer>(1);
+        timer.token = ++ui.next_timer;
+        timer.ms = ms;
+        timer.repeat = repeat;
+        slot.data = timer;
+        ui.timers.push(timer);
+        slot.dispose = void() { ui_drop_timer(timer); ui_release_closure(timer.handler); free(timer); };
+        timer.handler = handler;
+        ui_timer_arm(timer);
+        return;
+    }
+    ui_release_closure(timer.handler);
+    timer.handler = handler;
+    if (timer.ms != ms || timer.repeat != repeat) {
+        ui_timer_disarm(timer);
+        timer.ms = ms;
+        timer.repeat = repeat;
+        ui_timer_arm(timer);
+    }
+}
+
+// `handler` every `ms` milliseconds while the scope is mounted; 0 or less pauses it, and a
+// new period restarts it.
+void use_interval(int ms, escaping fn()->void handler) { ui_use_timer(ms, true, handler); }
+
+// `handler` once, `ms` milliseconds after the scope mounts (or after `ms` last changed).
+void use_timeout(int ms, escaping fn()->void handler) { ui_use_timer(ms, false, handler); }
+
+// The host's side: the timer with `token` fired.
+bool ui_event_timer(int token) { return ui_post(Event{token, 0, 12, 0, null}); }
+
+bool ui_dispatch_timer_event(*Event event) {
+    for (i in 0..ui.timers.size) {
+        *UiTimer timer = ui.timers.data[i];
+        if (timer.token != event.id || timer.removed || !timer.armed) { continue; }
+        if (!timer.repeat) { timer.armed = false; }
+        timer.handler();
+        return true;
+    }
+    return false;
+}
