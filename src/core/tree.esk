@@ -261,9 +261,11 @@ void ui_run(*Node node) {
     node.mounted = true;
 }
 
+// A node's removal is sent before its descendants', so a host knows a subtree leaves (a
+// screen that slides out keeps its content) before it hears of the parts.
 void ui_unmount(*Node node) {
-    for (int i = node.children.size - 1; i >= 0; i--) { ui_unmount(node.children.data[i]); }
     ui_emit(6, node, 0);
+    for (int i = node.children.size - 1; i >= 0; i--) { ui_unmount(node.children.data[i]); }
     if (node.next) { ui_drop_from(&ui.next_nodes, node); node.next = false; }
     if (node.render_write) { ui_drop_from(&ui.render_writes, node); node.render_write = false; }
     if (node.loop_frames > 0) { ui_drop_from(&ui.looping, node); node.loop_frames = 0; }

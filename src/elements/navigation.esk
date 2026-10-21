@@ -233,7 +233,9 @@ void ui_route_owner(*Router router) {
 // page's URL and history, and the links the app is opened with (ui_link).
 void Navigator(*Router router, escaping fn(string)->void screen) {
     ui_own(void() { ui_release_text(screen); });
-    Scope("Navigator", Key{}, void() {
+    // A scope that fills its parent, as its screens do.
+    ui.next_name = "Navigator";
+    ui_element(0, Style{grow: 1, gap: 0}, null, void() {
         use_back(bool() { return router.back(); });
         ui_route_owner(router);
         if (router.synced) {
@@ -257,5 +259,5 @@ void Navigator(*Router router, escaping fn(string)->void screen) {
             ui_element(14, Style{key: key(index), grow: 1, gap: 0}, null, void() { screen(route); },
                 void() {}, void() {});
         }
-    });
+    }, void() {}, void() {});
 }
