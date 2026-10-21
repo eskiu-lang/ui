@@ -1,23 +1,49 @@
-// Screens on the phone, pages on the web: a list of places, each one's page, and its notes.
-// The routes are "/", "/places/:id" and "/places/:id/notes"; on the web they are the URL.
+// Explore: screens on the phone, pages on the web. A list of places, each place's page and
+// a plan for the trip. The routes are "/", "/places/:id" and "/places/:id/plan"; on the web
+// they are the URL, and the page under the top keeps its state.
 import <string>;
 import <ui>;
 import <ui/kit>;
 
+// The palette.
+int64 ink() { return rgb(17, 24, 39); }
+int64 muted() { return rgb(107, 114, 128); }
+int64 page() { return rgb(245, 246, 250); }
+int64 card() { return rgb(255, 255, 255); }
+int64 line() { return rgb(229, 231, 235); }
+int64 primary() { return rgb(79, 70, 229); }
+int64 primary_soft() { return rgb(224, 231, 255); }
+int64 white() { return rgb(255, 255, 255); }
+int64 white_soft() { return rgba(255, 255, 255, 60); }
+
+struct Place { string name; string country; string flag; string blurb; string rating; string season; string month; string flight;
+               string todo1; string todo2; string todo3; int64 color; int64 soft; }
+
 const int kPlaces = 4;
 
-string place_name(int id) {
-    if (id == 0) { return "Lisbon"; }
-    if (id == 1) { return "Kyoto"; }
-    if (id == 2) { return "Oaxaca"; }
-    return "Reykjavik";
-}
-
-string place_blurb(int id) {
-    if (id == 0) { return "Hills, trams and the Atlantic light."; }
-    if (id == 1) { return "Temples, gardens and quiet streets."; }
-    if (id == 2) { return "Markets, mezcal and seven moles."; }
-    return "Lava fields and long summer days.";
+Place place(int id) {
+    if (id == 0) {
+        return Place{"Lisbon", "Portugal", "🇵🇹",
+                     "Seven hills over the Tagus, yellow trams climbing them and a light that turns every street gold before dinner.",
+                     "4.8", "May", "May", "8h", "Ride tram 28 through Alfama", "Pastéis de nata in Belém",
+                     "Sunset from the Senhora do Monte viewpoint", rgb(234, 88, 12), rgb(255, 237, 213)};
+    }
+    if (id == 1) {
+        return Place{"Kyoto", "Japan", "🇯🇵",
+                     "A thousand temples, moss gardens and wooden machiya on quiet lanes, with the old capital's rhythm in every season.",
+                     "4.9", "April", "Apr", "14h", "Walk the Fushimi Inari gates at dawn", "Tea in Higashiyama",
+                     "The bamboo grove in Arashiyama", rgb(225, 29, 72), rgb(255, 228, 230)};
+    }
+    if (id == 2) {
+        return Place{"Oaxaca", "Mexico", "🇲🇽",
+                     "Markets that smell of chocolate and chiles, seven moles, mezcal from the hills and Monte Albán above the valley.",
+                     "4.9", "November", "Nov", "5h", "Mole at the 20 de Noviembre market", "Monte Albán at sunrise",
+                     "A mezcal palenque in Santiago Matatlán", rgb(5, 150, 105), rgb(209, 250, 229)};
+    }
+    return Place{"Reykjavik", "Iceland", "🇮🇸",
+                 "A small, bright capital at the edge of lava fields, hot springs and long summer days that never quite end.",
+                 "4.7", "June", "Jun", "6h", "Soak in the Sky Lagoon", "Drive the Golden Circle",
+                 "Whale watching from the Old Harbour", rgb(2, 132, 199), rgb(224, 242, 254)};
 }
 
 // The id in a route's ":id" part, or -1.
@@ -29,63 +55,175 @@ int place_id(string route, string pattern) {
     return id >= 0 && id < kPlaces ? id : -1;
 }
 
-void PlaceList(*Router router) {
-    Column(Style{grow: 1, padding: 16, gap: 12, background: kit.page}, void() {
-        TextWith(Style{font_size: 28, font_weight: 700, color: kit.ink}, "Places");
-        // Kept while a place's page is open: going back finds the same count.
-        *Signal<int> visits = use_signal<int>(0);
-        String line;
-        defer String_free(&line);
-        String_format(&line, "%d places opened", visits.get());
-        TextWith(Style{color: kit.muted}, line.data);
-        for (i in 0..kPlaces) {
-            int id = i;
-            ListItem(place_name(id), place_blurb(id), void() {
-                visits.set(visits.get() + 1);
-                String route;
-                defer String_free(&route);
-                String_format(&route, "/places/%d", id);
-                router.push(route.data);
-            });
-        }
-    });
+void open_place(*Router router, int id, string suffix) {
+    String route;
+    defer String_free(&route);
+    String_format(&route, "/places/%d%s", id, suffix);
+    router.push(route.data);
 }
 
-void PlacePage(*Router router, int id) {
-    Column(Style{grow: 1, background: kit.page, gap: 0}, void() {
-        NavBar(place_name(id), void() { KitButton("Back", VariantGhost, void() { router.back(); }); });
-        Column(Style{padding: 16, gap: 12}, void() {
-            TextWith(Style{font_size: 17, color: kit.ink}, place_blurb(id));
-            KitButton("Notes", VariantPrimary, void() {
-                String route;
-                defer String_free(&route);
-                String_format(&route, "/places/%d/notes", id);
-                router.push(route.data);
+// The flag in a rounded tile of the place's soft color.
+void FlagTile(Place p, int size) {
+    Row(Style{width: size, height: size, radius: size / 4, background: p.soft, align: AlignCenter,
+              justify: JustifyCenter}, void() { TextWith(Style{font_size: size / 2}, p.flag); });
+}
+
+void Featured(*Router router) {
+    Place p = place(1);
+    Pressable(Style{padding: 22, gap: 6, radius: 24, background: p.color, label: "Featured: Kyoto"},
+        void() { open_place(router, 1, ""); }, void() {
+            Row(Style{}, void() {
+                Row(Style{padding: 6, radius: 10, background: white_soft()}, void() {
+                    TextWith(Style{font_size: 12, font_weight: 700, color: white()}, "TRIP OF THE MONTH");
+                });
             });
+            Row(Style{height: 18}, void() {});
+            TextWith(Style{font_size: 32, font_weight: 800, color: white()}, "Kyoto in April");
+            TextWith(Style{font_size: 15, color: rgba(255, 255, 255, 225)}, "Cherry blossoms, temples and tea houses.");
+        });
+}
+
+void PlaceRow(*Router router, int id) {
+    Place p = place(id);
+    Pressable(Style{padding: 14, radius: 18, background: card(), border_width: 1, border_color: line(), label: p.name},
+        void() { open_place(router, id, ""); }, void() {
+            Row(Style{gap: 14, align: AlignCenter}, void() {
+                FlagTile(p, 52);
+                Column(Style{grow: 1, gap: 2}, void() {
+                    TextWith(Style{font_size: 17, font_weight: 700, color: ink()}, p.name);
+                    String detail;
+                    defer String_free(&detail);
+                    String_format(&detail, "%s · best in %s", p.country, p.season);
+                    TextWith(Style{font_size: 14, color: muted()}, detail.data);
+                });
+                Row(Style{padding: 6, radius: 10, background: primary_soft()}, void() {
+                    String stars;
+                    defer String_free(&stars);
+                    String_format(&stars, "★ %s", p.rating);
+                    TextWith(Style{font_size: 13, font_weight: 700, color: primary()}, stars.data);
+                });
+            });
+        });
+}
+
+void PlaceList(*Router router) {
+    Scroll(Style{grow: 1, background: page(), gap: 0}, void() {
+        Column(Style{padding: 20, gap: 16}, void() {
+            Row(Style{height: ui_insets().top}, void() {});
+            Row(Style{align: AlignCenter, gap: 12}, void() {
+                Column(Style{grow: 1, gap: 2}, void() {
+                    TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "Good morning");
+                    TextWith(Style{font_size: 32, font_weight: 800, color: ink()}, "Explore");
+                });
+                Avatar("ED", 44);
+            });
+            Featured(router);
+            Row(Style{align: AlignCenter}, void() {
+                TextWith(Style{grow: 1, font_size: 20, font_weight: 700, color: ink()}, "Popular places");
+                TextWith(Style{font_size: 14, color: muted()}, "4 places");
+            });
+            for (i in 0..kPlaces) { PlaceRow(router, i); }
         });
     });
 }
 
-void NotesPage(*Router router, int id) {
-    Column(Style{grow: 1, background: kit.page, gap: 0}, void() {
+void Stat(string label, string value) {
+    // A width of 1 and a share of the row: the three take equal parts.
+    Column(Style{width: 1, grow: 1, padding: 14, gap: 2, radius: 16, background: card(), border_width: 1, border_color: line(),
+                 label: label}, void() {
+        TextWith(Style{font_size: 13, color: muted()}, label);
+        TextWith(Style{font_size: 18, font_weight: 700, color: ink()}, value);
+    });
+}
+
+void Todo(Place p, string text) {
+    Row(Style{gap: 12, align: AlignCenter}, void() {
+        Row(Style{width: 10, height: 10, radius: 5, background: p.color}, void() {});
+        TextWith(Style{grow: 1, font_size: 16, color: ink()}, text);
+    });
+}
+
+void PlacePage(*Router router, int id) {
+    Place p = place(id);
+    Scroll(Style{grow: 1, background: page(), gap: 0}, void() {
+        Column(Style{padding: 20, gap: 8, background: p.color}, void() {
+            Row(Style{height: ui_insets().top}, void() {});
+            Row(Style{}, void() {
+                Pressable(Style{padding: 10, radius: 14, background: white_soft(), label: "Back"},
+                    void() { router.back(); }, void() {
+                        TextWith(Style{font_size: 15, font_weight: 700, color: white()}, "‹  Places");
+                    });
+            });
+            Row(Style{height: 28}, void() {});
+            TextWith(Style{font_size: 52}, p.flag);
+            TextWith(Style{font_size: 40, font_weight: 800, color: white()}, p.name);
+            TextWith(Style{font_size: 17, color: rgba(255, 255, 255, 225)}, p.country);
+            Row(Style{height: 8}, void() {});
+        });
+        Column(Style{padding: 20, gap: 18}, void() {
+            Row(Style{gap: 10}, void() {
+                String stars;
+                defer String_free(&stars);
+                String_format(&stars, "★ %s", p.rating);
+                Stat("Rating", stars.data);
+                Stat("Best time", p.month);
+                Stat("Flight", p.flight);
+            });
+            TextWith(Style{font_size: 17, color: ink()}, p.blurb);
+            Column(Style{padding: 18, gap: 14, radius: 18, background: card(), border_width: 1, border_color: line()},
+                void() {
+                    TextWith(Style{font_size: 18, font_weight: 700, color: ink()}, "Things to do");
+                    Todo(p, p.todo1);
+                    Todo(p, p.todo2);
+                    Todo(p, p.todo3);
+                });
+            ButtonWith(Style{padding: 16, radius: 16, background: ink(), color: white(), font_size: 17, font_weight: 700},
+                "Plan a trip", void() { open_place(router, id, "/plan"); });
+        });
+    });
+}
+
+void PlanPage(*Router router, int id) {
+    Place p = place(id);
+    Column(Style{grow: 1, background: page(), gap: 0}, void() {
+        Row(Style{height: ui_insets().top, background: card()}, void() {});
         String title;
         defer String_free(&title);
-        String_format(&title, "%s notes", place_name(id));
+        String_format(&title, "Trip to %s", p.name);
         NavBar(title.data, void() { KitButton("Back", VariantGhost, void() { router.back(); }); });
-        Column(Style{padding: 16, gap: 12}, void() {
-            *StringState note = use_string("");
-            TextField(note.get(), "A note", void(string text) { note.set(text); });
-            KitButton("All places", VariantSecondary, void() { router.reset("/"); });
+        Column(Style{padding: 20, gap: 16}, void() {
+            Card(void() {
+                TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "When");
+                *StringState dates = use_string("");
+                TextField(dates.get(), "Dates, like April 3 to 10", void(string text) { dates.set(text); });
+                TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "Budget");
+                *Signal<int> budget = use_signal<int>(1);
+                SegmentedControl("Saver\nComfort\nLuxury", budget.get(), void(int i) { budget.set(i); });
+            });
+            Card(void() {
+                *Signal<bool> flights = use_signal<bool>(true);
+                *Signal<bool> hotel = use_signal<bool>(true);
+                *Signal<bool> guide = use_signal<bool>(false);
+                Checkbox("Flights", flights.get(), void(bool on) { flights.set(on); });
+                Checkbox("Hotel", hotel.get(), void(bool on) { hotel.set(on); });
+                Checkbox("A local guide", guide.get(), void(bool on) { guide.set(on); });
+            });
+            KitButton("Save the plan", VariantPrimary, void() { router.reset("/"); });
         });
     });
 }
 
 void Places(*Router router) {
-    Navigator(router, void(string route) {
-        int notes = place_id(route, "/places/:id/notes");
-        int place = place_id(route, "/places/:id");
-        if (notes >= 0) { NotesPage(router, notes); }
-        else if (place >= 0) { PlacePage(router, place); }
-        else { PlaceList(router); }
+    Column(Style{grow: 1, gap: 0}, void() {
+        // Light status bar text over a place's cover, dark elsewhere.
+        bool cover = place_id(router.path(), "/places/:id") >= 0;
+        StatusBar(cover ? BarLight : BarDark, false);
+        Navigator(router, void(string route) {
+            int plan = place_id(route, "/places/:id/plan");
+            int place_at = place_id(route, "/places/:id");
+            if (plan >= 0) { PlanPage(router, plan); }
+            else if (place_at >= 0) { PlacePage(router, place_at); }
+            else { PlaceList(router); }
+        });
     });
 }

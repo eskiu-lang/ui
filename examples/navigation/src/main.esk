@@ -4,6 +4,8 @@ import "places.esk";
 *Router places_router;
 
 void ui_app_start(int which) {
+    // Covers reach under the status bar; each screen pads itself from ui_insets().
+    ui_edge_policy = 1;
     places_router = router_new("/");
     ui_mount(void() { Places(places_router); });
 }
