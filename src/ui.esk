@@ -117,8 +117,12 @@ struct Ui {
     *Node root;
     *Node builder;
     *Observer tracking;
-    // Index = node id; null once the node is unmounted.
+    // Index = node id; null once the node is unmounted. An id is reused only after the
+    // commit that removed its node completes, with the next generation.
     List<*Node> by_id;
+    List<int> generations;
+    List<int> retired_ids;
+    List<int> free_ids;
     // Work lists, so a frame touches only what changed.
     List<*Node> next_nodes;
     List<*Node> render_writes;
@@ -530,6 +534,7 @@ void ui_unmount(*Node node) {
         }
     }
     ui.by_id.data[node.id] = null;
+    ui.retired_ids.push(node.id);
     // Every unmount cleanup runs while ALL retired state is still alive. A cleanup
     // may read a signal registered after its own hook, or state in a sibling scope.
     ui.finalizers.push(void() {
@@ -611,13 +616,11 @@ void ui_unmount(*Node node) {
     bool fresh = node == null;
     if (fresh) {
         node = alloc<Node>(1);
-        node.id = ui.by_id.size;
-        node.generation = 1;
+        ui_assign_id(node);
         node.kind = kind; node.key = style.key; node.parent = parent;
         node.depth = parent.depth + 1;
         node.fresh = true;
         node.observer = ui_observer(0, node);
-        ui.by_id.push(node);
         ui_emit(1, node, 0);
     } else {
         fn()->void old_block = node.block;
@@ -657,16 +660,28 @@ void Button_owned(string text, escaping fn()->void handler, escaping fn()->void 
     ui_element(4, Style{}, text, void() {}, handler, cleanup);
 }
 
+void ui_assign_id(*Node node) {
+    if (ui.free_ids.size > 0) {
+        node.id = ui.free_ids.data[--ui.free_ids.size];
+    } else {
+        node.id = ui.by_id.size;
+        ui.by_id.push(null);
+        ui.generations.push(0);
+    }
+    node.generation = ++ui.generations.data[node.id];
+    ui.by_id.data[node.id] = node;
+}
+
 void ui_init(*Ui runtime, escaping fn(*Mutation, int)->void apply) {
     ui = runtime;
     ui.apply = apply;
     ui.by_id.push(null);
+    ui.generations.push(0);
     *Node root = alloc<Node>(1);
-    root.id = ui.by_id.size;
+    ui_assign_id(root);
     root.block = void() {}; root.handler = void() {}; root.handler_cleanup = void() {};
     root.observer = ui_observer(0, root);
     ui.root = root;
-    ui.by_id.push(root);
 }
 
 void ui_mount(escaping fn()->void block) {
@@ -727,6 +742,9 @@ void ui_complete(int sequence) {
         dispose(); ui_release_closure(dispose);
     }
     ui.retired.size = 0;
+    // The renderer has applied the removals: their ids are free again.
+    for (i in 0..ui.retired_ids.size) { ui.free_ids.push(ui.retired_ids.data[i]); }
+    ui.retired_ids.size = 0;
     ui.mutations.size = 0;
     ui.phase = 2;
     ui_run_effects();
@@ -840,7 +858,8 @@ void ui_shutdown() {
     ui.apply(ui.mutations.data, ui.mutations.size);
     ui_require(!ui.in_flight, "prototype shutdown requires synchronous renderer");
     free_closure(ui.apply);
-    ui.by_id.free(); ui.next_nodes.free(); ui.render_writes.free(); ui.looping.free();
+    ui.by_id.free(); ui.generations.free(); ui.retired_ids.free(); ui.free_ids.free();
+    ui.next_nodes.free(); ui.render_writes.free(); ui.looping.free();
     ui.dirty_memos.free(); ui.dirty_effects.free();
     ui.mutations.free(); ui.writes.free(); ui.retired.free();
     ui.finalizers.free(); ui.events.free();
