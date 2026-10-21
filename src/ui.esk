@@ -10,8 +10,9 @@ struct Key { bool set; int64 value; }
 Key key(int64 value) { return Key{true, value}; }
 // `label` is the accessible name (ARIA label, accessibilityLabel, contentDescription).
 // width and height are points (0: sized by content and parent); grow shares the free
-// space along the parent's direction (flex-grow).
-struct Style { Key key; int gap = 8; int padding = 0; string label; int width; int height; int grow; }
+// space along the parent's direction (flex-grow); wrap lets a row's children flow onto
+// more lines (flex-wrap).
+struct Style { Key key; int gap = 8; int padding = 0; string label; int width; int height; int grow; bool wrap; }
 
 // A subscription is one entry on each side, each holding the other's index, so either
 // side removes it in O(1) by swapping in its last entry.
@@ -93,6 +94,7 @@ struct Node {
     int width;
     int height;
     int grow;
+    bool wrap;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -138,7 +140,8 @@ struct Node {
 //   6 remove   (nothing)
 //   7 listen, 8 unlisten
 //   9 string prop  prop u8 (1 label, 2 placeholder, 3 image source), length u32, the bytes, a NUL
-// Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow.
+// Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow,
+// 7 wrap (1 or 0).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image.
 // The renderer reads it during apply and copies what it keeps.
@@ -888,6 +891,9 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     }
     if ((fresh && style.grow != 0) || (!fresh && node.grow != style.grow)) {
         node.grow = style.grow; ui_emit_prop(node, 6, style.grow);
+    }
+    if ((fresh && style.wrap) || (!fresh && node.wrap != style.wrap)) {
+        node.wrap = style.wrap; ui_emit_prop(node, 7, style.wrap ? 1 : 0);
     }
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
     node.block = block;
