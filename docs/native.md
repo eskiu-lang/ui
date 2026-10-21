@@ -246,6 +246,14 @@ maps/
   native/web/map.mjs
 ```
 
+[eskiu-lang/ui-location](https://github.com/eskiu-lang/ui-location) is one: `use_location`
+over CoreLocation, `LocationManager` (with a runtime permission and C externs that call Java
+through JNI) and `navigator.geolocation`, a `ui.toml` with the framework, a usage text the app
+can replace and the Android permissions, tests that run on the computer with stand-ins for the
+native side, and an example app. A package like it starts and stops its service with
+`use_mount` ([state](state.md)), so the service runs while a component that uses it is
+mounted.
+
 ## Testing
 
 `tests/web.mjs` runs the native example's web code against the recording DOM;
