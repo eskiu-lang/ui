@@ -22,6 +22,9 @@ int main(int argc, string* argv) {
             Row(Style{key: key(0)}, void() {});
         }
         if (mode == 5 || mode == 6) { throw 7; }
+        if (mode == 7) {
+            for (i in 0..20) { Row(Style{key: key(i == 15 ? 3 : i)}, void() {}); }
+        }
         if (mode == 4) {
             cyclic = use_memo<int>(int() { return cyclic.get(); });
             cyclic.get();

@@ -60,7 +60,8 @@ def main():
     run([ESKIUC, HERE / "tests/rejections.esk", "-o", BUILD / "rejections"])
     for mode, message in [("1", "render loop"), ("2", "hook kind/type changed"),
                           ("3", "duplicate key"), ("4", "memo cycle"),
-                          ("5", "uncaught exception"), ("6", "runtime left mid-phase")]:
+                          ("5", "uncaught exception"), ("6", "runtime left mid-phase"),
+                          ("7", "duplicate key")]:
         result = subprocess.run([BUILD / "rejections", mode], env=ENV, capture_output=True, text=True, timeout=10)
         if result.returncode == 0 or message not in result.stdout + result.stderr:
             raise AssertionError((mode, result.returncode, result.stdout, result.stderr))

@@ -16,15 +16,15 @@ int cleanups;
 int observed;
 int mutation_count;
 int[9] ops;
-int[128] mutation_ops;
-int[128] mutation_ids;
-int[128] mutation_befores;
+int[1024] mutation_ops;
+int[1024] mutation_ids;
+int[1024] mutation_befores;
 bool async_apply;
 
 void record(*Mutation mutations, int count) {
     mutation_count = count;
     for (i in 0..9) { ops[i] = 0; }
-    ui_require(count <= 128, "recording capacity");
+    ui_require(count <= 1024, "recording capacity");
     for (i in 0..count) {
         ops[mutations[i].op]++;
         mutation_ops[i] = mutations[i].op;
@@ -378,6 +378,75 @@ void queued_events() {
     ui_shutdown(); balanced("queued events leak");
 }
 
+bool text_is(*Node node, int value) {
+    String expected;
+    defer String_free(&expected);
+    String_format(&expected, "%d", value);
+    return strcmp(node.text, expected.data) == 0;
+}
+
+// Lists past the scan threshold: keyed tables, minimal moves, unkeyed positions.
+int[64] order;
+int order_size;
+void large_lists() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    order_size = 20;
+    for (i in 0..20) { order[i] = i; }
+    ui_mount(void() {
+        a = use_signal<int>(0);
+        a.get();
+        Column(Style{}, void() {
+            for (i in 0..order_size) {
+                int id = order[i];
+                Row(Style{key: key(id)}, void() {
+                    *Signal<int> state = use_signal<int>(id + 100);
+                    text_number(state.get());
+                });
+            }
+        });
+    });
+    ui_frame();
+    int[20] ids;
+    for (i in 0..20) { ids[i] = keyed(i).id; }
+    for (i in 0..20) { order[i] = 19 - i; }
+    a.set(1); ui_frame();
+    check(ops[5] == 19 && ops[1] == 0 && ops[6] == 0, "reverse of 20 moves 19, creates and removes none");
+    for (i in 0..20) {
+        check(keyed(i).id == ids[i], "keyed node survives the reverse");
+        check(text_is(keyed(i).children.data[0], i + 100), "row keeps its state");
+    }
+    *Node column = ui.root.children.data[0];
+    for (i in 0..20) { check(column.children.data[i] == keyed(19 - i), "new order"); }
+    // Rotate: the last row to the front is one move.
+    int first = order[19];
+    for (int i = 19; i > 0; i--) { order[i] = order[i - 1]; }
+    order[0] = first;
+    a.set(2); ui_frame();
+    check(ops[5] == 1, "rotation is one move");
+    // Remove one, add one new key: one remove, one row created, no moves.
+    for (i in 0..20) { if (order[i] == 5) { order[i] = 40; } }
+    a.set(3); ui_frame();
+    check(ops[5] == 0 && ops[6] == 2, "replace a row: its row and text removed, nothing moves");
+    check(text_is(keyed(40).children.data[0], 140), "the new row starts with fresh state");
+    ui_shutdown(); balanced("large keyed leak");
+
+    ui_init(&runtime, record);
+    order_size = 12;
+    ui_mount(void() {
+        a = use_signal<int>(0);
+        int count = order_size - a.get();
+        Column(Style{}, void() { for (i in 0..count) { text_number(i); } });
+    });
+    ui_frame();
+    *Node list = ui.root.children.data[0];
+    int keep = list.children.data[3].id;
+    a.set(2); ui_frame();
+    check(ops[6] == 2 && ops[5] == 0 && ops[3] == 0, "unkeyed shrink removes the tail only");
+    check(ui.root.children.data[0].children.data[3].id == keep, "unkeyed positions keep their nodes");
+    ui_shutdown(); balanced("large unkeyed leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -387,6 +456,7 @@ int main() {
     effect_order(); printf("PASS effect order\n");
     cleanup_lifetime(); printf("PASS cleanup state lifetime\n");
     identity(); printf("PASS identity\n");
+    large_lists(); printf("PASS large lists\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");
