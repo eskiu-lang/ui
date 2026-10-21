@@ -16,16 +16,18 @@ struct Observer {
     List<*Source> deps;
     bool dirty;
     bool evaluating;
+    bool queued;
     fn()->void compute;
     fn()->void cleanup;
     bool has_cleanup;
     *Source output;
 }
-struct Slot { int kind; *void tag; *void data; fn()->void dispose; }
+struct Slot { int kind; *void tag; *void data; fn()->void dispose; *Observer observer; }
 struct Node {
     int id;
     int generation;
     int kind;
+    int depth;
     Key key;
     int gap;
     int padding;
@@ -54,8 +56,14 @@ struct Ui {
     *Node root;
     *Node builder;
     *Observer tracking;
-    List<*Node> nodes;
-    List<*Observer> observers;
+    // Index = node id; null once the node is unmounted.
+    List<*Node> by_id;
+    // Work lists, so a frame touches only what changed.
+    List<*Node> next_nodes;
+    List<*Node> render_writes;
+    List<*Node> looping;
+    List<*Observer> dirty_memos;
+    List<*Observer> dirty_effects;
     List<Mutation> mutations;
     List<fn()->void> writes;
     List<fn()->void> retired;
@@ -65,7 +73,6 @@ struct Ui {
     int phase;
     int sequence;
     bool in_flight;
-    int next_id;
 }
 *Ui ui;
 
@@ -110,14 +117,48 @@ void ui_track(*Source source) {
     source.readers.push(observer);
 }
 
+void ui_drop_from(List<*Node>* list, *Node node) {
+    for (int i = list.size - 1; i >= 0; i--) {
+        if (list.data[i] == node) { list.remove(i); return; }
+    }
+}
+
+void ui_schedule(*Node node) {
+    if (node.next) { return; }
+    node.next = true;
+    ui.next_nodes.push(node);
+}
+
+void ui_queue(List<*Observer>* list, *Observer observer) {
+    if (observer.queued) { return; }
+    observer.queued = true;
+    list.push(observer);
+}
+
+void ui_unqueue(List<*Observer>* list, *Observer observer) {
+    if (!observer.queued) { return; }
+    observer.queued = false;
+    for (int i = list.size - 1; i >= 0; i--) {
+        if (list.data[i] == observer) { list.remove(i); return; }
+    }
+}
+
 void ui_changed(*Source source) {
+    if (ui == null) { return; }
     for (i in 0..source.readers.size) {
         *Observer observer = source.readers.data[i];
         observer.dirty = true;
-        if (observer.kind == 1) { ui_stale_memos(observer.output); }
-        if (observer.kind == 0) {
-            observer.owner.next = true;
-            if (ui != null && ui.phase == 1) { observer.owner.render_write = true; }
+        if (observer.kind == 1) {
+            ui_queue(&ui.dirty_memos, observer);
+            ui_stale_memos(observer.output);
+        } else if (observer.kind == 2) {
+            ui_queue(&ui.dirty_effects, observer);
+        } else {
+            ui_schedule(observer.owner);
+            if (ui.phase == 1 && !observer.owner.render_write) {
+                observer.owner.render_write = true;
+                ui.render_writes.push(observer.owner);
+            }
         }
     }
 }
@@ -127,6 +168,7 @@ void ui_stale_memos(*Source source) {
         *Observer reader = source.readers.data[i];
         if (reader.kind == 1 && !reader.dirty) {
             reader.dirty = true;
+            ui_queue(&ui.dirty_memos, reader);
             ui_stale_memos(reader.output);
         }
     }
@@ -160,15 +202,12 @@ void ui_validate(*Observer observer) {
     *Observer observer = alloc<Observer>(1);
     observer.kind = kind;
     observer.owner = owner;
-    ui.observers.push(observer);
     return observer;
 }
 
 void ui_drop_observer(*Observer observer) {
     ui_untrack(observer);
-    for (i in 0..ui.observers.size) {
-        if (ui.observers.data[i] == observer) { ui.observers.remove(i); break; }
-    }
+    ui_unqueue(observer.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, observer);
     if (observer.has_cleanup) { observer.cleanup(); ui_release_closure(observer.cleanup); }
     if (observer.kind != 0) { ui_release_closure(observer.compute); }
     observer.deps.free();
@@ -242,6 +281,7 @@ struct Memo<T> { Signal<T> signal; fn()->T callback; bool initialized; }
         memo = alloc<Memo<T>>(1);
         slot.data = memo;
         *Observer observer = ui_observer(1, ui.builder);
+        slot.observer = observer;
         observer.output = &memo.signal.source;
         memo.signal.source.memo = observer;
         observer.compute = void() {
@@ -260,6 +300,7 @@ struct Memo<T> { Signal<T> signal; fn()->T callback; bool initialized; }
     } else { free_closure(memo.callback); }
     memo.callback = callback;
     memo.signal.source.memo.dirty = true;
+    ui_queue(&ui.dirty_memos, memo.signal.source.memo);
     return &memo.signal;
 }
 
@@ -270,10 +311,12 @@ void use_effect(escaping fn()->void callback) {
     if (effect == null) {
         effect = ui_observer(2, ui.builder);
         slot.data = effect;
+        slot.observer = effect;
         slot.dispose = void() { ui_drop_observer(effect); };
     } else { ui_release_closure(effect.compute); }
     effect.compute = callback;
     effect.dirty = true;
+    ui_queue(&ui.dirty_effects, effect);
 }
 
 void on_cleanup(escaping fn()->void callback) {
@@ -328,17 +371,21 @@ void ui_run(*Node node) {
 void ui_unmount(*Node node) {
     for (int i = node.children.size - 1; i >= 0; i--) { ui_unmount(node.children.data[i]); }
     ui_emit(6, node, 0);
-    node.next = false;
+    if (node.next) { ui_drop_from(&ui.next_nodes, node); node.next = false; }
+    if (node.render_write) { ui_drop_from(&ui.render_writes, node); node.render_write = false; }
+    if (node.loop_frames > 0) { ui_drop_from(&ui.looping, node); node.loop_frames = 0; }
     node.current = false;
     node.seen = false;
     // Detach dependencies immediately, destroy resources after renderer completion.
     ui_untrack(node.observer);
-    for (i in 0..ui.observers.size) {
-        if (ui.observers.data[i].owner == node) { ui_untrack(ui.observers.data[i]); }
+    for (i in 0..node.slots.size) {
+        *Observer hook = node.slots.data[i].observer;
+        if (hook != null) {
+            ui_untrack(hook);
+            ui_unqueue(hook.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, hook);
+        }
     }
-    for (i in 0..ui.nodes.size) {
-        if (ui.nodes.data[i] == node) { ui.nodes.remove(i); break; }
-    }
+    ui.by_id.data[node.id] = null;
     // Every unmount cleanup runs while ALL retired state is still alive. A cleanup
     // may read a signal registered after its own hook, or state in a sibling scope.
     ui.finalizers.push(void() {
@@ -395,12 +442,13 @@ void ui_unmount(*Node node) {
     bool fresh = node == null;
     if (fresh) {
         node = alloc<Node>(1);
-        node.id = ++ui.next_id;
+        node.id = ui.by_id.size;
         node.generation = 1;
         node.kind = kind; node.key = style.key; node.parent = parent;
+        node.depth = parent.depth + 1;
         node.fresh = true;
         node.observer = ui_observer(0, node);
-        ui.nodes.push(node);
+        ui.by_id.push(node);
         ui_emit(1, node, 0);
     } else {
         fn()->void old_block = node.block;
@@ -442,18 +490,58 @@ void Button_owned(string text, escaping fn()->void handler, escaping fn()->void 
 void ui_init(*Ui runtime, escaping fn(*Mutation, int)->void apply) {
     ui = runtime;
     ui.apply = apply;
+    ui.by_id.push(null);
     *Node root = alloc<Node>(1);
-    root.id = ++ui.next_id;
+    root.id = ui.by_id.size;
     root.block = void() {}; root.handler = void() {}; root.handler_cleanup = void() {};
     root.observer = ui_observer(0, root);
     ui.root = root;
-    ui.nodes.push(root);
+    ui.by_id.push(root);
 }
 
 void ui_mount(escaping fn()->void block) {
     ui_require(!ui.root.next && !ui.root.mounted, "already mounted");
     ui.root.block = block;
-    ui.root.next = true;
+    ui_schedule(ui.root);
+}
+
+// The indices of `depths` ordered by depth, ties in their order (a counting sort: stable
+// and linear). Parents come before children.
+List<int> ui_by_depth(List<int>* depths) {
+    int deepest = 0;
+    for (i in 0..depths.size) { if (depths.data[i] > deepest) { deepest = depths.data[i]; } }
+    List<int> starts;
+    for (i in 0..deepest + 2) { starts.push(0); }
+    for (i in 0..depths.size) { starts.data[depths.data[i] + 1]++; }
+    for (i in 1..deepest + 2) { starts.data[i] += starts.data[i - 1]; }
+    List<int> order;
+    for (i in 0..depths.size) { order.push(0); }
+    for (i in 0..depths.size) { order.data[starts.data[depths.data[i]]++] = i; }
+    starts.free();
+    return order;
+}
+
+// One pass over the effects dirty at completion, parents first and, within a depth, in
+// the order they were scheduled. An effect dirtied again after it ran waits for the next
+// commit.
+void ui_run_effects() {
+    List<*Observer> due = ui.dirty_effects;
+    ui.dirty_effects = List<*Observer>{};
+    List<int> depths;
+    for (i in 0..due.size) { depths.push(due.data[i].owner.depth); }
+    List<int> order = ui_by_depth(&depths);
+    for (i in 0..order.size) {
+        *Observer effect = due.data[order.data[i]];
+        effect.queued = false;
+        if (!effect.dirty) { continue; }
+        if (effect.has_cleanup) {
+            effect.cleanup(); ui_release_closure(effect.cleanup); effect.has_cleanup = false;
+        }
+        ui_validate(effect);
+    }
+    order.free();
+    depths.free();
+    due.free();
 }
 
 void ui_complete(int sequence) {
@@ -471,7 +559,7 @@ void ui_complete(int sequence) {
     ui.retired.size = 0;
     ui.mutations.size = 0;
     ui.phase = 2;
-    ui_run_effects(ui.root);
+    ui_run_effects();
     ui.phase = 0;
     // Events that arrived while the commit was in flight, in arrival order.
     for (i in 0..ui.events.size) {
@@ -479,22 +567,6 @@ void ui_complete(int sequence) {
         ui_dispatch_now(event.id, event.generation);
     }
     ui.events.size = 0;
-}
-
-void ui_run_effects(*Node node) {
-    if (node == null) { return; }
-    for (i in 0..node.slots.size) {
-        Slot slot = node.slots.data[i];
-        if (slot.kind == 2) {
-            *Observer effect = (*Observer)slot.data;
-            if (!effect.dirty) { continue; }
-            if (effect.has_cleanup) {
-                effect.cleanup(); ui_release_closure(effect.cleanup); effect.has_cleanup = false;
-            }
-            ui_validate(effect);
-        }
-    }
-    for (i in 0..node.children.size) { ui_run_effects(node.children.data[i]); }
 }
 
 // A throw out of a block, handler or effect is not caught by the runtime: the program
@@ -505,50 +577,65 @@ void ui_require_consistent() {
         "runtime left mid-phase (an exception escaped a block, handler or effect)");
 }
 
+bool ui_memo_work() {
+    for (i in 0..ui.dirty_memos.size) {
+        *Observer memo = ui.dirty_memos.data[i];
+        if (memo.dirty && memo.output.readers.size > 0) { return true; }
+    }
+    return false;
+}
+
 bool ui_frame() {
     ui_require_consistent();
     ui_require(!ui.in_flight, "frame while commit in flight");
     // Validate observed memos even when their consumers have not been scheduled yet.
-    for (i in 0..ui.observers.size) {
-        *Observer memo = ui.observers.data[i];
-        if (memo.kind == 1 && memo.dirty && memo.output.readers.size > 0) { ui_validate(memo); }
+    // Validation can queue more memos; the loop reaches them too.
+    for (int i = 0; i < ui.dirty_memos.size; i++) {
+        *Observer memo = ui.dirty_memos.data[i];
+        memo.queued = false;
+        if (memo.dirty && memo.output.readers.size > 0) { ui_validate(memo); }
     }
-    bool work = false;
-    for (i in 0..ui.nodes.size) {
-        *Node node = ui.nodes.data[i];
-        node.current = node.next; node.next = false;
-        if (node.current) { work = true; }
+    ui.dirty_memos.size = 0;
+    if (ui.next_nodes.size == 0 && ui.dirty_effects.size == 0) { return false; }
+    List<*Node> due = ui.next_nodes;
+    ui.next_nodes = List<*Node>{};
+    List<int> depths;
+    for (i in 0..due.size) {
+        due.data[i].next = false; due.data[i].current = true;
+        depths.push(due.data[i].depth);
     }
-    if (!work) {
-        for (i in 0..ui.observers.size) {
-            if (ui.observers.data[i].kind == 2 && ui.observers.data[i].dirty) { work = true; }
-        }
-    }
-    if (!work) { return false; }
+    // Parents before children: a parent's run re-runs a dirty child and clears it.
+    List<int> order = ui_by_depth(&depths);
     ui.phase = 1;
-    // Tree traversal instead of allocation order: keyed moves can change tree order.
-    ui_render_dirty(ui.root);
+    for (i in 0..order.size) {
+        *Node node = due.data[order.data[i]];
+        if (node.current) { ui_run(node); }
+    }
+    order.free();
+    depths.free();
+    due.free();
     for (i in 0..ui.writes.size) {
         fn()->void write = ui.writes.data[i];
         write(); ui_release_closure(write);
     }
     ui.writes.size = 0;
-    for (i in 0..ui.nodes.size) {
-        *Node node = ui.nodes.data[i];
-        node.loop_frames = node.render_write ? node.loop_frames + 1 : 0;
-        node.render_write = false;
-        ui_require(node.loop_frames < 100, "render loop (100 frames)");
+    for (i in 0..ui.looping.size) {
+        if (!ui.looping.data[i].render_write) { ui.looping.data[i].loop_frames = 0; }
     }
+    ui.looping.size = 0;
+    for (i in 0..ui.render_writes.size) {
+        *Node node = ui.render_writes.data[i];
+        node.render_write = false;
+        node.loop_frames++;
+        ui_require(node.loop_frames < 100, "render loop (100 frames)");
+        ui.looping.push(node);
+    }
+    ui.render_writes.size = 0;
     ui.phase = 0;
     ui.sequence++;
     ui.in_flight = true;
     ui.apply(ui.mutations.data, ui.mutations.size);
     return true;
-}
-
-void ui_render_dirty(*Node node) {
-    if (node.current) { ui_run(node); return; }
-    for (i in 0..node.children.size) { ui_render_dirty(node.children.data[i]); }
 }
 
 // Dispatch now, or queue until the commit in flight completes. Returns false only for an
@@ -563,24 +650,16 @@ bool ui_event(int id, int generation) {
 }
 
 bool ui_dispatch_now(int id, int generation) {
-    for (i in 0..ui.nodes.size) {
-        *Node node = ui.nodes.data[i];
-        if (node.id == id && node.generation == generation && node.kind == 4) {
-            node.handler(); return true;
-        }
-    }
-    return false;
+    if (id <= 0 || id >= ui.by_id.size) { return false; }
+    *Node node = ui.by_id.data[id];
+    if (node == null || node.generation != generation || node.kind != 4) { return false; }
+    node.handler();
+    return true;
 }
 
 bool ui_needs_frame() {
     if (ui == null || ui.in_flight) { return false; }
-    for (i in 0..ui.nodes.size) { if (ui.nodes.data[i].next) { return true; } }
-    for (i in 0..ui.observers.size) {
-        *Observer observer = ui.observers.data[i];
-        if (observer.dirty && (observer.kind == 2 ||
-            (observer.kind == 1 && observer.output.readers.size > 0))) { return true; }
-    }
-    return false;
+    return ui.next_nodes.size > 0 || ui.dirty_effects.size > 0 || ui_memo_work();
 }
 
 void ui_shutdown() {
@@ -591,7 +670,9 @@ void ui_shutdown() {
     ui.apply(ui.mutations.data, ui.mutations.size);
     ui_require(!ui.in_flight, "prototype shutdown requires synchronous renderer");
     free_closure(ui.apply);
-    ui.nodes.free(); ui.observers.free(); ui.mutations.free(); ui.writes.free(); ui.retired.free();
+    ui.by_id.free(); ui.next_nodes.free(); ui.render_writes.free(); ui.looping.free();
+    ui.dirty_memos.free(); ui.dirty_effects.free();
+    ui.mutations.free(); ui.writes.free(); ui.retired.free();
     ui.finalizers.free(); ui.events.free();
     ui = null;
 }

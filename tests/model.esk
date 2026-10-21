@@ -38,9 +38,9 @@ void check(bool ok, string label) { ui_require(ok, label); }
 void balanced(string label) { check(ui_live_allocations() == 0, label); }
 
 *Node keyed(int64 value) {
-    for (i in 0..ui.nodes.size) {
-        *Node node = ui.nodes.data[i];
-        if (node.key.set && node.key.value == value) { return node; }
+    for (i in 0..ui.by_id.size) {
+        *Node node = ui.by_id.data[i];
+        if (node != null && node.key.set && node.key.value == value) { return node; }
     }
     abort(); return null;
 }
