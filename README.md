@@ -93,16 +93,21 @@ share.
 | Name | What it does |
 |---|---|
 | `Column(Style, fn()->void)`, `Row(...)` | A container; its block emits the children. |
+| `Scroll(Style, fn()->void)` | A column whose content scrolls when it is taller than its space. |
 | `Scope(string name, Key, fn()->void)` | A component's own scope (state and identity); `name` appears in diagnostics. |
 | `Text(string)` | A text node. The text is copied. Format it with `<string>`'s `String_format`, which `-Wformat` checks. |
 | `Button(string, fn()->void)` | A button and its handler. `Button_owned` adds a cleanup, run when the handler is replaced or unmounted. |
-| `Style{key, gap, padding}`, `key(int64)` | Layout props; `key` sets identity among siblings. |
+| `TextInput(Input, fn(string)->void)` | A controlled text field: `Input{value, placeholder, label, focused}`; the handler gets each edit (borrowed for the call). `TextInput_focus` adds a focus handler. |
+| `Image(Style, string source)` | An image from an http(s) URL or a bundled file; give it a width and height. |
+| `Style{key, gap, padding, label, width, height, grow, wrap}`, `key(int64)` | Layout props and the accessible name (`label`: ARIA label, `accessibilityLabel`, `contentDescription`, an image's alt text); `key` sets identity among siblings. |
+| `ui_insets()`, `ui_is_active()` | The system bars, cutouts and keyboard (`Insets`, in points) and whether the app is in the foreground; reading them subscribes. |
 | `use_signal<T>(T)` | State owned by the current scope, by call order. |
 | `signal_new<T>(T)`, `Signal_free` | State owned by the app's model: it outlives mounts and works with no runtime. |
 | `Signal_get`, `Signal_set` | Read (and subscribe), write. A write during render applies after the render phase. |
 | `use_memo<T>(fn()->T)` | A derived value, computed lazily; readers wake only when its value changes. |
 | `use_effect(fn()->void)`, `on_cleanup(fn()->void)` | Work after each commit of its scope, parents first; the cleanup runs before the next run and at unmount. |
-| `ui_init`, `ui_mount`, `ui_frame`, `ui_complete`, `ui_event`, `ui_needs_frame`, `ui_shutdown` | The host's side: create, render a frame, report a commit complete, deliver events. |
+| `ui_init`, `ui_mount`, `ui_frame`, `ui_complete`, `ui_needs_frame`, `ui_shutdown` | The host's side: create, render a frame, report a commit complete. |
+| `ui_event`, `ui_event_text`, `ui_event_focus`, `ui_set_insets`, `ui_set_active` | Events and environment from the host; an event during a commit is queued, its text copied. |
 | `ui_decode(*uint8, int, List<Mutation>*)` | A commit as records, for tests and tools. Native hosts use `hosts/ui_commit.h`. |
 | `ui.lenient` | Release behavior: a duplicate key warns and the later child is unkeyed instead of stopping. |
 
@@ -124,7 +129,7 @@ the handler's cleanup releases it.
 
 | Platform | Renderer | Checked |
 |---|---|---|
-| Web | `web/renderer.mjs` over the DOM, wasm through emscripten | Node with a recording DOM, Chromium |
+| Web | `web/renderer.mjs` over the DOM, wasm through emscripten | Node with a recording DOM, Chromium, WKWebView |
 | iOS | UIKit + Yoga, Objective-C++ host (`ios/host.mm`) | iPhone simulator, iOS 27 |
 | Android | `android.view` + Yoga, Java activity and JNI shim (`android/`) | arm64 emulator, API 35 |
 | macOS | the web renderer in WKWebView (`desktop/host.m`) | macOS 27 |
@@ -132,8 +137,15 @@ the handler's cleanup releases it.
 | Physical phones | not yet | |
 
 The native hosts are thin platform shims with a C API toward the Eskiu core; components and
-state are Eskiu. Yoga 3.2.1 is downloaded for the iOS build, not vendored. The Android host
-draws behind the status bar for now; safe insets come with the renderer phase.
+state are Eskiu. Yoga 3.2.1 is downloaded for the iOS build, not vendored. By default the
+root sits inside the safe area and above the keyboard; an app that returns 1 from
+`ui_edge_to_edge` gets the whole screen and pads itself from `ui_insets()`. The web gives a
+CSS flexbox with Yoga's defaults (border-box sizes, no shrinking, zero minimum size).
+
+**Conformance.** `examples/conformance.esk` is one scene every renderer draws; each reports
+the frame and accessibility role of every labeled element and the handler log after a fixed
+script (two taps, typing "abc"). `tools/conformance.py` compares them with the frames the
+scene must have (within one point) on iOS, Android and the web; all three pass.
 
 ## Measurements
 
@@ -167,7 +179,7 @@ These are first baselines, not presentation-time or physical-device numbers;
 
 | iOS | Android | macOS |
 |---|---|---|
-| ![Counter on iOS with UIKit and Yoga](screenshots/counter-ios.png) | ![Counter on Android with android.view and Yoga](screenshots/counter-android.png) | ![TODO in the macOS WKWebView host](screenshots/todo-macos.png) |
+| ![Counter on iOS with UIKit and Yoga](screenshots/counter-ios.png) | ![TODO on Android with android.view and Yoga](screenshots/todo-android.png) | ![TODO in the macOS WKWebView host](screenshots/todo-macos.png) |
 
 ## Contributing
 
@@ -184,7 +196,8 @@ python3 -m http.server 8765 --directory build/web   # ?example=counter or ?examp
 git clone --depth 1 --branch v3.2.1 https://github.com/react/yoga.git build/yoga
 python3 tools/check_ios.py         # a booted simulator (DEVICE to pick one)
 python3 tools/check_android.py     # SDK 35, NDK 28.2, a booted arm64 device (ANDROID_SERIAL)
-python3 tools/check_desktop.py     # a WKWebView window running the web build
+python3 tools/check_desktop.py     # a WKWebView window running the web build (an awake display)
+python3 tools/conformance.py       # the conformance scene on every available host
 ```
 
 `tools/check.py` counts every allocation, closure environments included, by pointing the
