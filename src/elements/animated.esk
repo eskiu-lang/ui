@@ -1,0 +1,42 @@
+// Animated values: a number that moves to its target over time, for what the host's
+// transitions cannot animate (a count, a progress, a value drawn as text).
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// Progress `t` (0 to 1000) through the Easing curve, 0 to 1000 (a spring overshoots a little).
+int ui_ease(int easing, int t) {
+    double x = t / 1000.0;
+    double y = x;
+    if (easing == EaseOut) { y = 1 - (1 - x) * (1 - x) * (1 - x); }
+    else if (easing == EaseIn) { y = x * x * x; }
+    else if (easing == EaseInOut) { y = x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) * (-2 * x + 2) * (-2 * x + 2) / 2; }
+    else if (easing == EaseSpring) {
+        double c = 1.70158 * 1.2;
+        y = 1 + (c + 1) * (x - 1) * (x - 1) * (x - 1) + c * (x - 1) * (x - 1);
+    }
+    return (int)(y * 1000 + (y >= 0 ? 0.5 : -0.5));
+}
+
+// The value on its way to `target`: it starts there, and when `target` changes it moves from
+// where it is to the new one over `ms` milliseconds along `easing`, rendering its readers
+// about sixty times a second until it arrives.
+int use_animated(int target, int ms, int easing) {
+    *Signal<int> shown = use_signal<int>(target);
+    *Signal<int> goal = use_signal<int>(target);
+    *Signal<int> from = use_signal<int>(target);
+    *Signal<int> elapsed = use_signal<int>(0);
+    if (goal.value != target) {
+        from.set(shown.value);
+        goal.set(target);
+        elapsed.set(0);
+    }
+    bool running = goal.value != target || shown.get() != target;
+    use_interval(running ? 16 : 0, void() {
+        int e = elapsed.value + 16;
+        int t = ms <= 0 || e >= ms ? 1000 : e * 1000 / ms;
+        int start = from.value;
+        int end = goal.value;
+        elapsed.set(e);
+        shown.set(t >= 1000 ? end : start + (int)((int64)(end - start) * ui_ease(easing, t) / 1000));
+    });
+    return shown.get();
+}

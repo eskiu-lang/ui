@@ -318,3 +318,29 @@ void network() {
     ui_fetch(FetchRequest{url: "https://example.com"}, void(FetchResult r) {});
     ui_shutdown(); balanced("network leak");
 }
+
+int animated_seen;
+*Signal<int> animated_target;
+int animated_token;
+bool animated_armed;
+
+void animated_values() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_set_timer_host(void(int token, int ms, bool repeat) { animated_token = token; animated_armed = true; },
+        void(int token) { animated_armed = false; });
+    ui_mount(void() {
+        animated_target = use_signal<int>(0);
+        animated_seen = use_animated(animated_target.get(), 160, EaseLinear);
+    });
+    ui_frame();
+    check(animated_seen == 0 && !animated_armed, "at rest: no clock");
+    animated_target.set(100); ui_frame();
+    check(animated_seen == 0 && animated_armed, "a new target starts the clock from where it was");
+    for (i in 0..5) { ui_event_timer(animated_token); ui_frame(); }
+    check(animated_seen == 50, "halfway after half the time (linear)");
+    for (i in 0..5) { ui_event_timer(animated_token); ui_frame(); }
+    check(animated_seen == 100 && !animated_armed, "there, and the clock stops");
+    check(ui_ease(EaseOut, 500) > 500 && ui_ease(EaseIn, 500) < 500 && ui_ease(EaseSpring, 800) > 1000, "the curves");
+    ui_shutdown(); balanced("animated leak");
+}

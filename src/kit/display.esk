@@ -32,11 +32,14 @@ void Separator() { Row(Style{height: 1, background: kit.line}, void() {}); }
 
 void VSeparator() { Row(Style{width: 1, background: kit.line}, void() {}); }
 
-// `value` of `max` as a filled track.
+// `value` of `max` as a filled track, which moves to a new value.
 void ProgressBar(int value, int max) {
-    int done = value < 0 ? 0 : value > max ? max : value;
-    Row(Style{height: 8, radius: 4, gap: 0, background: kit.track, label: "Progress"}, void() {
-        if (done > 0) { Row(Style{grow: done, background: kit.primary, radius: 4}, void() {}); }
-        if (max - done > 0) { Row(Style{grow: max - done}, void() {}); }
+    int done = max <= 0 ? 0 : value < 0 ? 0 : value > max ? 1000 : value * 1000 / max;
+    Scope("ProgressBar", Key{}, void() {
+        int shown = use_animated(done, 300, EaseOut);
+        Row(Style{height: 8, radius: 4, gap: 0, background: kit.track, label: "Progress"}, void() {
+            if (shown > 0) { Row(Style{grow: shown, background: kit.primary, radius: 4}, void() {}); }
+            if (1000 - shown > 0) { Row(Style{grow: 1000 - shown}, void() {}); }
+        });
     });
 }
