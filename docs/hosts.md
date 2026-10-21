@@ -28,6 +28,7 @@ shim: the app, its components and its state are the same Eskiu code everywhere.
 | modal | `div role=dialog` over the page | a view over the window | a view over the window |
 | alert | `dialog` | `UIAlertController` | `AlertDialog` |
 | status bar | nothing | the view controller's status bar | `WindowInsetsController` |
+| screen | a `div`, `display: none` under the top | a `UIView`, hidden under the top; slides in and out | a view group, gone under the top; slides in and out |
 | native view | a `div` holding the factory's element | a `UIView` holding the factory's view | a `FrameLayout` holding the factory's view |
 
 Labels become `aria-label` (an image's `alt`), `accessibilityLabel` and

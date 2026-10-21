@@ -20,12 +20,15 @@ node id (`u32`):
 | 7 | listen | nothing: the node now has a handler |
 | 8 | unlisten | nothing |
 | 9 | string prop | prop `u8` (1 label, 2 placeholder, 3 image source, 4 native view type), length `u32`, the bytes, a NUL |
-| 10 | command | the id is a request id, not a node: command `u8` (1 alert: title, message, then the buttons; 2 open a URL), count `u8`, then that many strings, each a length `u32`, the bytes and a NUL |
+| 10 | command | the id is a request id, not a node: command `u8` (1 alert: title, message, then the buttons; 2 open a URL; 3 the web's history: `push` route, `replace` route, `back`, `reset` routes...), count `u8`, then that many strings, each a length `u32`, the bytes and a NUL |
 | 11 | named prop | a native view's prop: the name (length `u32`, bytes, NUL), then the value (the same) |
 
 A native view gets its type as string prop 4 when it is created (again if it changes), then
 its named props as op 11. The host makes the view the type's factory registered and puts it
 inside the node's box ([native code](native.md)).
+
+A node's removal comes before its descendants', so a host can keep a leaving screen's
+content while it slides out.
 
 The buffer belongs to the core: the host reads it during `apply` and copies what it keeps.
 `hosts/commit.h` is a C decoder for native hosts; `ui_decode` in `src/core/wire.esk` decodes
@@ -42,6 +45,7 @@ it into `Mutation` records for tests and tools.
 | 4 | button | 11 | status bar (no view) |
 | 5 | text input | 12 | modal (a column on a layer over the window, laid out on its own) |
 | 6 | scroll | 13 | native view (registered with the host by type) |
+| | | 14 | screen (a column filling its navigator; only the active one shows) |
 
 ### Int props
 
@@ -58,6 +62,7 @@ it into `Mutation` records for tests and tools.
 | 9 | text color (RGBA, 0: default) | 20 | status bar style (`BarStyle`) |
 | 10 | font size | 21 | status bar hidden (1 or 0) |
 | 11 | font weight | 22 | refreshing (a scroll with a RefreshControl) |
+| | | 23 | active (1 or 0: the screen on top of its navigator) |
 
 A text input's value is its text (op 3). Sizes are points.
 
@@ -94,6 +99,7 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_alert(request, choice)` | an alert was answered (-1 dismissed) |
 | `ui_dispatch_native(channel, payload)` | a native module posted an event (`use_native_event`) |
 | `ui_dispatch_view(id, gen, name, payload)` | a native view sent an event (`NativeView`'s `on_event`) |
+| `ui_dispatch_route(route, index)` | the browser went back or forward to `route`, at `index` in the app's history entries |
 | `ui_report_back()` | Android's back: returns 1 when the app handled it |
 | `ui_report_insets(top, right, bottom, left, keyboard)`, `ui_report_window(w, h, scale)`, `ui_report_active(active)`, `ui_report_link(url)` | the environment |
 | `ui_tick()` | render the frame the host scheduled |

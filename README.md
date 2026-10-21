@@ -48,6 +48,8 @@ void Counter() {
 - **Linear updates.** 10,000 rows mount, reverse or unmount in under 10 ms.
 - **Checked rules.** Hooks, keys and memos are checked, and a misuse stops with where it
   happened: `in Column[0] > TodoRow[key 3]`.
+- **Navigation.** A router's stack of routes is screens on the phone, with their slides and
+  back gestures, and pages with URLs and history on the web.
 - **Native code.** An app or a package ships modules and views per platform in `native/`
   (Objective-C or Swift, Java, Kotlin or C, JavaScript), with Maven and Swift package
   dependencies from `ui.toml`. See [native code](docs/native.md).
@@ -78,6 +80,7 @@ layout.
 | [Components](docs/components.md) | `<ui>` and `<ui/kit>` |
 | [Style and layout](docs/style-and-layout.md) | `Style`, colors, flexbox |
 | [The platform](docs/platform.md) | Insets, window, status bar, back, links, alerts, modals |
+| [Navigation](docs/navigation.md) | Screens and pages, back, links, the browser's history |
 | [Native code](docs/native.md) | Modules and views per platform, `ui.toml`, Gradle and Swift packages |
 | [Protocol](docs/protocol.md), [Hosts](docs/hosts.md) | For writing a host |
 | [Testing](docs/testing.md) | Tests, host checks, conformance, measurements |

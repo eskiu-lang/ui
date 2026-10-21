@@ -189,6 +189,10 @@ Next to `eskiu.toml`, in the app and in any package. The tool merges every packa
 [app]
 name = "Tasks"                   # the name people see (default: the package's name)
 id = "com.example.tasks"         # bundle id and Android package (default: org.eskiu.app.NAME)
+scheme = "tasks"                 # links tasks://route open the app (see navigation.md)
+
+[web]
+base = "/tasks/"                 # where the page is served from (default "/")
 
 [ios]
 frameworks = ["CoreLocation"]    # system frameworks to link

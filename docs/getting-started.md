@@ -91,6 +91,7 @@ Each directory in `examples/` is a project like the one above:
 | `tasks` | a whole app: header, progress card, filters, a styled field, a virtual list of cards |
 | `kit-gallery` | every `<ui/kit>` component |
 | `native` | a native module and a native view on every platform ([native code](native.md)) |
+| `navigation` | screens and pages: a list, a page per item, links ([navigation](navigation.md)) |
 
 ```bash
 cd examples/tasks && ui run ios

@@ -80,6 +80,17 @@ These are described in [the platform](platform.md).
 
 See [native code](native.md) for the platform side.
 
+### Navigation
+
+| Name | What it is |
+|---|---|
+| `router_new(root)`, `Router_free` | A stack of routes, owned by the app's model. |
+| `Navigator(*Router, fn(string)->void screen)` | The stack as screens; the ones under the top stay mounted. |
+| `router.push`, `back`, `replace`, `reset`, `path`, `depth`, `at` | Change and read the stack. |
+| `route_match(pattern, route, *List<String> params)` | `"/places/:id"` against a route. |
+
+See [navigation](navigation.md).
+
 ### State
 
 `use_signal`, `signal_new`, `use_memo`, `use_effect`, `on_cleanup`, `use_string` and

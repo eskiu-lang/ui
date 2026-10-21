@@ -12,6 +12,7 @@ window on macOS.
 | [Components](components.md) | Every element and every kit component, with their arguments |
 | [Style and layout](style-and-layout.md) | `Style`, flexbox through Yoga, colors, the web's Yoga defaults |
 | [The platform](platform.md) | Insets and the keyboard, the window, foreground state, the status bar, back, links, alerts, modals |
+| [Navigation](navigation.md) | Screens and pages: routers, navigators, back, links, the browser's history |
 | [Native code](native.md) | Modules and views per platform, `ui.toml`, Gradle and Swift packages |
 | [Protocol](protocol.md) | The commit format a renderer reads, events back, commits and ids |
 | [Hosts](hosts.md) | How each platform draws the tree: web, iOS, Android, macOS |
