@@ -64,6 +64,12 @@ work is scheduled. `app.html` starts the app, reports the window and the URL, an
 page's styles. The output is `build/ui/web/`: `index.html`, the JavaScript, the wasm module
 and the assets.
 
+Under `ui serve`, the tool's server adds a script to `index.html` as it serves it (the built
+file is unchanged). The script asks `/__ui/wait?v=N`, which answers when the build after N
+is done (or after 25 seconds) with `{"version", "error"}`: the page reloads after a build
+that worked and shows a failed one's output over the app. The server answers from eight
+threads, so a page that waits does not hold up the others.
+
 ## iOS
 
 `ui build ios` cross-compiles the app for the simulator (`arm64-apple-ios15.0-simulator`),

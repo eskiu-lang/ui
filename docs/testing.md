@@ -19,7 +19,8 @@ python3 tools/check.py # everything below, with an eskiu checkout
 `tests/rejections.esk` (each misuse stops with its message: a render loop, a changed hook,
 a duplicate key, a memo cycle, an uncaught exception, the runtime left mid-phase, a
 misplaced RefreshControl, the scope path in a message), the headless counter, and builds the
-`ui` tool and checks `ui new`.
+`ui` tool and checks `ui new` and `ui serve` (with a stand-in compiler,
+`tests/fake_eskiuc.sh`: the page's wait answers each build, a failed one with its output).
 
 `tools/check.py` also:
 

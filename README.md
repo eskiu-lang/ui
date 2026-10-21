@@ -70,6 +70,7 @@ Views use explicit lambdas for now; trailing blocks, planned for Eskiu 0.13, wil
 git clone https://github.com/eskiu-lang/ui && eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
 ui new myapp && cd myapp
 ui run web        # or macos, ios, android
+ui serve          # builds again and reloads on each change
 ```
 
 [Getting started](docs/getting-started.md) has what each platform needs and a project's

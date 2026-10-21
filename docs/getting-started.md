@@ -35,6 +35,22 @@ ui run android        # a device, or the first emulator it finds
 `ui new NAME --ui PATH` depends on a local checkout instead of GitHub. `ui build TARGET`
 builds without running.
 
+## The development loop
+
+```bash
+ui serve              # the web: builds, serves, and reloads the page after each change
+ui serve macos        # the same in the macOS window
+ui serve ios          # each change installs and launches the app on the simulator again
+ui serve android      # the same on the device or emulator
+```
+
+`ui serve` watches what a build reads: `src/`, `native/`, `assets/` and `ui.toml` of the
+app and of every package it depends on, and `eskiu.toml` and `eskiu.lock`. After a change it
+builds again. On the web and in the macOS window, the page reloads once the build is done,
+keeping its route and its saved data. A failed build shows the compiler's errors over the
+app until the next one builds; the app keeps running underneath. On a phone the tool
+installs and launches the app again, so it starts from its first screen.
+
 `src/main.esk` is the app:
 
 ```eskiu
