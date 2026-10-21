@@ -43,8 +43,10 @@ export function createHost(root, dispatch) {
           parentNode(m.parent).insertBefore(node, m.before ? nodes.get(m.before) : null);
         } else if (m.op === 6) { node.remove(); nodes.delete(m.id); }
         else if (m.op === 7 || m.op === 8) node.dataset.listening = String(m.op === 7);
+        // Props: the code in kind (1 gap, 2 padding), the value in before.
         else if (m.op === 2 && node.dataset.kind <= 2) {
-          node.style.gap = `${m.kind}px`; node.style.padding = `${m.before}px`;
+          if (m.kind === 1) node.style.gap = `${m.before}px`;
+          else if (m.kind === 2) node.style.padding = `${m.before}px`;
         } else if (m.op === 2) { /* Leaf views keep their platform control padding. */ }
         else throw new Error(`unknown operation ${m.op}`);
       }

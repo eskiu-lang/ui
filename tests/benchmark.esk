@@ -1,7 +1,7 @@
 import "../examples/components.esk";
 extern double ui_clock_ms();
 
-void host(*Mutation items, int n) { ui_complete(ui.sequence); }
+void host(*uint8 data, int len) { ui_complete(ui.sequence); }
 
 void benchmark(int rows, int frames) {
     Store model;

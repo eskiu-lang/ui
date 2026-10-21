@@ -1,0 +1,36 @@
+// Decodes an Eskiu ui commit (the byte format documented in src/ui.esk) into one call
+// per record. Shared by the native hosts; header-only, C and C++.
+#ifndef UI_COMMIT_H
+#define UI_COMMIT_H
+#include <stdint.h>
+
+typedef void (*ui_commit_fn)(int op, int id, int generation, int parent, int before,
+                             int kind, const char *text);
+
+static inline int ui_commit_u32(const uint8_t *p) {
+    return (int)((uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+                 ((uint32_t)p[3] << 24));
+}
+
+// Props arrive as op 2 with the prop code in `kind` and its value in `before`.
+static inline void ui_commit_each(const uint8_t *data, int len, ui_commit_fn apply) {
+    int at = 0;
+    while (at < len) {
+        int op = data[at];
+        int id = ui_commit_u32(data + at + 1);
+        at += 5;
+        int generation = 0, parent = 0, before = 0, kind = 0;
+        const char *text = 0;
+        if (op == 1) { generation = ui_commit_u32(data + at); kind = data[at + 4]; at += 5; }
+        else if (op == 2) { kind = data[at]; before = ui_commit_u32(data + at + 1); at += 5; }
+        else if (op == 3) {
+            int n = ui_commit_u32(data + at);
+            text = (const char *)(data + at + 4);
+            at += 4 + n + 1;
+        } else if (op == 4 || op == 5) {
+            parent = ui_commit_u32(data + at); before = ui_commit_u32(data + at + 4); at += 8;
+        }
+        apply(op, id, generation, parent, before, kind, text);
+    }
+}
+#endif

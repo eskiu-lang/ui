@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <yoga/Yoga.h>
+#include "../hosts/ui_commit.h"
 #include <unordered_map>
 #include <cstdint>
 #include <cstdlib>
@@ -44,7 +45,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         else YGNodeStyleSetFlexDirection(node, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
     } else if (nodes.count(id)) {
         YGNodeRef node = nodes.at(id);
-        if (op == 2) { YGNodeStyleSetGap(node, YGGutterAll, kind); YGNodeStyleSetPadding(node, YGEdgeAll, before); }
+        // Props: the code in kind (1 gap, 2 padding), the value in before.
+        if (op == 2) {
+            if (kind == 1) YGNodeStyleSetGap(node, YGGutterAll, before);
+            else if (kind == 2) YGNodeStyleSetPadding(node, YGEdgeAll, before);
+        }
         else if (op == 3) YGNodeMarkDirty(node);
         else if (op == 4 || op == 5) {
             YGNodeRef owner = nodes.count(parent) ? nodes.at(parent) : root;
@@ -61,6 +66,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
     env->CallVoidMethod(activity, applyMethod, op, id, generation, parent, before, kind, value);
     if (value) env->DeleteLocalRef(value);
     checked();
+}
+extern "C" void ui_host_ready();
+extern "C" void ui_host_commit(const uint8_t *data, int len) {
+    ui_commit_each(data, len, ui_host_apply);
+    ui_host_ready();
 }
 extern "C" void ui_host_ready() {
     YGNodeCalculateLayout(root, env->CallFloatMethod(activity, widthMethod), env->CallFloatMethod(activity, heightMethod), YGDirectionLTR);

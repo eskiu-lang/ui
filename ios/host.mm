@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CADisplayLink.h>
 #include <yoga/Yoga.h>
+#include "../hosts/ui_commit.h"
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -104,8 +105,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
     UiHostNode *node = nodes[@(id)];
     if (!node) { if (op == 6) return; abort(); }
     if (op == 2) {
-        YGNodeStyleSetGap(node.yoga, YGGutterAll, kind);
-        YGNodeStyleSetPadding(node.yoga, YGEdgeAll, before);
+        // Props: the code in kind (1 gap, 2 padding), the value in before.
+        if (kind == 1) YGNodeStyleSetGap(node.yoga, YGGutterAll, before);
+        else if (kind == 2) YGNodeStyleSetPadding(node.yoga, YGEdgeAll, before);
     } else if (op == 3) {
         NSString *value = [NSString stringWithUTF8String:text ? text : ""];
         if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).text = value;
@@ -131,6 +133,12 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         [nodes removeObjectForKey:@(id)];
     } else if (op == 7 || op == 8) { node.view.userInteractionEnabled = op == 7; }
     else abort();
+}
+
+extern "C" void ui_host_ready(void);
+extern "C" void ui_host_commit(const uint8_t *data, int len) {
+    ui_commit_each(data, len, ui_host_apply);
+    ui_host_ready();
 }
 
 extern "C" void ui_host_ready(void) {

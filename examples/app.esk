@@ -1,6 +1,6 @@
 import "components.esk";
-extern void ui_host_apply(int op, int id, int generation, int parent, int before, int kind, string text);
-extern void ui_host_ready();
+// The host applies a whole commit (the format in src/ui.esk) and lays it out.
+extern void ui_host_commit(*uint8 data, int len);
 extern void ui_host_schedule();
 extern void ui_host_cancel();
 Ui app;
@@ -27,12 +27,8 @@ void ui_stop() {
 void ui_start(int example) {
     if (app_active) { ui_stop(); }
     app_active = true;
-    ui_init(&app, void(*Mutation items, int n) {
-        for (i in 0..n) {
-            Mutation m = items[i];
-            ui_host_apply(m.op, m.id, m.generation, m.parent, m.before, m.kind, m.text);
-        }
-        ui_host_ready();
+    ui_init(&app, void(*uint8 data, int len) {
+        ui_host_commit(data, len);
         ui_complete(ui.sequence);
     });
     if (example == 0) { ui_mount(void() { Counter(); }); }

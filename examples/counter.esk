@@ -2,10 +2,13 @@ import "components.esk";
 
 int main() {
     Ui runtime;
-    ui_init(&runtime, void(*Mutation items, int n) {
-        for (i in 0..n) {
-            if (items[i].op == 3) { printf("%s\n", items[i].text); }
+    ui_init(&runtime, void(*uint8 data, int len) {
+        List<Mutation> items;
+        ui_decode(data, len, &items);
+        for (i in 0..items.size) {
+            if (items.data[i].op == 3) { printf("%s\n", items.data[i].text); }
         }
+        items.free();
         ui_complete(ui.sequence);
     });
     ui_mount(void() { Counter(); });

@@ -2,7 +2,7 @@ import "../src/ui.esk";
 *Signal<int> revision;
 int mode;
 *Signal<int> cyclic;
-void host(*Mutation items, int n) { ui_complete(ui.sequence); }
+void host(*uint8 data, int len) { ui_complete(ui.sequence); }
 
 int main(int argc, string* argv) {
     ui_require(argc == 2, "expected rejection mode");
