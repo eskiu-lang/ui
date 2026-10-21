@@ -53,6 +53,7 @@ static int commitCount;
 static double commitTime;
 static bool selfTest;
 static bool conformance;
+static bool nativeTest;
 static int launchExample;
 static std::vector<double> frameTimes;
 static CADisplayLink *frameLink;
@@ -549,6 +550,36 @@ static void runTodoTest(void) {
 
 // Places the root: inside the safe area and above the keyboard, unless the app draws edge
 // to edge; either way the raw insets go to the app.
+// The native example (scene 6): ticks from its clock module, its UISlider's events and the
+// value prop sent back; prints the result and exits.
+static void runNativeTest(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        int ticks = 0;
+        UISlider *slider = nil;
+        for (UiHostNode *node in nodes.allValues) {
+            if ([node.view isKindOfClass:UILabel.class] && [((UILabel *)node.view).text hasPrefix:@"Ticks: "]) {
+                ticks = [((UILabel *)node.view).text substringFromIndex:7].intValue;
+            }
+            if ([node.nativeView isKindOfClass:UISlider.class]) slider = (UISlider *)node.nativeView;
+        }
+        bool initial = slider && lroundf(slider.value) == 30 && findView(UILabel.class, @"Volume: 30");
+        slider.value = 64;
+        [slider sendActionsForControlEvents:UIControlEventValueChanged];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            bool changed = findView(UILabel.class, @"Volume: 64") != nil;
+            [(UIButton *)findView(UIButton.class, @"Mute") sendActionsForControlEvents:UIControlEventTouchUpInside];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                bool muted = findView(UILabel.class, @"Volume: 0") != nil && lroundf(slider.value) == 0;
+                bool pass = ticks >= 1 && initial && changed && muted;
+                printf("iOS native: %s ticks=%d initial=%d changed=%d muted=%d\n", pass ? "PASS" : "FAIL", ticks, initial,
+                       changed, muted);
+                fflush(stdout);
+                exit(pass ? 0 : 1);
+            });
+        });
+    });
+}
+
 @interface UiController : UIViewController
 @property(nonatomic) CGFloat keyboard;
 @end
@@ -749,8 +780,9 @@ static void runConformance(void) {
     [controller.view addSubview:rootView];
     rootYoga = YGNodeNew();
     YGNodeStyleSetFlexDirection(rootYoga, YGFlexDirectionColumn);
-    ui_start(conformance ? 3 : launchExample);
+    ui_start(conformance ? 3 : nativeTest ? 6 : launchExample);
     if (conformance) runConformance();
+    if (nativeTest) runNativeTest();
     if (selfTest) {
         dispatch_async(dispatch_get_main_queue(), ^{
             UIButton *button = nil;
@@ -789,6 +821,7 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--self-test")) selfTest = true;
         if (!strcmp(argv[i], "--conformance")) conformance = true;
+        if (!strcmp(argv[i], "--native-test")) nativeTest = true;
         if (!strcmp(argv[i], "--example") && i + 1 < argc) launchExample = atoi(argv[i + 1]);
     }
     @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(UiDelegate.class)); }
