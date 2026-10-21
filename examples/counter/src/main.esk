@@ -2,7 +2,7 @@
 import "counter.esk";
 
 void ui_app_start(int which) {
-    ui_mount(void() { Counter(); });
+    ui_mount() { Counter(); }
 }
 
 void ui_app_stop() {}

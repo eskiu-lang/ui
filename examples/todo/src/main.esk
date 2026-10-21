@@ -5,7 +5,7 @@ void ui_app_start(int which) {
     todo_store.init();
     todo_store.add("Try Eskiu UI");
     todo_store.add("Reorder without losing state");
-    ui_mount(void() { TodoApp(&todo_store); });
+    ui_mount() { TodoApp(&todo_store); }
 }
 
 void ui_app_stop() { todo_store.free(); }

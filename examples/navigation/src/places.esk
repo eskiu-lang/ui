@@ -66,134 +66,133 @@ void open_place(*Router router, int id, string suffix) {
 // The flag in a rounded tile of the place's soft color.
 void FlagTile(Place p, int size) {
     Row(Style{width: size, height: size, radius: size / 4, background: p.soft, align: AlignCenter,
-              justify: JustifyCenter}, void() { TextWith(Style{font_size: size / 2}, p.flag); });
+              justify: JustifyCenter}) { TextWith(Style{font_size: size / 2}, p.flag); }
 }
 
 void Featured(*Router router) {
     Place p = place(1);
     Pressable(Style{padding: 22, gap: 6, radius: 24, background: p.color, label: "Featured: Kyoto"},
-        void() { open_place(router, 1, ""); }, void() {
-            Row(Style{}, void() {
-                Row(Style{padding: 6, radius: 10, background: white_soft()}, void() {
-                    TextWith(Style{font_size: 12, font_weight: 700, color: white()}, "TRIP OF THE MONTH");
-                });
-            });
-            Row(Style{height: 18}, void() {});
-            TextWith(Style{font_size: 32, font_weight: 800, color: white()}, "Kyoto in April");
-            TextWith(Style{font_size: 15, color: rgba(255, 255, 255, 225)}, "Cherry blossoms, temples and tea houses.");
-        });
+        void() { open_place(router, 1, ""); }) {
+        Row(Style{}) {
+            Row(Style{padding: 6, radius: 10, background: white_soft()}) {
+                TextWith(Style{font_size: 12, font_weight: 700, color: white()}, "TRIP OF THE MONTH");
+            }
+        }
+        Row(Style{height: 18}) {}
+        TextWith(Style{font_size: 32, font_weight: 800, color: white()}, "Kyoto in April");
+        TextWith(Style{font_size: 15, color: rgba(255, 255, 255, 225)}, "Cherry blossoms, temples and tea houses.");
+    }
 }
 
 void PlaceRow(*Router router, int id) {
     Place p = place(id);
     Pressable(Style{padding: 14, radius: 18, background: card(), border_width: 1, border_color: line(), label: p.name},
-        void() { open_place(router, id, ""); }, void() {
-            Row(Style{gap: 14, align: AlignCenter}, void() {
-                FlagTile(p, 52);
-                Column(Style{grow: 1, gap: 2}, void() {
-                    TextWith(Style{font_size: 17, font_weight: 700, color: ink()}, p.name);
-                    String detail;
-                    defer String_free(&detail);
-                    String_format(&detail, "%s · best in %s", p.country, p.season);
-                    TextWith(Style{font_size: 14, color: muted()}, detail.data);
-                });
-                Row(Style{padding: 6, radius: 10, background: primary_soft()}, void() {
-                    String stars;
-                    defer String_free(&stars);
-                    String_format(&stars, "★ %s", p.rating);
-                    TextWith(Style{font_size: 13, font_weight: 700, color: primary()}, stars.data);
-                });
-            });
-        });
+        void() { open_place(router, id, ""); }) {
+        Row(Style{gap: 14, align: AlignCenter}) {
+            FlagTile(p, 52);
+            Column(Style{grow: 1, gap: 2}) {
+                TextWith(Style{font_size: 17, font_weight: 700, color: ink()}, p.name);
+                String detail;
+                defer String_free(&detail);
+                String_format(&detail, "%s · best in %s", p.country, p.season);
+                TextWith(Style{font_size: 14, color: muted()}, detail.data);
+            }
+            Row(Style{padding: 6, radius: 10, background: primary_soft()}) {
+                String stars;
+                defer String_free(&stars);
+                String_format(&stars, "★ %s", p.rating);
+                TextWith(Style{font_size: 13, font_weight: 700, color: primary()}, stars.data);
+            }
+        }
+    }
 }
 
 void PlaceList(*Router router) {
-    Scroll(Style{grow: 1, background: page(), gap: 0}, void() {
-        Column(Style{padding: 20, gap: 16}, void() {
-            Row(Style{height: ui_insets().top}, void() {});
-            Row(Style{align: AlignCenter, gap: 12}, void() {
-                Column(Style{grow: 1, gap: 2}, void() {
+    Scroll(Style{grow: 1, background: page(), gap: 0}) {
+        Column(Style{padding: 20, gap: 16}) {
+            Row(Style{height: ui_insets().top}) {}
+            Row(Style{align: AlignCenter, gap: 12}) {
+                Column(Style{grow: 1, gap: 2}) {
                     TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "Good morning");
                     TextWith(Style{font_size: 32, font_weight: 800, color: ink()}, "Explore");
-                });
+                }
                 Avatar("ED", 44);
-            });
+            }
             Featured(router);
-            Row(Style{align: AlignCenter}, void() {
+            Row(Style{align: AlignCenter}) {
                 TextWith(Style{grow: 1, font_size: 20, font_weight: 700, color: ink()}, "Popular places");
                 TextWith(Style{font_size: 14, color: muted()}, "4 places");
-            });
+            }
             for (i in 0..kPlaces) { PlaceRow(router, i); }
-        });
-    });
+        }
+    }
 }
 
 void Stat(string label, string value) {
     // A width of 1 and a share of the row: the three take equal parts.
     Column(Style{width: 1, grow: 1, padding: 14, gap: 2, radius: 16, background: card(), border_width: 1, border_color: line(),
-                 label: label}, void() {
+                 label: label}) {
         TextWith(Style{font_size: 13, color: muted()}, label);
         TextWith(Style{font_size: 18, font_weight: 700, color: ink()}, value);
-    });
+    }
 }
 
 void Todo(Place p, string text) {
-    Row(Style{gap: 12, align: AlignCenter}, void() {
-        Row(Style{width: 10, height: 10, radius: 5, background: p.color}, void() {});
+    Row(Style{gap: 12, align: AlignCenter}) {
+        Row(Style{width: 10, height: 10, radius: 5, background: p.color}) {}
         TextWith(Style{grow: 1, font_size: 16, color: ink()}, text);
-    });
+    }
 }
 
 void PlacePage(*Router router, int id) {
     Place p = place(id);
-    Scroll(Style{grow: 1, background: page(), gap: 0}, void() {
-        Column(Style{padding: 20, gap: 8, background: p.color}, void() {
-            Row(Style{height: ui_insets().top}, void() {});
-            Row(Style{}, void() {
+    Scroll(Style{grow: 1, background: page(), gap: 0}) {
+        Column(Style{padding: 20, gap: 8, background: p.color}) {
+            Row(Style{height: ui_insets().top}) {}
+            Row(Style{}) {
                 Pressable(Style{padding: 10, radius: 14, background: white_soft(), label: "Back"},
-                    void() { router.back(); }, void() {
-                        TextWith(Style{font_size: 15, font_weight: 700, color: white()}, "‹  Places");
-                    });
-            });
-            Row(Style{height: 28}, void() {});
+                    void() { router.back(); }) {
+                    TextWith(Style{font_size: 15, font_weight: 700, color: white()}, "‹  Places");
+                }
+            }
+            Row(Style{height: 28}) {}
             TextWith(Style{font_size: 52}, p.flag);
             TextWith(Style{font_size: 40, font_weight: 800, color: white()}, p.name);
             TextWith(Style{font_size: 17, color: rgba(255, 255, 255, 225)}, p.country);
-            Row(Style{height: 8}, void() {});
-        });
-        Column(Style{padding: 20, gap: 18}, void() {
-            Row(Style{gap: 10}, void() {
+            Row(Style{height: 8}) {}
+        }
+        Column(Style{padding: 20, gap: 18}) {
+            Row(Style{gap: 10}) {
                 String stars;
                 defer String_free(&stars);
                 String_format(&stars, "★ %s", p.rating);
                 Stat("Rating", stars.data);
                 Stat("Best time", p.month);
                 Stat("Flight", p.flight);
-            });
+            }
             TextWith(Style{font_size: 17, color: ink()}, p.blurb);
-            Column(Style{padding: 18, gap: 14, radius: 18, background: card(), border_width: 1, border_color: line()},
-                void() {
-                    TextWith(Style{font_size: 18, font_weight: 700, color: ink()}, "Things to do");
-                    Todo(p, p.todo1);
-                    Todo(p, p.todo2);
-                    Todo(p, p.todo3);
-                });
+            Column(Style{padding: 18, gap: 14, radius: 18, background: card(), border_width: 1, border_color: line()}) {
+                TextWith(Style{font_size: 18, font_weight: 700, color: ink()}, "Things to do");
+                Todo(p, p.todo1);
+                Todo(p, p.todo2);
+                Todo(p, p.todo3);
+            }
             ButtonWith(Style{padding: 16, radius: 16, background: ink(), color: white(), font_size: 17, font_weight: 700},
-                "Plan a trip", void() { open_place(router, id, "/plan"); });
-        });
-    });
+                "Plan a trip") { open_place(router, id, "/plan"); }
+        }
+    }
 }
 
 void PlanPage(*Router router, int id) {
     Place p = place(id);
-    Column(Style{grow: 1, background: page(), gap: 0}, void() {
-        Row(Style{height: ui_insets().top, background: card()}, void() {});
+    Column(Style{grow: 1, background: page(), gap: 0}) {
+        Row(Style{height: ui_insets().top, background: card()}) {}
         String title;
         defer String_free(&title);
         String_format(&title, "Trip to %s", p.name);
-        NavBar(title.data, void() { KitButton("Back", VariantGhost, void() { router.back(); }); });
-        Column(Style{padding: 20, gap: 16}, void() {
-            Card(void() {
+        NavBar(title.data) { KitButton("Back", VariantGhost, void() { router.back(); }); }
+        Column(Style{padding: 20, gap: 16}) {
+            Card() {
                 // The day leaving, as year * 10000 + month * 100 + day (a signal holds a number).
                 *Signal<int> leaving = use_signal<int>(20261112);
                 *Signal<int> travelers = use_signal<int>(1);
@@ -207,28 +206,28 @@ void PlanPage(*Router router, int id) {
                 Select("Just me\nTwo people\nA family of four", travelers.get(), void(int i) { travelers.set(i); });
                 TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "Budget");
                 SegmentedControl("Saver\nComfort\nLuxury", budget.get(), void(int i) { budget.set(i); });
-            });
-            Card(void() {
+            }
+            Card() {
                 *Signal<bool> flights = use_signal<bool>(true);
                 *Signal<bool> hotel = use_signal<bool>(true);
                 *Signal<bool> guide = use_signal<bool>(false);
                 Checkbox("Flights", flights.get(), void(bool on) { flights.set(on); });
                 Checkbox("Hotel", hotel.get(), void(bool on) { hotel.set(on); });
                 Checkbox("A local guide", guide.get(), void(bool on) { guide.set(on); });
-            });
-            KitButton("Save the plan", VariantPrimary, void() {
+            }
+            KitButton("Save the plan", VariantPrimary) {
                 String saved;
                 defer String_free(&saved);
                 String_format(&saved, "Your trip to %s is saved", p.name);
                 kit_toast(saved.data);
                 router.reset("/");
-            });
-        });
-    });
+            }
+        }
+    }
 }
 
 void Places(*Router router) {
-    Column(Style{grow: 1, gap: 0}, void() {
+    Column(Style{grow: 1, gap: 0}) {
         // Light status bar text over a place's cover, dark elsewhere.
         bool cover = place_id(router.path(), "/places/:id") >= 0;
         StatusBar(cover ? BarLight : BarDark, false);
@@ -240,5 +239,5 @@ void Places(*Router router) {
             else { PlaceList(router); }
         });
         ToastHost();
-    });
+    }
 }

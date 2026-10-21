@@ -11,10 +11,10 @@ void NumberText(string label, int value) {
 }
 
 void Counter() {
-    Column(Style{padding: 16}, void() {
+    Column(Style{padding: 16}) {
         *Signal<int> count = use_signal<int>(0);
         Text("Eskiu counter");
         NumberText("Count: ", count.get());
-        Button("Increment", void() { count.set(count.get() + 1); });
-    });
+        Button("Increment") { count.set(count.get() + 1); }
+    }
 }

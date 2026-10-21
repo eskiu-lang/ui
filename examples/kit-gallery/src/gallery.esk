@@ -5,10 +5,10 @@ void KitGallery() {
     // Light or dark, as the system is.
     kit_follow_system();
     StatusBar(kit.dark ? BarLight : BarDark, false);
-    Column(Style{grow: 1, background: kit.page, gap: 0}, void() {
-        NavBar("Kit", void() { Avatar("ED", 36); });
+    Column(Style{grow: 1, background: kit.page, gap: 0}) {
+        NavBar("Kit") { Avatar("ED", 36); }
         Separator();
-        Scroll(Style{grow: 1, padding: 16, gap: 16, label: "Gallery"}, void() {
+        Scroll(Style{grow: 1, padding: 16, gap: 16, label: "Gallery"}) {
             *Signal<bool> notify = use_signal<bool>(true);
             *Signal<bool> weekly = use_signal<bool>(false);
             *Signal<int> plan = use_signal<int>(1);
@@ -17,107 +17,107 @@ void KitGallery() {
             *Signal<int> steps = use_signal<int>(3);
             *StringState email = use_string("");
 
-            Card(void() {
+            Card() {
                 TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Badges and avatars");
-                Row(Style{gap: 8, wrap: true}, void() {
+                Row(Style{gap: 8, wrap: true}) {
                     Badge("Neutral", ToneNeutral);
                     Badge("Primary", TonePrimary);
                     Badge("Success", ToneSuccess);
                     Badge("Warning", ToneWarning);
                     Badge("Danger", ToneDanger);
-                });
-                Row(Style{gap: 8, align: AlignCenter}, void() {
+                }
+                Row(Style{gap: 8, align: AlignCenter}) {
                     Avatar("AB", 40);
                     Avatar("CD", 40);
                     AvatarImage("logo.png", 40, "Eskiu");
-                });
-            });
+                }
+            }
 
-            Card(void() {
+            Card() {
                 TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Buttons");
-                Row(Style{gap: 8, wrap: true}, void() {
-                    KitButton("Primary", VariantPrimary, void() { steps.set(steps.get() + 1); });
-                    KitButton("Secondary", VariantSecondary, void() { steps.set(steps.get() - 1); });
-                    KitButton("Ghost", VariantGhost, void() {});
-                    KitButton("Danger", VariantDanger, void() { steps.set(0); });
-                });
+                Row(Style{gap: 8, wrap: true}) {
+                    KitButton("Primary", VariantPrimary) { steps.set(steps.get() + 1); }
+                    KitButton("Secondary", VariantSecondary) { steps.set(steps.get() - 1); }
+                    KitButton("Ghost", VariantGhost) {}
+                    KitButton("Danger", VariantDanger) { steps.set(0); }
+                }
                 ProgressBar(steps.get(), 5);
-            });
+            }
 
-            Card(void() {
+            Card() {
                 TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Forms");
                 TextField(email.get(), "Email", void(string text) { email.set(text); });
                 Checkbox("Email notifications", notify.get(), void(bool on) { notify.set(on); });
                 Checkbox("Weekly summary", weekly.get(), void(bool on) { weekly.set(on); });
                 Separator();
                 RadioGroup("Free\nPro\nTeam", plan.get(), void(int i) { plan.set(i); });
-            });
+            }
 
-            Card(void() {
+            Card() {
                 TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Navigation");
                 SegmentedControl("Day\nWeek\nMonth", view.get(), void(int i) { view.set(i); });
                 TabBar("Overview\nActivity\nSettings", tab.get(), void(int i) { tab.set(i); });
                 TextWith(Style{font_size: 15, color: kit.muted},
                     tab.get() == 0 ? "Everything at a glance." : tab.get() == 1 ? "What changed lately." : "How it works.");
-            });
+            }
 
-            Card(void() {
+            Card() {
                 TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Overlays");
                 *Signal<int> sort = use_signal<int>(0);
                 *Signal<int> day = use_signal<int>(21);
                 *Signal<int64> color = use_signal<int64>(0x6366F1FF);
                 Select("Newest first\nOldest first\nBy name", sort.get(), void(int i) { sort.set(i); });
-                Row(Style{gap: 12, align: AlignCenter}, void() {
-                    Column(Style{grow: 1, gap: 0}, void() {
+                Row(Style{gap: 12, align: AlignCenter}) {
+                    Column(Style{grow: 1, gap: 0}) {
                         DatePicker(Date{2026, 10, day.get()}, void(Date d) { day.set(d.day); });
-                    });
+                    }
                     ColorPicker(color.get(), void(int64 c) { color.set(c); });
-                });
-                Row(Style{gap: 12, align: AlignCenter}, void() {
+                }
+                Row(Style{gap: 12, align: AlignCenter}) {
                     DropdownMenu("Share", "Copy link\nEmail\nMessages", void(int i) {
                         kit_toast(i == 0 ? "Link copied" : i == 1 ? "Opening Mail" : "Opening Messages");
                     });
-                    Tooltip("Shows a message for a moment", void() {
-                        KitButton("Toast", VariantGhost, void() { kit_toast("Saved to your library"); });
-                    });
-                });
-            });
+                    Tooltip("Shows a message for a moment") {
+                        KitButton("Toast", VariantGhost) { kit_toast("Saved to your library"); }
+                    }
+                }
+            }
 
-            Card(void() {
+            Card() {
                 TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Gestures");
                 // Swipe a row left to delete it; each row is keyed, so the others keep their state.
                 *Signal<int> deleted = use_signal<int>(0);
                 for (i in 0..3) {
                     int row = i;
                     if ((deleted.get() & (1 << row)) != 0) { continue; }
-                    Column(Style{key: key(row), gap: 0}, void() {
-                        SwipeToDelete("Delete", void() { deleted.set(deleted.get() | (1 << row)); }, void() {
-                            ListItem(row == 0 ? "Inbox" : row == 1 ? "Drafts" : "Archive", "Swipe left to delete", void() {});
-                        });
-                    });
+                    Column(Style{key: key(row), gap: 0}) {
+                        SwipeToDelete("Delete", void() { deleted.set(deleted.get() | (1 << row)); }) {
+                            ListItem(row == 0 ? "Inbox" : row == 1 ? "Drafts" : "Archive", "Swipe left to delete") {}
+                        }
+                    }
                 }
                 if (deleted.get() == 7) { KitButton("Bring them back", VariantSecondary, void() { deleted.set(0); }); }
-            });
+            }
 
-            Accordion(void() {
-                Collapsible("What is Eskiu?", void() {
+            Accordion() {
+                Collapsible("What is Eskiu?") {
                     TextWith(Style{font_size: 15, color: kit.muted}, "A systems language that compiles through LLVM.");
-                });
+                }
                 Separator();
-                Collapsible("Where does ui run?", void() {
+                Collapsible("Where does ui run?") {
                     TextWith(Style{font_size: 15, color: kit.muted}, "iOS, Android, the web and the desktop.");
-                });
-            });
+                }
+            }
 
-            Toolbar(void() {
-                KitButton("Bold", VariantGhost, void() {});
+            Toolbar() {
+                KitButton("Bold", VariantGhost) {}
                 VSeparator();
-                KitButton("Italic", VariantGhost, void() {});
-            });
+                KitButton("Italic", VariantGhost) {}
+            }
 
-            ListItem("Account", "Name, email and password", void() {});
-            ListItem("Notifications", "", void() {});
-        });
+            ListItem("Account", "Name, email and password") {}
+            ListItem("Notifications", "") {}
+        }
         ToastHost();
-    });
+    }
 }

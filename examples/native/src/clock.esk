@@ -22,14 +22,14 @@ void NativeSlider(string label, int value, escaping fn(int)->void on_change) {
 }
 
 void Clock() {
-    Column(Style{grow: 1, padding: 24, gap: 16}, void() {
+    Column(Style{grow: 1, padding: 24, gap: 16}) {
         *Signal<int> ticks = use_signal<int>(0);
         *Signal<int> volume = use_signal<int>(30);
         use_native_event("clock", void(string payload) { ticks.set(ticks.get() + 1); });
-        use_effect(void() {
+        use_effect() {
             clock_start(1000);
-            on_cleanup(void() { clock_stop(); });
-        });
+            on_cleanup() { clock_stop(); }
+        }
         TextWith(Style{font_size: 28, font_weight: 700}, "Native code");
         String line;
         defer String_free(&line);
@@ -39,6 +39,6 @@ void Clock() {
         String_format(&line, "Volume: %d", volume.get());
         Text(line.data);
         NativeSlider("Volume", volume.get(), void(int v) { volume.set(v); });
-        Button("Mute", void() { volume.set(0); });
-    });
+        Button("Mute") { volume.set(0); }
+    }
 }

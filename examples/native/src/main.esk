@@ -2,7 +2,7 @@
 import "clock.esk";
 
 void ui_app_start(int which) {
-    ui_mount(void() { Clock(); });
+    ui_mount() { Clock(); }
 }
 
 void ui_app_stop() {}

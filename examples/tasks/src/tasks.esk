@@ -64,31 +64,31 @@ void Chip(string name, int value, *Signal<int> filter) {
     bool selected = filter.get() == value;
     Pressable(Style{padding: 10, radius: 18, border_width: 1, border_color: selected ? ink() : line(),
                     background: selected ? ink() : card(), label: name},
-        void() { filter.set(value); }, void() {
-            Label(Style{font_size: 14, font_weight: 600, color: selected ? card() : ink()}, name);
-        });
+        void() { filter.set(value); }) {
+        Label(Style{font_size: 14, font_weight: 600, color: selected ? card() : ink()}, name);
+    }
 }
 
 void TaskRow(*TaskStore store, int index) {
     Task task = store.tasks.data[index];
     Row(Style{height: 60, padding: 14, gap: 12, align: AlignCenter, background: card(), radius: 14,
-              border_width: 1, border_color: line(), label: task.title}, void() {
+              border_width: 1, border_color: line(), label: task.title}) {
         Pressable(Style{width: 24, height: 24, radius: 12, border_width: 2,
                         border_color: task.done ? success() : rgb(209, 213, 219),
                         background: task.done ? success() : -1, align: AlignCenter, justify: JustifyCenter,
                         label: task.done ? "Mark as not done" : "Mark as done"},
-            void() { store.toggle(task.id); }, void() {
-                if (task.done) { Label(Style{font_size: 13, font_weight: 700, color: card()}, "✓"); }
-            });
+            void() { store.toggle(task.id); }) {
+            if (task.done) { Label(Style{font_size: 13, font_weight: 700, color: card()}, "✓"); }
+        }
         Label(Style{grow: 1, font_size: 16, font_weight: 500, color: task.done ? muted() : ink()}, task.title);
-        Row(Style{padding: 6, radius: 8, background: tag_background(task.tag)}, void() {
+        Row(Style{padding: 6, radius: 8, background: tag_background(task.tag)}) {
             Label(Style{font_size: 12, font_weight: 600, color: tag_color(task.tag)}, tag_name(task.tag));
-        });
-    });
+        }
+    }
 }
 
 void TasksApp(*TaskStore store) {
-    Column(Style{grow: 1, padding: 20, gap: 16, background: page()}, void() {
+    Column(Style{grow: 1, padding: 20, gap: 16, background: page()}) {
         StatusBar(BarDark, false);
         *Signal<int> filter = use_signal<int>(0);
         *StringState draft = use_string("");
@@ -102,55 +102,55 @@ void TasksApp(*TaskStore store) {
             if (shown) { store.visible.push(i); }
         }
 
-        Row(Style{gap: 12, align: AlignCenter}, void() {
+        Row(Style{gap: 12, align: AlignCenter}) {
             Image(Style{width: 44, height: 44, radius: 22, label: "Eskiu"}, "logo.png");
-            Column(Style{gap: 2, grow: 1}, void() {
+            Column(Style{gap: 2, grow: 1}) {
                 Label(Style{font_size: 26, font_weight: 700, color: ink()}, "Today");
                 String date;
                 defer String_free(&date);
                 time_format(time_now_s(), "%A, %B %d", TIME_LOCAL, &date);
                 Label(Style{font_size: 14, color: muted()}, date.data);
-            });
+            }
             Row(Style{width: 40, height: 40, radius: 20, background: primary_soft(), align: AlignCenter,
-                      justify: JustifyCenter, label: "Account"}, void() {
+                      justify: JustifyCenter, label: "Account"}) {
                 Label(Style{font_size: 15, font_weight: 700, color: primary()}, "ED");
-            });
-        });
+            }
+        }
 
-        Column(Style{background: primary(), radius: 20, padding: 20, gap: 10, label: "Progress"}, void() {
+        Column(Style{background: primary(), radius: 20, padding: 20, gap: 10, label: "Progress"}) {
             String count;
             defer String_free(&count);
             String_format(&count, "%d of %d", done, total);
             String percent;
             defer String_free(&percent);
             String_format(&percent, "%d%%", total == 0 ? 0 : done * 100 / total);
-            Row(Style{justify: JustifyBetween, align: AlignCenter}, void() {
+            Row(Style{justify: JustifyBetween, align: AlignCenter}) {
                 Label(Style{font_size: 14, font_weight: 600, color: rgba(255, 255, 255, 210)}, "Daily progress");
                 Label(Style{font_size: 14, font_weight: 600, color: card()}, count.data);
-            });
+            }
             Label(Style{font_size: 34, font_weight: 800, color: card()}, percent.data);
-            Row(Style{height: 8, radius: 4, gap: 0, background: rgba(255, 255, 255, 70)}, void() {
+            Row(Style{height: 8, radius: 4, gap: 0, background: rgba(255, 255, 255, 70)}) {
                 if (done > 0) { Row(Style{grow: done, background: card(), radius: 4}, void() {}); }
                 if (total - done > 0) { Row(Style{grow: total - done}, void() {}); }
-            });
-        });
+            }
+        }
 
-        Row(Style{gap: 8}, void() {
+        Row(Style{gap: 8}) {
             Chip("All", 0, filter);
             Chip("Active", 1, filter);
             Chip("Done", 2, filter);
-        });
+        }
 
-        Row(Style{gap: 10, align: AlignCenter}, void() {
+        Row(Style{gap: 10, align: AlignCenter}) {
             TextInput(Input{value: draft.get(), placeholder: "Add a task", label: "New task",
                             style: Style{grow: 1, padding: 12, radius: 12, background: card(), border_width: 1,
                                          border_color: line(), font_size: 16}},
                 void(string text) { draft.set(text); });
             ButtonWith(Style{background: primary(), color: card(), radius: 12, padding: 12, font_size: 16,
-                             font_weight: 600}, "Add", void() {
+                             font_weight: 600}, "Add") {
                 if (draft.get()[0] != 0) { store.add(draft.get(), 0, false); draft.set(""); }
-            });
-        });
+            }
+        }
 
         if (store.visible.size == 0) {
             Label(Style{font_size: 15, color: muted()}, "Nothing here yet");
@@ -158,5 +158,5 @@ void TasksApp(*TaskStore store) {
         FlatList(Style{grow: 1, label: "Tasks"}, store.visible.size, 68, void(int i) {
             TaskRow(store, store.visible.data[i]);
         });
-    });
+    }
 }

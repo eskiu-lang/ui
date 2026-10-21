@@ -2,7 +2,7 @@
 import "gallery.esk";
 
 void ui_app_start(int which) {
-    ui_mount(void() { KitGallery(); });
+    ui_mount() { KitGallery(); }
 }
 
 void ui_app_stop() {}
