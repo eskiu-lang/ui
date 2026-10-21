@@ -55,6 +55,18 @@ on each change, in a file in the app's data directory (on the web, the page's
 web), reported before the app starts, so `ui_app_start` can read from it; `<fs>` works in it
 for anything larger.
 
+## Mounting
+
+```eskiu
+use_mount(void() { sensor_start(); }, void() { sensor_stop(); });
+```
+
+`use_mount(on_mount, on_unmount)` calls `on_mount` once, when the scope first renders, and
+`on_unmount` when the scope unmounts. It is for what lives exactly as long as a component, such
+as a subscription to a sensor or a native module, which `use_effect` would stop and start again
+after every render that changed something it read. The closures later renders pass are
+dropped.
+
 ## Timers
 
 ```eskiu
@@ -73,7 +85,7 @@ tick reaches the handler on the UI thread like any event, so it may set signals.
 ## The hooks rule
 
 Hooks (`use_signal`, `use_memo`, `use_effect`, `use_string`, `use_back`,
-`use_native_event`, `use_interval`, `use_timeout`, `use_animated`) are matched by the order a block calls
+`use_native_event`, `use_interval`, `use_timeout`, `use_animated`, `use_mount`) are matched by the order a block calls
 them in. A block must call the
 same hooks, of the same types, in the same order every time it renders. The core checks it:
 a block that calls a different hook, or the same hook with another type, at a slot stops

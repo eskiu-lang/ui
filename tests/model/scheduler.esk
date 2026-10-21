@@ -146,6 +146,36 @@ void cleanup_lifetime() {
     balanced("cleanup state lifetime leak");
 }
 
+int mounts;
+int unmounts;
+
+void mount_lifetime() {
+    Ui runtime;
+    mounts = 0; unmounts = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(1);
+        if (a.get() > 0) {
+            Scope("Sensor", Key{}, void() {
+                // Read in the scope, so each change renders it again.
+                String text;
+                defer String_free(&text);
+                String_format(&text, "%d", a.get());
+                use_mount(void() { mounts++; }, void() { unmounts++; });
+                Text(text.data);
+            });
+        }
+    });
+    ui_frame();
+    a.set(2); ui_frame();
+    a.set(3); ui_frame();
+    check(mounts == 1 && unmounts == 0, "use_mount runs once across renders");
+    a.set(0); ui_frame();
+    check(mounts == 1 && unmounts == 1, "use_mount's unmount runs when the scope goes");
+    ui_shutdown();
+    balanced("mount lifetime leak");
+}
+
 void commit_lifetime() {
     Ui runtime;
     async_apply = true; observed = 0;

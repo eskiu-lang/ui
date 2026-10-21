@@ -98,7 +98,7 @@ See [navigation](navigation.md).
 
 ### State
 
-`use_signal`, `signal_new`, `use_memo`, `use_effect`, `on_cleanup`, `use_string` and
+`use_signal`, `signal_new`, `use_memo`, `use_effect`, `on_cleanup`, `use_mount`, `use_string` and
 `ui_own` are described in [state](state.md).
 
 ## `<ui/kit>`

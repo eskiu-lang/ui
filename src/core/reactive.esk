@@ -176,6 +176,7 @@ string ui_hook_name(int kind) {
     if (kind == 6) { return "Navigator"; }
     if (kind == 7) { return "use_interval"; }
     if (kind == 8) { return "ToastHost"; }
+    if (kind == 9) { return "use_mount"; }
     return "use_string";
 }
 
@@ -294,6 +295,26 @@ void use_effect(escaping fn()->void callback) {
     effect.compute = callback;
     effect.dirty = true;
     ui_queue(&ui.dirty_effects, effect);
+}
+
+// on_mount once, when the scope first renders, and on_unmount when it unmounts: for what
+// lives as long as a component, such as a subscription to a sensor. Unlike use_effect it
+// does not run again when the scope renders again (later renders' closures are dropped).
+void use_mount(escaping fn()->void on_mount, escaping fn()->void on_unmount) {
+    static int tag;
+    *Slot slot = ui_slot(9, &tag);
+    if (slot.data != null) {
+        ui_release_closure(on_mount);
+        ui_release_closure(on_unmount);
+        return;
+    }
+    slot.data = &tag;
+    slot.dispose = void() {
+        on_unmount();
+        ui_release_closure(on_unmount);
+    };
+    on_mount();
+    ui_release_closure(on_mount);
 }
 
 void on_cleanup(escaping fn()->void callback) {
