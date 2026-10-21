@@ -9,11 +9,24 @@ struct Key { bool set; int64 value; }
 Key key(int64 value) { return Key{true, value}; }
 struct Style { Key key; int gap = 8; int padding = 0; }
 
-struct Source { List<*Observer> readers; *Observer memo; }
+// A subscription is one entry on each side, each holding the other's index, so either
+// side removes it in O(1) by swapping in its last entry.
+struct Reader { *Observer observer; int at; }
+struct Edge { *Source source; int at; }
+struct Source {
+    List<Reader> readers;
+    *Observer memo;
+    // The observer run that last subscribed: a second read in the same run is not a new edge.
+    *Observer marked;
+    int64 marked_epoch;
+}
 struct Observer {
     int kind;
     *Node owner;
-    List<*Source> deps;
+    List<Edge> deps;
+    // Unique per run across all observers (ui_epochs), so a freed observer's mark never
+    // matches a new one at the same address.
+    int64 epoch;
     bool dirty;
     bool evaluating;
     bool queued;
@@ -123,6 +136,8 @@ struct Ui {
     bool in_flight;
 }
 *Ui ui;
+int64 ui_epochs;
+const int kSmall = 8;
 
 void ui_require(bool ok, string message) {
     // stderr is unbuffered: the message survives the abort when output goes to a file.
@@ -144,25 +159,52 @@ void ui_emit(int op, *Node node, int before) {
         node.parent == null ? 0 : node.parent.id, before, node.kind, node.text});
 }
 
+void ui_remove_reader(*Source source, int at) {
+    int last = source.readers.size - 1;
+    if (at != last) {
+        Reader moved = source.readers.data[last];
+        source.readers.data[at] = moved;
+        moved.observer.deps.data[moved.at].at = at;
+    }
+    source.readers.size = last;
+}
+
+void ui_remove_edge(*Observer observer, int at) {
+    int last = observer.deps.size - 1;
+    if (at != last) {
+        Edge moved = observer.deps.data[last];
+        observer.deps.data[at] = moved;
+        moved.source.readers.data[moved.at].at = at;
+    }
+    observer.deps.size = last;
+}
+
+// Drop every subscription of the observer; a new run subscribes again.
 void ui_untrack(*Observer observer) {
-    for (i in 0..observer.deps.size) {
-        *Source source = observer.deps.data[i];
-        for (int j = source.readers.size - 1; j >= 0; j--) {
-            if (source.readers.data[j] == observer) { source.readers.remove(j); }
-        }
+    for (int i = observer.deps.size - 1; i >= 0; i--) {
+        Edge edge = observer.deps.data[i];
+        ui_remove_reader(edge.source, edge.at);
     }
     observer.deps.size = 0;
+    observer.epoch = ++ui_epochs;
 }
 
 void ui_track(*Source source) {
     if (ui == null) { return; }
     *Observer observer = ui.tracking;
     if (observer == null) { return; }
-    for (i in 0..observer.deps.size) {
-        if (observer.deps.data[i] == source) { return; }
+    if (source.marked == observer && source.marked_epoch == observer.epoch) { return; }
+    // A memo validated between two reads moves the mark; a short dependency list is
+    // checked directly. A longer one may get a duplicate edge, which only costs a visit.
+    if (observer.deps.size <= kSmall) {
+        for (i in 0..observer.deps.size) {
+            if (observer.deps.data[i].source == source) { return; }
+        }
     }
-    observer.deps.push(source);
-    source.readers.push(observer);
+    source.marked = observer;
+    source.marked_epoch = observer.epoch;
+    observer.deps.push(Edge{source, source.readers.size});
+    source.readers.push(Reader{observer, observer.deps.size - 1});
 }
 
 void ui_drop_from(List<*Node>* list, *Node node) {
@@ -194,7 +236,7 @@ void ui_unqueue(List<*Observer>* list, *Observer observer) {
 void ui_changed(*Source source) {
     if (ui == null) { return; }
     for (i in 0..source.readers.size) {
-        *Observer observer = source.readers.data[i];
+        *Observer observer = source.readers.data[i].observer;
         observer.dirty = true;
         if (observer.kind == 1) {
             ui_queue(&ui.dirty_memos, observer);
@@ -213,7 +255,7 @@ void ui_changed(*Source source) {
 
 void ui_stale_memos(*Source source) {
     for (i in 0..source.readers.size) {
-        *Observer reader = source.readers.data[i];
+        *Observer reader = source.readers.data[i].observer;
         if (reader.kind == 1 && !reader.dirty) {
             reader.dirty = true;
             ui_queue(&ui.dirty_memos, reader);
@@ -224,13 +266,12 @@ void ui_stale_memos(*Source source) {
 
 // Forget a source that is being freed: no observer keeps it as a dependency.
 void ui_detach_source(*Source source) {
-    for (i in 0..source.readers.size) {
-        *Observer observer = source.readers.data[i];
-        for (int j = observer.deps.size - 1; j >= 0; j--) {
-            if (observer.deps.data[j] == source) { observer.deps.remove(j); }
-        }
+    for (int i = source.readers.size - 1; i >= 0; i--) {
+        Reader reader = source.readers.data[i];
+        ui_remove_edge(reader.observer, reader.at);
     }
     source.readers.free();
+    source.marked = null;
 }
 
 void ui_validate(*Observer observer) {
@@ -250,6 +291,7 @@ void ui_validate(*Observer observer) {
     *Observer observer = alloc<Observer>(1);
     observer.kind = kind;
     observer.owner = owner;
+    observer.epoch = ++ui_epochs;
     return observer;
 }
 
@@ -398,8 +440,6 @@ List<bool> ui_kept(List<int>* seq) {
     previous.free(); tails.free();
     return kept;
 }
-
-const int kSmall = 8;
 
 void ui_run(*Node node) {
     node.current = false;
