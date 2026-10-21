@@ -175,7 +175,7 @@ phase 1's indexing (the shared-signal row was measured once the other fixes were
 These are first baselines, not presentation-time or physical-device numbers;
 `build/*-results.json` holds the latest machine-readable results.
 
-![TODO on the web after reordering, with editing state kept](screenshots/todo-web.jpg)
+![The TODO on the web: a logo image, keyed rows in a scroll, a text field](screenshots/todo-web.jpg)
 
 | iOS | Android | macOS |
 |---|---|---|
