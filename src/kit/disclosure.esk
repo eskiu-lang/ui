@@ -9,7 +9,9 @@ void Collapsible(string title, escaping fn()->void content) {
         Pressable(Style{padding: 14, label: title}, void() { open.set(!open.get()); }, void() {
             Row(Style{align: AlignCenter}, void() {
                 TextWith(Style{grow: 1, font_size: 16, font_weight: 600, color: kit.ink}, title);
-                TextWith(Style{font_size: 18, color: kit.muted}, open.get() ? "−" : "+");
+                // The plus turns into a cross as the section opens.
+                TextWith(Style{font_size: 20, color: kit.muted, rotate: open.get() ? 45 : 0, transition_ms: 200,
+                               easing: EaseOut}, "+");
             });
         });
         if (open.get()) { Column(Style{padding: 14, gap: 8}, void() { content(); }); }
