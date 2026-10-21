@@ -31,6 +31,7 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}, 
 | `scale` | 100 | Scales the drawn element about its center, in percent. |
 | `rotate` | 0 | Turns the drawn element about its center, in degrees. |
 | `transition_ms` | 0 | Animates changes of the opacity, the transforms and the colors, in milliseconds. |
+| `shadow` | 0 | Raises the element with a soft shadow below it: its elevation in points, as React Native's `elevation` (a `CALayer` shadow on iOS, `View.setElevation` on Android, `box-shadow` on the web). A raised element does not clip its content to its radius on iOS. |
 | `easing` | `EaseInOut` | The transition's curve: `EaseInOut`, `EaseOut`, `EaseIn`, `EaseLinear`, `EaseSpring`. |
 
 A field left at its default is not sent to the host, and changing one sends only that

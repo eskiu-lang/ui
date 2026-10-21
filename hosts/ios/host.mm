@@ -592,7 +592,16 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         else if (kind == 11) { node.fontWeight = before; applyFont(node); }
         else if (kind == 12) { node.view.layer.borderWidth = before; YGNodeStyleSetBorder(node.yoga, YGEdgeAll, before); }
         else if (kind == 13) node.view.layer.borderColor = colorOf(before).CGColor;
-        else if (kind == 14) { node.view.layer.cornerRadius = before; node.view.clipsToBounds = before > 0; }
+        else if (kind == 14) { node.view.layer.cornerRadius = before; node.view.clipsToBounds = before > 0 && !node.view.layer.shadowOpacity; }
+        else if (kind == 46) {
+            // A shadow draws outside the bounds, so a raised view does not clip to its radius.
+            CALayer *layer = node.view.layer;
+            layer.shadowColor = [UIColor colorWithRed:17 / 255.0 green:24 / 255.0 blue:39 / 255.0 alpha:1].CGColor;
+            layer.shadowOpacity = before ? 0.16 : 0;
+            layer.shadowRadius = before;
+            layer.shadowOffset = CGSizeMake(0, before / 2.0);
+            node.view.clipsToBounds = layer.cornerRadius > 0 && !before;
+        }
         else if (kind == 15) { UIView *view = node.view; animated(node, ^{ view.alpha = before / 100.0; }); }
         else if (kind >= 35 && kind <= 38) {
             if (kind == 35) node.translateX = before;

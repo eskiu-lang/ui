@@ -635,6 +635,8 @@ public final class UiActivity extends Activity {
             border[code - 12] = value;
             paintOf(id, view).setStroke(Math.round(border[0] * d), border[1] == 0 ? 0xff000000 : argb(border[1]));
         } else if (code == 14) paintOf(id, view).setCornerRadius(value * d);
+        // Elevation casts the platform's shadow from the outline of the view's background.
+        else if (code == 46) view.setElevation(value * d);
         else if (code == 15) {
             int[] motion = motionOf(id, view);
             if (motion == null) view.setAlpha(value / 100f);
