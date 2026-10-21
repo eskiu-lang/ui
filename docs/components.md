@@ -92,7 +92,8 @@ See [native code](native.md) for the platform side.
 | `router_new(root)`, `Router_free` | A stack of routes, owned by the app's model. |
 | `Navigator(*Router, fn(string)->void screen)` | The stack as screens; the ones under the top stay mounted. |
 | `router.push`, `back`, `replace`, `reset`, `path`, `depth`, `at` | Change and read the stack. |
-| `route_match(pattern, route, *List<String> params)` | `"/places/:id"` against a route. |
+| `route_match(pattern, route, *List<String> params)` | `"/places/:id"` against a route; the caller frees the params. |
+| `route_param(pattern, route, index)` | One parameter of a route the navigator handed a screen, kept as long as the route is on the stack (null when it does not match). |
 
 See [navigation](navigation.md).
 

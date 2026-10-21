@@ -16,9 +16,30 @@ struct Router { List<String> stack; *Signal<int> version; bool synced; string li
     return router;
 }
 
+// The params route_param read, each kept with the route it came from until that route
+// leaves its router's stack.
+struct RouteParams { string route; String pattern; List<String> values; }
+
+List<*RouteParams> ui_route_params;
+
+void ui_route_params_drop(string route) {
+    for (int i = ui_route_params.size - 1; i >= 0; i--) {
+        *RouteParams entry = ui_route_params.data[i];
+        if (entry.route != route) { continue; }
+        String_free(&entry.pattern);
+        route_params_free(&entry.values);
+        free(entry);
+        ui_route_params.remove(i);
+    }
+    if (ui_route_params.size == 0) { ui_route_params.free(); }
+}
+
 // Free it after the UI that shows it is shut down (in ui_app_stop).
 void Router_free(*Router self) {
-    for (i in 0..self.stack.size) { String_free(&self.stack.data[i]); }
+    for (i in 0..self.stack.size) {
+        ui_route_params_drop(self.stack.data[i].data);
+        String_free(&self.stack.data[i]);
+    }
     self.stack.free();
     self.version.free();
     free(self.link);
@@ -42,9 +63,15 @@ string Router_at(*Router self, int i) {
     return self.stack.data[i].data;
 }
 
-// A route's text lives until the commit that stopped showing it completes.
+// A route's text, and the params read from it, live until the commit that stopped showing
+// it completes.
 void ui_route_drop(String route) {
-    if (ui != null) { ui_retire(void() { free(route.data); }); } else { free(route.data); }
+    if (ui != null) {
+        ui_retire(void() { ui_route_params_drop(route.data); free(route.data); });
+    } else {
+        ui_route_params_drop(route.data);
+        free(route.data);
+    }
 }
 
 void ui_route_changed(*Router self) { self.version.set(self.version.value + 1); }
@@ -205,6 +232,31 @@ bool route_match(string pattern, string path, List<String>* params) {
         bool path_seg = path[b] == 0 || path[b] == '/' || path[b] == '?';
         if (!pattern_seg || !path_seg) { return false; }
     }
+}
+
+// The `index`th parameter (from 0) of `route` matched against `pattern` ("/places/:id"), or
+// null when the route does not match. For a screen, given the route its Navigator handed it:
+// the text lives as long as that route is on its router's stack, so the screen and its
+// blocks can keep it (route_match's params are freed by the caller, before the blocks run).
+// A route that is not a router's is matched again on each call.
+string route_param(string pattern, string route, int index) {
+    for (i in 0..ui_route_params.size) {
+        *RouteParams entry = ui_route_params.data[i];
+        if (entry.route == route && String_eq_cstr(&entry.pattern, pattern) == 1) {
+            return index >= 0 && index < entry.values.size ? entry.values.data[index].data : null;
+        }
+    }
+    List<String> values;
+    if (!route_match(pattern, route, &values)) {
+        route_params_free(&values);
+        return null;
+    }
+    *RouteParams entry = alloc<RouteParams>(1);
+    entry.route = route;
+    String_from(&entry.pattern, pattern);
+    entry.values = values;
+    ui_route_params.push(entry);
+    return index >= 0 && index < values.size ? entry.values.data[index].data : null;
 }
 
 // Frees what route_match put in `params`.

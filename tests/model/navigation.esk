@@ -14,6 +14,15 @@ void nav_screens(String* out) {
     }
 }
 
+// Whether a text node shows `text`.
+bool nav_text_shown(string text) {
+    for (i in 0..ui.by_id.size) {
+        *Node node = ui.by_id.data[i];
+        if (node != null && node.kind == 3 && node.text != null && strcmp(node.text, text) == 0) { return true; }
+    }
+    return false;
+}
+
 // Press the button showing `text`.
 void nav_press(string text) {
     for (i in 0..ui.by_id.size) {
@@ -27,8 +36,28 @@ void nav_press(string text) {
     check(false, "a button to press");
 }
 
+// A screen handed its parameter as text, shown from a block of its own that renders again on
+// its own when nav_tick changes, after the Navigator's block has returned: the text must
+// outlive that block (route_param's does; route_match's params are freed by then).
+*Signal<int> nav_tick;
+
+void NavNote(string name) {
+    Column(Style{}, void() {
+        nav_tick.get();
+        String title;
+        defer String_free(&title);
+        String_format(&title, "Note %s", name);
+        Text(title.data);
+    });
+}
+
 void nav_app() {
     Navigator(nav_router, void(string route) {
+        string note = route_param("/notes/:name", route, 0);
+        if (note != null) {
+            NavNote(note);
+            return;
+        }
         List<String> params;
         defer route_params_free(&params);
         if (route_match("/tasks/:id", route, &params)) {
@@ -103,6 +132,27 @@ void navigation() {
     nav_router.reset("/");
     ui_frame();
     check(nav_router.depth() == 1, "reset");
+    // A parameter a screen keeps: the right text in its block, again after a render, and freed
+    // with the route.
+    nav_tick = signal_new<int>(0);
+    nav_router.push("/notes/groceries");
+    ui_frame();
+    check(nav_text_shown("Note groceries"), "a kept route parameter");
+    // Only the note's block renders again: the Navigator's does not.
+    nav_tick.set(1);
+    ui_frame();
+    check(nav_text_shown("Note groceries"), "the parameter after the screen's block renders on its own");
+    check(route_param("/notes/:name", nav_router.path(), 0) == route_param("/notes/:name", nav_router.path(), 0),
+          "the same text each time");
+    check(route_param("/notes/:name", nav_router.path(), 1) == null && route_param("/tasks/:id", nav_router.path(), 0) == null,
+          "no parameter past the last, none for another pattern");
+    nav_router.replace("/notes/errands");
+    ui_frame();
+    check(nav_text_shown("Note errands"), "the replaced route's parameter");
+    nav_router.reset("/");
+    ui_frame();
+    check(ui_route_params.size == 0, "the parameters go with their routes");
+    nav_tick.free();
     String_free(&screens);
     ui_shutdown();
     nav_router.free();
