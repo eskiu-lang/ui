@@ -9,12 +9,13 @@
 @property(copy) NSString *url;
 @property(copy) NSString *screenshot;
 @property BOOL testing;
+@property NSSize size;
 @end
 @implementation DesktopHost
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
     [configuration.userContentController addScriptMessageHandler:self name:@"results"];
-    self.web = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1100, 860) configuration:configuration];
+    self.web = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, self.size.width, self.size.height) configuration:configuration];
     self.web.navigationDelegate = self;
     self.window = [[NSWindow alloc] initWithContentRect:self.web.frame
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
@@ -54,6 +55,10 @@ int main(int argc, const char **argv) {
         host.url = argc > 1 ? [NSString stringWithUTF8String:argv[1]] : @"http://127.0.0.1:8765/?example=counter";
         host.testing = argc > 2;
         host.screenshot = argc > 2 ? [NSString stringWithUTF8String:argv[2]] : @"desktop.png";
+        // An optional window size, WIDTHxHEIGHT in points.
+        int width = 1100, height = 860;
+        if (argc > 3) sscanf(argv[3], "%dx%d", &width, &height);
+        host.size = NSMakeSize(width, height);
         NSApplication *application = NSApplication.sharedApplication;
         [application setActivationPolicy:NSApplicationActivationPolicyRegular];
         application.delegate = host;

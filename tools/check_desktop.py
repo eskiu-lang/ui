@@ -10,8 +10,8 @@ import threading
 HERE = Path(__file__).resolve().parents[1]
 BUILD = HERE / "build/desktop"
 BUILD.mkdir(exist_ok=True)
-shots = HERE / "screenshots"
-shots.mkdir(exist_ok=True)
+shots = HERE / "build/screenshots"  # test captures; the README's come from tools/screenshots.py
+shots.mkdir(parents=True, exist_ok=True)
 binary = BUILD / "EskiuDesktop"
 subprocess.run(["xcrun", "clang", "-fobjc-arc", HERE / "desktop/host.m", "-framework", "Cocoa",
                 "-framework", "WebKit", "-o", binary], check=True, timeout=60)

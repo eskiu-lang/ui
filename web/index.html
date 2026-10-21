@@ -8,15 +8,26 @@
   nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
   #app { padding: 1.5rem; background: white; border: 1px solid #d8dfe8; border-radius: 12px; }
   button { font: inherit; padding: .4rem .7rem; cursor: pointer; }
-  #app button { border: 1px solid #c5cedd; border-radius: 6px; background: #f8faff; color: #182235; }
-  #app button:hover { background: #e9eff9; }
+  body:not(.showcase) #app button { border: 1px solid #c5cedd; border-radius: 6px; background: #f8faff; color: #182235; }
+  body:not(.showcase) #app button:hover { background: #e9eff9; }
+  /* The showcase app in a phone-sized frame. */
+  body.showcase { margin: 0; max-width: none; padding: 40px 0; background: #e5e7ee; }
+  body.showcase nav, body.showcase #status, body.showcase aside { display: none; }
+  body.showcase #app { width: 402px; height: 860px; margin: 0 auto; padding: 0; border: 10px solid #111827;
+    border-radius: 44px; overflow: hidden; display: flex; flex-direction: column; background: #f5f6fa; }
+  body.showcase #app button { border: 0; cursor: pointer; }
+  /* A narrow window (a desktop app's): the app fills it. */
+  @media (max-width: 520px) {
+    body.showcase { padding: 0; background: #f5f6fa; }
+    body.showcase #app { width: 100vw; height: 100vh; border: 0; border-radius: 0; }
+  }
   #app button:focus-visible { outline: 3px solid #81a9ee; outline-offset: 2px; }
   aside { margin-top: 1.5rem; padding: 1rem; border: 1px solid #d8dfe8; border-radius: 8px; }
   output { display: block; margin-top: .75rem; white-space: pre-wrap; font: 14px ui-monospace, monospace; }
-  #app:not(.conformance) [data-kind="2"] { align-items: center; border-top: 1px solid #e6eaf0; padding-top: .5rem; }
+  body:not(.showcase) #app:not(.conformance) [data-kind="2"] { align-items: center; border-top: 1px solid #e6eaf0; padding-top: .5rem; }
   #app input { font: inherit; padding: .4rem .6rem; border: 1px solid #c5cedd; border-radius: 6px; }
 </style>
-<nav><a href="?example=counter">Counter</a><a href="?example=todo">TODO</a></nav>
+<nav><a href="?example=counter">Counter</a><a href="?example=todo">TODO</a><a href="?example=tasks">Tasks</a></nav>
 <div id="app" aria-label="Eskiu demo"></div>
 <p id="status">Loading WebAssembly…</p>
 <aside aria-label="Frame measurements">
@@ -35,7 +46,8 @@
   host.cancel = () => scheduler.cancel();
   const app = await createApp({uiHost: host});
   const name = new URLSearchParams(location.search).get('example');
-  const example = name === 'todo' ? 1 : name === 'conformance' ? 3 : 0;
+  const example = name === 'todo' ? 1 : name === 'conformance' ? 3 : name === 'tasks' ? 4 : 0;
+  if (example === 4) document.body.classList.add('showcase');
   if (example === 3) root.classList.add('conformance');
   window.uiDemo = {app, host, scheduler};
   app._ui_start(example);
@@ -61,7 +73,12 @@
     } catch (error) { output.textContent = `Measurement failed: ${error.message}`; }
     finally { benchmarkButton.disabled = false; }
   });
-  if (example === 3 && new URLSearchParams(location.search).has('selftest')) {
+  if (new URLSearchParams(location.search).has('shot')) {
+    // For a screenshot: report once the app has rendered and laid out.
+    const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+    await frame(); await frame(); await frame();
+    window.webkit?.messageHandlers?.results?.postMessage({status: 'PASS'});
+  } else if (example === 3 && new URLSearchParams(location.search).has('selftest')) {
     let result;
     try {
       const {runConformance} = await import('./conformance.mjs');

@@ -48,8 +48,8 @@ if not report or report.get("status") != "PASS" or report.get("todo") != "PASS":
 report["serial"] = serial
 report["model"] = subprocess.check_output([*adb, "shell", "getprop", "ro.product.model"], text=True).strip()
 report["api"] = subprocess.check_output([*adb, "shell", "getprop", "ro.build.version.sdk"], text=True).strip()
-shots = HERE / "screenshots"
-shots.mkdir(exist_ok=True)
+shots = HERE / "build/screenshots"  # test captures; the README's come from tools/screenshots.py
+shots.mkdir(parents=True, exist_ok=True)
 # Exercise the same allocation-counted runtime on the Android target as well.
 compiler = find_compiler()
 ir = subprocess.check_output([compiler, HERE / "tests/model.esk", "--target", "aarch64-linux-android24",

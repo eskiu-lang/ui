@@ -82,9 +82,10 @@ void Counter() {
 }
 ```
 
-`examples/components.esk` has the counter and a TODO list with keyed rows, per-row state and
-a model-owned signal. `examples/app.esk` is the entry point the web, iOS and Android hosts
-share.
+`examples/tasks.esk` is a complete app (header, progress card, filters, a field to add
+tasks, a virtual list of task cards with tags); `examples/components.esk` has the counter and
+a TODO list with keyed rows, per-row state and a model-owned signal. `examples/app.esk` is
+the entry point the web, iOS and Android hosts share.
 
 ## Modules
 
@@ -192,11 +193,16 @@ phase 1's indexing (the shared-signal row was measured once the other fixes were
 These are first baselines, not presentation-time or physical-device numbers;
 `build/*-results.json` holds the latest machine-readable results.
 
-![The TODO on the web: a logo image, keyed rows in a scroll, a text field](screenshots/todo-web.jpg)
+The screenshots are `examples/tasks.esk`, a task app built only from these components
+(`tools/screenshots.py` takes them):
 
-| iOS | Android | macOS |
+<p align="center">
+  <img src="screenshots/tasks-web.png" alt="Eskiu Tasks in a browser: a header with today's date, a progress card, filters, a field to add a task and a list of tasks with colored tags" width="360">
+</p>
+
+| iOS (UIKit) | Android (android.view) | macOS (WKWebView) |
 |---|---|---|
-| ![Counter on iOS with UIKit and Yoga](screenshots/counter-ios.png) | ![TODO on Android with android.view and Yoga](screenshots/todo-android.png) | ![TODO in the macOS WKWebView host](screenshots/todo-macos.png) |
+| ![Eskiu Tasks on the iOS simulator](screenshots/tasks-ios.png) | ![Eskiu Tasks on the Android emulator](screenshots/tasks-android.png) | ![Eskiu Tasks in a macOS window](screenshots/tasks-macos.png) |
 
 ## Contributing
 
@@ -215,6 +221,7 @@ python3 tools/check_ios.py         # a booted simulator (DEVICE to pick one)
 python3 tools/check_android.py     # SDK 35, NDK 28.2, a booted arm64 device (ANDROID_SERIAL)
 python3 tools/check_desktop.py     # a WKWebView window running the web build (an awake display)
 python3 tools/conformance.py       # the conformance scene on every available host
+python3 tools/screenshots.py       # the README's screenshots of examples/tasks.esk
 ```
 
 `tools/check.py` counts every allocation, closure environments included, by pointing the
