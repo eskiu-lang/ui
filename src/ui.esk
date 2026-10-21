@@ -1391,13 +1391,21 @@ void Button_owned(string text, escaping fn()->void handler, escaping fn()->void 
 // A controlled text field: `value` is what it shows, `on_change` gets each edit (the text
 // is borrowed for the call; keep it in owned state such as use_string). `focused` is 1 to
 // focus it, 0 to blur it, -1 to leave focus to the user.
-struct Input { Key key; string value; string placeholder; string label; int focused = -1; }
+struct Input { Key key; string value; string placeholder; string label; int focused = -1; Style style; }
+
+// The field's style, with the Input's key and label.
+Style ui_input_style(Input input) {
+    Style style = input.style;
+    if (input.key.set) { style.key = input.key; }
+    if (input.label != null) { style.label = input.label; }
+    return style;
+}
 
 void TextInput(Input input, escaping fn(string)->void on_change) {
     InputExtra extra = InputExtra{on_text: on_change, placeholder: input.placeholder,
         focused: input.focused};
     ui.next_input = &extra;
-    ui_element(5, Style{key: input.key, label: input.label}, input.value == null ? "" : input.value,
+    ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
         void() {}, void() {}, void() {});
 }
 
@@ -1406,7 +1414,7 @@ void TextInput_focus(Input input, escaping fn(string)->void on_change, escaping 
     InputExtra extra = InputExtra{on_text: on_change, on_focus: on_focus, has_on_focus: true,
         placeholder: input.placeholder, focused: input.focused};
     ui.next_input = &extra;
-    ui_element(5, Style{key: input.key, label: input.label}, input.value == null ? "" : input.value,
+    ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
         void() {}, void() {}, void() {});
 }
 
