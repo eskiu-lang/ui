@@ -1,0 +1,250 @@
+// iOS through Xcode, for apps whose native code needs Swift packages or is written in Swift:
+// an Xcode project around the app's object and Yoga's, which Xcode can also open.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// The objects of a project.pbxproj, by section, with ids made from a counter.
+struct Pbx { int next; String files; String refs; String groups; String sources; String frameworks; String packages; String products; }
+
+// A fresh object id: 24 hex digits.
+string Pbx_id(Pbx* self) {
+    self.next++;
+    String id;
+    String_appendf(&id, "E5C0%020X", self.next);
+    return id.data;
+}
+
+// `text` as a quoted pbxproj string.
+string pbx_quote(string text) {
+    String out;
+    String_from(&out, text == null ? "" : text);
+    String_replace_all(&out, "\\", "\\\\");
+    String_replace_all(&out, "\"", "\\\"");
+    String quoted;
+    String_appendf(&quoted, "\"%s\"", out.data);
+    String_free(&out);
+    return quoted.data;
+}
+
+// A source file in the group and the Sources phase.
+void Pbx_source(Pbx* self, string path, string type) {
+    string ref = self.id();
+    string file = self.id();
+    String name;
+    path_basename(&name, path);
+    String_appendf(&self.refs, "\t\t%s = {isa = PBXFileReference; lastKnownFileType = %s; name = %s; path = %s; sourceTree = \"<absolute>\"; };\n",
+        ref, type, pbx_quote(name.data), pbx_quote(path));
+    String_appendf(&self.files, "\t\t%s = {isa = PBXBuildFile; fileRef = %s; };\n", file, ref);
+    String_appendf(&self.groups, "\t\t\t\t%s,\n", ref);
+    String_appendf(&self.sources, "\t\t\t\t%s,\n", file);
+    String_free(&name);
+}
+
+// A swift package and its products, linked into the app.
+void Pbx_package(Pbx* self, Project* p, string name) {
+    String key;
+    String_appendf(&key, "ios.spm.%s.url", name);
+    string url = p.config.string(key.data);
+    if (url == null) { print_err("ui: ui.toml [ios.spm] "); print_err(name); fail(" has no url"); }
+    String_clear(&key);
+    String_appendf(&key, "ios.spm.%s.from", name);
+    string from = p.config.string(key.data);
+    String_clear(&key);
+    String_appendf(&key, "ios.spm.%s.exact", name);
+    string exact = p.config.string(key.data);
+    String_clear(&key);
+    String_appendf(&key, "ios.spm.%s.branch", name);
+    string branch = p.config.string(key.data);
+    String requirement;
+    if (exact != null) { String_appendf(&requirement, "kind = exactVersion; version = %s;", pbx_quote(exact)); }
+    else if (branch != null) { String_appendf(&requirement, "kind = branch; branch = %s;", pbx_quote(branch)); }
+    else if (from != null) { String_appendf(&requirement, "kind = upToNextMajorVersion; minimumVersion = %s;", pbx_quote(from)); }
+    else { String_append(&requirement, "kind = branch; branch = main;"); }
+    string ref = self.id();
+    String_appendf(&self.packages, "\t\t%s = {isa = XCRemoteSwiftPackageReference; repositoryURL = %s; requirement = {%s}; };\n",
+        ref, pbx_quote(url), requirement.data);
+    // The products: `products = [...]`, else the package's name in ui.toml.
+    String_clear(&key);
+    String_appendf(&key, "ios.spm.%s.products", name);
+    List<string> products;
+    p.config.all(key.data, &products);
+    if (products.size == 0) { products.push(name); }
+    for (i in 0..products.size) {
+        string dependency = self.id();
+        string file = self.id();
+        String_appendf(&self.packages, "\t\t%s = {isa = XCSwiftPackageProductDependency; package = %s; productName = %s; };\n",
+            dependency, ref, pbx_quote(products.data[i]));
+        String_appendf(&self.files, "\t\t%s = {isa = PBXBuildFile; productRef = %s; };\n", file, dependency);
+        String_appendf(&self.frameworks, "\t\t\t\t%s,\n", file);
+        String_appendf(&self.products, "\t\t\t\t%s,\n", dependency);
+    }
+    products.free();
+    String_free(&key); String_free(&requirement);
+}
+
+// The class a Swift file gives the host: its @objc(Name), else the file's name.
+void swift_class_name(string path, String* out) {
+    String text;
+    defer String_free(&text);
+    fs_read_text(path, &text);
+    int64 at = String_find(&text, "@objc(", 0);
+    if (at >= 0) {
+        for (int64 j = at + 6; j < text.len && text.data[j] != ')'; j++) {
+            char[2] one;
+            one[0] = text.data[j]; one[1] = 0;
+            String_append(out, (string)&one[0]);
+        }
+        return;
+    }
+    path_basename(out, path);
+    out.len -= 6;
+    out.data[out.len] = 0;
+}
+
+// build/ui/ios/xcode/NAME.xcodeproj and the Info.plist, then xcodebuild for the simulator.
+string build_ios_xcode(Project* p, string out, string app_object, List<String>* yoga) {
+    string dir = join(out, "xcode");
+    String project_name;
+    String_appendf(&project_name, "%s.xcodeproj", p.name.data);
+    string project = join(dir, project_name.data);
+    fs_mkdir_p(project);
+    Pbx pbx;
+    Pbx_source(&pbx, join(p.ui.data, "hosts/ios/host.mm"), "sourcecode.cpp.objcpp");
+    List<String> natives;
+    defer fs_list_free(&natives);
+    p.native("ios", ".m", &natives);
+    p.native("ios", ".mm", &natives);
+    p.native("ios", ".swift", &natives);
+    String classes;
+    defer String_free(&classes);
+    bool has_swift = false;
+    for (i in 0..natives.size) {
+        string path = natives.data[i].data;
+        if (String_ends_with(&natives.data[i], ".swift") == 1) {
+            has_swift = true;
+            Pbx_source(&pbx, path, "sourcecode.swift");
+            String name;
+            swift_class_name(path, &name);
+            String_appendf(&classes, "<string>%s</string>", xml_escape(name.data));
+            String_free(&name);
+        } else if (String_ends_with(&natives.data[i], ".mm") == 1) { Pbx_source(&pbx, path, "sourcecode.cpp.objcpp"); }
+        else { Pbx_source(&pbx, path, "sourcecode.c.objc"); }
+    }
+    List<String> packages;
+    defer fs_list_free(&packages);
+    p.config.names("ios.spm.", &packages);
+    for (i in 0..packages.size) { Pbx_package(&pbx, p, packages.data[i].data); }
+    string plist = join(dir, "Info.plist");
+    fs_write_text(plist, ios_plist(p, classes.data == null ? "" : classes.data, false));
+    // The app's object and Yoga's are linked as they are; frameworks from ui.toml too.
+    String flags;
+    defer String_free(&flags);
+    String_appendf(&flags, "%s", pbx_quote(app_object));
+    for (i in 0..yoga.size) { String_appendf(&flags, ", %s", pbx_quote(yoga.data[i].data)); }
+    String_append(&flags, ", \"-framework\", UIKit, \"-framework\", Foundation, \"-framework\", CoreGraphics, \"-framework\", QuartzCore");
+    List<string> frameworks;
+    defer frameworks.free();
+    p.config.all("ios.frameworks", &frameworks);
+    for (i in 0..frameworks.size) { String_appendf(&flags, ", \"-framework\", %s", pbx_quote(frameworks.data[i])); }
+    string assets = join(p.root.data, "assets");
+    string main_group = pbx.id();
+    string target = pbx.id();
+    string project_id = pbx.id();
+    string sources_phase = pbx.id();
+    string frameworks_phase = pbx.id();
+    string assets_phase = pbx.id();
+    string target_list = pbx.id();
+    string project_list = pbx.id();
+    string target_config = pbx.id();
+    string project_config = pbx.id();
+    string product = pbx.id();
+    String swift_settings;
+    defer String_free(&swift_settings);
+    if (has_swift) {
+        String_appendf(&swift_settings, "\t\t\t\tSWIFT_VERSION = 5.0;\n\t\t\t\tSWIFT_OBJC_BRIDGING_HEADER = %s;\n",
+            pbx_quote(join(p.ui.data, "hosts/ios/ui_native.h")));
+    }
+    String text;
+    defer String_free(&text);
+    String_appendf(&text, "// !$*UTF8*$!\n// Made by ui.\n{\n\tarchiveVersion = 1;\n\tclasses = {\n\t};\n\tobjectVersion = 60;\n\tobjects = {\n"
+        "%s%s"
+        "\t\t%s = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = %s; sourceTree = BUILT_PRODUCTS_DIR; };\n"
+        "\t\t%s = {isa = PBXGroup; children = (\n%s\t\t\t); sourceTree = \"<group>\"; };\n"
+        "\t\t%s = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (\n%s\t\t\t); runOnlyForDeploymentPostprocessing = 0; };\n"
+        "\t\t%s = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (\n%s\t\t\t); runOnlyForDeploymentPostprocessing = 0; };\n"
+        "\t\t%s = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); outputPaths = (); "
+        "runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; alwaysOutOfDate = 1; "
+        "shellScript = %s; };\n"
+        "\t\t%s = {isa = PBXNativeTarget; buildConfigurationList = %s; buildPhases = (%s, %s, %s); buildRules = (); dependencies = (); "
+        "name = %s; packageProductDependencies = (\n%s\t\t\t); productName = %s; productReference = %s; productType = \"com.apple.product-type.application\"; };\n"
+        "\t\t%s = {isa = PBXProject; buildConfigurationList = %s; compatibilityVersion = \"Xcode 14.0\"; mainGroup = %s; "
+        "packageReferences = (%s); projectDirPath = \"\"; projectRoot = \"\"; targets = (%s); };\n"
+        "%s"
+        "\t\t%s = {isa = XCBuildConfiguration; buildSettings = {\n"
+        "\t\t\t\tPRODUCT_NAME = %s;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = %s;\n\t\t\t\tINFOPLIST_FILE = %s;\n"
+        "\t\t\t\tIPHONEOS_DEPLOYMENT_TARGET = 15.0;\n\t\t\t\tSDKROOT = iphoneos;\n\t\t\t\tSUPPORTED_PLATFORMS = \"iphonesimulator iphoneos\";\n"
+        "\t\t\t\tTARGETED_DEVICE_FAMILY = \"1,2\";\n\t\t\t\tARCHS = %s;\n\t\t\t\tCLANG_ENABLE_OBJC_ARC = YES;\n\t\t\t\tALWAYS_SEARCH_USER_PATHS = NO;\n"
+        "\t\t\t\tCLANG_CXX_LANGUAGE_STANDARD = \"c++17\";\n\t\t\t\tHEADER_SEARCH_PATHS = (%s, %s);\n"
+        "\t\t\t\tOTHER_LDFLAGS = (%s);\n\t\t\t\tCODE_SIGN_IDENTITY = \"-\";\n\t\t\t\tCODE_SIGN_STYLE = Manual;\n"
+        "\t\t\t\tGENERATE_INFOPLIST_FILE = NO;\n\t\t\t\tLD_RUNPATH_SEARCH_PATHS = (\"$(inherited)\", \"@executable_path/Frameworks\");\n%s"
+        "\t\t\t}; name = Debug; };\n"
+        "\t\t%s = {isa = XCBuildConfiguration; buildSettings = {\n\t\t\t\tSDKROOT = iphoneos;\n\t\t\t\tONLY_ACTIVE_ARCH = YES;\n\t\t\t}; name = Debug; };\n"
+        "\t\t%s = {isa = XCConfigurationList; buildConfigurations = (%s); defaultConfigurationName = Debug; };\n"
+        "\t\t%s = {isa = XCConfigurationList; buildConfigurations = (%s); defaultConfigurationName = Debug; };\n"
+        "\t};\n\trootObject = %s;\n}\n",
+        pbx.files.data == null ? "" : pbx.files.data, pbx.refs.data == null ? "" : pbx.refs.data,
+        product, pbx_quote(join(p.name.data, "")),
+        main_group, pbx.groups.data == null ? "" : pbx.groups.data,
+        sources_phase, pbx.sources.data == null ? "" : pbx.sources.data,
+        frameworks_phase, pbx.frameworks.data == null ? "" : pbx.frameworks.data,
+        assets_phase, pbx_quote(ios_assets_script(assets)),
+        target, target_list, sources_phase, frameworks_phase, assets_phase,
+        pbx_quote(p.name.data), pbx.products.data == null ? "" : pbx.products.data, pbx_quote(p.name.data), product,
+        project_id, project_list, main_group, pbx_refs(&pbx), target,
+        pbx.packages.data == null ? "" : pbx.packages.data,
+        target_config, pbx_quote(p.name.data), pbx_quote(p.id.data), pbx_quote(plist),
+        ios_arch(), pbx_quote(yoga_source()), pbx_quote(join(p.ui.data, "hosts/ios")),
+        flags.data, swift_settings.data == null ? "" : swift_settings.data,
+        project_config, target_list, target_config, project_list, project_config, project_id);
+    fs_write_text(join(project, "project.pbxproj"), text.data);
+    string derived = join(dir, "DerivedData");
+    Cmd cmd;
+    defer cmd.free();
+    cmd.add("xcodebuild"); cmd.add("-quiet"); cmd.add("-project"); cmd.add(project); cmd.add("-scheme"); cmd.add(p.name.data);
+    cmd.add("-configuration"); cmd.add("Debug"); cmd.add("-sdk"); cmd.add("iphonesimulator");
+    cmd.add("-derivedDataPath"); cmd.add(derived); cmd.add("build");
+    if (cmd.run(null) != 0) { fail("ui: xcodebuild failed (open build/ui/ios/xcode in Xcode to see why)"); }
+    String bundle_name;
+    String_appendf(&bundle_name, "%s.app", p.name.data);
+    return join(join(derived, "Build/Products/Debug-iphonesimulator"), bundle_name.data);
+}
+
+// The XCRemoteSwiftPackageReference ids, for the project's packageReferences.
+string pbx_refs(Pbx* self) {
+    String out;
+    if (self.packages.data == null) { return ""; }
+    List<String> lines;
+    String_lines(&self.packages, &lines);
+    for (i in 0..lines.size) {
+        if (String_contains(&lines.data[i], "XCRemoteSwiftPackageReference") != 1) { continue; }
+        String_trim(&lines.data[i]);
+        String id;
+        for (int64 j = 0; j < lines.data[i].len && lines.data[i].data[j] != ' '; j++) {
+            char[2] one;
+            one[0] = lines.data[i].data[j]; one[1] = 0;
+            String_append(&id, (string)&one[0]);
+        }
+        String_appendf(&out, "%s, ", id.data);
+        String_free(&id);
+    }
+    fs_list_free(&lines);
+    return out.data == null ? "" : out.data;
+}
+
+// A build phase that copies the project's assets into the bundle's top level, where Image
+// finds them by name.
+string ios_assets_script(string assets) {
+    String script;
+    String_appendf(&script, "if [ -d '%s' ]; then cp -R '%s'/ \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/\"; fi\n",
+        assets, assets);
+    return script.data;
+}

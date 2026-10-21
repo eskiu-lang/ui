@@ -6,7 +6,7 @@
 //
 // Inside a project, the ui package is the one eskiu.lock names; its hosts (hosts/) are built
 // around the app. Yoga, for the native hosts, is fetched and compiled once into
-// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), new.
+// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), xcode (Swift packages), new.
 import <io>;
 import <string>;
 import <list>;
@@ -26,6 +26,7 @@ import "yoga.esk";
 import "ios.esk";
 import "android.esk";
 import "gradle.esk";
+import "xcode.esk";
 import "new.esk";
 
 void usage() {

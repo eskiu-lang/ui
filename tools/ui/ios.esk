@@ -31,6 +31,24 @@ string build_ios(Project* p) {
     compiler.push("-isysroot"); compiler.push(sdk.data); compiler.push("-O2");
     List<String> objects;
     yoga_objects(&compiler, join(eskiu_home(), join("cache/yoga-ios", ios_arch())), &objects);
+    string app = join(out, "app.o");
+    Cmd esk;
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add("-O2");
+    esk.add("-o"); esk.add(app);
+    esk.must(null);
+    esk.free();
+    // Swift Package Manager packages (ui.toml [ios.spm]) and Swift sources need Xcode: the
+    // tool makes a project around the app's object. UI_XCODE=1 takes that path without them.
+    List<String> packages;
+    defer fs_list_free(&packages);
+    p.config.names("ios.spm.", &packages);
+    List<String> swift;
+    defer fs_list_free(&swift);
+    p.native("ios", ".swift", &swift);
+    string xcode = env_get("UI_XCODE");
+    if (packages.size > 0 || swift.size > 0 || (xcode != null && strcmp(xcode, "1") == 0)) {
+        return build_ios_xcode(p, out, app, &objects);
+    }
     string host = join(out, "host.o");
     Cmd cmd;
     for (i in 0..compiler.size) { cmd.add(compiler.data[i]); }
@@ -57,30 +75,11 @@ string build_ios(Project* p) {
         compile.free();
         native_objects.push(object);
     }
-    string app = join(out, "app.o");
-    Cmd esk;
-    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add("-O2");
-    esk.add("-o"); esk.add(app);
-    esk.must(null);
-    esk.free();
     String bundle_name;
     String_appendf(&bundle_name, "%s.app", p.name.data);
     string bundle = join(out, bundle_name.data);
     fs_mkdir_p(bundle);
-    String plist;
-    String_appendf(&plist, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\n"
-        "<key>CFBundleIdentifier</key><string>%s</string>\n<key>CFBundleName</key><string>%s</string>\n"
-        "<key>CFBundleDisplayName</key><string>%s</string>\n<key>CFBundleExecutable</key><string>%s</string>\n"
-        "<key>CFBundlePackageType</key><string>APPL</string>\n<key>CFBundleVersion</key><string>1</string>\n"
-        "<key>CFBundleShortVersionString</key><string>0.1.0</string>\n<key>LSRequiresIPhoneOS</key><true/>\n"
-        "<key>UILaunchScreen</key><dict/>\n<key>UIApplicationSceneManifest</key><dict>\n"
-        "<key>UIApplicationSupportsMultipleScenes</key><false/>\n<key>UISceneConfigurations</key><dict>\n"
-        "<key>UIWindowSceneSessionRoleApplication</key><array><dict>\n"
-        "<key>UISceneConfigurationName</key><string>Default</string>\n"
-        "<key>UISceneDelegateClassName</key><string>UiSceneDelegate</string>\n</dict></array></dict></dict>\n"
-        "<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>\n%s</dict></plist>\n",
-        p.id.data, p.name.data, xml_escape(p.display.data), p.name.data, ios_plist_entries(p));
-    fs_write_text(join(bundle, "Info.plist"), plist.data);
+    fs_write_text(join(bundle, "Info.plist"), ios_plist(p, "", true));
     p.copy_assets(bundle);
     Cmd link;
     for (i in 0..compiler.size) { link.add(compiler.data[i]); }
@@ -101,6 +100,28 @@ string build_ios(Project* p) {
     sign.must(null);
     sign.free();
     return bundle;
+}
+
+// Info.plist: the app's id, names and scene, the ui.toml entries, and `classes`, the
+// <string> elements of the classes whose +setup the host calls (Swift native code), and
+// the device family unless Xcode sets it.
+string ios_plist(Project* p, string classes, bool family) {
+    String plist;
+    String_appendf(&plist, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\n"
+        "<key>CFBundleIdentifier</key><string>%s</string>\n<key>CFBundleName</key><string>%s</string>\n"
+        "<key>CFBundleDisplayName</key><string>%s</string>\n<key>CFBundleExecutable</key><string>%s</string>\n"
+        "<key>CFBundlePackageType</key><string>APPL</string>\n<key>CFBundleVersion</key><string>1</string>\n"
+        "<key>CFBundleShortVersionString</key><string>0.1.0</string>\n<key>LSRequiresIPhoneOS</key><true/>\n"
+        "<key>UILaunchScreen</key><dict/>\n<key>UIApplicationSceneManifest</key><dict>\n"
+        "<key>UIApplicationSupportsMultipleScenes</key><false/>\n<key>UISceneConfigurations</key><dict>\n"
+        "<key>UIWindowSceneSessionRoleApplication</key><array><dict>\n"
+        "<key>UISceneConfigurationName</key><string>Default</string>\n"
+        "<key>UISceneDelegateClassName</key><string>UiSceneDelegate</string>\n</dict></array></dict></dict>\n"
+        "%s<key>UiNativeClasses</key><array>%s</array>\n%s</dict></plist>\n",
+        p.id.data, p.name.data, xml_escape(p.display.data), p.name.data,
+        family ? "<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>\n" : "",
+        classes, ios_plist_entries(p));
+    return plist.data;
 }
 
 // The ui.toml [ios.plist] entries as plist keys and strings.

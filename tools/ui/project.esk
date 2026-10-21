@@ -49,29 +49,27 @@ void Project_find(Project* self) {
     fs_read_text(join(dir.data, "eskiu.toml"), &text);
     toml_value(text.data, "name", &self.name);
     if (self.name.len == 0) { String_from(&self.name, "app"); }
-    // org.eskiu.app.NAME: lowercase letters and digits, others as "_".
-    String_from(&self.id, "org.eskiu.app.");
+    // org.eskiu.app.NAME: lowercase letters and digits only, valid as a bundle id and as a
+    // Java package (not a keyword, not starting with a digit).
+    String segment;
     for (i in 0..self.name.len) {
         char c = self.name.data[i];
         if (c >= 'A' && c <= 'Z') { c = (char)(c + 32); }
-        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) { c = '_'; }
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) { continue; }
         char[2] one;
         one[0] = c; one[1] = 0;
-        String_append(&self.id, (string)&one[0]);
+        String_append(&segment, (string)&one[0]);
     }
-    // A Java package name: not a keyword, not starting with a digit.
-    String segment;
-    String_from(&segment, &self.id.data[14]);
     string keywords = " abstract assert boolean break byte case catch char class const continue default do double "
         "else enum extends final finally float for goto if implements import instanceof int interface long native new "
         "package private protected public return short static strictfp super switch synchronized this throw throws "
         "transient try void volatile while true false null ";
     String padded;
-    String_appendf(&padded, " %s ", segment.data);
-    if (segment.len == 0 || (segment.data[0] >= '0' && segment.data[0] <= '9')) {
-        String_clear(&self.id);
-        String_appendf(&self.id, "org.eskiu.app._%s", segment.data);
-    } else if (strstr(keywords, padded.data) != null) { String_append(&self.id, "_"); }
+    String_appendf(&padded, " %s ", segment.data == null ? "" : segment.data);
+    if (segment.len == 0) { String_from(&self.id, "org.eskiu.app.app"); }
+    else if (segment.data[0] >= '0' && segment.data[0] <= '9') { String_appendf(&self.id, "org.eskiu.app.app%s", segment.data); }
+    else if (strstr(keywords, padded.data) != null) { String_appendf(&self.id, "org.eskiu.app.%sapp", segment.data); }
+    else { String_appendf(&self.id, "org.eskiu.app.%s", segment.data); }
     String_free(&segment); String_free(&padded);
     // The ui package: the lock's entry (NAME git URL REV COMMIT, or NAME path DIR).
     String lock;
