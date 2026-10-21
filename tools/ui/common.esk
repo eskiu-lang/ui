@@ -89,3 +89,14 @@ bool newer(string source, string target) {
     if (fs_stat(source, &a) != 0) { return true; }
     return a.mtime > b.mtime;
 }
+
+// `text` with & < > " escaped for XML, in a fresh string.
+string xml_escape(string text) {
+    String out;
+    String_from(&out, text == null ? "" : text);
+    String_replace_all(&out, "&", "&amp;");
+    String_replace_all(&out, "<", "&lt;");
+    String_replace_all(&out, ">", "&gt;");
+    String_replace_all(&out, "\"", "&quot;");
+    return out.data;
+}

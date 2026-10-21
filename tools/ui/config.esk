@@ -1,0 +1,213 @@
+// ui.toml: what an app or a package needs from each platform. Every package in the build
+// may have one at its root; the tool merges them (the [app] table only from the project).
+// Part of the ui tool (tools/ui/main.esk imports every part).
+//
+//   [app]
+//   name = "Tasks"                       the name people see (default: the package's name)
+//   id = "com.example.tasks"             bundle id and Android package (default: org.eskiu.app.NAME)
+//
+//   [ios]
+//   frameworks = ["CoreLocation"]        system frameworks to link
+//   [ios.plist]
+//   NSCameraUsageDescription = "Scan codes"   Info.plist entries
+//   [ios.spm]
+//   FirebaseAuth = { url = "https://github.com/firebase/firebase-ios-sdk", from = "11.0.0" }
+//
+//   [android]
+//   permissions = ["android.permission.CAMERA"]
+//   dependencies = ["com.google.android.material:material:1.12.0"]
+//
+// The values are strings and arrays of strings; a table's keys may also take an inline table
+// of them. The reader knows this subset of TOML and stops at anything else with its line.
+
+// One value: its full key ("ios.frameworks", "ios.spm.FirebaseAuth.url") and its strings.
+struct ConfigEntry { String key; List<String> values; }
+
+struct Config { List<ConfigEntry> entries; }
+
+struct ConfigReader { string text; int64 at; string path; }
+
+void ConfigReader_fail(ConfigReader* self, string message) {
+    int line = 1;
+    for (int64 i = 0; i < self.at && self.text[i] != 0; i++) { if (self.text[i] == '\n') { line++; } }
+    String text;
+    String_appendf(&text, "ui: %s:%d: %s", self.path, line, message);
+    fail(text.data);
+}
+
+char ConfigReader_peek(ConfigReader* self) { return self.text[self.at]; }
+
+// Blanks and comments; newlines too when `lines`.
+void ConfigReader_skip(ConfigReader* self, bool lines) {
+    while (true) {
+        char c = self.peek();
+        if (c == ' ' || c == '\t' || c == '\r' || (lines && c == '\n')) { self.at++; }
+        else if (c == '#') { while (self.peek() != 0 && self.peek() != '\n') { self.at++; } }
+        else { return; }
+    }
+}
+
+void ConfigReader_string(ConfigReader* self, String* out) {
+    self.at++;
+    while (true) {
+        char c = self.peek();
+        if (c == 0 || c == '\n') { self.fail("unterminated string"); }
+        self.at++;
+        if (c == '"') { return; }
+        if (c == '\\') {
+            char e = self.peek();
+            self.at++;
+            c = e == 'n' ? '\n' : e == 't' ? '\t' : e;
+        }
+        char[2] one;
+        one[0] = c; one[1] = 0;
+        String_append(out, (string)&one[0]);
+    }
+}
+
+// A key: bare (letters, digits, _ - .) or quoted.
+void ConfigReader_key(ConfigReader* self, String* out) {
+    if (self.peek() == '"') { self.string(out); return; }
+    while (true) {
+        char c = self.peek();
+        bool bare = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                    c == '_' || c == '-' || c == '.';
+        if (!bare) { break; }
+        char[2] one;
+        one[0] = c; one[1] = 0;
+        String_append(out, (string)&one[0]);
+        self.at++;
+    }
+    if (out.len == 0) { self.fail("expected a key"); }
+}
+
+void ConfigReader_value(ConfigReader* self, Config* config, string key) {
+    char c = self.peek();
+    if (c == '"') {
+        ConfigEntry entry;
+        String_from(&entry.key, key);
+        String value;
+        self.string(&value);
+        entry.values.push(value);
+        config.entries.push(entry);
+    } else if (c == '[') {
+        ConfigEntry entry;
+        String_from(&entry.key, key);
+        self.at++;
+        while (true) {
+            self.skip(true);
+            if (self.peek() == ']') { self.at++; break; }
+            if (self.peek() != '"') { self.fail("expected a string in the array"); }
+            String value;
+            self.string(&value);
+            entry.values.push(value);
+            self.skip(true);
+            if (self.peek() == ',') { self.at++; }
+            else if (self.peek() != ']') { self.fail("expected , or ]"); }
+        }
+        config.entries.push(entry);
+    } else if (c == '{') {
+        self.at++;
+        while (true) {
+            self.skip(false);
+            if (self.peek() == '}') { self.at++; break; }
+            String field;
+            self.key(&field);
+            self.skip(false);
+            if (self.peek() != '=') { self.fail("expected ="); }
+            self.at++;
+            self.skip(false);
+            String full;
+            String_appendf(&full, "%s.%s", key, field.data);
+            self.value(config, full.data);
+            String_free(&field); String_free(&full);
+            self.skip(false);
+            if (self.peek() == ',') { self.at++; }
+            else if (self.peek() != '}') { self.fail("expected , or }"); }
+        }
+    } else { self.fail("expected a string, an array of strings or an inline table"); }
+}
+
+// Add the entries of the ui.toml at `path`, if there is one; `app` keeps its [app] table.
+void Config_load(Config* self, string path, bool app) {
+    String text;
+    defer String_free(&text);
+    if (fs_exists(path) != 1 || fs_read_text(path, &text) != 0) { return; }
+    ConfigReader r = ConfigReader{text: text.data, at: 0, path: path};
+    Config parsed;
+    String section;
+    defer String_free(&section);
+    while (true) {
+        r.skip(true);
+        if (r.peek() == 0) { break; }
+        if (r.peek() == '[') {
+            r.at++;
+            String_clear(&section);
+            r.key(&section);
+            if (r.peek() != ']') { r.fail("expected ]"); }
+            r.at++;
+            continue;
+        }
+        String key;
+        r.key(&key);
+        r.skip(false);
+        if (r.peek() != '=') { r.fail("expected ="); }
+        r.at++;
+        r.skip(false);
+        String full;
+        if (section.len > 0) { String_appendf(&full, "%s.%s", section.data, key.data); }
+        else { String_from(&full, key.data); }
+        r.value(&parsed, full.data);
+        String_free(&key); String_free(&full);
+        r.skip(false);
+        if (r.peek() != '\n' && r.peek() != 0) { r.fail("expected the end of the line"); }
+    }
+    for (i in 0..parsed.entries.size) {
+        ConfigEntry entry = parsed.entries.data[i];
+        if (!app && String_starts_with(&entry.key, "app.") == 1) { continue; }
+        self.entries.push(entry);
+    }
+    parsed.entries.free();
+}
+
+// The first value of `key`, or null.
+string Config_string(Config* self, string key) {
+    for (i in 0..self.entries.size) {
+        ConfigEntry* entry = &self.entries.data[i];
+        if (String_eq_cstr(&entry.key, key) == 1 && entry.values.size > 0) { return entry.values.data[0].data; }
+    }
+    return null;
+}
+
+// Every value of `key` over all the packages, each once, in order.
+void Config_all(Config* self, string key, List<string>* out) {
+    for (i in 0..self.entries.size) {
+        ConfigEntry* entry = &self.entries.data[i];
+        if (String_eq_cstr(&entry.key, key) != 1) { continue; }
+        for (j in 0..entry.values.size) {
+            string value = entry.values.data[j].data;
+            bool seen = false;
+            for (k in 0..out.size) { if (strcmp(out.data[k], value) == 0) { seen = true; } }
+            if (!seen) { out.push(value); }
+        }
+    }
+}
+
+// The names under `prefix` ("ios.plist." gives the plist keys, "ios.spm." the packages'
+// names), each once, in order.
+void Config_names(Config* self, string prefix, List<String>* out) {
+    int64 n = (int64)strlen(prefix);
+    for (i in 0..self.entries.size) {
+        ConfigEntry* entry = &self.entries.data[i];
+        if (String_starts_with(&entry.key, prefix) != 1) { continue; }
+        String name;
+        for (int64 j = n; j < entry.key.len && entry.key.data[j] != '.'; j++) {
+            char[2] one;
+            one[0] = entry.key.data[j]; one[1] = 0;
+            String_append(&name, (string)&one[0]);
+        }
+        bool seen = false;
+        for (k in 0..out.size) { if (String_eq_cstr(&out.data[k], name.data) == 1) { seen = true; } }
+        if (seen) { String_free(&name); } else { out.push(name); }
+    }
+}

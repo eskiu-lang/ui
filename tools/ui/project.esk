@@ -3,7 +3,8 @@
 
 // The project: its root (where eskiu.toml is), its name, the ui package's root, and the
 // root of every package in the build (the project first), where native code is looked for.
-struct Project { String root; String name; String ui; String id; List<String> roots; }
+// `display` is the name people see and `config` the merged ui.toml files (config.esk).
+struct Project { String root; String name; String ui; String id; List<String> roots; String display; Config config; }
 
 // The value of `key = "..."` on its own line in a TOML file, or "".
 void toml_value(string text, string key, String* out) {
@@ -87,6 +88,11 @@ void Project_find(Project* self) {
         }
         fs_list_free(&fields);
     }
+    for (i in 0..self.roots.size) { self.config.load(join(self.roots.data[i].data, "ui.toml"), i == 0); }
+    string display = self.config.string("app.name");
+    String_from(&self.display, display != null ? display : self.name.data);
+    string id = self.config.string("app.id");
+    if (id != null) { String_from(&self.id, id); }
     if (self.ui.len == 0) { fail("ui: eskiu.lock has no ui package: eskiuc add ui --git https://github.com/eskiu-lang/ui"); }
 }
 

@@ -114,14 +114,14 @@ string build_android(Project* p) {
     // The app's id and label; the activity keeps the class the JNI names are built from.
     String manifest;
     String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" package=\"%s\">\n"
-        "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n"
+        "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n%s"
         "  <application android:label=\"%s\" android:theme=\"@android:style/Theme.Material.Light.NoActionBar\""
         " android:debuggable=\"true\">\n"
         "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\">\n"
         "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n"
         "      <intent-filter><action android:name=\"android.intent.action.MAIN\"/>"
         "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n"
-        "    </activity>\n  </application>\n</manifest>\n", p.id.data, p.name.data, setup_classes.data == null ? "" : setup_classes.data);
+        "    </activity>\n  </application>\n</manifest>\n", p.id.data, android_permissions(p), xml_escape(p.display.data), setup_classes.data == null ? "" : setup_classes.data);
     fs_write_text(join(out, "AndroidManifest.xml"), manifest.data);
     string assets = join(out, "assets");
     fs_mkdir_p(assets);
@@ -190,6 +190,18 @@ void java_class_name(string path, String* out) {
     base.len -= 5;
     base.data[base.len] = 0;
     String_append(out, base.data);
+}
+
+// The ui.toml [android] permissions as uses-permission lines.
+string android_permissions(Project* p) {
+    List<string> permissions;
+    defer permissions.free();
+    p.config.all("android.permissions", &permissions);
+    String out;
+    for (i in 0..permissions.size) {
+        String_appendf(&out, "  <uses-permission android:name=\"%s\"/>\n", xml_escape(permissions.data[i]));
+    }
+    return out.data == null ? "" : out.data;
 }
 
 string adb() { return join(android_sdk(), "platform-tools/adb"); }

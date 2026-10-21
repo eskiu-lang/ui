@@ -78,8 +78,8 @@ string build_ios(Project* p) {
         "<key>UIWindowSceneSessionRoleApplication</key><array><dict>\n"
         "<key>UISceneConfigurationName</key><string>Default</string>\n"
         "<key>UISceneDelegateClassName</key><string>UiSceneDelegate</string>\n</dict></array></dict></dict>\n"
-        "<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>\n</dict></plist>\n",
-        p.id.data, p.name.data, p.name.data, p.name.data);
+        "<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>\n%s</dict></plist>\n",
+        p.id.data, p.name.data, xml_escape(p.display.data), p.name.data, ios_plist_entries(p));
     fs_write_text(join(bundle, "Info.plist"), plist.data);
     p.copy_assets(bundle);
     Cmd link;
@@ -89,6 +89,10 @@ string build_ios(Project* p) {
     for (i in 0..objects.size) { link.add(objects.data[i].data); }
     link.add("-framework"); link.add("UIKit"); link.add("-framework"); link.add("Foundation");
     link.add("-framework"); link.add("CoreGraphics"); link.add("-framework"); link.add("QuartzCore");
+    List<string> frameworks;
+    defer frameworks.free();
+    p.config.all("ios.frameworks", &frameworks);
+    for (i in 0..frameworks.size) { link.add("-framework"); link.add(frameworks.data[i]); }
     link.add("-o"); link.add(join(bundle, p.name.data));
     link.must(null);
     link.free();
@@ -97,6 +101,22 @@ string build_ios(Project* p) {
     sign.must(null);
     sign.free();
     return bundle;
+}
+
+// The ui.toml [ios.plist] entries as plist keys and strings.
+string ios_plist_entries(Project* p) {
+    List<String> keys;
+    p.config.names("ios.plist.", &keys);
+    String out;
+    for (i in 0..keys.size) {
+        String key;
+        String_appendf(&key, "ios.plist.%s", keys.data[i].data);
+        String_appendf(&out, "<key>%s</key><string>%s</string>\n", xml_escape(keys.data[i].data),
+            xml_escape(p.config.string(key.data)));
+        String_free(&key);
+    }
+    fs_list_free(&keys);
+    return out.data == null ? "" : out.data;
 }
 
 // A booted simulator, booting the first available iPhone when none is.
