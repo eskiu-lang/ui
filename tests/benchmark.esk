@@ -27,4 +27,40 @@ void benchmark(int rows, int frames) {
     ui_shutdown(); store.free();
 }
 
-int main() { benchmark(10, 100); benchmark(100, 100); benchmark(1000, 20); return 0; }
+// Whole-list operations: mount, reverse (every row moves), one event, unmount.
+void scaling(int rows) {
+    Store model;
+    *Store store = &model;
+    store.init();
+    for (i in 0..rows) { store.items.push(Todo{i, false, "Task"}); }
+    Ui runtime;
+    ui_init(&runtime, host);
+    double start = ui_clock_ms();
+    ui_mount(void() { TodoApp(store); });
+    ui_frame();
+    double mounted = ui_clock_ms();
+    for (int i = 0; i < rows / 2; i++) {
+        Todo temporary = store.items.data[i];
+        store.items.data[i] = store.items.data[rows - 1 - i];
+        store.items.data[rows - 1 - i] = temporary;
+    }
+    store.changed(); ui_frame();
+    double reversed = ui_clock_ms();
+    // The last row's "Done" button: the deepest, last-created handler.
+    *Node column = ui.root.children.data[0];
+    *Node row = column.children.data[2 + rows - 1];
+    ui_event(row.children.data[1].id, row.children.data[1].generation);
+    ui_frame();
+    double dispatched = ui_clock_ms();
+    ui_shutdown();
+    double unmounted = ui_clock_ms();
+    printf("scale rows=%d mount_ms=%.1f reverse_ms=%.1f event_ms=%.1f unmount_ms=%.1f\n", rows,
+        mounted - start, reversed - mounted, dispatched - reversed, unmounted - dispatched);
+    store.free();
+}
+
+int main() {
+    benchmark(10, 100); benchmark(100, 100); benchmark(1000, 20);
+    scaling(1000); scaling(2000); scaling(5000); scaling(10000);
+    return 0;
+}
