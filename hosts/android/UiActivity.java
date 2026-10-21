@@ -46,6 +46,7 @@ public final class UiActivity extends Activity {
     private native void nativeTick();
     private native void nativeLayout(float width, float height);
     private native void nativeStop();
+    private native int nativeReload(String path);
     private native int nativeEdgeToEdge();
     private native void nativeInsets(int top, int right, int bottom, int left, int keyboard);
     private native void nativeActive(int active);
@@ -398,6 +399,10 @@ public final class UiActivity extends Activity {
     private float density() { return getResources().getDisplayMetrics().density; }
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        // A reload build (ui serve) loads the app's code from the library ui-reload names,
+        // before anything here calls into it.
+        String core = reloadPath();
+        if (core != null) nativeReload(core);
         root = new YogaGroup();
         setContentView(root);
         // System bars, display cutouts and the keyboard: padding on the root unless the app
@@ -443,8 +448,54 @@ public final class UiActivity extends Activity {
             }
         });
     }
+    // `ui serve`: files/ui-reload holds the path of the app's newest library (the tool writes
+    // it through run-as), null when there is none.
+    private String reloadPath() {
+        java.io.File file = new java.io.File(getFilesDir(), "ui-reload");
+        if (!file.exists()) return null;
+        try (java.io.FileInputStream in = new java.io.FileInputStream(file)) {
+            byte[] bytes = new byte[(int)file.length()];
+            int got = 0;
+            while (got < bytes.length) {
+                int n = in.read(bytes, got, bytes.length - got);
+                if (n < 0) break;
+                got += n;
+            }
+            return new String(bytes, 0, got, "UTF-8").trim();
+        } catch (java.io.IOException e) {
+            return null;
+        }
+    }
+    // A new build of the app's code (an intent with ui_reload from `ui serve`): the old core
+    // stops, the views, timers and per-node state it left go, and the new one starts as at launch.
+    private void restartCore(String path) {
+        if (active) { nativeStop(); active = false; }
+        cancel();
+        for (Runnable tick : timers.values()) mainThread.removeCallbacks(tick);
+        timers.clear();
+        if (shownAlert != null) { shownAlert.dismiss(); shownAlert = null; }
+        for (View view : nodes.values()) {
+            if (view.getParent() instanceof ViewGroup) ((ViewGroup)view.getParent()).removeView(view);
+        }
+        root.removeAllViews();
+        nodes.clear(); generations.clear(); paints.clear(); borders.clear(); fonts.clear();
+        nativeViews.clear(); nativeTypes.clear(); pans.clear(); sliderRanges.clear(); transforms.clear();
+        motions.clear(); refreshers.clear(); scrollViewports.clear(); activeScreens.clear(); leaving.clear();
+        modalIds.clear();
+        if (nativeReload(path) == 0) return;
+        active = true;
+        nativeDataDir(getFilesDir().getPath());
+        nativeStart(0);
+        root.requestApplyInsets();
+        reportInsets();
+        reportSystem();
+        root.requestLayout();
+        android.util.Log.i("ui", "restarted on " + new java.io.File(path).getName());
+    }
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        String reload = intent.getStringExtra("ui_reload");
+        if (reload != null) { restartCore(reload); return; }
         if (active && intent.getData() != null) nativeLink(intent.getData().toString());
     }
     // Back asks the app first: an open modal closes, or a use_back handler takes it.

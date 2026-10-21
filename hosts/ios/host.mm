@@ -11,36 +11,10 @@
 #include <algorithm>
 #include <vector>
 
-extern "C" void ui_start(int example);
-extern "C" void ui_dispatch(int id, int generation);
-extern "C" void ui_dispatch_text(int id, int generation, const char *text);
-extern "C" void ui_dispatch_focus(int id, int generation, int focused);
-extern "C" void ui_dispatch_toggle(int id, int generation, int on);
-extern "C" void ui_dispatch_scroll(int id, int generation, int offset, int viewport);
-extern "C" void ui_dispatch_alert(int request, int choice);
-extern "C" void ui_dispatch_refresh(int id, int generation);
-extern "C" void ui_report_link(const char *url);
-extern "C" void ui_report_window(int width, int height, int scale);
-extern "C" int ui_edge_to_edge(void);
-extern "C" void ui_report_insets(int top, int right, int bottom, int left, int keyboard);
-extern "C" void ui_report_active(int active);
-extern "C" void ui_report_appearance(int dark);
-extern "C" void ui_report_accessibility(int screen_reader, int reduce_motion, int font_scale);
-extern "C" void ui_report_locale(const char *locale, int rtl);
-extern "C" const char *ui_conformance_log(void);
-extern "C" void ui_tick(void);
-extern "C" void ui_stop(void);
-extern "C" void ui_dispatch_native(const char *channel, const char *payload);
-extern "C" int ui_report_back(void);
-extern "C" void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height, int window_x, int window_y);
-extern "C" void ui_dispatch_timer(int token);
-extern "C" void ui_dispatch_hover(int id, int generation, int inside);
-extern "C" void ui_dispatch_value(int id, int generation, int value);
-extern "C" void ui_dispatch_answer(int request, const char *text);
-extern "C" void ui_dispatch_pan(int id, int generation, int phase, int dx, int dy, int vx, int vy);
-extern "C" void ui_report_data_dir(const char *path);
-extern "C" void ui_dispatch_fetch(int request, int status, const char *body, const char *headers);
-extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
+#include "../core.h"
+#ifdef UI_RELOAD
+static void ui_core_error(const char *message) { fprintf(stderr, "ui: %s\n", message); }
+#endif
 
 @interface UiHostNode : NSObject
 @property(nonatomic, strong) UIView *view;
@@ -1182,6 +1156,48 @@ static void runConformance(void) {
 }
 @end
 
+#ifdef UI_RELOAD
+// `ui serve`'s builds: UI_RELOAD_FILE names a file holding the path of the app's newest dylib.
+// When it changes, the app starts again on the new code in the running process: the old core
+// stops, the views, timers and nodes it left go, and the new one starts as at launch.
+static NSString *loadedCore;
+static UIViewController *rootController;
+
+static NSString *newestCore(void) {
+    const char *file = getenv("UI_RELOAD_FILE");
+    if (!file) return nil;
+    NSString *text = [NSString stringWithContentsOfFile:@(file) encoding:NSUTF8StringEncoding error:nil];
+    return [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
+static void restartCore(NSString *path) {
+    ui_stop();
+    [frameLink invalidate];
+    frameLink = nil;
+    for (NSTimer *timer in timers.allValues) [timer invalidate];
+    [timers removeAllObjects];
+    if (shownAlert) [shownAlert dismissViewControllerAnimated:NO completion:nil];
+    shownAlert = nil;
+    swipeTop = swipeBelow = nil;
+    for (UiHostNode *node in nodes.allValues) {
+        [node.view removeFromSuperview];
+        YGNodeFree(node.yoga);
+    }
+    [nodes removeAllObjects];
+    [modals removeAllObjects];
+    [leaving removeAllObjects];
+    for (UIView *view in rootView.subviews.copy) [view removeFromSuperview];
+    if (!loadCore(path.UTF8String)) return;
+    loadedCore = path;
+    NSString *data = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
+    ui_report_data_dir(data.UTF8String);
+    ui_start(launchExample);
+    [rootController.view setNeedsLayout];
+    [rootController.view layoutIfNeeded];
+    fprintf(stderr, "ui: restarted on %s\n", path.lastPathComponent.UTF8String);
+}
+#endif
+
 @interface UiSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -1194,6 +1210,17 @@ static void runConformance(void) {
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     nodes = [NSMutableDictionary new];
     modals = [NSMutableArray new];
+#ifdef UI_RELOAD
+    loadedCore = newestCore();
+    if (!loadedCore || !loadCore(loadedCore.UTF8String)) { fprintf(stderr, "ui: no app dylib (UI_RELOAD_FILE)\n"); exit(1); }
+    // The pid next to the reload file: `ui run ios` restarts a running app instead of launching it.
+    NSString *pidFile = [[@(getenv("UI_RELOAD_FILE")) stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"pid"];
+    [[NSString stringWithFormat:@"%d", getpid()] writeToFile:pidFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *t) {
+        NSString *path = newestCore();
+        if (path.length && ![path isEqualToString:loadedCore]) restartCore(path);
+    }];
+#endif
     // The app's data directory, before the app starts (ui_data_dir).
     NSString *data = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
     [NSFileManager.defaultManager createDirectoryAtPath:data withIntermediateDirectories:YES attributes:nil error:nil];
@@ -1205,6 +1232,9 @@ static void runConformance(void) {
     events = [UiEvents new];
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     UiController *controller = [UiController new];
+#ifdef UI_RELOAD
+    rootController = controller;
+#endif
     controller.view.backgroundColor = UIColor.systemBackgroundColor;
     self.window.rootViewController = controller;
     [self.window makeKeyAndVisible];

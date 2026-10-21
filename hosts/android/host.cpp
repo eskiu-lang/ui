@@ -11,36 +11,11 @@
 #include <cstdint>
 #include <cstdlib>
 
-extern "C" void ui_start(int);
-extern "C" void ui_dispatch(int, int);
-extern "C" void ui_dispatch_text(int, int, const char *);
-extern "C" void ui_dispatch_focus(int, int, int);
-extern "C" void ui_dispatch_toggle(int, int, int);
-extern "C" void ui_dispatch_scroll(int, int, int, int);
-extern "C" void ui_dispatch_alert(int, int);
-extern "C" void ui_dispatch_refresh(int, int);
-extern "C" int ui_report_back();
-extern "C" void ui_report_link(const char *);
-extern "C" void ui_report_window(int, int, int);
-extern "C" int ui_edge_to_edge();
-extern "C" void ui_report_insets(int, int, int, int, int);
-extern "C" void ui_report_active(int);
-extern "C" void ui_report_appearance(int);
-extern "C" void ui_report_accessibility(int, int, int);
-extern "C" void ui_report_locale(const char *, int);
-extern "C" const char *ui_conformance_log();
-extern "C" void ui_tick();
-extern "C" void ui_stop();
-extern "C" void ui_dispatch_native(const char *, const char *);
-extern "C" void ui_dispatch_view(int, int, const char *, const char *);
-extern "C" void ui_dispatch_layout(int, int, int, int, int, int, int, int);
-extern "C" void ui_dispatch_timer(int);
-extern "C" void ui_dispatch_hover(int, int, int);
-extern "C" void ui_dispatch_pan(int, int, int, int, int, int, int);
-extern "C" void ui_dispatch_value(int, int, int);
-extern "C" void ui_dispatch_answer(int, const char *);
-extern "C" void ui_report_data_dir(const char *);
-extern "C" void ui_dispatch_fetch(int, int, const char *, const char *);
+#include "../core.h"
+#ifdef UI_RELOAD
+#include <android/log.h>
+static void ui_core_error(const char *message) { __android_log_print(ANDROID_LOG_ERROR, "ui", "%s", message); }
+#endif
 
 static JNIEnv *env;
 static jobject activity;
@@ -309,6 +284,22 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeLink(JNIEnv
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStop(JNIEnv *current, jobject) {
     env = current; ui_stop(); YGNodeFree(root); env->DeleteGlobalRef(activity); activity = nullptr;
+}
+
+// `ui serve`'s builds (UI_RELOAD): the app's code in a library of its own, loaded at start and
+// again after each build, once the old one stopped (nativeStop); 0 without a reload build.
+extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_UiActivity_nativeReload(JNIEnv *current, jobject, jstring path) {
+#ifdef UI_RELOAD
+    env = current;
+    for (auto &entry : nodes) YGNodeFree(entry.second);
+    nodes.clear(); scrolls.clear(); modals.clear(); generations.clear(); layouts.clear();
+    const char *chars = env->GetStringUTFChars(path, nullptr);
+    bool loaded = loadCore(chars);
+    env->ReleaseStringUTFChars(path, chars);
+    return loaded ? 1 : 0;
+#else
+    return 0;
+#endif
 }
 
 // Native code: events from Java (UiActivity.emit, a view's events) and the C API in
