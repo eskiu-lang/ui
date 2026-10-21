@@ -9,6 +9,8 @@ typedef void (*ui_commit_fn)(int op, int id, int generation, int parent, int bef
 // A command (op 10): its request id, the command (1 alert: title, message, buttons; 2 open
 // a URL) and its strings.
 typedef void (*ui_command_fn)(int request, int command, int count, const char **strings);
+// A native view's named prop (op 11): the node, the prop's name and its value ("" removed).
+typedef void (*ui_named_fn)(int id, const char *name, const char *value);
 
 static inline int ui_commit_u32(const uint8_t *p) {
     return (int)((uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
@@ -17,7 +19,8 @@ static inline int ui_commit_u32(const uint8_t *p) {
 
 // Props arrive as op 2 with the prop code in `kind` and its value in `before`; string props
 // (op 9) with the prop code in `kind` and the value in `text`.
-static inline void ui_commit_each(const uint8_t *data, int len, ui_commit_fn apply, ui_command_fn command) {
+static inline void ui_commit_each(const uint8_t *data, int len, ui_commit_fn apply, ui_command_fn command,
+                                  ui_named_fn named) {
     int at = 0;
     while (at < len) {
         int op = data[at];
@@ -43,6 +46,15 @@ static inline void ui_commit_each(const uint8_t *data, int len, ui_commit_fn app
                 at += 4 + n + 1;
             }
             command(id, which, count < 32 ? count : 32, strings);
+            continue;
+        } else if (op == 11) {
+            int n = ui_commit_u32(data + at);
+            const char *name = (const char *)(data + at + 4);
+            at += 4 + n + 1;
+            int v = ui_commit_u32(data + at);
+            const char *value = (const char *)(data + at + 4);
+            at += 4 + v + 1;
+            named(id, name, value);
             continue;
         } else if (op == 9) {
             kind = data[at];
