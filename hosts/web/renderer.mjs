@@ -2,7 +2,7 @@
 // (1 or 0), 5 scroll (the offset in value, the viewport height in extra), 6 alert, 7 refresh,
 // 9 a native view's event (the payload in text, its name in extra), 10 the browser went to a
 // route (the route in text, its history index in value), 11 a node's frame (x in value, y in
-// extra, then width and height), 13 hover (1 entered, 0 left).
+// extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value.
 export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
@@ -11,6 +11,7 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
   else if (kind === 6) app._ui_dispatch_alert(id, value);
   else if (kind === 13) app._ui_dispatch_hover(id, generation, value);
+  else if (kind === 14) app._ui_dispatch_value(id, generation, value);
   else if (kind === 11) app._ui_dispatch_layout(id, generation, value, extra, width, height);
   else if (kind === 10) app.ccall('ui_dispatch_route', null, ['string', 'number'], [text, value]);
   else if (kind === 9) app.ccall('ui_dispatch_view', null, ['number', 'number', 'string', 'string'], [id, generation, extra, text]);
@@ -20,7 +21,7 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
 // Kinds (src/ui.esk): 0 scope, 1 column, 2 row, 3 text, 4 button, 5 text input, 6 scroll,
 // 7 image, 8 pressable, 9 switch, 10 activity indicator, 11 status bar, 12 modal, 13 native
 // view, 14 screen.
-const TAGS = {3: 'span', 4: 'button', 5: 'input', 7: 'img', 9: 'input'};
+const TAGS = {3: 'span', 4: 'button', 5: 'input', 7: 'img', 9: 'input', 15: 'input'};
 // An edge offset that is not set (kUnset in src/core/state.esk).
 const UNSET = -1000000;
 const CONTAINERS = new Set([0, 1, 2, 6, 8, 12, 14]);
@@ -131,6 +132,7 @@ export function createHost(root, dispatch, views = {}) {
   root.addEventListener('input', event => {
     const input = listening(event, 'input[data-ui-id]');
     if (input && kindOf(input) === 5) dispatch(...ids(input), 2, input.value);
+    if (input && kindOf(input) === 15) dispatch(...ids(input), 14, null, Number(input.value));
   });
   root.addEventListener('change', event => {
     const input = listening(event, 'input[data-ui-id]');
@@ -168,6 +170,7 @@ export function createHost(root, dispatch, views = {}) {
     node.style.flexShrink = '0';
     node.style.minWidth = '0';
     node.style.minHeight = '0';
+    node.style.margin = '0';
     if (CONTAINERS.has(m.kind)) {
       node.style.display = 'flex';
       node.style.flexDirection = m.kind === 2 ? 'row' : 'column';
@@ -175,6 +178,7 @@ export function createHost(root, dispatch, views = {}) {
       if (m.kind === 6) node.style.overflow = 'auto';
     }
     if (m.kind === 5) node.type = 'text';
+    if (m.kind === 15) { node.type = 'range'; node.step = '1'; }
     if (m.kind === 8) { node.setAttribute('role', 'button'); node.tabIndex = 0; node.style.cursor = 'pointer'; }
     if (m.kind === 9) { node.type = 'checkbox'; node.setAttribute('role', 'switch'); }
     if (m.kind === 10) { node.className = 'ui-spinner'; node.setAttribute('role', 'progressbar'); }
@@ -213,6 +217,9 @@ export function createHost(root, dispatch, views = {}) {
       case 22: refresh(node, value !== 0); break;
       case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
       case 31: hover(node, value !== 0); break;
+      case 32: if (node.value !== String(value)) node.value = String(value); break;
+      case 33: node.min = String(value); break;
+      case 34: node.max = String(value); break;
       case 30: if (value) layouts.set(Number(node.dataset.uiId), null); else layouts.delete(Number(node.dataset.uiId)); break;
       case 24: s.position = value ? 'absolute' : ''; break;
       case 25: s.left = value === UNSET ? '' : `${value}px`; break;

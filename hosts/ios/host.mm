@@ -32,6 +32,7 @@ extern "C" int ui_report_back(void);
 extern "C" void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height);
 extern "C" void ui_dispatch_timer(int token);
 extern "C" void ui_dispatch_hover(int id, int generation, int inside);
+extern "C" void ui_dispatch_value(int id, int generation, int value);
 extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
 
 @interface UiHostNode : NSObject
@@ -52,6 +53,8 @@ extern "C" void ui_dispatch_view(int id, int generation, const char *name, const
 // Whether the app listens to this node's frame (ui_on_layout), and the frame last reported.
 @property(nonatomic) bool layoutListening;
 @property(nonatomic) int nodeId;
+// A slider's value as last shown or reported, in whole steps.
+@property(nonatomic) int sliderValue;
 @property(nonatomic) CGRect reportedFrame;
 @end
 @implementation UiHostNode
@@ -302,6 +305,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
 @interface UiEvents : NSObject <UIScrollViewDelegate>
 - (void)press:(UIControl *)sender;
 - (void)hover:(UIHoverGestureRecognizer *)gesture;
+- (void)slide:(UISlider *)sender;
 - (void)edit:(UITextField *)sender;
 - (void)toggle:(UISwitch *)sender;
 - (void)refresh:(UIRefreshControl *)sender;
@@ -310,6 +314,14 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)frame:(CADisplayLink *)sender;
 @end
 @implementation UiEvents
+// A slider moved: each new whole step is reported.
+- (void)slide:(UISlider *)sender {
+    UiHostNode *node = nodes[@(sender.tag)];
+    int value = (int)lroundf(sender.value);
+    if (!node || value == node.sliderValue) return;
+    node.sliderValue = value;
+    ui_dispatch_value((int)sender.tag, node.generation, value);
+}
 // A pointer (an iPad's, a Mac's) entering and leaving a node with a hover handler.
 - (void)hover:(UIHoverGestureRecognizer *)gesture {
     UiHostNode *node = nodes[@(gesture.view.tag)];
@@ -424,6 +436,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view = control;
             YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
+        } else if (kind == 15) {
+            UISlider *slider = [UISlider new];
+            slider.tag = id;
+            [slider addTarget:events action:@selector(slide:) forControlEvents:UIControlEventValueChanged];
+            node.view = slider;
         } else if (kind == 9) {
             UISwitch *toggle = [UISwitch new];
             toggle.tag = id;
@@ -457,7 +474,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
         }
         YGNodeSetContext(node.yoga, (__bridge void *)node);
-        if ((kind >= 3 && kind <= 5) || kind == 7 || kind == 9 || kind == 10) YGNodeSetMeasureFunc(node.yoga, measure);
+        if ((kind >= 3 && kind <= 5) || kind == 7 || kind == 9 || kind == 10 || kind == 15) YGNodeSetMeasureFunc(node.yoga, measure);
         nodes[@(id)] = node;
         return;
     }
@@ -513,7 +530,12 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (before && !scroll.refreshControl.refreshing) [scroll.refreshControl beginRefreshing];
             else if (!before && scroll.refreshControl.refreshing) [scroll.refreshControl endRefreshing];
         } else if (kind == 23) screenActive(node, before);
-        else if (kind == 31) {
+        else if (kind >= 32 && kind <= 34 && [node.view isKindOfClass:UISlider.class]) {
+            UISlider *slider = (UISlider *)node.view;
+            if (kind == 33) slider.minimumValue = before;
+            else if (kind == 34) slider.maximumValue = before;
+            else { slider.value = before; node.sliderValue = before; }
+        } else if (kind == 31) {
             for (UIGestureRecognizer *g in node.view.gestureRecognizers.copy) {
                 if ([g isKindOfClass:UIHoverGestureRecognizer.class]) [node.view removeGestureRecognizer:g];
             }
@@ -757,6 +779,7 @@ static void runNativeTest(void) {
 static NSString *roleOf(UIView *view) {
     if ([view isKindOfClass:UIButton.class]) return @"button";
     if ([view isKindOfClass:UISwitch.class]) return @"switch";
+    if ([view isKindOfClass:UISlider.class]) return @"slider";
     if ([view isKindOfClass:UITextField.class]) return @"textfield";
     if ([view isKindOfClass:UIControl.class]) return @"button";
     if ([view isKindOfClass:UIActivityIndicatorView.class]) return @"progressbar";
@@ -797,7 +820,9 @@ static void runConformance(void) {
         UILabel *title = nil;
         UIControl *press = nil;
         UISwitch *toggle = nil;
+        UISlider *volume = nil;
         for (UiHostNode *node in nodes.allValues) {
+            if ([node.view.accessibilityLabel isEqualToString:@"Volume"]) volume = (UISlider *)node.view;
             NSString *label = node.view.accessibilityLabel;
             if ([label isEqualToString:@"Painted"]) painted = node.view;
             if ([label isEqualToString:@"Title"]) title = (UILabel *)node.view;
@@ -823,6 +848,8 @@ static void runConformance(void) {
         [press sendActionsForControlEvents:UIControlEventTouchUpInside];
         [toggle setOn:YES animated:NO];
         [toggle sendActionsForControlEvents:UIControlEventValueChanged];
+        volume.value = 70;
+        [volume sendActionsForControlEvents:UIControlEventValueChanged];
         UIScrollView *feed = nil;
         for (UiHostNode *node in nodes.allValues) if ([node.view.accessibilityLabel isEqualToString:@"Feed"]) feed = (UIScrollView *)node.view;
         UIButton *ask = (UIButton *)findView(UIButton.class, @"Ask");

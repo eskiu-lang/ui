@@ -49,6 +49,13 @@ void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// The user moved a Slider to `value`.
+void ui_dispatch_value(int id, int generation, int value) {
+    if (!app_active) { return; }
+    ui_event_value(id, generation, value);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 // A pointer entered (1) or left (0) a node with a hover handler.
 void ui_dispatch_hover(int id, int generation, int inside) {
     if (!app_active) { return; }

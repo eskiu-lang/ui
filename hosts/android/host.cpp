@@ -33,6 +33,7 @@ extern "C" void ui_dispatch_view(int, int, const char *, const char *);
 extern "C" void ui_dispatch_layout(int, int, int, int, int, int);
 extern "C" void ui_dispatch_timer(int);
 extern "C" void ui_dispatch_hover(int, int, int);
+extern "C" void ui_dispatch_value(int, int, int);
 
 static JNIEnv *env;
 static jobject activity;
@@ -108,7 +109,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         nodes[id] = node;
         YGNodeSetContext(node, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
         // Measured leaves: text, button, input, image, switch, activity indicator.
-        bool measured = kind == 3 || kind == 4 || kind == 5 || kind == 7 || kind == 9 || kind == 10;
+        bool measured = kind == 3 || kind == 4 || kind == 5 || kind == 7 || kind == 9 || kind == 10 || kind == 15;
         if (measured) YGNodeSetMeasureFunc(node, measure);
         else YGNodeStyleSetFlexDirection(node, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
         if (kind == 6) { YGNodeStyleSetOverflow(node, YGOverflowScroll); scrolls[id] = 1; }
@@ -331,4 +332,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeTimer(JNIEn
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeHover(JNIEnv *current, jobject, jint id, jint generation, jint inside) {
     env = current; ui_dispatch_hover(id, generation, inside);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeValue(JNIEnv *current, jobject, jint id, jint generation, jint value) {
+    env = current; ui_dispatch_value(id, generation, value);
 }

@@ -68,6 +68,9 @@ public final class UiActivity extends Activity {
     private native void nativeModuleEvent(String channel, String payload);
     private native void nativeTimer(int token);
     private native void nativeHover(int id, int generation, int inside);
+    private native void nativeValue(int id, int generation, int value);
+    // A slider's range: SeekBar counts from 0, so its progress is the value minus the minimum.
+    private final HashMap<Integer, int[]> sliderRanges = new HashMap<>();
     // Timers for use_interval and use_timeout, on the UI thread, by token.
     private final HashMap<Integer, Runnable> timers = new HashMap<>();
     public void timerStart(int token, int ms, boolean repeat) {
@@ -295,6 +298,17 @@ public final class UiActivity extends Activity {
 
     private void prop(int id, View view, int code, int value) {
         float d = density();
+        if (code >= 32 && code <= 34 && view instanceof android.widget.SeekBar) {
+            android.widget.SeekBar slider = (android.widget.SeekBar)view;
+            int[] range = sliderRanges.get(id);
+            int shown = slider.getProgress() + range[0];
+            if (code == 33) range[0] = value;
+            else if (code == 34) range[1] = value;
+            else shown = value;
+            slider.setMax(Math.max(0, range[1] - range[0]));
+            slider.setProgress(shown - range[0]);
+            return;
+        }
         if (code == 31) {
             // A pointer (a mouse, a stylus) entering and leaving the view.
             view.setOnHoverListener(value == 0 ? null : (v, e) -> {
@@ -491,6 +505,17 @@ public final class UiActivity extends Activity {
                 pressable.setFocusable(true);
                 pressable.setOnClickListener(v -> nativeEvent(id, generations.get(id)));
                 view = pressable;
+            } else if (kind == 15) {
+                android.widget.SeekBar slider = new android.widget.SeekBar(this);
+                sliderRanges.put(id, new int[] {0, 100});
+                slider.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                    @Override public void onProgressChanged(android.widget.SeekBar b, int progress, boolean user) {
+                        if (user && active && generations.containsKey(id)) nativeValue(id, generations.get(id), progress + sliderRanges.get(id)[0]);
+                    }
+                    @Override public void onStartTrackingTouch(android.widget.SeekBar b) {}
+                    @Override public void onStopTrackingTouch(android.widget.SeekBar b) {}
+                });
+                view = slider;
             } else if (kind == 9) {
                 Switch toggle = new Switch(this);
                 toggle.setOnCheckedChangeListener((b, on) -> {
@@ -576,7 +601,7 @@ public final class UiActivity extends Activity {
             activeScreens.remove(id);
             nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
             modalIds.remove(id); refreshers.remove(id); nativeViews.remove(id); nativeTypes.remove(id);
-            shownScreens.remove(id);
+            shownScreens.remove(id); sliderRanges.remove(id);
             scrollViewports.remove(id);
         } else if (op == 7 || op == 8) {
             if (view instanceof ScrollView) { if (op == 7) scrollViewports.put(id, -1); else scrollViewports.remove(id); }
@@ -671,6 +696,7 @@ public final class UiActivity extends Activity {
 
     private static String roleOf(View view) {
         if (view instanceof Switch) return "switch";
+        if (view instanceof android.widget.SeekBar) return "slider";
         if (view instanceof Button) return "button";
         if (view instanceof ProgressBar) return "progressbar";
         if (view instanceof ViewGroup && view.isClickable() && !(view instanceof ScrollView)) return "button";
@@ -710,7 +736,9 @@ public final class UiActivity extends Activity {
         View painted = null, press = null;
         TextView title = null;
         Switch toggle = null;
+        android.widget.SeekBar volume = null;
         for (View view : nodes.values()) {
+            if ("Volume".contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) volume = (android.widget.SeekBar)view;
             String label = view.getContentDescription() == null ? "" : view.getContentDescription().toString();
             if (label.equals("Painted")) painted = view;
             if (label.equals("Title")) title = (TextView)view;
@@ -730,6 +758,10 @@ public final class UiActivity extends Activity {
         field.setText("abc");
         press.performClick();
         toggle.setChecked(true);
+        // A key press is a user's move (setProgress is not): 30 + 40.
+        volume.setKeyProgressIncrement(40);
+        volume.onKeyDown(android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
+            new android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DPAD_RIGHT));
         final String result = "{\"status\":\"DONE\",\"session\":\"" + getIntent().getStringExtra("session") +
             "\",\"frames\":{" + frames + "},\"roles\":{" + roles + "},\"styles\":" + styles;
         final View suiteView = suite;
