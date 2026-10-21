@@ -59,8 +59,35 @@ void scaling(int rows) {
     store.free();
 }
 
+// Every row reads one shared signal: a change re-runs all of them, and each re-run
+// re-subscribes.
+void shared_reader(int rows) {
+    *Signal<int> selected = signal_new<int>(0);
+    Ui runtime;
+    ui_init(&runtime, host);
+    ui_mount(void() {
+        Column(Style{}, void() {
+            for (i in 0..rows) {
+                int id = i;
+                Row(Style{key: key(id)}, void() {
+                    Text(selected.get() == id ? "selected" : "row");
+                });
+            }
+        });
+    });
+    ui_frame();
+    double start = ui_clock_ms();
+    selected.set(rows / 2); ui_frame();
+    double changed = ui_clock_ms();
+    ui_shutdown();
+    double unmounted = ui_clock_ms();
+    printf("shared rows=%d change_ms=%.1f unmount_ms=%.1f\n", rows, changed - start, unmounted - changed);
+    selected.free();
+}
+
 int main() {
     benchmark(10, 100); benchmark(100, 100); benchmark(1000, 20);
     scaling(1000); scaling(2000); scaling(5000); scaling(10000);
+    shared_reader(1000); shared_reader(5000); shared_reader(10000);
     return 0;
 }
