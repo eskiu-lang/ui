@@ -94,6 +94,14 @@ share.
 |---|---|
 | `Column(Style, fn()->void)`, `Row(...)` | A container; its block emits the children. |
 | `Scroll(Style, fn()->void)` | A column whose content scrolls when it is taller than its space. |
+| `FlatList(Style, count, item_height, fn(int)->void)` | A virtual list: only the rows near the viewport are mounted (a million rows cost what a screenful does). Rows have a fixed height. |
+| `SectionList(Style, *List<int> sizes, header_height, item_height, fn(int, int)->void)` | The same with section headers: `render(section, -1)` draws a header, `render(section, i)` a row. |
+| `RefreshControl(bool refreshing, fn()->void)` | Pull to refresh for the Scroll or FlatList right after it. |
+| `Modal(bool visible, fn()->void on_request_close, fn()->void block)` | Content on a layer over the whole screen; back (Android) and Escape (web) ask it to close. |
+| `StatusBar(BarStyle, bool hidden)` | The system status bar's content style and visibility. |
+| `Alert(title, message, buttons, fn(int)->void)` | A native alert; `buttons` are separated by newlines, the handler gets the index pressed (-1 dismissed). |
+| `use_back(fn()->bool)` | A back handler while the scope is mounted (Android's back button). |
+| `ui_open_url(string)`, `ui_link()` | Open a URL with the platform; the link the app was opened with. |
 | `Scope(string name, Key, fn()->void)` | A component's own scope (state and identity); `name` appears in diagnostics. |
 | `Text(string)` | A text node. The text is copied. Format it with `<string>`'s `String_format`, which `-Wformat` checks. |
 | `Button(string, fn()->void)` | A button and its handler. `Button_owned` adds a cleanup, run when the handler is replaced or unmounted. |
@@ -116,7 +124,9 @@ share.
 | `ui_decode(*uint8, int, List<Mutation>*)` | A commit as records, for tests and tools. Native hosts use `hosts/ui_commit.h`. |
 | `ui.lenient` | Release behavior: a duplicate key warns and the later child is unkeyed instead of stopping. |
 
-Node ids are reused once the commit that removed them completes, each time with a new
+Unkeyed children match by position among the unkeyed siblings of their own kind, so an
+element that comes and goes (`if (saving) { Text("Saving"); }`) does not move its siblings
+of other kinds. Node ids are reused once the commit that removed them completes, each time with a new
 generation, so an event for a removed node never reaches the node that took its id.
 
 Values in `use_signal<T>` need built-in equality (scalars and pointers); pointers stored in
@@ -149,7 +159,8 @@ CSS flexbox with Yoga's defaults (border-box sizes, no shrinking, zero minimum s
 
 **Conformance.** `examples/conformance.esk` is one scene every renderer draws; each reports
 the frame and accessibility role of every labeled element and the handler log after a fixed
-script (two taps, typing "abc", a press and a toggle), plus the colors, radius, border,
+script (two taps, typing "abc", a press, a toggle, an alert answered, a modal opened and
+closed, a pull to refresh, a feed of 1000 rows scrolled), plus the colors, radius, border,
 opacity and font a styled box and a title were drawn with. `tools/conformance.py` compares them with the frames the
 scene must have (within one point) on iOS, Android and the web; all three pass.
 
