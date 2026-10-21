@@ -24,14 +24,14 @@
 <script type="module">
   // The page `ui build web` makes for an app: the app fills the window.
   import createApp from './app.mjs';
-  import {createHost, uiDispatch} from './renderer.mjs';
+  import {createHost, uiDispatch, withStrings} from './renderer.mjs';
   import {createFrameScheduler} from './scheduler.mjs';
   import {setupNative} from './native.mjs';
   const root = document.querySelector('#app');
   // Native code (native/web): views by type, and events on channels for use_native_event.
   const views = {};
   const emit = (channel, payload = '') => {
-    if (app) app.ccall('ui_dispatch_native', null, ['string', 'string'], [String(channel), String(payload)]);
+    if (app) withStrings(app, [String(channel), String(payload)], (c, p) => app._ui_dispatch_native(c, p));
   };
   setupNative({registerView: (type, factory) => { views[type] = factory; }, emit});
   let app;

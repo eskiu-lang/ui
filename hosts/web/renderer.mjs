@@ -5,9 +5,22 @@
 // extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value,
 // 15 an answer (the request in id, its text), 16 a fetch's answer (status in value, the body
 // in text, the headers in extra), 17 a pan (the phase in value, then dx, dy, vx, vy).
+// Strings into the wasm heap for a call, freed after it. ccall's 'string' copies them onto the
+// wasm stack, 64 KiB, which a fetch's body or a long paste overflows.
+export function withStrings(app, strings, call) {
+  const pointers = strings.map(text => {
+    if (text == null) return 0;
+    const size = app.lengthBytesUTF8(text) + 1;
+    const pointer = app._malloc(size);
+    app.stringToUTF8(text, pointer, size);
+    return pointer;
+  });
+  try { return call(...pointers); } finally { for (const pointer of pointers) if (pointer) app._free(pointer); }
+}
+
 export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0, more = 0, rest = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
-  else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
+  else if (kind === 2) withStrings(app, [text], t => app._ui_dispatch_text(id, generation, t));
   else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
   else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
@@ -15,11 +28,11 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 13) app._ui_dispatch_hover(id, generation, value);
   else if (kind === 14) app._ui_dispatch_value(id, generation, value);
   else if (kind === 17) app._ui_dispatch_pan(id, generation, value, extra, width, height, more);
-  else if (kind === 16) app.ccall('ui_dispatch_fetch', null, ['number', 'number', 'string', 'string'], [id, value, text, extra]);
-  else if (kind === 15) app.ccall('ui_dispatch_answer', null, ['number', 'string'], [id, text]);
+  else if (kind === 16) withStrings(app, [text, extra], (body, headers) => app._ui_dispatch_fetch(id, value, body, headers));
+  else if (kind === 15) withStrings(app, [text], t => app._ui_dispatch_answer(id, t));
   else if (kind === 11) app._ui_dispatch_layout(id, generation, value, extra, width, height, more, rest);
-  else if (kind === 10) app.ccall('ui_dispatch_route', null, ['string', 'number'], [text, value]);
-  else if (kind === 9) app.ccall('ui_dispatch_view', null, ['number', 'number', 'string', 'string'], [id, generation, extra, text]);
+  else if (kind === 10) withStrings(app, [text], t => app._ui_dispatch_route(t, value));
+  else if (kind === 9) withStrings(app, [extra, text], (name, payload) => app._ui_dispatch_view(id, generation, name, payload));
   else app._ui_dispatch_refresh(id, generation);
 }
 

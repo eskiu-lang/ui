@@ -29,8 +29,8 @@ string build_web(Project* p) {
     cmd.add("--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_dispatch_text,_ui_dispatch_focus,"
             "_ui_dispatch_toggle,_ui_dispatch_scroll,_ui_dispatch_alert,_ui_dispatch_refresh,_ui_report_back,"
             "_ui_report_link,_ui_report_window,_ui_tick,_ui_stop,_ui_conformance_log,_ui_dispatch_native,"
-            "_ui_dispatch_view,_ui_dispatch_route,_ui_dispatch_layout,_ui_dispatch_timer,_ui_dispatch_hover,_ui_dispatch_value,_ui_report_appearance,_ui_report_accessibility,_ui_report_locale,_ui_dispatch_answer,_ui_dispatch_fetch,_ui_dispatch_pan");
-    cmd.add("--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall");
+            "_ui_dispatch_view,_ui_dispatch_route,_ui_dispatch_layout,_ui_dispatch_timer,_ui_dispatch_hover,_ui_dispatch_value,_ui_report_appearance,_ui_report_accessibility,_ui_report_locale,_ui_dispatch_answer,_ui_dispatch_fetch,_ui_dispatch_pan,_malloc,_free");
+    cmd.add("--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall,stringToUTF8,lengthBytesUTF8");
     cmd.must(null);
     fs_copy(join(p.ui.data, "hosts/web/renderer.mjs"), join(out, "renderer.mjs"));
     fs_copy(join(p.ui.data, "hosts/web/scheduler.mjs"), join(out, "scheduler.mjs"));
