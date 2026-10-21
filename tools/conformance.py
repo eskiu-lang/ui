@@ -51,7 +51,7 @@ EXPECTED_ROLES = {"Suite": "group", "Boxes": "group", "Fixed": "group", "Grow": 
                   "Item 0": "group", "Item 1": "group", "Item 2": "group", "Logo": "image",
                   "Field": "textfield", "Tap": "button", "Press": "button", "Toggle": "switch", "Volume": "slider",
                   "Busy": "progressbar", "Painted": "group", "Title": "text", "Feed": "scroll", "Ask": "button"}
-EXPECTED_LOG = "layout:100x50,timer,tap,tap,text:abc,press,switch:1,slider:70,clip:eskiu,alert:1,close"
+EXPECTED_LOG = "layout:100x50,timer,store:saved,tap,tap,text:abc,press,switch:1,slider:70,clip:eskiu,alert:1,close"
 # What the host drew: colors as rrggbbaa, sizes in points, opacity 0 to 1.
 EXPECTED_STYLES = {
     "Painted": {"background": "ff0000ff", "radius": 8, "border": 2, "borderColor": "000000ff", "opacity": 0.5},
