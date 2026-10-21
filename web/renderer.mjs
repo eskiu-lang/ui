@@ -51,6 +51,12 @@ export function createHost(root, dispatch) {
           node.dataset.uiId = m.id;
           node.dataset.generation = m.generation;
           node.dataset.kind = m.kind;
+          // Yoga's defaults, as react-native-web sets them: sizes include padding, items do
+          // not shrink, and their minimum size is zero.
+          node.style.boxSizing = 'border-box';
+          node.style.flexShrink = '0';
+          node.style.minWidth = '0';
+          node.style.minHeight = '0';
           if (m.kind <= 2 || m.kind === 6) {
             node.style.display = 'flex';
             node.style.flexDirection = m.kind === 2 ? 'row' : 'column';
