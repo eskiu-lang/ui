@@ -1,0 +1,126 @@
+import "../src/ui.esk";
+
+// The bridge between a host (hosts/ui_commit.h, web/ui-library.js, the iOS, Android and
+// desktop hosts) and an app. The app defines what to mount and what to free:
+//
+//   void ui_app_start(int which) { ui_mount(void() { App(); }); }
+//   void ui_app_stop() {}
+//
+// `which` is the example a host was asked for (0 unless it was given one).
+void ui_app_start(int which);
+void ui_app_stop();
+
+// The host applies a whole commit (the format in src/ui.esk) and lays it out.
+extern void ui_host_commit(*uint8 data, int len);
+extern void ui_host_schedule();
+extern void ui_host_cancel();
+Ui ui_host_runtime;
+
+// What the hosts' conformance runs read back: the conformance scene writes its handler log
+// here; any other app leaves it empty.
+string ui_test_log;
+string ui_conformance_log() { return ui_test_log == null ? "" : ui_test_log; }
+bool app_active;
+
+void ui_dispatch(int id, int generation) {
+    if (!app_active) { return; }
+    ui_event(id, generation);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+void ui_dispatch_text(int id, int generation, string text) {
+    if (!app_active) { return; }
+    ui_event_text(id, generation, text);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+void ui_dispatch_focus(int id, int generation, int focused) {
+    if (!app_active) { return; }
+    ui_event_focus(id, generation, focused != 0);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+// Host policy: 0 puts the root inside the safe area and above the keyboard; 1 gives it the
+// whole screen and leaves the insets to the app (ui_insets). An app sets it in
+// ui_app_start.
+int ui_edge_policy;
+int ui_edge_to_edge() { return ui_edge_policy; }
+
+void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
+    if (!app_active) { return; }
+    ui_set_insets(Insets{top, right, bottom, left, keyboard});
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+void ui_dispatch_scroll(int id, int generation, int offset, int viewport) {
+    if (!app_active) { return; }
+    ui_event_scroll(id, generation, offset, viewport);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+void ui_dispatch_refresh(int id, int generation) {
+    if (!app_active) { return; }
+    ui_event_refresh(id, generation);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+void ui_dispatch_alert(int request, int choice) {
+    if (!app_active) { return; }
+    ui_event_alert(request, choice);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+// Android's back press: 1 when the app handled it.
+int ui_report_back() {
+    if (!app_active) { return 0; }
+    bool handled = ui_back();
+    if (ui_needs_frame()) { ui_host_schedule(); }
+    return handled ? 1 : 0;
+}
+
+void ui_report_link(string url) {
+    if (!app_active) { return; }
+    ui_set_link(url);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+void ui_dispatch_toggle(int id, int generation, int on) {
+    if (!app_active) { return; }
+    ui_event_toggle(id, generation, on != 0);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+// The window in points and its scale, pixels per point times 100.
+void ui_report_window(int width, int height, int scale) {
+    if (!app_active) { return; }
+    ui_set_window(Window{width, height, scale});
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+void ui_report_active(int active) {
+    if (!app_active) { return; }
+    ui_set_active(active != 0);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+void ui_tick() {
+    if (!app_active) { return; }
+    ui_frame();
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+void ui_stop() {
+    if (!app_active) { return; }
+    app_active = false;
+    ui_host_cancel();
+    ui_shutdown();
+    ui_app_stop();
+}
+
+void ui_start(int which) {
+    if (app_active) { ui_stop(); }
+    app_active = true;
+    ui_init(&ui_host_runtime, void(*uint8 data, int len) {
+        ui_host_commit(data, len);
+        ui_complete(ui.sequence);
+    });
+    ui_app_start(which);
+    ui_frame();
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}

@@ -1,4 +1,4 @@
-import "../src/ui.esk";
+import "../hosts/bridge.esk";
 import "../src/owned_string.esk";
 import <string>;
 
@@ -7,11 +7,10 @@ import <string>;
 // Every element a host reports carries a label; handlers append to the log.
 String conformance_log;
 
-string ui_conformance_log() { return conformance_log.data == null ? "" : conformance_log.data; }
-
 void conformance_note(string entry) {
     if (conformance_log.len > 0) { String_append(&conformance_log, ","); }
     String_append(&conformance_log, entry);
+    ui_test_log = conformance_log.data;
 }
 
 void Conformance() {
