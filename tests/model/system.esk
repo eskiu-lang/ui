@@ -214,3 +214,30 @@ void timers() {
     armed_tokens.free(); armed_ms.free();
     balanced("timers leak");
 }
+
+int seen_scheme;
+string seen_locale;
+
+void environment_apis() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        Row(Style{key: key(1)}, void() { seen_scheme = ui_color_scheme(); seen_locale = ui_locale(); });
+    });
+    ui_frame();
+    check(seen_scheme == SchemeLight && strcmp(seen_locale, "en") == 0, "light and English until the host says");
+    check(ui_platform() == PlatformDesktop && strcmp(ui_platform_name(), "desktop") == 0, "the platform");
+    ui_set_appearance(SchemeDark);
+    ui_set_locale("es-MX", false);
+    ui_set_accessibility(true, true, 130);
+    ui_frame();
+    check(seen_scheme == SchemeDark && strcmp(seen_locale, "es-MX") == 0, "readers see the system");
+    check(ui_screen_reader() && ui_reduce_motion() && ui_font_scale() == 130, "accessibility");
+    int runs = keyed(1).runs;
+    ui_set_appearance(SchemeDark);
+    check(!ui_needs_frame() && keyed(1).runs == runs, "the same appearance changes nothing");
+    kit_follow_system();
+    check(kit.dark, "the kit follows");
+    kit = kit_light();
+    ui_shutdown(); balanced("environment apis leak");
+}

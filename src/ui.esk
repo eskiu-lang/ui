@@ -6,6 +6,7 @@
 //   elements/        what apps build with: layout, text, input, media, lists, overlays,
 //                    the platform, native modules and views, navigation, timers
 //   state/strings    owned strings (use_string)
+//   apis/            the system: environment (platform, dark mode, accessibility, language)
 //
 // One UI thread; hosts deliver events and frames on it.
 import <io>;
@@ -33,3 +34,4 @@ import "elements/native.esk";
 import "elements/navigation.esk";
 import "elements/timers.esk";
 import "state/strings.esk";
+import "apis/environment.esk";

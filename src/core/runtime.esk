@@ -102,6 +102,13 @@ struct Ui {
     string link;
     // The window the root is in, in points, and its scale (pixels per point, times 100).
     Window window;
+    // The system's appearance, accessibility settings and language (src/apis/environment.esk).
+    int color_scheme;
+    bool screen_reader;
+    bool reduce_motion;
+    int font_scale;
+    string locale;
+    bool rtl;
     bool in_flight;
 }
 
@@ -430,6 +437,7 @@ void ui_shutdown() {
     if (ui.has_timer_host) { ui_release_timer_start(ui.timer_start); ui_release_int(ui.timer_stop); }
     ui.alerts.free(); ui.back_handlers.free(); ui.modals.free(); ui.next_owned.free();
     free(ui.link);
+    free(ui.locale);
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }
     ui.native_handlers.free(); ui_free_pairs(&ui.next_native_props);
     ui.finalizers.free(); ui.events.free();

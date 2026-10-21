@@ -1,0 +1,67 @@
+// What the app adapts to: the platform, light or dark, accessibility settings, the language.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// The platform, known when the app is compiled (macOS runs the web host, so it is web).
+enum Platform { PlatformDesktop, PlatformWeb, PlatformIos, PlatformAndroid }
+
+int ui_platform() {
+#if defined(__ANDROID__)
+    return PlatformAndroid;
+#elif defined(TARGET_OS_IOS)
+    return PlatformIos;
+#elif defined(__wasm__)
+    return PlatformWeb;
+#else
+    return PlatformDesktop;
+#endif
+}
+
+string ui_platform_name() {
+    int platform = ui_platform();
+    if (platform == PlatformAndroid) { return "android"; }
+    if (platform == PlatformIos) { return "ios"; }
+    if (platform == PlatformWeb) { return "web"; }
+    return "desktop";
+}
+
+// The system's appearance. Reading these subscribes, so a change renders the readers again.
+enum ColorScheme { SchemeLight, SchemeDark }
+
+int ui_color_scheme() { ui.environment.get(); return ui.color_scheme; }
+
+// Accessibility: a screen reader running (VoiceOver, TalkBack), reduced motion asked for,
+// and the text size the user chose, in percent (100: the default).
+bool ui_screen_reader() { ui.environment.get(); return ui.screen_reader; }
+
+bool ui_reduce_motion() { ui.environment.get(); return ui.reduce_motion; }
+
+int ui_font_scale() { ui.environment.get(); return ui.font_scale > 0 ? ui.font_scale : 100; }
+
+// The user's language as a BCP 47 tag ("es-MX", "en"; "en" until the host says), and whether
+// it is written right to left.
+string ui_locale() { ui.environment.get(); return ui.locale == null ? "en" : ui.locale; }
+
+bool ui_is_rtl() { ui.environment.get(); return ui.rtl; }
+
+// The host's side.
+void ui_set_appearance(int scheme) {
+    if (ui.color_scheme == scheme) { return; }
+    ui.color_scheme = scheme;
+    ui.environment.set(ui.environment.value + 1);
+}
+
+void ui_set_accessibility(bool screen_reader, bool reduce_motion, int font_scale) {
+    if (ui.screen_reader == screen_reader && ui.reduce_motion == reduce_motion && ui.font_scale == font_scale) { return; }
+    ui.screen_reader = screen_reader;
+    ui.reduce_motion = reduce_motion;
+    ui.font_scale = font_scale;
+    ui.environment.set(ui.environment.value + 1);
+}
+
+void ui_set_locale(string locale, bool rtl) {
+    if (ui.rtl == rtl && ui.locale != null && locale != null && strcmp(ui.locale, locale) == 0) { return; }
+    free(ui.locale);
+    ui.locale = locale == null ? null : ui_copy(locale);
+    ui.rtl = rtl;
+    ui.environment.set(ui.environment.value + 1);
+}
