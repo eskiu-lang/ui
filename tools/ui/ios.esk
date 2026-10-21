@@ -129,6 +129,12 @@ string ios_plist_entries(Project* p) {
     List<String> keys;
     p.config.names("ios.plist.", &keys);
     String out;
+    // The app's URL scheme (ui.toml [app] scheme): links like SCHEME://route open it.
+    string scheme = p.config.string("app.scheme");
+    if (scheme != null) {
+        String_appendf(&out, "<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLSchemes</key>"
+            "<array><string>%s</string></array></dict></array>\n", xml_escape(scheme));
+    }
     for (i in 0..keys.size) {
         String key;
         String_appendf(&key, "ios.plist.%s", keys.data[i].data);

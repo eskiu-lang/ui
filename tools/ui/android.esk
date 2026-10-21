@@ -176,14 +176,15 @@ string android_manifest(Project* p, string setup_classes, bool package) {
     String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"%s>\n"
         "%s%s"
         "  <application android:label=\"%s\" android:theme=\"@android:style/Theme.Material.Light.NoActionBar\"%s>\n"
-        "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\">\n"
+        "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\" android:launchMode=\"singleTask\">\n"
         "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n"
         "      <intent-filter><action android:name=\"android.intent.action.MAIN\"/>"
-        "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n"
+        "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n%s"
         "    </activity>\n  </application>\n</manifest>\n",
         attribute.data == null ? "" : attribute.data,
         package ? "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n" : "",
-        android_permissions(p), xml_escape(p.display.data), package ? " android:debuggable=\"true\"" : "", setup_classes);
+        android_permissions(p), xml_escape(p.display.data), package ? " android:debuggable=\"true\"" : "", setup_classes,
+        android_scheme(p));
     return manifest.data;
 }
 
@@ -214,6 +215,17 @@ void java_class_name(string path, String* out) {
     base.len -= String_ends_with(&base, ".kt") == 1 ? 3 : 5;
     base.data[base.len] = 0;
     String_append(out, base.data);
+}
+
+// The app's URL scheme (ui.toml [app] scheme) as an intent filter: SCHEME://route links open it.
+string android_scheme(Project* p) {
+    string scheme = p.config.string("app.scheme");
+    if (scheme == null) { return ""; }
+    String out;
+    String_appendf(&out, "      <intent-filter><action android:name=\"android.intent.action.VIEW\"/>"
+        "<category android:name=\"android.intent.category.DEFAULT\"/><category android:name=\"android.intent.category.BROWSABLE\"/>"
+        "<data android:scheme=\"%s\"/></intent-filter>\n", xml_escape(scheme));
+    return out.data;
 }
 
 // The ui.toml [android] permissions as uses-permission lines.
