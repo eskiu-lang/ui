@@ -287,3 +287,34 @@ void storage() {
     ui_set_data_dir(null);
     balanced("storage leak");
 }
+
+int fetched_status;
+string fetched;
+
+void network() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() { Row(Style{}, void() {}); });
+    ui_frame();
+    ui_fetch(FetchRequest{url: "https://example.com/a", headers: "Accept: text/plain"}, void(FetchResult r) {
+        fetched_status = r.status;
+        fetched = ui_copy(r.status == 0 ? r.error : r.body);
+    });
+    ui_frame();
+    check(mutation_count == 1 && mutation_kinds[0] == 10 && mutation_befores[0] == 6 &&
+          strcmp(mutation_texts[0], "https://example.com/a") == 0, "a fetch command: URL, method, headers, body, timeout");
+    int request = mutation_ids[0];
+    check(ui_event_fetch(request, 200, "hello", "Content-Type: text/plain"), "the answer");
+    check(fetched_status == 200 && strcmp(fetched, "hello") == 0, "status and body");
+    free(fetched);
+    ui_fetch(FetchRequest{url: "https://nowhere.invalid"}, void(FetchResult r) {
+        fetched_status = r.status;
+        fetched = ui_copy(r.error);
+    });
+    ui_frame();
+    ui_event_fetch(mutation_ids[0], 0, "no such host", null);
+    check(fetched_status == 0 && strcmp(fetched, "no such host") == 0, "a failure");
+    free(fetched);
+    ui_fetch(FetchRequest{url: "https://example.com"}, void(FetchResult r) {});
+    ui_shutdown(); balanced("network leak");
+}

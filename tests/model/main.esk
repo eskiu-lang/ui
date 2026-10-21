@@ -43,6 +43,7 @@ int main() {
     environment_apis(); printf("PASS environment apis\n");
     actions(); printf("PASS actions\n");
     storage(); printf("PASS storage\n");
+    network(); printf("PASS network\n");
     timers(); printf("PASS timers\n");
     controls(); printf("PASS controls\n");
     window_size(); printf("PASS window\n");

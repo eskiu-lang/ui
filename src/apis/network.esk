@@ -1,0 +1,52 @@
+// The network through the platform: NSURLSession on iOS, HttpURLConnection on Android, the
+// browser's fetch on the web, so TLS, proxies and certificates are the system's.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A request: `headers` one "Name: value" per line; `method` "GET" when null; `body` sent
+// unless null; `timeout_ms` 0 for the platform's.
+struct FetchRequest { string url; string method; string headers; string body; int timeout_ms; }
+
+// The answer, borrowed for the handler's call: the status (0 when the request failed, with
+// `error` saying why), the body as text and the response headers, one per line.
+struct FetchResult { int status; string body; string headers; string error; }
+
+struct PendingFetch { int id; fn(FetchResult)->void on_done; }
+
+// Send `request`; on_done gets the result as an event, on the UI thread.
+void ui_fetch(FetchRequest request, escaping fn(FetchResult)->void on_done) {
+    int id = ++ui.next_request;
+    ui.fetches.push(PendingFetch{id, on_done});
+    String timeout;
+    defer String_free(&timeout);
+    String_appendf(&timeout, "%d", request.timeout_ms);
+    List<string> strings;
+    strings.push(request.url == null ? "" : request.url);
+    strings.push(request.method == null ? "GET" : request.method);
+    strings.push(request.headers == null ? "" : request.headers);
+    strings.push(request.body == null ? "" : request.body);
+    strings.push(timeout.data);
+    strings.push(request.body == null ? "0" : "1");
+    ui_command(id, 10, &strings);
+    strings.free();
+}
+
+// The host's side: the request `id` finished (event 16; status 0: `body` is the error).
+bool ui_event_fetch(int id, int status, string body, string headers) {
+    return ui_post(Event{id, 0, 16, status, body, 0, headers});
+}
+
+bool ui_dispatch_fetch_event(*Event event) {
+    for (i in 0..ui.fetches.size) {
+        PendingFetch pending = ui.fetches.data[i];
+        if (pending.id != event.id) { continue; }
+        ui.fetches.remove(i);
+        string text = event.text == null ? "" : event.text;
+        FetchResult result = event.value == 0
+            ? FetchResult{0, "", "", text}
+            : FetchResult{event.value, text, event.name == null ? "" : event.name, ""};
+        pending.on_done(result);
+        ui_release_fetch(pending.on_done);
+        return true;
+    }
+    return false;
+}

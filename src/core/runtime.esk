@@ -10,7 +10,8 @@
 // value x, extra y, width and height, relative to its parent), 12 timer (the id is the
 // timer's token), 13 hover (value 1 when a pointer enters the node, 0 when it leaves),
 // 14 value (a Slider moved to `value`), 15 answer (the text a request asked for: the id is
-// the request).
+// the request), 16 fetch (a request finished: value the status, text the body or the error,
+// name the headers).
 struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height; }
 
 // What the host reports about the screen, in points: the system bars and display cutouts
@@ -97,6 +98,8 @@ struct Ui {
     List<Pending> alerts;
     // The requests waiting for text (ui_clipboard_get).
     List<PendingText> text_requests;
+    // The requests on the network (ui_fetch).
+    List<PendingFetch> fetches;
     int next_request;
     // Back handlers by registration order, and the modals open, by opening order.
     List<*BackEntry> back_handlers;
@@ -346,6 +349,7 @@ bool ui_dispatch_event(*Event event) {
     if (event.kind == 10) { ui_dispatch_route_event(event); return ui.router != null; }
     if (event.kind == 12) { return ui_dispatch_timer_event(event); }
     if (event.kind == 15) { return ui_dispatch_answer_event(event); }
+    if (event.kind == 16) { return ui_dispatch_fetch_event(event); }
     if (event.kind == 6) {
         for (i in 0..ui.alerts.size) {
             Pending pending = ui.alerts.data[i];
@@ -441,7 +445,9 @@ void ui_shutdown() {
     if (ui.has_timer_host) { ui_release_timer_start(ui.timer_start); ui_release_int(ui.timer_stop); }
     ui.alerts.free(); ui.back_handlers.free();
     for (i in 0..ui.text_requests.size) { ui_release_string(ui.text_requests.data[i].on_text); }
-    ui.text_requests.free(); ui.modals.free(); ui.next_owned.free();
+    ui.text_requests.free();
+    for (i in 0..ui.fetches.size) { ui_release_fetch(ui.fetches.data[i].on_done); }
+    ui.fetches.free(); ui.modals.free(); ui.next_owned.free();
     free(ui.link);
     free(ui.locale);
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }
