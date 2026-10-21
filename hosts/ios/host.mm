@@ -610,6 +610,10 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view.layer.cornerRadius = std::min<CGFloat>(before, std::min(size.width, size.height) / 2);
             node.view.clipsToBounds = before > 0 && !node.view.layer.shadowOpacity;
         }
+        else if (kind == 47 && [node.view isKindOfClass:UIImageView.class]) {
+            node.view.contentMode = before ? UIViewContentModeScaleAspectFill : UIViewContentModeScaleAspectFit;
+            node.view.clipsToBounds = before || node.radius > 0;
+        }
         else if (kind == 46) {
             // A shadow draws outside the bounds, so a raised view does not clip to its radius.
             CALayer *layer = node.view.layer;

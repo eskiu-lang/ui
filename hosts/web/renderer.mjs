@@ -283,6 +283,7 @@ export function createHost(root, dispatch, views = {}) {
       case 43: s.maxWidth = value ? `${value}px` : ''; break;
       case 44: s.minHeight = value ? `${value}px` : '0'; break;
       case 45: s.maxHeight = value ? `${value}px` : ''; break;
+      case 47: s.objectFit = value ? 'cover' : ''; break;
       case 46: s.boxShadow = value ? `0 ${value / 2}px ${value * 2}px rgba(17, 24, 39, 0.14), 0 1px 2px rgba(17, 24, 39, 0.06)` : ''; break;
       case 35: case 36: case 37: case 38: {
         // Transforms: translate in points, scale in percent, rotate in degrees.

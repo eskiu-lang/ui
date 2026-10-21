@@ -21,7 +21,8 @@ Key key(int64 value) { return Key{true, value}; }
 // members) animate changes of opacity, the transforms and the colors on the host.
 // min_width, max_width, min_height and max_height bound the size the layout gives (points;
 // 0: no bound). `shadow` raises the element over what is under it: a soft shadow below it,
-// its elevation in points (0: none), as React Native's elevation.
+// its elevation in points (0: none), as React Native's elevation. `cover` makes an Image fill
+// its box, cropped, instead of fitting in it (React Native's resizeMode "cover").
 struct Style {
     Key key; int gap = 8; int padding = 0; string label;
     int width; int height; int grow; bool wrap;
@@ -34,6 +35,7 @@ struct Style {
     int transition_ms; int easing;
     int min_width; int max_width; int min_height; int max_height;
     int shadow;
+    bool cover;
 }
 
 enum Easing { EaseInOut, EaseOut, EaseIn, EaseLinear, EaseSpring }

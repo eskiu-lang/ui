@@ -674,6 +674,8 @@ public final class UiActivity extends Activity {
         } else if (code == 14) paintOf(id, view).setCornerRadius(value * d);
         // Elevation casts the platform's shadow from the outline of the view's background.
         else if (code == 46) view.setElevation(value * d);
+        else if (code == 47 && view instanceof ImageView)
+            ((ImageView)view).setScaleType(value != 0 ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_CENTER);
         else if (code == 15) {
             int[] motion = motionOf(id, view);
             if (motion == null) view.setAlpha(value / 100f);

@@ -77,6 +77,7 @@ it into `Mutation` records for tests and tools.
 | | | 41 | pan listener (1: report drags on the node) |
 | | | 42 to 45 | minimum width, maximum width, minimum height, maximum height (points; 0: no bound) |
 | | | 46 | shadow: the elevation of a raised view (points; 0: none) |
+| | | 47 | cover: an image fills its box, cropped (1), or fits in it (0) |
 
 A text input's value is its text (op 3). Sizes are points.
 
