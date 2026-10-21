@@ -269,3 +269,21 @@ void actions() {
     ui_clipboard_get(void(string text) {});
     ui_shutdown(); balanced("actions leak");
 }
+
+void storage() {
+    ui_set_data_dir("build/storage-test");
+    fs_remove_all("build/storage-test");
+    check(ui_storage_get("theme") == null, "nothing saved yet");
+    ui_storage_set("theme", "dark");
+    ui_storage_set("note", "two\tparts\nand \\ a slash");
+    ui_storage_set("theme", "light");
+    ui_storage_unload();
+    check(strcmp(ui_storage_get("theme"), "light") == 0, "saved and read back from the file");
+    check(strcmp(ui_storage_get("note"), "two\tparts\nand \\ a slash") == 0, "tabs, newlines and slashes survive");
+    ui_storage_remove("theme");
+    ui_storage_unload();
+    check(ui_storage_get("theme") == null && ui_storage_get("note") != null, "removed");
+    ui_storage_unload();
+    ui_set_data_dir(null);
+    balanced("storage leak");
+}

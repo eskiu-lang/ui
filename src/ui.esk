@@ -7,13 +7,16 @@
 //                    the platform, native modules and views, navigation, timers
 //   state/strings    owned strings (use_string)
 //   apis/            the system: environment (platform, dark mode, accessibility, language),
-//                    actions (keyboard, share, clipboard, haptics, announcements)
+//                    actions (keyboard, share, clipboard, haptics, announcements), storage
 //
 // One UI thread; hosts deliver events and frames on it.
 import <io>;
 import <list>;
 import <mem>;
 import <string>;
+#ifndef __wasm__
+import <fs>;
+#endif
 
 import "core/state.esk";
 import "style.esk";
@@ -37,3 +40,4 @@ import "elements/timers.esk";
 import "state/strings.esk";
 import "apis/environment.esk";
 import "apis/actions.esk";
+import "apis/storage.esk";

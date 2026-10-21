@@ -24,3 +24,6 @@ const int kUnset = -1000000;
 // whole screen and leaves the insets to the app (ui_insets). An app sets it in
 // ui_app_start.
 int ui_edge_policy;
+
+// The app's data directory (ui_data_dir), set by the host before the app starts.
+string ui_data_path;

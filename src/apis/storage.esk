@@ -1,0 +1,158 @@
+// Storage: small key-value data that outlives the app, and the directory for the app's files.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// The app's own data directory ("" on the web, which has none): the host reports it before
+// the app starts, so ui_app_start may read from it. <fs> works in it.
+string ui_data_dir() { return ui_data_path == null ? "" : ui_data_path; }
+
+void ui_set_data_dir(string path) {
+    free(ui_data_path);
+    ui_data_path = path == null ? null : ui_copy(path);
+}
+
+// Every key and value, loaded on first use and written whole on each change: in a file in
+// the data directory, or in the page's localStorage on the web. Meant for settings and small
+// state; a large or structured store belongs in a file of its own.
+List<NativePair> ui_store;
+bool ui_store_loaded;
+
+#ifdef __wasm__
+extern string ui_host_storage_load();
+extern void ui_host_storage_save(string text);
+#endif
+
+// One "key<TAB>value" line per entry, with \\, \t and \n escaped.
+void ui_store_escape(String* out, string text) {
+    for (int i = 0; text[i] != 0; i++) {
+        char c = text[i];
+        if (c == '\\') { String_append(out, "\\\\"); }
+        else if (c == '\t') { String_append(out, "\\t"); }
+        else if (c == '\n') { String_append(out, "\\n"); }
+        else {
+            char[2] one;
+            one[0] = c; one[1] = 0;
+            String_append(out, (string)&one[0]);
+        }
+    }
+}
+
+// The text from `at` to the next tab or newline, unescaped; `at` moves past it.
+string ui_store_field(string text, int* at) {
+    String out;
+    String_append(&out, "");
+    int i = *at;
+    while (text[i] != 0 && text[i] != '\t' && text[i] != '\n') {
+        char c = text[i];
+        if (c == '\\' && text[i + 1] != 0) {
+            i++;
+            c = text[i] == 't' ? '\t' : text[i] == 'n' ? '\n' : text[i];
+        }
+        char[2] one;
+        one[0] = c; one[1] = 0;
+        String_append(&out, (string)&one[0]);
+        i++;
+    }
+    *at = i;
+    return out.data;
+}
+
+string ui_store_path() {
+    if (ui_data_path == null || ui_data_path[0] == 0) { return null; }
+    String path;
+    String_appendf(&path, "%s/ui-storage.tsv", ui_data_path);
+    return path.data;
+}
+
+void ui_store_load() {
+    if (ui_store_loaded) { return; }
+    ui_store_loaded = true;
+    string text = null;
+#ifdef __wasm__
+    text = ui_host_storage_load();
+#else
+    string path = ui_store_path();
+    if (path != null) {
+        int64 size = 0;
+        *uint8 bytes = fs_read_all(path, &size);
+        if (bytes != null) {
+            *char copy = alloc<char>(size + 1);
+            memcpy(copy, bytes, (size_t)size);
+            free(bytes);
+            text = (string)copy;
+        }
+        free(path);
+    }
+#endif
+    if (text == null) { return; }
+    int at = 0;
+    while (text[at] != 0) {
+        string key = ui_store_field(text, &at);
+        if (text[at] == '\t') { at++; }
+        string value = ui_store_field(text, &at);
+        if (text[at] == '\n') { at++; }
+        if (key[0] != 0) { ui_store.push(NativePair{key, value}); } else { free(key); free(value); }
+    }
+    free(text);
+}
+
+void ui_store_save() {
+    String text;
+    defer String_free(&text);
+    String_append(&text, "");
+    for (i in 0..ui_store.size) {
+        ui_store_escape(&text, ui_store.data[i].name);
+        String_append(&text, "\t");
+        ui_store_escape(&text, ui_store.data[i].value);
+        String_append(&text, "\n");
+    }
+#ifdef __wasm__
+    ui_host_storage_save(text.data);
+#else
+    string path = ui_store_path();
+    if (path == null) { return; }
+    // Written beside it, then renamed over it: a crash leaves the old or the new file.
+    String temporary;
+    String_appendf(&temporary, "%s.tmp", path);
+    fs_mkdir_p(ui_data_path);
+    if (fs_write_text(temporary.data, text.data) == 0) { fs_rename(temporary.data, path); }
+    String_free(&temporary);
+    free(path);
+#endif
+}
+
+int ui_store_find(string key) {
+    for (i in 0..ui_store.size) { if (strcmp(ui_store.data[i].name, key) == 0) { return i; } }
+    return -1;
+}
+
+// The value saved for `key`, or null. Borrowed until the next set or remove.
+string ui_storage_get(string key) {
+    ui_store_load();
+    int at = ui_store_find(key);
+    return at < 0 ? null : ui_store.data[at].value;
+}
+
+void ui_storage_set(string key, string value) {
+    ui_store_load();
+    int at = ui_store_find(key);
+    string copy = ui_copy(value == null ? "" : value);
+    if (at < 0) { ui_store.push(NativePair{ui_copy(key), copy}); }
+    else { free(ui_store.data[at].value); ui_store.data[at].value = copy; }
+    ui_store_save();
+}
+
+void ui_storage_remove(string key) {
+    ui_store_load();
+    int at = ui_store_find(key);
+    if (at < 0) { return; }
+    free(ui_store.data[at].name); free(ui_store.data[at].value);
+    ui_store.remove(at);
+    ui_store_save();
+}
+
+// Forget the loaded entries (the next use loads them again); for tests and shutdown.
+void ui_storage_unload() {
+    ui_free_pairs(&ui_store);
+    ui_store = List<NativePair>{};
+    ui_store_loaded = false;
+}
