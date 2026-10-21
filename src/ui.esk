@@ -22,6 +22,46 @@ struct Observer {
     bool has_cleanup;
     *Source output;
 }
+// int64 key -> node, open addressing. Built per run, only for children that have keys.
+struct KeyTable { List<int64> keys; List<*Node> nodes; int mask; int count; }
+
+void KeyTable_init(*KeyTable self, int expected) {
+    int cap = 8;
+    while (cap < expected * 2) { cap = cap * 2; }
+    self.mask = cap - 1;
+    for (i in 0..cap) { self.keys.push(0); self.nodes.push(null); }
+}
+
+int KeyTable_slot(*KeyTable self, int64 key) {
+    int64 h = key * 0x9E3779B97F4A7C15;
+    int at = (int)((h ^ (h >> 31)) & (int64)self.mask);
+    while (self.nodes.data[at] != null && self.keys.data[at] != key) { at = (at + 1) & self.mask; }
+    return at;
+}
+
+*Node KeyTable_get(*KeyTable self, int64 key) { return self.nodes.data[self.slot(key)]; }
+
+void KeyTable_free(*KeyTable self) {
+    self.keys.free(); self.nodes.free(); self.mask = 0; self.count = 0;
+}
+
+void KeyTable_put(*KeyTable self, int64 key, *Node node) {
+    if ((self.count + 1) * 2 > self.mask + 1) {
+        // Keep it at most half full: rehash into twice the room.
+        KeyTable old = *self;
+        *self = KeyTable{};
+        KeyTable_init(self, old.mask + 1);
+        for (i in 0..old.mask + 1) {
+            if (old.nodes.data[i] != null) { self.put(old.keys.data[i], old.nodes.data[i]); }
+        }
+        old.free();
+    }
+    int at = self.slot(key);
+    if (self.nodes.data[at] == null) { self.count++; }
+    self.keys.data[at] = key;
+    self.nodes.data[at] = node;
+}
+
 struct Slot { int kind; *void tag; *void data; fn()->void dispose; *Observer observer; }
 struct Node {
     int id;
@@ -34,6 +74,14 @@ struct Node {
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
+    // Matching state while this node's block runs. Up to kSmall children are matched by
+    // scanning; more get the tables.
+    bool indexed;
+    int old_index;
+    List<*Node> old_unkeyed;
+    int unkeyed_emitted;
+    KeyTable old_keys;
+    KeyTable new_keys;
     List<Slot> slots;
     int cursor;
     bool mounted;
@@ -326,11 +374,53 @@ void on_cleanup(escaping fn()->void callback) {
     ui.tracking.has_cleanup = true;
 }
 
+// Which entries of `seq` (old positions, -1 for new nodes) form a longest increasing
+// subsequence: those children keep their place, every other one moves.
+List<bool> ui_kept(List<int>* seq) {
+    List<bool> kept;
+    List<int> previous;
+    List<int> tails;
+    for (i in 0..seq.size) { kept.push(false); previous.push(-1); }
+    for (i in 0..seq.size) {
+        int value = seq.data[i];
+        if (value < 0) { continue; }
+        int lo = 0;
+        int hi = tails.size;
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (seq.data[tails.data[mid]] < value) { lo = mid + 1; } else { hi = mid; }
+        }
+        if (lo > 0) { previous.data[i] = tails.data[lo - 1]; }
+        if (lo == tails.size) { tails.push(i); } else { tails.data[lo] = i; }
+    }
+    int at = tails.size > 0 ? tails.data[tails.size - 1] : -1;
+    while (at >= 0) { kept.data[at] = true; at = previous.data[at]; }
+    previous.free(); tails.free();
+    return kept;
+}
+
+const int kSmall = 8;
+
 void ui_run(*Node node) {
     node.current = false;
     node.runs++;
     node.cursor = 0;
-    for (i in 0..node.children.size) { node.children.data[i].seen = false; }
+    node.indexed = node.children.size > kSmall;
+    int keyed = 0;
+    for (i in 0..node.children.size) {
+        *Node child = node.children.data[i];
+        child.seen = false;
+        child.old_index = i;
+        if (child.key.set) { keyed++; } else if (node.indexed) { node.old_unkeyed.push(child); }
+    }
+    if (keyed > 0 && node.indexed) {
+        KeyTable_init(&node.old_keys, keyed);
+        for (i in 0..node.children.size) {
+            *Node child = node.children.data[i];
+            if (child.key.set) { node.old_keys.put(child.key.value, child); }
+        }
+    }
+    node.unkeyed_emitted = 0;
     *Node previous_builder = ui.builder;
     *Observer previous_tracking = ui.tracking;
     ui.builder = node;
@@ -340,28 +430,42 @@ void ui_run(*Node node) {
     ui_require(node.cursor == node.slots.size, "hook count decreased");
     ui.builder = previous_builder;
     ui.tracking = previous_tracking;
+    node.old_unkeyed.free();
+    if (node.old_keys.mask != 0) { node.old_keys.free(); }
+    if (node.new_keys.mask != 0) { node.new_keys.free(); }
     for (int i = node.children.size - 1; i >= 0; i--) {
         if (!node.children.data[i].seen) { ui_unmount(node.children.data[i]); }
     }
-    List<*Node> order;
-    for (i in 0..node.children.size) {
-        if (node.children.data[i].seen) { order.push(node.children.data[i]); }
-    }
+    // Back to front, each child goes before the one after it, which is already placed.
+    // The kept children keep their place; when the old ones kept their order, all do.
+    bool ordered = true;
+    int last = -1;
     for (i in 0..node.emitted.size) {
         *Node child = node.emitted.data[i];
-        int at = -1;
-        for (j in 0..order.size) { if (order.data[j] == child) { at = j; break; } }
-        if (at != i) {
-            if (at >= 0) { order.remove(at); }
-            int before = i < order.size ? order.data[i].id : 0;
-            ui_emit(child.fresh ? 4 : 5, child, before);
-            order.push(child);
-            for (int j = order.size - 1; j > i; j--) { order.data[j] = order.data[j - 1]; }
-            order.data[i] = child;
+        if (!child.fresh) {
+            if (child.old_index < last) { ordered = false; break; }
+            last = child.old_index;
         }
-        child.fresh = false;
     }
-    order.free();
+    List<bool> kept;
+    if (!ordered) {
+        List<int> seq;
+        for (i in 0..node.emitted.size) {
+            *Node child = node.emitted.data[i];
+            seq.push(child.fresh ? -1 : child.old_index);
+        }
+        kept = ui_kept(&seq);
+        seq.free();
+    }
+    int before = 0;
+    for (int i = node.emitted.size - 1; i >= 0; i--) {
+        *Node child = node.emitted.data[i];
+        if (child.fresh) { ui_emit(4, child, before); }
+        else if (!ordered && !kept.data[i]) { ui_emit(5, child, before); }
+        child.fresh = false;
+        before = child.id;
+    }
+    kept.free();
     node.children.free();
     node.children = node.emitted;
     node.emitted = List<*Node>{};
@@ -420,25 +524,50 @@ void ui_unmount(*Node node) {
     escaping fn()->void block, escaping fn()->void handler, escaping fn()->void handler_cleanup) {
     *Node parent = ui.builder;
     ui_require(parent != null, "element outside render");
+    // A keyed child matches the old child with its key, an unkeyed one the old unkeyed
+    // child at its position; either only if the kind is the same.
     *Node node = null;
-    for (i in 0..parent.emitted.size) {
-        *Node sibling = parent.emitted.data[i];
-        ui_require(!style.key.set || !sibling.key.set || sibling.key.value != style.key.value,
-            "duplicate key");
-    }
-    int unkeyed = 0;
-    for (i in 0..parent.emitted.size) { if (!parent.emitted.data[i].key.set) { unkeyed++; } }
-    int position = 0;
-    for (i in 0..parent.children.size) {
-        *Node candidate = parent.children.data[i];
-        bool match_key = style.key.set && candidate.key.set && style.key.value == candidate.key.value;
-        bool match_pos = !style.key.set && !candidate.key.set && position == unkeyed;
-        if (!candidate.key.set) { position++; }
-        if (!candidate.seen && (match_key || match_pos)) {
-            if (candidate.kind == kind) { node = candidate; }
-            break;
+    *Node candidate = null;
+    if (style.key.set) {
+        int64 k = style.key.value;
+        if (parent.new_keys.mask == 0 && parent.emitted.size >= kSmall) {
+            KeyTable_init(&parent.new_keys, parent.emitted.size * 2);
+            for (i in 0..parent.emitted.size) {
+                *Node sibling = parent.emitted.data[i];
+                if (sibling.key.set) { parent.new_keys.put(sibling.key.value, sibling); }
+            }
+        }
+        if (parent.new_keys.mask != 0) {
+            ui_require(parent.new_keys.get(k) == null, "duplicate key");
+        } else {
+            for (i in 0..parent.emitted.size) {
+                *Node sibling = parent.emitted.data[i];
+                ui_require(!sibling.key.set || sibling.key.value != k, "duplicate key");
+            }
+        }
+        if (parent.indexed) {
+            if (parent.old_keys.mask != 0) { candidate = parent.old_keys.get(k); }
+        } else {
+            for (i in 0..parent.children.size) {
+                *Node old = parent.children.data[i];
+                if (old.key.set && old.key.value == k) { candidate = old; break; }
+            }
+        }
+    } else {
+        int position = parent.unkeyed_emitted++;
+        if (parent.indexed) {
+            if (position < parent.old_unkeyed.size) { candidate = parent.old_unkeyed.data[position]; }
+        } else {
+            for (i in 0..parent.children.size) {
+                *Node old = parent.children.data[i];
+                if (!old.key.set) {
+                    if (position == 0) { candidate = old; break; }
+                    position--;
+                }
+            }
         }
     }
+    if (candidate != null && !candidate.seen && candidate.kind == kind) { node = candidate; }
     bool fresh = node == null;
     if (fresh) {
         node = alloc<Node>(1);
@@ -458,6 +587,7 @@ void ui_unmount(*Node node) {
         ui_retire(void() { ui_release_closure(old_handler); old_cleanup(); ui_release_closure(old_cleanup); });
     }
     node.seen = true;
+    if (style.key.set && parent.new_keys.mask != 0) { parent.new_keys.put(style.key.value, node); }
     if (fresh || node.gap != style.gap || node.padding != style.padding) {
         node.gap = style.gap; node.padding = style.padding;
         ui.mutations.push(Mutation{2, node.id, node.generation, parent.id,
