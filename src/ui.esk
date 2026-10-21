@@ -140,6 +140,9 @@ struct Node {
     fn()->void block;
     fn()->void handler;
     fn()->void handler_cleanup;
+    // What the element's owner gave it to free with its block (ui_own): run when the
+    // block is replaced or the node unmounted, after the commit.
+    List<fn()->void> owned;
     // TextInput: the new text (borrowed for the call) and focus changes.
     fn(string)->void on_text;
     // TextInput focus changes and Switch toggles.
@@ -312,6 +315,8 @@ struct Ui {
     *ListExtra next_list;
     int next_bar_style;
     bool next_bar_hidden;
+    // Destructors for the next element (ui_own).
+    List<fn()->void> next_owned;
     // The RefreshControl for the next Scroll or FlatList.
     *RefreshExtra next_refresh;
     RefreshExtra refresh_slot;
@@ -805,6 +810,7 @@ void ui_run(*Node node) {
     ui.tracking = node.observer;
     node.block();
     ui_require(ui.next_refresh == null, "RefreshControl must come right before a Scroll or FlatList");
+    ui_require(ui.next_owned.size == 0, "ui_own must come right before an element");
     ui_require(node.cursor == node.slots.size, "hook count decreased");
     ui.builder = previous_builder;
     ui.tracking = previous_tracking;
@@ -898,12 +904,13 @@ void ui_unmount(*Node node) {
         ui_release_closure(node.block);
         ui_release_closure(node.handler);
         ui_release_closure(node.handler_cleanup);
+        ui_run_owned(&node.owned);
         ui_release_text(node.on_text);
         ui_release_focus(node.on_bool);
         ui_release_item(node.on_item);
         ui_release_cell(node.on_cell);
         free(node.text); free(node.label); free(node.placeholder); free(node.source);
-        node.slots.free(); node.children.free(); node.emitted.free();
+        node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
         free(node);
     });
 }
@@ -1008,6 +1015,11 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         fn()->void old_handler = node.handler;
         fn()->void old_cleanup = node.handler_cleanup;
         ui_retire(void() { ui_release_closure(old_block); });
+        if (node.owned.size > 0) {
+            List<fn()->void> old_owned = node.owned;
+            node.owned = List<fn()->void>{};
+            ui_retire(void() { ui_finish_owned(old_owned); });
+        }
         ui_retire(void() { ui_release_closure(old_handler); old_cleanup(); ui_release_closure(old_cleanup); });
         if (node.virtual) {
             fn(int)->void old_item = node.on_item;
@@ -1046,6 +1058,9 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 16, style.align, 0);
     ui_prop(node, fresh, 17, style.justify, 0);
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
+    // What the caller gave this element to free with its block.
+    for (i in 0..ui.next_owned.size) { node.owned.push(ui.next_owned.data[i]); }
+    ui.next_owned.size = 0;
     node.block = block;
     node.handler = handler;
     node.handler_cleanup = handler_cleanup;
@@ -1220,6 +1235,37 @@ void SectionList(Style style, *List<int> sizes, int header_height, int item_heig
     style.gap = 0;
     ui_element(6, style, null, void() { ui_section_rows(ui.builder); }, void() {}, void() {});
 }
+
+// For components built on others: `destructor` runs when the next element's block is
+// replaced or the element unmounted, after the commit. A component that captures a
+// caller's closure in its own lambdas frees it this way, as the tree frees the closures it
+// is given directly:
+//
+//   void Checkbox(string label, bool checked, escaping fn(bool)->void on_change) {
+//       ui_own(void() { ui_release_bool(on_change); });
+//       Pressable(Style{...}, void() { on_change(!checked); }, void() { ... });
+//   }
+void ui_own(escaping fn()->void destructor) { ui.next_owned.push(destructor); }
+
+void ui_run_owned(List<fn()->void>* owned) {
+    for (i in 0..owned.size) {
+        fn()->void destructor = owned.data[i];
+        destructor();
+        ui_release_closure(destructor);
+    }
+    owned.size = 0;
+}
+
+// Run and free a list of destructors taken from a node (a copy owns it now).
+void ui_finish_owned(List<fn()->void> owned) {
+    ui_run_owned(&owned);
+    owned.free();
+}
+
+// Free a caller's closure of each common type (for ui_own destructors).
+void ui_release_bool(escaping fn(bool)->void callback) { free_closure(callback); }
+void ui_release_int(escaping fn(int)->void callback) { free_closure(callback); }
+void ui_release_string(escaping fn(string)->void callback) { free_closure(callback); }
 
 // Pull to refresh for the Scroll or FlatList that comes right after it: on_refresh runs when
 // the user pulls at the top, and the platform's indicator shows while `refreshing`.
@@ -1703,7 +1749,7 @@ void ui_shutdown() {
     ui.dirty_memos.free(); ui.dirty_effects.free();
     ui.commit.free(); ui.writes.free(); ui.retired.free(); ui.commands.free();
     for (i in 0..ui.alerts.size) { ui_release_choice(ui.alerts.data[i].on_choice); }
-    ui.alerts.free(); ui.back_handlers.free(); ui.modals.free();
+    ui.alerts.free(); ui.back_handlers.free(); ui.modals.free(); ui.next_owned.free();
     free(ui.link);
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); }
     ui.finalizers.free(); ui.events.free();
