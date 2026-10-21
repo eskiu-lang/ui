@@ -37,6 +37,7 @@ extern "C" void ui_dispatch_timer(int token);
 extern "C" void ui_dispatch_hover(int id, int generation, int inside);
 extern "C" void ui_dispatch_value(int id, int generation, int value);
 extern "C" void ui_dispatch_answer(int request, const char *text);
+extern "C" void ui_dispatch_pan(int id, int generation, int phase, int dx, int dy, int vx, int vy);
 extern "C" void ui_report_data_dir(const char *path);
 extern "C" void ui_dispatch_fetch(int request, int status, const char *body, const char *headers);
 extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
@@ -346,6 +347,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)press:(UIControl *)sender;
 - (void)hover:(UIHoverGestureRecognizer *)gesture;
 - (void)slide:(UISlider *)sender;
+- (void)pan:(UIPanGestureRecognizer *)gesture;
 - (void)edit:(UITextField *)sender;
 - (void)toggle:(UISwitch *)sender;
 - (void)refresh:(UIRefreshControl *)sender;
@@ -354,6 +356,18 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)frame:(CADisplayLink *)sender;
 @end
 @implementation UiEvents
+// A drag on a node with a pan handler, measured in its superview (the node itself may move).
+- (void)pan:(UIPanGestureRecognizer *)gesture {
+    UiHostNode *node = nodes[@(gesture.view.tag)];
+    if (!node) return;
+    UIView *space = gesture.view.superview;
+    CGPoint t = [gesture translationInView:space], v = [gesture velocityInView:space];
+    int phase = gesture.state == UIGestureRecognizerStateBegan ? 0 : gesture.state == UIGestureRecognizerStateChanged ? 1
+              : gesture.state == UIGestureRecognizerStateEnded ? 2 : 3;
+    if (phase == 0) ui_dispatch_pan((int)gesture.view.tag, node.generation, 0, 0, 0, 0, 0);
+    ui_dispatch_pan((int)gesture.view.tag, node.generation, phase == 0 ? 1 : phase, (int)std::lround(t.x), (int)std::lround(t.y),
+                    (int)std::lround(v.x), (int)std::lround(v.y));
+}
 // A slider moved: each new whole step is reported.
 - (void)slide:(UISlider *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
@@ -584,6 +598,15 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (kind == 33) slider.minimumValue = before;
             else if (kind == 34) slider.maximumValue = before;
             else { slider.value = before; node.sliderValue = before; }
+        } else if (kind == 41) {
+            for (UIGestureRecognizer *g in node.view.gestureRecognizers.copy) {
+                if ([g isKindOfClass:UIPanGestureRecognizer.class]) [node.view removeGestureRecognizer:g];
+            }
+            if (before) {
+                node.view.tag = id;
+                node.view.userInteractionEnabled = YES;
+                [node.view addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:events action:@selector(pan:)]];
+            }
         } else if (kind == 31) {
             for (UIGestureRecognizer *g in node.view.gestureRecognizers.copy) {
                 if ([g isKindOfClass:UIHoverGestureRecognizer.class]) [node.view removeGestureRecognizer:g];

@@ -4,8 +4,8 @@
 // route (the route in text, its history index in value), 11 a node's frame (x in value, y in
 // extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value,
 // 15 an answer (the request in id, its text), 16 a fetch's answer (status in value, the body
-// in text, the headers in extra).
-export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0) {
+// in text, the headers in extra), 17 a pan (the phase in value, then dx, dy, vx, vy).
+export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0, more = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
   else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
@@ -14,6 +14,7 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 6) app._ui_dispatch_alert(id, value);
   else if (kind === 13) app._ui_dispatch_hover(id, generation, value);
   else if (kind === 14) app._ui_dispatch_value(id, generation, value);
+  else if (kind === 17) app._ui_dispatch_pan(id, generation, value, extra, width, height, more);
   else if (kind === 16) app.ccall('ui_dispatch_fetch', null, ['number', 'number', 'string', 'string'], [id, value, text, extra]);
   else if (kind === 15) app.ccall('ui_dispatch_answer', null, ['number', 'string'], [id, text]);
   else if (kind === 11) app._ui_dispatch_layout(id, generation, value, extra, width, height);
@@ -65,6 +66,48 @@ export function createHost(root, dispatch, views = {}) {
   const natives = new Map();
   // The nodes whose frame the app listens to (ui_on_layout), with the frame last reported.
   const layouts = new Map();
+  // Pan listeners (ui_on_pan): a drag past a few pixels, then captured. A press that does
+  // not move stays a click; the click after a drag is swallowed. Vertical touch drags scroll
+  // the page (touch-action: pan-y).
+  function pan(node, on) {
+    if (!on || node.uiPan) { if (!on) node.uiPan = null; return; }
+    let start = null, began = false, samples = [];
+    const send = (phase, e) => {
+      const dx = Math.round(e.clientX - start.x), dy = Math.round(e.clientY - start.y);
+      let vx = 0, vy = 0;
+      if (samples.length > 1) {
+        const [t0, x0, y0] = samples[0], [t1, x1, y1] = samples[samples.length - 1];
+        const dt = Math.max(1, t1 - t0) / 1000;
+        vx = Math.round((x1 - x0) / dt); vy = Math.round((y1 - y0) / dt);
+      }
+      dispatch(...ids(node), 17, null, phase, dx, dy, vx, vy);
+    };
+    node.uiPan = true;
+    node.style.touchAction = 'pan-y';
+    node.addEventListener('pointerdown', e => {
+      if (!node.uiPan || e.button > 0) return;
+      start = {x: e.clientX, y: e.clientY}; began = false; samples = [[e.timeStamp, e.clientX, e.clientY]];
+    });
+    node.addEventListener('pointermove', e => {
+      if (!start) return;
+      samples.push([e.timeStamp, e.clientX, e.clientY]);
+      if (samples.length > 5) samples.shift();
+      if (!began && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
+      // Captured only once it is a drag, so a press keeps its click target.
+      if (!began) { began = true; node.setPointerCapture?.(e.pointerId); send(0, e); }
+      send(1, e);
+    });
+    const finish = cancelled => e => {
+      if (!start) return;
+      if (began) { send(cancelled ? 3 : 2, e); node.uiPanned = true; }
+      start = null;
+    };
+    node.addEventListener('pointerup', finish(false));
+    node.addEventListener('pointercancel', finish(true));
+    node.addEventListener('click', e => {
+      if (node.uiPanned) { node.uiPanned = false; e.stopPropagation(); e.preventDefault(); }
+    }, true);
+  }
   // Hover listeners (ui_on_hover): a pointer entering and leaving the node.
   function hover(node, on) {
     if (on && !node.uiHover) {
@@ -223,6 +266,7 @@ export function createHost(root, dispatch, views = {}) {
       case 22: refresh(node, value !== 0); break;
       case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
       case 31: hover(node, value !== 0); break;
+      case 41: pan(node, value !== 0); break;
       case 35: case 36: case 37: case 38: {
         // Transforms: translate in points, scale in percent, rotate in degrees.
         const t = node.uiTransform ??= {35: 0, 36: 0, 37: 100, 38: 0};

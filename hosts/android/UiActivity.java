@@ -88,6 +88,72 @@ public final class UiActivity extends Activity {
     private native void nativeModuleEvent(String channel, String payload);
     private native void nativeTimer(int token);
     private native void nativeHover(int id, int generation, int inside);
+    private native void nativePan(int id, int generation, int phase, int dx, int dy, int vx, int vy);
+    // Drags past the touch slop, in screen coordinates (the view itself may move), with their
+    // velocity; a touch that does not move is still a click. A group takes the drag from a
+    // child that would consume it (a pressable inside), once it passes the slop.
+    private final class PanTracker {
+        final int id;
+        final float[] start = new float[2];
+        boolean down, panning;
+        android.view.VelocityTracker velocity;
+        final int slop = android.view.ViewConfiguration.get(UiActivity.this).getScaledTouchSlop();
+        PanTracker(int id) { this.id = id; }
+        void track(android.view.MotionEvent e) {
+            android.view.MotionEvent screen = android.view.MotionEvent.obtain(e);
+            screen.setLocation(e.getRawX(), e.getRawY());
+            if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                start[0] = e.getRawX(); start[1] = e.getRawY(); down = true; panning = false;
+                if (velocity != null) velocity.recycle();
+                velocity = android.view.VelocityTracker.obtain();
+            }
+            if (velocity != null) velocity.addMovement(screen);
+            screen.recycle();
+        }
+        boolean past(android.view.MotionEvent e) { return down && Math.hypot(e.getRawX() - start[0], e.getRawY() - start[1]) >= slop; }
+        // A group's interception: true once the drag passes the slop.
+        boolean intercept(android.view.MotionEvent e) {
+            track(e);
+            int action = e.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) { down = false; return false; }
+            return action == android.view.MotionEvent.ACTION_MOVE && past(e);
+        }
+        boolean touch(View v, android.view.MotionEvent e) {
+            if (e.getActionMasked() != android.view.MotionEvent.ACTION_DOWN || !down) track(e);
+            float d = density();
+            int action = e.getActionMasked();
+            int dx = Math.round((e.getRawX() - start[0]) / d), dy = Math.round((e.getRawY() - start[1]) / d);
+            if (!active || !generations.containsKey(id)) return true;
+            int generation = generations.get(id);
+            if (action == android.view.MotionEvent.ACTION_MOVE) {
+                if (!panning && !past(e)) return true;
+                if (!panning) {
+                    panning = true;
+                    if (v.getParent() != null) v.getParent().requestDisallowInterceptTouchEvent(true);
+                    nativePan(id, generation, 0, 0, 0, 0, 0);
+                }
+                nativePan(id, generation, 1, dx, dy, 0, 0);
+            } else if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
+                int vx = 0, vy = 0;
+                if (velocity != null) {
+                    velocity.computeCurrentVelocity(1000);
+                    vx = Math.round(velocity.getXVelocity() / d); vy = Math.round(velocity.getYVelocity() / d);
+                    velocity.recycle(); velocity = null;
+                }
+                if (panning) nativePan(id, generation, action == android.view.MotionEvent.ACTION_UP ? 2 : 3, dx, dy, vx, vy);
+                else if (action == android.view.MotionEvent.ACTION_UP) v.performClick();
+                panning = false; down = false;
+            }
+            return true;
+        }
+    }
+    private final HashMap<Integer, PanTracker> pans = new HashMap<>();
+    private void listenPan(int id, View view, boolean on) {
+        if (!on) { pans.remove(id); view.setOnTouchListener(null); return; }
+        PanTracker tracker = new PanTracker(id);
+        pans.put(id, tracker);
+        view.setOnTouchListener(tracker::touch);
+    }
     private native void nativeValue(int id, int generation, int value);
     private native void nativeAnswer(int request, String text);
     private native void nativeDataDir(String path);
@@ -269,6 +335,12 @@ public final class UiActivity extends Activity {
     };
 
     private final class YogaGroup extends ViewGroup {
+        // The node this group draws (-1: the root, a scroll's content).
+        int nodeId = -1;
+        @Override public boolean onInterceptTouchEvent(android.view.MotionEvent e) {
+            PanTracker tracker = pans.get(nodeId);
+            return tracker != null && tracker.intercept(e);
+        }
         // The size Yoga gave a scroll view's content; 0 for every other group.
         int contentWidth, contentHeight;
         YogaGroup() { super(UiActivity.this); }
@@ -403,6 +475,7 @@ public final class UiActivity extends Activity {
             slider.setProgress(shown - range[0]);
             return;
         }
+        if (code == 41) { listenPan(id, view, value != 0); return; }
         if (code == 31) {
             // A pointer (a mouse, a stylus) entering and leaving the view.
             view.setOnHoverListener(value == 0 ? null : (v, e) -> {
@@ -700,6 +773,7 @@ public final class UiActivity extends Activity {
                 view = new FrameLayout(this);
             } else view = new YogaGroup();
             view.setId(View.generateViewId());
+            if (view instanceof YogaGroup) ((YogaGroup)view).nodeId = id;
             nodes.put(id, view); generations.put(id, generation);
             return;
         }
@@ -752,7 +826,7 @@ public final class UiActivity extends Activity {
             activeScreens.remove(id);
             nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
             modalIds.remove(id); refreshers.remove(id); nativeViews.remove(id); nativeTypes.remove(id);
-            shownScreens.remove(id); sliderRanges.remove(id); transforms.remove(id); motions.remove(id);
+            shownScreens.remove(id); sliderRanges.remove(id); transforms.remove(id); motions.remove(id); pans.remove(id);
             scrollViewports.remove(id);
         } else if (op == 7 || op == 8) {
             if (view instanceof ScrollView) { if (op == 7) scrollViewports.put(id, -1); else scrollViewports.remove(id); }

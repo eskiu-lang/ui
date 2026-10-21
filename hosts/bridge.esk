@@ -66,6 +66,13 @@ void ui_dispatch_answer(int request, string text) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// A drag on a node with a pan handler: phase (PanPhase), translation and velocity in points.
+void ui_dispatch_pan(int id, int generation, int phase, int dx, int dy, int vx, int vy) {
+    if (!app_active) { return; }
+    ui_event_pan(id, generation, phase, dx, dy, vx, vy);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 // The user moved a Slider to `value`.
 void ui_dispatch_value(int id, int generation, int value) {
     if (!app_active) { return; }

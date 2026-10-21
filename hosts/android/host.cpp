@@ -36,6 +36,7 @@ extern "C" void ui_dispatch_view(int, int, const char *, const char *);
 extern "C" void ui_dispatch_layout(int, int, int, int, int, int);
 extern "C" void ui_dispatch_timer(int);
 extern "C" void ui_dispatch_hover(int, int, int);
+extern "C" void ui_dispatch_pan(int, int, int, int, int, int, int);
 extern "C" void ui_dispatch_value(int, int, int);
 extern "C" void ui_dispatch_answer(int, const char *);
 extern "C" void ui_report_data_dir(const char *);
@@ -366,4 +367,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeFetch(JNIEn
     const char *text = env->GetStringUTFChars(body, nullptr), *names = env->GetStringUTFChars(headers, nullptr);
     ui_dispatch_fetch(request, status, text, names);
     env->ReleaseStringUTFChars(body, text); env->ReleaseStringUTFChars(headers, names);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativePan(JNIEnv *current, jobject, jint id, jint generation, jint phase, jint dx, jint dy, jint vx, jint vy) {
+    env = current; ui_dispatch_pan(id, generation, phase, dx, dy, vx, vy);
 }
