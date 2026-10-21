@@ -20,8 +20,7 @@ void ui_app_start(int example) {
         ui_mount(void() { TasksApp(&task_store); });
     }
     else if (example == 3) {
-        String_free(&conformance_log);
-        ui_test_log = null;
+        conformance_reset();
         ui_mount(void() { Conformance(); });
     }
     else if (example == 2) {

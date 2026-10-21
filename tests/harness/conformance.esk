@@ -6,6 +6,15 @@ import <string>;
 // Every element a host reports carries a label; handlers append to the log.
 String conformance_log;
 
+// The size the layout handler last logged.
+Frame conformance_frame;
+
+void conformance_reset() {
+    String_free(&conformance_log);
+    conformance_frame = Frame{};
+    ui_test_log = null;
+}
+
 void conformance_note(string entry) {
     if (conformance_log.len > 0) { String_append(&conformance_log, ","); }
     String_append(&conformance_log, entry);
@@ -72,6 +81,14 @@ void Conformance() {
         // Out of the flow: pinned to the stage's top right; a ratio gives the height.
         Row(Style{height: 60, label: "Stage"}, void() {
             Row(Style{absolute: true, right: 10, top: 5, width: 40, height: 30, label: "Pinned"}, void() {});
+            ui_on_layout(void(Frame f) {
+                if (f.width == conformance_frame.width && f.height == conformance_frame.height) { return; }
+                conformance_frame = f;
+                String entry;
+                defer String_free(&entry);
+                String_appendf(&entry, "layout:%dx%d", f.width, f.height);
+                conformance_note(entry.data);
+            });
             Row(Style{width: 100, aspect_ratio: 2.0, label: "Ratio"}, void() {});
         });
     });
