@@ -1,6 +1,7 @@
 // Explore: screens on the phone, pages on the web. A list of places, each place's page and
-// a plan for the trip. The routes are "/", "/places/:id" and "/places/:id/plan"; on the web
-// they are the URL, and the page under the top keeps its state.
+// a plan for the trip, with a date picker, a menu and a toast when it is saved. The routes
+// are "/", "/places/:id" and "/places/:id/plan"; on the web they are the URL, and the page
+// under the top keeps its state.
 import <string>;
 import <ui>;
 import <ui/kit>;
@@ -193,11 +194,18 @@ void PlanPage(*Router router, int id) {
         NavBar(title.data, void() { KitButton("Back", VariantGhost, void() { router.back(); }); });
         Column(Style{padding: 20, gap: 16}, void() {
             Card(void() {
-                TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "When");
-                *StringState dates = use_string("");
-                TextField(dates.get(), "Dates, like April 3 to 10", void(string text) { dates.set(text); });
-                TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "Budget");
+                // The day leaving, as year * 10000 + month * 100 + day (a signal holds a number).
+                *Signal<int> leaving = use_signal<int>(20261112);
+                *Signal<int> travelers = use_signal<int>(1);
                 *Signal<int> budget = use_signal<int>(1);
+                int day = leaving.get();
+                TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "Leaving");
+                DatePicker(Date{day / 10000, day / 100 % 100, day % 100}, void(Date d) {
+                    leaving.set(d.year * 10000 + d.month * 100 + d.day);
+                });
+                TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "Travelers");
+                Select("Just me\nTwo people\nA family of four", travelers.get(), void(int i) { travelers.set(i); });
+                TextWith(Style{font_size: 15, font_weight: 600, color: muted()}, "Budget");
                 SegmentedControl("Saver\nComfort\nLuxury", budget.get(), void(int i) { budget.set(i); });
             });
             Card(void() {
@@ -208,7 +216,13 @@ void PlanPage(*Router router, int id) {
                 Checkbox("Hotel", hotel.get(), void(bool on) { hotel.set(on); });
                 Checkbox("A local guide", guide.get(), void(bool on) { guide.set(on); });
             });
-            KitButton("Save the plan", VariantPrimary, void() { router.reset("/"); });
+            KitButton("Save the plan", VariantPrimary, void() {
+                String saved;
+                defer String_free(&saved);
+                String_format(&saved, "Your trip to %s is saved", p.name);
+                kit_toast(saved.data);
+                router.reset("/");
+            });
         });
     });
 }
@@ -225,5 +239,6 @@ void Places(*Router router) {
             else if (place_at >= 0) { PlacePage(router, place_at); }
             else { PlaceList(router); }
         });
+        ToastHost();
     });
 }
