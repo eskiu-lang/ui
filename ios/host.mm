@@ -190,6 +190,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         } else if (kind == 5) {
             if (before) YGNodeStyleSetHeight(node.yoga, before); else YGNodeStyleSetHeightAuto(node.yoga);
         } else if (kind == 6) YGNodeStyleSetFlexGrow(node.yoga, before);
+        else if (kind == 7) YGNodeStyleSetFlexWrap(node.yoga, before ? YGWrapWrap : YGWrapNoWrap);
     } else if (op == 9) {
         NSString *value = text && text[0] ? [NSString stringWithUTF8String:text] : nil;
         if (kind == 1) node.view.accessibilityLabel = value;

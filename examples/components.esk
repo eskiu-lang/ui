@@ -69,7 +69,7 @@ void TodoApp(*Store store) {
         Scroll(Style{height: 320}, void() {
             for (i in 0..store.items.size) {
                 Todo item = store.items.data[i];
-                Row(Style{key: key(item.id)}, void() {
+                Row(Style{key: key(item.id), wrap: true}, void() {
                     *Signal<bool> editing = use_signal<bool>(false);
                     Text(item.title);
                     if (editing.get()) { Text("Editing"); }

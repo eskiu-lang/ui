@@ -70,7 +70,7 @@ run([*adb, "push", BUILD / "model", remote], stdout=subprocess.DEVNULL)
 report["runtime"] = subprocess.check_output([*adb, "shell", remote], text=True, timeout=60)
 assert "PASS leak gates" in report["runtime"]
 # Capture after the runtime gate, once the app's launch animation has settled.
-with (shots / "counter-android.png").open("wb") as shot:
+with (shots / "todo-android.png").open("wb") as shot:
     run([*adb, "exec-out", "screencap", "-p"], stdout=shot)
 (HERE / "build/android-results.json").write_text(json.dumps(report, indent=2) + "\n")
 print(json.dumps(report, indent=2))

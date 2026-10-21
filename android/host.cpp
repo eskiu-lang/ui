@@ -72,6 +72,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             else if (kind == 4) { if (before) YGNodeStyleSetWidth(node, before); else YGNodeStyleSetWidthAuto(node); }
             else if (kind == 5) { if (before) YGNodeStyleSetHeight(node, before); else YGNodeStyleSetHeightAuto(node); }
             else if (kind == 6) YGNodeStyleSetFlexGrow(node, before);
+            else if (kind == 7) YGNodeStyleSetFlexWrap(node, before ? YGWrapWrap : YGWrapNoWrap);
         }
         else if (op == 3) YGNodeMarkDirty(node);
         else if (op == 4 || op == 5) {

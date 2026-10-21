@@ -93,6 +93,7 @@ export function createHost(root, dispatch) {
           else if (m.kind === 4) node.style.width = px(m.before);
           else if (m.kind === 5) node.style.height = px(m.before);
           else if (m.kind === 6) node.style.flexGrow = m.before ? String(m.before) : '';
+          else if (m.kind === 7) node.style.flexWrap = m.before ? 'wrap' : '';
         }
         else throw new Error(`unknown operation ${m.op}`);
       }
