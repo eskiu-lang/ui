@@ -70,7 +70,8 @@ struct Ui {
 *Ui ui;
 
 void ui_require(bool ok, string message) {
-    if (!ok) { printf("ui: %s\n", message); abort(); }
+    // stderr is unbuffered: the message survives the abort when output goes to a file.
+    if (!ok) { print_err("ui: "); println_err(message); abort(); }
 }
 
 string ui_copy(string text) {
