@@ -10,6 +10,14 @@
   #app { height: 100%; display: flex; flex-direction: column; }
   #app button { font: inherit; border: 0; cursor: pointer; }
   #app input { font: inherit; border: 1px solid #d1d5db; border-radius: 6px; outline-color: #6366f1; }
+  /* Switch: a checkbox with role=switch, drawn as a track and a sliding knob. */
+  #app input[role=switch] { appearance: none; -webkit-appearance: none; flex-shrink: 0; position: relative; margin: 0;
+    width: 51px; height: 31px; border: 0; border-radius: 999px; background: #e5e7eb; cursor: pointer; transition: background 0.2s; }
+  #app input[role=switch]::before { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px;
+    border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); transition: transform 0.2s; }
+  #app input[role=switch]:checked { background: #4f46e5; }
+  #app input[role=switch]:checked::before { transform: translateX(20px); }
+  #app input[role=switch]:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
 </style>
 <div id="app"></div>
 <script type="module">
