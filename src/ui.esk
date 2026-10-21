@@ -8,7 +8,8 @@ extern void abort();
 
 struct Key { bool set; int64 value; }
 Key key(int64 value) { return Key{true, value}; }
-struct Style { Key key; int gap = 8; int padding = 0; }
+// `label` is the accessible name (ARIA label, accessibilityLabel, contentDescription).
+struct Style { Key key; int gap = 8; int padding = 0; string label; }
 
 // A subscription is one entry on each side, each holding the other's index, so either
 // side removes it in O(1) by swapping in its last entry.
@@ -112,17 +113,26 @@ struct Node {
     fn()->void block;
     fn()->void handler;
     fn()->void handler_cleanup;
+    // TextInput: the new text (borrowed for the call) and focus changes.
+    fn(string)->void on_text;
+    fn(bool)->void on_focus;
+    bool has_on_focus;
+    string label;
+    string placeholder;
+    int focused;
     string text;
 }
 // A commit is one byte buffer, little-endian. Each record is an op byte and the node id
 // (u32), then:
 //   1 create   generation u32, kind u8
-//   2 prop     prop u8 (1 gap, 2 padding), value i32
+//   2 prop     prop u8, value i32
 //   3 text     length u32, the bytes, a NUL
 //   4 insert   parent u32, before u32 (0: at the end)
 //   5 move     parent u32, before u32
 //   6 remove   (nothing)
 //   7 listen, 8 unlisten
+//   9 string prop  prop u8 (1 label, 2 placeholder), length u32, the bytes, a NUL
+// Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur). An input's value is its text.
 // The renderer reads it during apply and copies what it keeps.
 struct Commit { *uint8 data; int len; int cap; }
 
@@ -172,13 +182,19 @@ void ui_decode(*uint8 data, int len, List<Mutation>* out) {
             int n = ui_read_u32(&data[at]);
             m.text = (string)&data[at + 4];
             at += 4 + n + 1;
+        } else if (m.op == 9) {
+            m.kind = (int)data[at];
+            int n = ui_read_u32(&data[at + 1]);
+            m.text = (string)&data[at + 5];
+            at += 5 + n + 1;
         } else if (m.op == 4 || m.op == 5) {
             m.parent = ui_read_u32(&data[at]); m.before = ui_read_u32(&data[at + 4]); at += 8;
         }
         out.push(m);
     }
 }
-struct Event { int id; int generation; }
+// Event kinds: 1 press, 2 change (text), 3 focus (value 1 focused, 0 blurred).
+struct Event { int id; int generation; int kind; int value; string text; }
 struct Ui {
     *Node root;
     *Node builder;
@@ -208,6 +224,8 @@ struct Ui {
     bool lenient;
     // The name the next element takes (Scope), cleared as soon as it is taken.
     string next_name;
+    // The input parts of the next element (TextInput), likewise.
+    *InputExtra next_input;
     bool in_flight;
 }
 *Ui ui;
@@ -267,6 +285,10 @@ string ui_copy(string text) {
 }
 
 void ui_release_closure(escaping fn()->void callback) { free_closure(callback); }
+// Through a parameter: the self-hosted compiler miscompiles free_closure of a captured
+// variable inside a lambda.
+void ui_release_text(escaping fn(string)->void callback) { free_closure(callback); }
+void ui_release_focus(escaping fn(bool)->void callback) { free_closure(callback); }
 
 void ui_retire(escaping fn()->void dispose) { ui.retired.push(dispose); }
 void ui_emit(int op, *Node node, int before) {
@@ -288,6 +310,34 @@ void ui_emit(int op, *Node node, int before) {
 
 void ui_emit_prop(*Node node, int prop, int value) {
     ui.commit.u8(2); ui.commit.u32(node.id); ui.commit.u8(prop); ui.commit.u32(value);
+}
+
+void ui_emit_string_prop(*Node node, int prop, string value) {
+    *Commit c = &ui.commit;
+    c.u8(9); c.u32(node.id); c.u8(prop);
+    if (value == null) { value = ""; }
+    int n = (int)strlen(value);
+    c.u32(n);
+    c.room(n + 1);
+    memcpy(&c.data[c.len], value, (size_t)(n + 1));
+    c.len += n + 1;
+}
+
+// Keep a copy of `value` in `*slot` when it changed, retiring the old one after the
+// commit; true when the renderer must hear about it. Null and "" are the same and stored
+// as null, so an element without the prop allocates nothing.
+bool ui_update_string(*string slot, string value) {
+    string current = *slot;
+    bool empty = value == null || value[0] == 0;
+    if (current == null) {
+        if (empty) { return false; }
+        *slot = ui_copy(value);
+        return true;
+    }
+    if (!empty && strcmp(current, value) == 0) { return false; }
+    ui_retire(void() { free(current); });
+    *slot = empty ? null : ui_copy(value);
+    return true;
 }
 
 void ui_remove_reader(*Source source, int at) {
@@ -703,11 +753,17 @@ void ui_unmount(*Node node) {
         ui_release_closure(node.block);
         ui_release_closure(node.handler);
         ui_release_closure(node.handler_cleanup);
-        free(node.text);
+        ui_release_text(node.on_text);
+        ui_release_focus(node.on_focus);
+        free(node.text); free(node.label); free(node.placeholder);
         node.slots.free(); node.children.free(); node.emitted.free();
         free(node);
     });
 }
+
+// What an input element adds to an element: set by TextInput before ui_element.
+struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_on_focus;
+    string placeholder; int focused; }
 
 *Node ui_element(int kind, Style style, string text,
     escaping fn()->void block, escaping fn()->void handler, escaping fn()->void handler_cleanup) {
@@ -786,6 +842,11 @@ void ui_unmount(*Node node) {
         fn()->void old_cleanup = node.handler_cleanup;
         ui_retire(void() { ui_release_closure(old_block); });
         ui_retire(void() { ui_release_closure(old_handler); old_cleanup(); ui_release_closure(old_cleanup); });
+        if (kind == 5) {
+            fn(string)->void old_text = node.on_text;
+            fn(bool)->void old_focus = node.on_focus;
+            ui_retire(void() { ui_release_text(old_text); ui_release_focus(old_focus); });
+        }
     }
     node.seen = true;
     node.name = ui.next_name;
@@ -796,10 +857,25 @@ void ui_unmount(*Node node) {
         node.padding = style.padding;
         ui_emit_prop(node, 2, style.padding);
     }
+    if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
     node.block = block;
     node.handler = handler;
     node.handler_cleanup = handler_cleanup;
-    if (kind == 4) { ui_emit(7, node, 0); }
+    if (kind == 5) {
+        *InputExtra extra = ui.next_input;
+        ui.next_input = null;
+        node.on_text = extra.on_text;
+        node.on_focus = extra.on_focus;
+        node.has_on_focus = extra.has_on_focus;
+        if (ui_update_string(&node.placeholder, extra.placeholder)) {
+            ui_emit_string_prop(node, 2, node.placeholder);
+        }
+        if (extra.focused >= 0 && (fresh || extra.focused != node.focused)) {
+            node.focused = extra.focused;
+            ui_emit_prop(node, 3, extra.focused);
+        }
+    }
+    if (kind == 4 || kind == 5) { ui_emit(7, node, 0); }
     if (text != null && (node.text == null || strcmp(text, node.text) != 0)) {
         string previous = node.text;
         if (previous != null) { ui_retire(void() { free(previous); }); }
@@ -822,6 +898,28 @@ void Text(string text) { ui_element(3, Style{}, text, void() {}, void() {}, void
 void Button(string text, escaping fn()->void handler) { ui_element(4, Style{}, text, void() {}, handler, void() {}); }
 void Button_owned(string text, escaping fn()->void handler, escaping fn()->void cleanup) {
     ui_element(4, Style{}, text, void() {}, handler, cleanup);
+}
+
+// A controlled text field: `value` is what it shows, `on_change` gets each edit (the text
+// is borrowed for the call; keep it in owned state such as use_string). `focused` is 1 to
+// focus it, 0 to blur it, -1 to leave focus to the user.
+struct Input { Key key; string value; string placeholder; string label; int focused = -1; }
+
+void TextInput(Input input, escaping fn(string)->void on_change) {
+    InputExtra extra = InputExtra{on_text: on_change, placeholder: input.placeholder,
+        focused: input.focused};
+    ui.next_input = &extra;
+    ui_element(5, Style{key: input.key, label: input.label}, input.value == null ? "" : input.value,
+        void() {}, void() {}, void() {});
+}
+
+// The same, with `on_focus` told when the field gains (true) or loses (false) focus.
+void TextInput_focus(Input input, escaping fn(string)->void on_change, escaping fn(bool)->void on_focus) {
+    InputExtra extra = InputExtra{on_text: on_change, on_focus: on_focus, has_on_focus: true,
+        placeholder: input.placeholder, focused: input.focused};
+    ui.next_input = &extra;
+    ui_element(5, Style{key: input.key, label: input.label}, input.value == null ? "" : input.value,
+        void() {}, void() {}, void() {});
 }
 
 void ui_assign_id(*Node node) {
@@ -913,10 +1011,12 @@ void ui_complete(int sequence) {
     ui.phase = 2;
     ui_run_effects();
     ui.phase = 0;
-    // Events that arrived while the commit was in flight, in arrival order.
+    // Events that arrived while the commit was in flight, in arrival order. Their text was
+    // copied on receipt and is freed once the handler returns.
     for (i in 0..ui.events.size) {
         Event event = ui.events.data[i];
-        ui_dispatch_now(event.id, event.generation);
+        ui_dispatch_event(&event);
+        free(event.text);
     }
     ui.events.size = 0;
 }
@@ -990,23 +1090,44 @@ bool ui_frame() {
     return true;
 }
 
-// Dispatch now, or queue until the commit in flight completes. Returns false only for an
-// event dispatched now whose node is gone or stale; a queued one is checked when it runs.
-bool ui_event(int id, int generation) {
+// Dispatch now, or queue until the commit in flight completes (copying its text). Returns
+// false only for an event dispatched now whose node is gone or stale; a queued one is
+// checked when it runs.
+bool ui_post(Event event) {
     if (ui.in_flight || ui.phase != 0) {
-        ui.events.push(Event{id, generation});
+        if (event.text != null) { event.text = ui_copy(event.text); }
+        ui.events.push(event);
         return true;
     }
     ui_require_consistent();
-    return ui_dispatch_now(id, generation);
+    return ui_dispatch_event(&event);
 }
 
-bool ui_dispatch_now(int id, int generation) {
+bool ui_event(int id, int generation) { return ui_post(Event{id, generation, 1, 0, null}); }
+
+// The text of an input changed; `text` is only read during the call.
+bool ui_event_text(int id, int generation, string text) {
+    return ui_post(Event{id, generation, 2, 0, text});
+}
+
+bool ui_event_focus(int id, int generation, bool focused) {
+    return ui_post(Event{id, generation, 3, focused ? 1 : 0, null});
+}
+
+bool ui_dispatch_event(*Event event) {
+    int id = event.id;
     if (id <= 0 || id >= ui.by_id.size) { return false; }
     *Node node = ui.by_id.data[id];
-    if (node == null || node.generation != generation || node.kind != 4) { return false; }
-    node.handler();
-    return true;
+    if (node == null || node.generation != event.generation) { return false; }
+    if (event.kind == 1 && node.kind == 4) { node.handler(); return true; }
+    if (event.kind == 2 && node.kind == 5) { node.on_text(event.text); return true; }
+    if (event.kind == 3 && node.kind == 5) {
+        // The renderer moved focus: remember it so a later `focused` prop is a change.
+        node.focused = event.value;
+        if (node.has_on_focus) { node.on_focus(event.value != 0); }
+        return true;
+    }
+    return false;
 }
 
 bool ui_needs_frame() {
@@ -1026,6 +1147,7 @@ void ui_shutdown() {
     ui.next_nodes.free(); ui.render_writes.free(); ui.looping.free();
     ui.dirty_memos.free(); ui.dirty_effects.free();
     ui.commit.free(); ui.writes.free(); ui.retired.free();
+    for (i in 0..ui.events.size) { free(ui.events.data[i].text); }
     ui.finalizers.free(); ui.events.free();
     ui = null;
 }

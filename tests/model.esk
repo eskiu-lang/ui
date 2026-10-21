@@ -15,10 +15,11 @@ int effects;
 int cleanups;
 int observed;
 int mutation_count;
-int[9] ops;
+int[16] ops;
 int[1024] mutation_ops;
 int[1024] mutation_ids;
 int[1024] mutation_befores;
+int[1024] mutation_kinds;
 bool async_apply;
 
 void record(*uint8 data, int len) {
@@ -27,13 +28,14 @@ void record(*uint8 data, int len) {
     *Mutation mutations = decoded.data;
     int count = decoded.size;
     mutation_count = count;
-    for (i in 0..9) { ops[i] = 0; }
+    for (i in 0..16) { ops[i] = 0; }
     ui_require(count <= 1024, "recording capacity");
     for (i in 0..count) {
         ops[mutations[i].op]++;
         mutation_ops[i] = mutations[i].op;
         mutation_ids[i] = mutations[i].id;
         mutation_befores[i] = mutations[i].before;
+        mutation_kinds[i] = mutations[i].kind;
     }
     decoded.free();
     if (!async_apply) { ui_complete(ui.sequence); }
@@ -531,6 +533,78 @@ void lenient_keys() {
     ui_shutdown(); balanced("lenient keys leak");
 }
 
+int count_prop(int op, int prop) {
+    int n = 0;
+    for (i in 0..mutation_count) { if (mutation_ops[i] == op && mutation_kinds[i] == prop) { n++; } }
+    return n;
+}
+
+*StringState draft;
+*Signal<int> want_focus;
+int focus_calls;
+bool last_focus;
+// A controlled input: edits reach the handler, the value goes back as the input's text,
+// focus is a prop, and a queued edit keeps its own copy of the text.
+void text_input() {
+    Ui runtime;
+    focus_calls = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        draft = use_string("");
+        want_focus = use_signal<int>(1);
+        TextInput_focus(Input{value: draft.get(), placeholder: "New task", label: "Task", focused: want_focus.get()},
+            void(string text) { draft.set(text); },
+            void(bool focused) { focus_calls++; last_focus = focused; });
+    });
+    ui_frame();
+    check(count_prop(2, 3) == 1 && count_prop(9, 2) == 1 && count_prop(9, 1) == 1,
+        "mount sends focus, placeholder and label once");
+    *Node input = ui.root.children.data[0];
+    check(ui_event_text(input.id, input.generation, "Buy milk"), "edit dispatched");
+    check(strcmp(draft.get(), "Buy milk") == 0, "the handler got the text");
+    ui_frame();
+    check(ops[3] == 1 && count_prop(2, 3) == 0 && count_prop(9, 1) == 0, "the new value only");
+    // The renderer moved focus away: the handler hears it, and focused: 1 is a change again.
+    ui_event_focus(input.id, input.generation, false);
+    check(focus_calls == 1 && !last_focus, "focus handler");
+    want_focus.set(1); ui_frame();
+    check(!ui_frame() || count_prop(2, 3) == 0, "no frame without a change");
+    draft.set("x"); ui_frame();
+    check(count_prop(2, 3) == 1, "focused: 1 after a blur refocuses");
+    // An edit queued while a commit is in flight keeps its own copy of the text.
+    async_apply = true;
+    draft.set("y"); ui_frame();
+    char[16] buffer;
+    buffer[0] = 'a'; buffer[1] = 'b'; buffer[2] = 0;
+    ui_event_text(input.id, input.generation, (string)&buffer[0]);
+    buffer[0] = 'z';
+    ui_complete(ui.sequence);
+    check(strcmp(draft.get(), "ab") == 0, "queued text was copied on receipt");
+    async_apply = false;
+    ui_shutdown(); balanced("text input leak");
+}
+
+*Signal<int> label_version;
+void labels() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        label_version = use_signal<int>(0);
+        int v = label_version.get();
+        Row(Style{label: v == 0 ? "Close" : v == 1 ? "Close" : v == 2 ? "Dismiss" : null}, void() {});
+        Row(Style{}, void() {});
+    });
+    ui_frame();
+    check(count_prop(9, 1) == 1, "only the labeled row sends a label");
+    label_version.set(1); ui_frame();
+    check(count_prop(9, 1) == 0, "an unchanged label sends nothing");
+    label_version.set(2); ui_frame();
+    check(count_prop(9, 1) == 1, "a changed label is sent");
+    label_version.set(3); ui_frame();
+    check(count_prop(9, 1) == 1, "a removed label is sent as empty");
+    ui_shutdown(); balanced("labels leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -544,6 +618,8 @@ int main() {
     shared_subscriptions(); printf("PASS shared subscriptions\n");
     id_reuse(); printf("PASS id reuse\n");
     lenient_keys(); printf("PASS lenient keys\n");
+    text_input(); printf("PASS text input\n");
+    labels(); printf("PASS labels\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");
