@@ -14,6 +14,9 @@ void ui_app_stop();
 extern void ui_host_commit(*uint8 data, int len);
 extern void ui_host_schedule();
 extern void ui_host_cancel();
+// The host's timers (use_interval, use_timeout): each tick calls ui_dispatch_timer(token).
+extern void ui_host_timer_start(int token, int ms, int repeat);
+extern void ui_host_timer_stop(int token);
 Ui ui_host_runtime;
 
 // What the hosts' conformance runs read back: the conformance scene writes its handler log
@@ -43,6 +46,13 @@ int ui_edge_to_edge() { return ui_edge_policy; }
 void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
     if (!app_active) { return; }
     ui_set_insets(Insets{top, right, bottom, left, keyboard});
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+// A timer the app armed fired.
+void ui_dispatch_timer(int token) {
+    if (!app_active) { return; }
+    ui_event_timer(token);
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
@@ -154,6 +164,8 @@ void ui_start(int which) {
         ui_host_commit(data, len);
         ui_complete(ui.sequence);
     });
+    ui_set_timer_host(void(int token, int ms, bool repeat) { ui_host_timer_start(token, ms, repeat ? 1 : 0); },
+        void(int token) { ui_host_timer_stop(token); });
     if (pending_link != null) {
         ui_set_link(pending_link);
         free(pending_link);

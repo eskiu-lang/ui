@@ -31,6 +31,7 @@ extern "C" void ui_stop();
 extern "C" void ui_dispatch_native(const char *, const char *);
 extern "C" void ui_dispatch_view(int, int, const char *, const char *);
 extern "C" void ui_dispatch_layout(int, int, int, int, int, int);
+extern "C" void ui_dispatch_timer(int);
 
 static JNIEnv *env;
 static jobject activity;
@@ -52,7 +53,7 @@ static const int kUnset = -1000000;
 static JavaVM *vm;
 static jclass activityClass;
 static jobject classLoader;
-static jmethodID namedMethod, emitMethod, loadClassMethod;
+static jmethodID namedMethod, emitMethod, loadClassMethod, timerStartMethod, timerStopMethod;
 static void checked() { if (env->ExceptionCheck()) { env->ExceptionDescribe(); std::abort(); } }
 static YGSize measure(YGNodeConstRef node, float width, YGMeasureMode wm, float height, YGMeasureMode hm) {
     int id = static_cast<int>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
@@ -96,6 +97,10 @@ static void place(YGNodeRef parent) {
 }
 extern "C" void ui_host_schedule() { env->CallVoidMethod(activity, scheduleMethod); checked(); }
 extern "C" void ui_host_cancel() { env->CallVoidMethod(activity, cancelMethod); checked(); }
+extern "C" void ui_host_timer_start(int token, int ms, int repeat) {
+    env->CallVoidMethod(activity, timerStartMethod, token, ms, repeat != 0); checked();
+}
+extern "C" void ui_host_timer_stop(int token) { env->CallVoidMethod(activity, timerStopMethod, token); checked(); }
 extern "C" void ui_host_apply(int op, int id, int generation, int parent, int before, int kind, const char *text) {
     if (op == 1) {
         YGNodeRef node = YGNodeNew();
@@ -211,6 +216,8 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStart(JNIEn
     screenWidthMethod = env->GetMethodID(cls, "screenWidth", "()F");
     screenHeightMethod = env->GetMethodID(cls, "screenHeight", "()F");
     namedMethod = env->GetMethodID(cls, "named", "(ILjava/lang/String;Ljava/lang/String;)V");
+    timerStartMethod = env->GetMethodID(cls, "timerStart", "(IIZ)V");
+    timerStopMethod = env->GetMethodID(cls, "timerStop", "(I)V");
     emitMethod = env->GetStaticMethodID(cls, "emit", "(Ljava/lang/String;Ljava/lang/String;)V");
     activityClass = (jclass)env->NewGlobalRef(cls);
     // The app's class loader, for ui_find_class on threads native code starts.
@@ -317,4 +324,7 @@ extern "C" void ui_native_emit(const char *channel, const char *payload) {
     jstring c = current->NewStringUTF(channel ? channel : ""), p = current->NewStringUTF(payload ? payload : "");
     current->CallStaticVoidMethod(activityClass, emitMethod, c, p);
     current->DeleteLocalRef(c); current->DeleteLocalRef(p);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeTimer(JNIEnv *current, jobject, jint token) {
+    env = current; ui_dispatch_timer(token);
 }

@@ -30,6 +30,7 @@ extern "C" void ui_stop(void);
 extern "C" void ui_dispatch_native(const char *channel, const char *payload);
 extern "C" int ui_report_back(void);
 extern "C" void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height);
+extern "C" void ui_dispatch_timer(int token);
 extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
 
 @interface UiHostNode : NSObject
@@ -354,6 +355,22 @@ extern "C" void ui_host_schedule(void) {
     [frameLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
 }
 extern "C" void ui_host_cancel(void) { [frameLink invalidate]; frameLink = nil; }
+
+// Timers for use_interval and use_timeout, on the main run loop, by token.
+static NSMutableDictionary<NSNumber *, NSTimer *> *timers;
+extern "C" void ui_host_timer_start(int token, int ms, int repeat) {
+    if (!timers) timers = [NSMutableDictionary new];
+    NSTimer *timer = [NSTimer timerWithTimeInterval:ms / 1000.0 repeats:repeat != 0 block:^(NSTimer *t) {
+        if (!repeat) [timers removeObjectForKey:@(token)];
+        ui_dispatch_timer(token);
+    }];
+    [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
+    timers[@(token)] = timer;
+}
+extern "C" void ui_host_timer_stop(int token) {
+    [timers[@(token)] invalidate];
+    [timers removeObjectForKey:@(token)];
+}
 
 extern "C" void ui_host_apply(int op, int id, int generation, int parent,
                                int before, int kind, const char *text) {

@@ -66,6 +66,23 @@ public final class UiActivity extends Activity {
     private final HashMap<Integer, Integer> scrollViewports = new HashMap<>();
     private native void nativeWindow(int width, int height, int scale);
     private native void nativeModuleEvent(String channel, String payload);
+    private native void nativeTimer(int token);
+    // Timers for use_interval and use_timeout, on the UI thread, by token.
+    private final HashMap<Integer, Runnable> timers = new HashMap<>();
+    public void timerStart(int token, int ms, boolean repeat) {
+        Runnable[] tick = new Runnable[1];
+        tick[0] = () -> {
+            if (!timers.containsKey(token)) return;
+            if (repeat) mainThread.postDelayed(tick[0], ms); else timers.remove(token);
+            if (active) nativeTimer(token);
+        };
+        timers.put(token, tick[0]);
+        mainThread.postDelayed(tick[0], ms);
+    }
+    public void timerStop(int token) {
+        Runnable tick = timers.remove(token);
+        if (tick != null) mainThread.removeCallbacks(tick);
+    }
     private native void nativeViewEvent(int id, int generation, String name, String payload);
 
     // Native code (native/android). A view type for NativeView: create makes the view (it

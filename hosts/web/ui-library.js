@@ -34,5 +34,17 @@ mergeInto(LibraryManager.library, {
     host.commit();
   },
   ui_host_schedule: function() { Module['uiHost'].schedule(); },
-  ui_host_cancel: function() { Module['uiHost'].cancel(); }
+  ui_host_cancel: function() { Module['uiHost'].cancel(); },
+  // Timers for use_interval and use_timeout, by token.
+  ui_host_timer_start: function(token, ms, repeat) {
+    const timers = Module['uiTimers'] || (Module['uiTimers'] = new Map());
+    const fire = () => { if (!repeat) timers.delete(token); Module['_ui_dispatch_timer'](token); };
+    timers.set(token, repeat ? setInterval(fire, ms) : setTimeout(fire, ms));
+  },
+  ui_host_timer_stop: function(token) {
+    const timers = Module['uiTimers'];
+    if (!timers || !timers.has(token)) return;
+    clearTimeout(timers.get(token)); clearInterval(timers.get(token));
+    timers.delete(token);
+  }
 });
