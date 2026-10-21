@@ -9,7 +9,9 @@ extern void abort();
 struct Key { bool set; int64 value; }
 Key key(int64 value) { return Key{true, value}; }
 // `label` is the accessible name (ARIA label, accessibilityLabel, contentDescription).
-struct Style { Key key; int gap = 8; int padding = 0; string label; }
+// width and height are points (0: sized by content and parent); grow shares the free
+// space along the parent's direction (flex-grow).
+struct Style { Key key; int gap = 8; int padding = 0; string label; int width; int height; int grow; }
 
 // A subscription is one entry on each side, each holding the other's index, so either
 // side removes it in O(1) by swapping in its last entry.
@@ -88,6 +90,9 @@ struct Node {
     string name;
     int gap;
     int padding;
+    int width;
+    int height;
+    int grow;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -132,7 +137,9 @@ struct Node {
 //   6 remove   (nothing)
 //   7 listen, 8 unlisten
 //   9 string prop  prop u8 (1 label, 2 placeholder), length u32, the bytes, a NUL
-// Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur). An input's value is its text.
+// Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow.
+// An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
+// 5 text input, 6 scroll (a column whose content scrolls).
 // The renderer reads it during apply and copies what it keeps.
 struct Commit { *uint8 data; int len; int cap; }
 
@@ -233,6 +240,8 @@ int64 ui_epochs;
 const int kSmall = 8;
 
 string ui_kind_name(int kind) {
+    if (kind == 6) { return "Scroll"; }
+    if (kind == 5) { return "TextInput"; }
     if (kind == 1) { return "Column"; }
     if (kind == 2) { return "Row"; }
     if (kind == 3) { return "Text"; }
@@ -857,6 +866,16 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         node.padding = style.padding;
         ui_emit_prop(node, 2, style.padding);
     }
+    // Sizes are sent when set or changed, so most elements send none.
+    if ((fresh && style.width != 0) || (!fresh && node.width != style.width)) {
+        node.width = style.width; ui_emit_prop(node, 4, style.width);
+    }
+    if ((fresh && style.height != 0) || (!fresh && node.height != style.height)) {
+        node.height = style.height; ui_emit_prop(node, 5, style.height);
+    }
+    if ((fresh && style.grow != 0) || (!fresh && node.grow != style.grow)) {
+        node.grow = style.grow; ui_emit_prop(node, 6, style.grow);
+    }
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
     node.block = block;
     node.handler = handler;
@@ -889,6 +908,8 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
 
 void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
 void Row(Style style, escaping fn()->void block) { ui_element(2, style, null, block, void() {}, void() {}); }
+// A column whose content scrolls when it is taller than the space it gets.
+void Scroll(Style style, escaping fn()->void block) { ui_element(6, style, null, block, void() {}, void() {}); }
 // A component's own scope: state, identity and its name in diagnostics.
 void Scope(string name, Key k, escaping fn()->void block) {
     ui.next_name = name;

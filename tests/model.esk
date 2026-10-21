@@ -602,6 +602,24 @@ void labels() {
     ui_shutdown(); balanced("labels leak");
 }
 
+*Signal<int> size_version;
+void sizes() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        size_version = use_signal<int>(0);
+        int v = size_version.get();
+        Scroll(Style{height: v == 0 ? 300 : 200, grow: 1}, void() { Row(Style{}, void() {}); });
+    });
+    ui_frame();
+    *Node scroll = ui.root.children.data[0];
+    check(scroll.kind == 6 && count_prop(2, 5) == 1 && count_prop(2, 6) == 1 && count_prop(2, 4) == 0,
+        "a scroll sends its height and grow, not an unset width");
+    size_version.set(1); ui_frame();
+    check(count_prop(2, 5) == 1 && count_prop(2, 6) == 0, "only the changed height");
+    ui_shutdown(); balanced("sizes leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -617,6 +635,7 @@ int main() {
     lenient_keys(); printf("PASS lenient keys\n");
     text_input(); printf("PASS text input\n");
     labels(); printf("PASS labels\n");
+    sizes(); printf("PASS sizes\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");
