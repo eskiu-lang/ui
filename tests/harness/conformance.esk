@@ -118,6 +118,9 @@ void Conformance() {
         // Out of the flow: pinned to the stage's top right; a ratio gives the height.
         Row(Style{height: 60, label: "Stage"}, void() {
             Row(Style{absolute: true, right: 10, top: 5, width: 40, height: 30, label: "Pinned"}, void() {});
+            // Drawn moved, scaled and turned; laid out where it was.
+            Row(Style{absolute: true, left: 0, bottom: 0, width: 20, height: 20, translate_x: 20, translate_y: 10,
+                      scale: 150, rotate: 45, label: "Moved"}, void() {});
             ui_on_layout(void(Frame f) {
                 if (f.width == conformance_frame.width && f.height == conformance_frame.height) { return; }
                 conformance_frame = f;

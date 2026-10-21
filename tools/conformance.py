@@ -56,6 +56,7 @@ EXPECTED_LOG = "layout:100x50,timer,store:saved,tap,tap,text:abc,press,switch:1,
 EXPECTED_STYLES = {
     "Painted": {"background": "ff0000ff", "radius": 8, "border": 2, "borderColor": "000000ff", "opacity": 0.5},
     "Title": {"color": "0000ffff", "fontSize": 24, "fontWeight": 700},
+    "Moved": {"translateX": 20, "translateY": 10, "scale": 1.5, "rotate": 45},
 }
 
 

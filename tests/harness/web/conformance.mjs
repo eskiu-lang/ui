@@ -24,6 +24,12 @@ export async function runConformance(app, root) {
     const [r, g, b, a = 1] = css.match(/[\d.]+/g).map(Number);
     return [r, g, b, Math.round(a * 255)].map(v => v.toString(16).padStart(2, '0')).join('');
   };
+  // A transform's parts from its computed matrix.
+  const moved = () => {
+    const [a, b, , , e, f] = getComputedStyle(root.querySelector('[aria-label="Moved"]')).transform.match(/-?[\d.e-]+/g).map(Number);
+    return {translateX: e, translateY: f, scale: Math.round(Math.hypot(a, b) * 100) / 100,
+      rotate: Math.round(Math.atan2(b, a) * 180 / Math.PI)};
+  };
   const css = label => getComputedStyle(root.querySelector(`[aria-label="${label}"]`));
   const painted = css('Painted');
   const title = css('Title');
@@ -31,6 +37,7 @@ export async function runConformance(app, root) {
     Painted: {background: hex(painted.backgroundColor), radius: parseFloat(painted.borderTopLeftRadius),
       border: parseFloat(painted.borderTopWidth), borderColor: hex(painted.borderTopColor), opacity: Number(painted.opacity)},
     Title: {color: hex(title.color), fontSize: parseFloat(title.fontSize), fontWeight: Number(title.fontWeight)},
+    Moved: moved(),
   };
   const tap = [...root.querySelectorAll('button')].find(button => button.textContent === 'Tap');
   tap.click();
