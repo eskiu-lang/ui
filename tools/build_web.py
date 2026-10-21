@@ -12,6 +12,7 @@ compiler = find_compiler()
 subprocess.run([compiler, str(HERE / "tests/harness/app.esk"), "--target", "wasm32-unknown-emscripten",
                 "-O2", "-o", str(BUILD / "app.mjs"),
                 "--link-arg=--js-library", "--link-arg=" + str(HERE / "hosts/web/ui-library.js"),
+                "--link-arg=--js-library", "--link-arg=" + str(HERE / "examples/native/native/web/clock.js"),
                 "--link-arg=-sMODULARIZE=1", "--link-arg=-sEXPORT_ES6=1",
                 "--link-arg=-sALLOW_MEMORY_GROWTH=1", "--link-arg=-sINVOKE_RUN=0",
                 "--link-arg=--no-entry",

@@ -30,6 +30,8 @@ class Element {
   focus() { globalThis.document.activeElement = this; }
   blur() { if (globalThis.document.activeElement === this) globalThis.document.activeElement = null; }
   addEventListener(kind, callback) { this.listeners[kind] = callback; }
+  appendChild(node) { this.insertBefore(node, null); }
+  replaceChildren() { for (const child of [...this.children]) child.remove(); }
   insertBefore(node, before) {
     node.remove();
     const index = before ? this.children.indexOf(before) : this.children.length;
@@ -138,6 +140,46 @@ assert.equal(todoFind('Pending: 0').length, 1);
 todo._ui_stop();
 assert.equal(todoHost.nodes.size, 0);
 assert.equal(todoRoot.children.length, 0);
+// Native code: the native example's slider view (native/web/slider.mjs, registered as an app
+// would) and its clock module (native/web/clock.js, linked in), with the interval run by hand.
+const {setup: setupSlider} = await import('../examples/native/native/web/slider.mjs');
+const views = {};
+setupSlider({registerView: (type, factory) => { views[type] = factory; }});
+const intervals = [];
+globalThis.setInterval = (callback, ms) => { intervals.push({callback, ms}); return intervals.length; };
+globalThis.clearInterval = id => { if (intervals[id - 1]) intervals[id - 1].cleared = true; };
+const nativeRoot = new Element('root');
+let native;
+const nativeHost = createHost(nativeRoot, (...event) => uiDispatch(native, ...event), views);
+const nativeFrames = fakeFrames(() => native._ui_tick());
+nativeHost.schedule = () => nativeFrames.scheduler.request();
+nativeHost.cancel = () => nativeFrames.scheduler.cancel();
+const emit = (channel, payload = '') => native.ccall('ui_dispatch_native', null, ['string', 'string'], [channel, payload]);
+native = await createApp({uiHost: nativeHost, uiEmit: emit});
+const nativeFind = text => [...nativeHost.nodes.values()].filter(node => node.textContent === text);
+native._ui_start(6);
+nativeFrames.frame();
+assert.equal(intervals.length, 1, 'the effect started the clock');
+assert.equal(intervals[0].ms, 1000);
+intervals[0].callback(); intervals[0].callback();
+nativeFrames.frame();
+assert.equal(nativeFind('Ticks: 2').length, 1, 'module events reach use_native_event');
+const box = [...nativeHost.nodes.values()].find(node => node.dataset.kind === 13);
+assert(box && box.attributes['aria-label'] === 'Volume' && box.style.height === '44px', 'the native view box');
+const range = box.children[0];
+assert(range && range.tagName === 'input' && range.type === 'range', 'the slider view is mounted');
+assert.equal(range.value, '30', 'the named prop reaches the view');
+range.value = '64';
+range.listeners.input();
+nativeFrames.frame();
+assert.equal(nativeFind('Volume: 64').length, 1, 'view events reach NativeView');
+nativeRoot.listeners.click({target: nativeFind('Mute')[0]});
+nativeFrames.frame();
+assert.equal(range.value, '0', 'a changed prop is sent again');
+native._ui_stop();
+assert(intervals[0].cleared, 'the effect cleanup stopped the clock');
+assert.equal(nativeHost.nodes.size, 0);
+
 timings.wasmBytes = (await import('node:fs')).statSync(new URL('../build/web/app.wasm', import.meta.url)).size;
 writeFileSync(new URL('../build/web-results.json', import.meta.url), JSON.stringify(timings, null, 2) + '\n');
-console.log('PASS wasm batching, effect follow-ups, restart, cancellation, TODO identity and teardown', timings);
+console.log('PASS wasm batching, effect follow-ups, restart, cancellation, TODO identity, native code and teardown', timings);

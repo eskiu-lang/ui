@@ -39,16 +39,24 @@ def main():
         list(pool.map(compile_one, zip(sources, objects)))
     host = BUILD / "host.o"
     run([*common, "-std=c++17", "-c", HERE / "hosts/android/host.cpp", "-o", host])
+    # The native example's code, which scene 6 of the test app uses.
+    native = HERE / "examples/native/native/android"
+    natives = []
+    for source in sorted(native.glob("*.c")):
+        output = BUILD / ("native-" + source.stem + ".o")
+        run([*common, "-x", "c", "-I", HERE / "hosts/android", "-c", source, "-o", output])
+        natives.append(output)
     esk = BUILD / "app.o"
     run([find_compiler(), HERE / "tests/harness/app.esk", "--target",
          "aarch64-linux-android24", "-O2", "-o", esk])
     library = BUILD / "libeskiu_ui.so"
-    run([clang, "-shared", "-static-libstdc++", "-Wl,-z,max-page-size=16384", host, esk, *objects, "-llog", "-o", library])
+    run([clang, "-shared", "-static-libstdc++", "-Wl,-z,max-page-size=16384", host, esk, *natives, *objects, "-llog", "-o", library])
     classes = BUILD / "classes"
     dex = BUILD / "dex"
     classes.mkdir(exist_ok=True); dex.mkdir(exist_ok=True)
     bootclasspath = str(tools / "core-lambda-stubs.jar") + os.pathsep + str(platform)
-    run(["javac", "-source", "8", "-target", "8", "-bootclasspath", bootclasspath, "-d", classes, HERE / "hosts/android/UiActivity.java"])
+    run(["javac", "-source", "8", "-target", "8", "-bootclasspath", bootclasspath, "-d", classes, HERE / "hosts/android/UiActivity.java",
+         *sorted(native.glob("*.java"))])
     run([tools / "d8", "--min-api", "24", "--lib", platform, "--output", dex, *sorted(classes.rglob("*.class"))])
     unsigned = BUILD / "unsigned.apk"
     run([tools / "aapt", "package", "-f", "-M", HERE / "hosts/android/AndroidManifest.xml", "-A", HERE / "tests/harness/assets",

@@ -4,13 +4,16 @@ import "../../examples/counter/src/counter.esk";
 import "../../examples/todo/src/todo.esk";
 import "../../examples/tasks/src/tasks.esk";
 import "../../examples/kit-gallery/src/gallery.esk";
+import "../../examples/native/src/clock.esk";
 import "conformance.esk";
 import "../../hosts/bridge.esk";
 
 // The examples behind one host app: `which` picks one (0 counter, 1 TODO, 2 a scheduler
-// probe, 3 the conformance scene, 4 the Tasks showcase, 5 the kit gallery).
+// probe, 3 the conformance scene, 4 the Tasks showcase, 5 the kit gallery, 6 native code: the
+// native example's clock module and slider view, built from examples/native/native).
 void ui_app_start(int example) {
     if (example == 0) { ui_mount(void() { Counter(); }); }
+    else if (example == 6) { ui_mount(void() { Clock(); }); }
     else if (example == 5) { ui_mount(void() { KitGallery(); }); }
     else if (example == 4) {
         tasks_seed(&task_store);

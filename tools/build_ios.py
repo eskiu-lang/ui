@@ -42,6 +42,12 @@ def main():
         list(pool.map(compile_one, zip(sources, objects)))
     host = BUILD / "host.o"
     run([*common, "-std=c++17", "-fobjc-arc", "-c", HERE / "hosts/ios/host.mm", "-o", host])
+    # The native example's code, which scene 6 of the test app uses.
+    natives = []
+    for source in sorted((HERE / "examples/native/native/ios").glob("*.m")):
+        output = BUILD / ("native-" + source.stem + ".o")
+        run([*common, "-fobjc-arc", "-I", HERE / "hosts/ios", "-c", source, "-o", output])
+        natives.append(output)
     esk = BUILD / "app.o"
     run([find_compiler(), HERE / "tests/harness/app.esk", "--target", target,
          "-O2", "-o", esk])
@@ -50,7 +56,7 @@ def main():
     shutil.copyfile(HERE / "hosts/ios/Info.plist", bundle / "Info.plist")
     for asset in (HERE / "tests/harness/assets").iterdir():
         shutil.copyfile(asset, bundle / asset.name)
-    run([*common, host, esk, *objects, "-framework", "UIKit", "-framework", "Foundation",
+    run([*common, host, esk, *natives, *objects, "-framework", "UIKit", "-framework", "Foundation",
          "-framework", "CoreGraphics", "-framework", "QuartzCore", "-o", bundle / "EskiuUI"])
     run(["codesign", "--force", "--sign", "-", bundle])
     print("Built:", bundle)
