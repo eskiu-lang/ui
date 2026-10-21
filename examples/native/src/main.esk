@@ -1,0 +1,8 @@
+// The app: `ui run web` (or macos, ios, android) builds it with its native code.
+import "clock.esk";
+
+void ui_app_start(int which) {
+    ui_mount(void() { Clock(); });
+}
+
+void ui_app_stop() {}

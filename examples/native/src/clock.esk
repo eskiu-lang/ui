@@ -1,0 +1,43 @@
+// Native code from Eskiu: a clock module that ticks from native code, and a slider that is
+// the platform's own control (native/ios, native/android, native/web).
+import <string>;
+import <ui>;
+
+// The clock module: clock_start(ms) posts "tick" on the "clock" channel every `ms`
+// milliseconds, from the platform's timer; clock_stop() stops it.
+extern void clock_start(int ms);
+extern void clock_stop();
+
+// A native slider from 0 to 100: the "slider" view each platform registers.
+void Slider(string label, int value, escaping fn(int)->void on_change) {
+    ui_own(void() { ui_release_int(on_change); });
+    String text;
+    defer String_free(&text);
+    String_format(&text, "%d", value);
+    ui_native_prop("value", text.data);
+    NativeView(Style{height: 44, label: label}, "slider", void(string name, string payload) {
+        if (strcmp(name, "change") == 0) { on_change(atoi(payload)); }
+    });
+}
+
+void Clock() {
+    Column(Style{grow: 1, padding: 24, gap: 16}, void() {
+        *Signal<int> ticks = use_signal<int>(0);
+        *Signal<int> volume = use_signal<int>(30);
+        use_native_event("clock", void(string payload) { ticks.set(ticks.get() + 1); });
+        use_effect(void() {
+            clock_start(1000);
+            on_cleanup(void() { clock_stop(); });
+        });
+        TextWith(Style{font_size: 28, font_weight: 700}, "Native code");
+        String line;
+        defer String_free(&line);
+        String_format(&line, "Ticks: %d", ticks.get());
+        Text(line.data);
+        String_clear(&line);
+        String_format(&line, "Volume: %d", volume.get());
+        Text(line.data);
+        Slider("Volume", volume.get(), void(int v) { volume.set(v); });
+        Button("Mute", void() { volume.set(0); });
+    });
+}
