@@ -15,6 +15,7 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 | `Scroll(Style, block)` | A column whose content scrolls when it is taller than the space it gets. |
 | `Pressable(Style, on_press, block)` | A column that reacts to a press anywhere in it. |
 | `Scope(name, Key, block)` | A component's own scope: state, identity, and `name` in diagnostics. No view. |
+| `ui_on_hover(fn(bool)->void)` | For the element right after it: true when a pointer (a mouse, a trackpad, an iPad's pointer, a stylus) moves over it, false when it leaves. Touch screens have no hover. |
 | `ui_on_layout(fn(Frame)->void)` | For the element right after it: the handler gets its `Frame{x, y, width, height}` (points, relative to the parent) after each layout that changes it, as React Native's `onLayout`. |
 
 ### Text and buttons
@@ -139,7 +140,7 @@ variants `VariantPrimary`, `VariantSecondary`, `VariantGhost`, `VariantDanger`.
 | `TabBar(tabs, selected, fn(int)->void)` | Tabs over content the caller shows, the selected one underlined. |
 | `Toolbar(block)` | A bar of controls. |
 | `NavBar(title, actions)` | A title bar with controls at its end. |
-| `ListItem(title, subtitle, on_press)` | A pressable row with a title and an optional subtitle. |
+| `ListItem(title, subtitle, on_press)` | A pressable row with a title and an optional subtitle; it lights up under a pointer. |
 | `Collapsible(title, content)` | A header that shows or hides its content. |
 | `Accordion(sections)` | Collapsibles in one card. |
 
