@@ -157,9 +157,13 @@ export function createHost(root, dispatch, views = {}) {
     style.textContent = SPINNER_CSS;
     document.head.appendChild(style);
   }
+  // The innermost element matching `selector` that listens, from the event's target up: a
+  // row or a text inside a pressable is the pressable's.
   const listening = (event, selector) => {
-    const node = event.target.closest(selector);
-    return node && root.contains(node) && node.dataset.listening === 'true' ? node : null;
+    for (let node = event.target.closest?.(selector); node && root.contains(node); node = node.parentElement?.closest(selector)) {
+      if (node.dataset.listening === 'true') return node;
+    }
+    return null;
   };
   const kindOf = node => Number(node.dataset.kind);
   // Open modals, newest last: Escape asks the newest to close.
