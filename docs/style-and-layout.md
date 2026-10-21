@@ -56,6 +56,9 @@ over the native views; on the web the renderer sets CSS flexbox with Yoga's defa
 - sizes include padding and border (`box-sizing: border-box`);
 - children do not shrink (`flex-shrink: 0`) and have no minimum size, so a long text in a
   row needs `grow: 1` to take the remaining space and wrap within it;
+- a `Scroll`, and an element with `grow`, also shrink to the space their parent has (as
+  React Native's `ScrollView` and `flex: 1`), so a scroll under a growing column stays inside
+  the window and scrolls instead of taking its content's height;
 - children stretch across the axis unless `align` says otherwise.
 
 An absolute element is placed against its parent's padding edges and the other children are
