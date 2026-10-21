@@ -29,7 +29,7 @@ string build_web(Project* p) {
     cmd.add("--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_dispatch_text,_ui_dispatch_focus,"
             "_ui_dispatch_toggle,_ui_dispatch_scroll,_ui_dispatch_alert,_ui_dispatch_refresh,_ui_report_back,"
             "_ui_report_link,_ui_report_window,_ui_tick,_ui_stop,_ui_conformance_log,_ui_dispatch_native,"
-            "_ui_dispatch_view");
+            "_ui_dispatch_view,_ui_dispatch_route");
     cmd.add("--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall");
     cmd.must(null);
     fs_copy(join(p.ui.data, "hosts/web/renderer.mjs"), join(out, "renderer.mjs"));
@@ -39,6 +39,9 @@ string build_web(Project* p) {
     defer String_free(&page);
     fs_read_text(join(p.ui.data, "hosts/web/app.html"), &page);
     String_replace_all(&page, "{{name}}", xml_escape(p.display.data));
+    // Where the app is served from (ui.toml [web] base), for the routes' URLs.
+    string base = p.config.string("web.base");
+    String_replace_all(&page, "{{base}}", xml_escape(base != null ? base : "/"));
     fs_write_text(join(out, "index.html"), page.data);
     p.copy_assets(out);
     return out;
@@ -118,6 +121,14 @@ void serve_one(int client) {
     int64 size = 0;
     *uint8 body = null;
     if (String_contains(&path, "..") != 1) { body = fs_read_all(join(serve_root, &path.data[1]), &size); }
+    // A route the app shows (/tasks/42) is the page itself, as on any host set up for one.
+    String last;
+    path_basename(&last, path.data);
+    if (body == null && String_contains(&last, ".") != 1) {
+        body = fs_read_all(join(serve_root, "index.html"), &size);
+        String_from(&path, "/index.html");
+    }
+    String_free(&last);
     if (body == null) {
         net_send_str(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     } else {
