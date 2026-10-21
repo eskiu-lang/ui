@@ -157,6 +157,64 @@ void positions() {
     ui_shutdown(); balanced("positions leak");
 }
 
+Pan panned;
+int pans;
+
+void pans_test() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        ui_on_pan(void(Pan p) { panned = p; pans++; });
+        Row(Style{key: key(1)}, void() {});
+    });
+    ui_frame();
+    check(count_prop(2, 41) == 1 && prop_value(2, 41) == 1, "the host is asked to report drags");
+    *Node row = keyed(1);
+    ui_event_pan(row.id, row.generation, PanBegan, 0, 0, 0, 0);
+    ui_event_pan(row.id, row.generation, PanMoved, -60, 4, -500, 10);
+    check(pans == 2 && panned.phase == PanMoved && panned.dx == -60 && panned.dy == 4 && panned.vx == -500 && panned.vy == 10,
+        "the drag's translation and velocity");
+    ui_event_pan(row.id, row.generation, PanEnded, -80, 4, -600, 0);
+    check(panned.phase == PanEnded, "and its end");
+    ui_on_pan(void(Pan p) {});
+    ui_shutdown(); balanced("pan leak");
+}
+
+int swipe_deleted;
+int swipe_token;
+
+void swipes() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_set_timer_host(void(int token, int ms, bool repeat) { swipe_token = token; }, void(int token) {});
+    ui_mount(void() {
+        Column(Style{key: key(1), width: 300}, void() {
+            SwipeToDelete("Delete", void() { swipe_deleted++; }, void() { Text("Row"); });
+        });
+    });
+    ui_frame();
+    // The red band (the element with the layout listener) is 300 wide; drag the row 40 left.
+    *Node band = find_label(ui.root, "Delete");
+    check(band != null, "the band");
+    ui_event_layout(band.id, band.generation, 0, 0, 300, 60);
+    // The content, which the drag moves, takes the pan.
+    *Node row = band.children.data[1];
+    ui_event_pan(row.id, row.generation, PanBegan, 0, 0, 0, 0);
+    ui_event_pan(row.id, row.generation, PanMoved, -40, 0, 0, 0);
+    ui_frame();
+    check(prop_value(2, 35) == -40 && prop_value(2, 39) == 0, "the row follows the drag, with no transition");
+    ui_event_pan(row.id, row.generation, PanEnded, -40, 0, -100, 0);
+    ui_frame();
+    check(prop_value(2, 35) == 0 && prop_value(2, 39) == 220 && swipe_deleted == 0, "short: it springs back");
+    ui_event_pan(row.id, row.generation, PanMoved, -150, 0, 0, 0);
+    ui_frame();
+    ui_event_pan(row.id, row.generation, PanEnded, -150, 0, -300, 0);
+    ui_frame();
+    check(prop_value(2, 35) == -324, "far: it slides out");
+    check(ui_event_timer(swipe_token) && swipe_deleted == 1, "and is deleted once it is gone");
+    ui_shutdown(); balanced("swipe leak");
+}
+
 *Signal<int> motion_version;
 
 void transforms() {

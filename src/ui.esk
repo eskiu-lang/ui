@@ -4,7 +4,7 @@
 //   style            Style, colors, Align and Justify, keys
 //   core/            the runtime: state, tree, reactivity, frames and commits, the wire format
 //   elements/        what apps build with: layout, text, input, media, lists, overlays,
-//                    the platform, native modules and views, navigation, timers
+//                    the platform, native modules and views, navigation, timers, gestures
 //   state/strings    owned strings (use_string)
 //   apis/            the system: environment (platform, dark mode, accessibility, language),
 //                    actions (keyboard, share, clipboard, haptics, announcements), storage, network
@@ -37,6 +37,7 @@ import "elements/system.esk";
 import "elements/native.esk";
 import "elements/navigation.esk";
 import "elements/timers.esk";
+import "elements/gestures.esk";
 import "state/strings.esk";
 import "apis/environment.esk";
 import "apis/actions.esk";

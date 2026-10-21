@@ -30,6 +30,8 @@ void ui_release_timer_start(escaping fn(int, int, bool)->void callback) { free_c
 
 void ui_release_fetch(escaping fn(FetchResult)->void callback) { free_closure(callback); }
 
+void ui_release_pan(escaping fn(Pan)->void callback) { free_closure(callback); }
+
 void ui_release_frame(escaping fn(Frame)->void callback) { free_closure(callback); }
 
 void ui_release_choice(escaping fn(int)->void callback) { free_closure(callback); }

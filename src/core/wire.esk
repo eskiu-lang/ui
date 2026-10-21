@@ -32,7 +32,7 @@
 // pointer entering and leaving), 32 slider value, 33 slider minimum, 34 slider maximum,
 // 35 translate x and 36 translate y (points), 37 scale (percent), 38 rotate (degrees),
 // 39 transition (ms; 0 none), 40 easing (Easing). A transition comes before the props it
-// animates.
+// animates. 41 pan listener (1: the host reports drags on the node).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal

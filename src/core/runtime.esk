@@ -11,8 +11,10 @@
 // timer's token), 13 hover (value 1 when a pointer enters the node, 0 when it leaves),
 // 14 value (a Slider moved to `value`), 15 answer (the text a request asked for: the id is
 // the request), 16 fetch (a request finished: value the status, text the body or the error,
-// name the headers).
-struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height; }
+// name the headers), 17 pan (value the phase, extra dx, width dy, height the x velocity,
+// extra2 the y velocity).
+struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height;
+               int extra2; }
 
 // What the host reports about the screen, in points: the system bars and display cutouts
 // on each side, and the software keyboard over the bottom.
@@ -87,6 +89,8 @@ struct Ui {
     bool has_next_layout;
     fn(bool)->void next_hover;
     bool has_next_hover;
+    fn(Pan)->void next_pan;
+    bool has_next_pan;
     // Destructors for the next element (ui_own).
     List<fn()->void> next_owned;
     // The RefreshControl for the next Scroll or FlatList.
@@ -319,6 +323,12 @@ bool ui_event_toggle(int id, int generation, bool on) {
 }
 
 // A scroll view moved: its offset and viewport height, in points.
+// A pan on a node with a pan handler: its phase, the translation since it began and the
+// velocity (points, points per second).
+bool ui_event_pan(int id, int generation, int phase, int dx, int dy, int vx, int vy) {
+    return ui_post(Event{id, generation, 17, phase, null, dx, null, dy, vx, vy});
+}
+
 // The user moved a Slider to `value`.
 bool ui_event_value(int id, int generation, int value) { return ui_post(Event{id, generation, 14, value, null}); }
 
@@ -394,6 +404,10 @@ bool ui_dispatch_event(*Event event) {
         ui_schedule(node.parent);
         return true;
     }
+    if (event.kind == 17 && node.has_on_pan) {
+        node.on_pan(Pan{event.value, event.extra, event.width, event.height, event.extra2});
+        return true;
+    }
     if (event.kind == 13 && node.has_on_hover) { node.on_hover(event.value != 0); return true; }
     if (event.kind == 11 && node.has_on_layout) {
         node.on_layout(Frame{event.value, event.extra, event.width, event.height});
@@ -441,6 +455,7 @@ void ui_shutdown() {
     for (i in 0..ui.alerts.size) { ui_release_choice(ui.alerts.data[i].on_choice); }
     if (ui.has_next_layout) { ui_release_frame(ui.next_layout); }
     if (ui.has_next_hover) { ui_release_bool(ui.next_hover); }
+    if (ui.has_next_pan) { ui_release_pan(ui.next_pan); }
     ui.timers.free();
     if (ui.has_timer_host) { ui_release_timer_start(ui.timer_start); ui_release_int(ui.timer_stop); }
     ui.alerts.free(); ui.back_handlers.free();

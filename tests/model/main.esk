@@ -39,6 +39,8 @@ int main() {
     positions(); printf("PASS positions\n");
     layouts(); printf("PASS layouts\n");
     transforms(); printf("PASS transforms\n");
+    pans_test(); printf("PASS pans\n");
+    swipes(); printf("PASS swipes\n");
     hovers(); printf("PASS hovers\n");
     sliders(); printf("PASS sliders\n");
     environment_apis(); printf("PASS environment apis\n");

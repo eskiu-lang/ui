@@ -14,7 +14,7 @@ const int kSmall = 8;
 // Room for the element kinds (0 to 15 today); kind_start and kind_emitted are sized by it.
 const int kKinds = 16;
 
-// Room for the int props (codes 1 to 40 today).
+// Room for the int props (codes 1 to 41 today).
 const int kProps = 48;
 
 // An edge offset (Style's left, top, right, bottom) that is not set.

@@ -29,17 +29,17 @@ int mutation_count;
 
 int[16] ops;
 
-int[1024] mutation_ops;
+int[4096] mutation_ops;
 
-int[1024] mutation_ids;
+int[4096] mutation_ids;
 
-int[1024] mutation_befores;
+int[4096] mutation_befores;
 
-int[1024] mutation_kinds;
+int[4096] mutation_kinds;
 
-string[1024] mutation_texts;
+string[4096] mutation_texts;
 
-string[1024] mutation_names;
+string[4096] mutation_names;
 
 bool async_apply;
 
@@ -50,7 +50,7 @@ void record(*uint8 data, int len) {
     int count = decoded.size;
     mutation_count = count;
     for (i in 0..16) { ops[i] = 0; }
-    ui_require(count <= 1024, "recording capacity");
+    ui_require(count <= 4096, "recording capacity");
     for (i in 0..count) {
         ops[mutations[i].op]++;
         mutation_ops[i] = mutations[i].op;

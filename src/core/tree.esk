@@ -76,6 +76,9 @@ struct Node {
     // ui_on_hover's handler, told when a pointer enters and leaves.
     fn(bool)->void on_hover;
     bool has_on_hover;
+    // ui_on_pan's handler.
+    fn(Pan)->void on_pan;
+    bool has_on_pan;
     // A Slider's handler.
     fn(int)->void on_value;
     int focused;
@@ -330,6 +333,7 @@ void ui_unmount(*Node node) {
         ui_release_view(node.on_view);
         if (node.has_on_layout) { ui_release_frame(node.on_layout); }
         if (node.has_on_hover) { ui_release_bool(node.on_hover); }
+        if (node.has_on_pan) { ui_release_pan(node.on_pan); }
         if (node.kind == 15) { ui_release_int(node.on_value); }
         node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
         free(node);
@@ -456,6 +460,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             fn(bool)->void old_hover = node.on_hover;
             ui_retire(void() { ui_release_bool(old_hover); });
         }
+        if (node.has_on_pan) {
+            fn(Pan)->void old_pan = node.on_pan;
+            ui_retire(void() { ui_release_pan(old_pan); });
+        }
         if (kind == 15) {
             fn(int)->void old_value = node.on_value;
             ui_retire(void() { ui_release_int(old_value); });
@@ -519,6 +527,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     node.on_hover = ui.next_hover;
     ui.has_next_hover = false;
     ui_prop(node, fresh, 31, node.has_on_hover ? 1 : 0, 0);
+    node.has_on_pan = ui.has_next_pan;
+    node.on_pan = ui.next_pan;
+    ui.has_next_pan = false;
+    ui_prop(node, fresh, 41, node.has_on_pan ? 1 : 0, 0);
     // What the caller gave this element to free with its block.
     for (i in 0..ui.next_owned.size) { node.owned.push(ui.next_owned.data[i]); }
     ui.next_owned.size = 0;

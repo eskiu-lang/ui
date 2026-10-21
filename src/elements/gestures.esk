@@ -1,0 +1,16 @@
+// Gestures: dragging an element.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A drag's phase, the translation since it began (points) and its velocity (points per second).
+enum PanPhase { PanBegan, PanMoved, PanEnded, PanCancelled }
+
+struct Pan { int phase; int dx; int dy; int vx; int vy; }
+
+// For the element right after it: `handler` follows a drag on it, from PanBegan (once the
+// pointer moved past the platform's slop) through PanMoved to PanEnded or PanCancelled. A press
+// that does not move is still a press.
+void ui_on_pan(escaping fn(Pan)->void handler) {
+    if (ui.has_next_pan) { ui_release_pan(ui.next_pan); }
+    ui.next_pan = handler;
+    ui.has_next_pan = true;
+}
