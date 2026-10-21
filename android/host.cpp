@@ -14,6 +14,7 @@ extern "C" void ui_dispatch_focus(int, int, int);
 extern "C" void ui_dispatch_toggle(int, int, int);
 extern "C" void ui_dispatch_scroll(int, int, int, int);
 extern "C" void ui_dispatch_alert(int, int);
+extern "C" void ui_dispatch_refresh(int, int);
 extern "C" int ui_report_back();
 extern "C" void ui_report_link(const char *);
 extern "C" void ui_report_window(int, int, int);
@@ -205,6 +206,9 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeW
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeTick(JNIEnv *current, jobject) { env = current; ui_tick(); }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeLayout(JNIEnv *current, jobject, jfloat width, jfloat height) {
     env = current; YGNodeCalculateLayout(root, width, height, YGDirectionLTR); place(root); layoutModals();
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeRefresh(JNIEnv *current, jobject, jint id, jint generation) {
+    env = current; ui_dispatch_refresh(id, generation);
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeAlert(JNIEnv *current, jobject, jint request, jint choice) {
     env = current; ui_dispatch_alert(request, choice);

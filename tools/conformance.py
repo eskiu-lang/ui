@@ -99,7 +99,10 @@ def differences(report, host=""):
         out.append("feed: row 0 still mounted after scrolling")
     if len(rows) > 30:
         out.append(f"feed: {len(rows)} rows mounted, expected a window")
-    expected_log = EXPECTED_LOG + EXTRA_LOG.get(host, "")
+    expected_log = EXPECTED_LOG + EXTRA_LOG.get(host, "") + ",refresh"
+    # Pulling the feed shows the platform's indicator; "Loaded" hides it.
+    if report.get("refresh") != [True, False]:
+        out.append(f"refresh indicator after pull and after loading: {report.get('refresh')}, expected [True, False]")
     if report.get("log") != expected_log:
         out.append(f"log: {report.get('log')!r}, expected {expected_log!r}")
     return out

@@ -48,6 +48,9 @@ public final class UiActivity extends Activity {
     private native void nativeToggle(int id, int generation, int on);
     private native void nativeScroll(int id, int generation, int offset, int viewport);
     private native void nativeAlert(int request, int choice);
+    private native void nativeRefresh(int id, int generation);
+    // Pull to refresh per scroll: its indicator, over the top of the content.
+    private final HashMap<Integer, ProgressBar> refreshers = new HashMap<>();
     private native int nativeBack();
     private native void nativeLink(String url);
     // The alert on screen and how to answer it (also used by the conformance run).
@@ -202,9 +205,50 @@ public final class UiActivity extends Activity {
         } else if (code == 14) paintOf(id, view).setCornerRadius(value * d);
         else if (code == 15) view.setAlpha(value / 100f);
         else if (code == 20 || code == 21) applyStatusBar(code, value);
+        else if (code == 22 && view instanceof ScrollView) refresh(id, (ScrollView)view, value != 0);
         else if (code == 18 && view instanceof Switch) {
             applying = true; ((Switch)view).setChecked(value != 0); applying = false;
         } else if (code == 19) view.setVisibility(value != 0 ? View.VISIBLE : View.INVISIBLE);
+    }
+
+    // Android's framework has no pull to refresh view (SwipeRefreshLayout is androidx): a
+    // downward drag past 64 dp at the top of the scroll asks once per gesture; the indicator
+    // overlaps the top of the content, as SwipeRefreshLayout's does.
+    private void refresh(int id, ScrollView scroll, boolean on) {
+        ProgressBar indicator = refreshers.get(id);
+        if (indicator == null) {
+            indicator = new ProgressBar(this);
+            indicator.setIndeterminate(true);
+            indicator.setElevation(8 * density());
+            indicator.setVisibility(View.INVISIBLE);
+            ((ViewGroup)scroll.getChildAt(0)).addView(indicator);
+            refreshers.put(id, indicator);
+            final float[] start = {0};
+            final boolean[] armed = {false};
+            scroll.setOnTouchListener((v, event) -> {
+                int action = event.getActionMasked();
+                if (action == android.view.MotionEvent.ACTION_DOWN) {
+                    start[0] = event.getY();
+                    armed[0] = scroll.getScrollY() == 0 && refreshers.get(id).getVisibility() != View.VISIBLE;
+                } else if (action == android.view.MotionEvent.ACTION_MOVE && armed[0] && scroll.getScrollY() == 0
+                           && event.getY() - start[0] > 64 * density()) {
+                    armed[0] = false;
+                    if (active && generations.containsKey(id)) nativeRefresh(id, generations.get(id));
+                }
+                return false;
+            });
+        }
+        indicator.setVisibility(on ? View.VISIBLE : View.INVISIBLE);
+        layoutRefresh(id, scroll);
+    }
+    private void layoutRefresh(int id, ScrollView scroll) {
+        ProgressBar indicator = refreshers.get(id);
+        if (indicator == null) return;
+        int size = Math.round(40 * density());
+        int left = (scroll.getWidth() - size) / 2, top = Math.round(8 * density());
+        indicator.measure(View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY),
+                          View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY));
+        indicator.layout(left, top, left + size, top + size);
     }
 
     private void applyStatusBar(int code, int value) {
@@ -369,7 +413,7 @@ public final class UiActivity extends Activity {
         } else if (op == 6) {
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
             nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
-            modalIds.remove(id);
+            modalIds.remove(id); refreshers.remove(id);
             scrollViewports.remove(id);
         } else if (op == 7 || op == 8) {
             if (view instanceof ScrollView) { if (op == 7) scrollViewports.put(id, -1); else scrollViewports.remove(id); }
@@ -409,6 +453,7 @@ public final class UiActivity extends Activity {
         content.layout(0, 0, content.contentWidth, content.contentHeight);
         // A virtual list hears its viewport once laid out, and again when it changes size.
         ScrollView scroll = (ScrollView)nodes.get(id);
+        layoutRefresh(id, scroll);
         Integer reported = scrollViewports.get(id);
         if (reported != null && reported != Math.round(scroll.getHeight() / density())) reportScroll(id, scroll);
     }
@@ -526,6 +571,7 @@ public final class UiActivity extends Activity {
             "\",\"frames\":{" + frames + "},\"roles\":{" + roles + "},\"styles\":" + styles;
         final View suiteView = suite;
         final String[] modal = {"null"};
+        final boolean[] refreshSeen = {false, false};
         steps(300,
             // The alert: answer its second button.
             () -> findButton("Ask").performClick(),
@@ -535,6 +581,21 @@ public final class UiActivity extends Activity {
             // Back with the modal open closes it (Android only).
             () -> findButton("Open sheet").performClick(),
             this::onBackPressed,
+            // Pull the feed at its top with real touches; "Loaded" hides the indicator.
+            () -> {
+                View feed = labeled("Feed");
+                long now = android.os.SystemClock.uptimeMillis();
+                float x = feed.getWidth() / 2f, y = 20 * density();
+                feed.dispatchTouchEvent(android.view.MotionEvent.obtain(now, now, android.view.MotionEvent.ACTION_DOWN, x, y, 0));
+                for (int i = 1; i <= 5; i++) {
+                    feed.dispatchTouchEvent(android.view.MotionEvent.obtain(now, now + i * 16,
+                        android.view.MotionEvent.ACTION_MOVE, x, y + i * 30 * density(), 0));
+                }
+                feed.dispatchTouchEvent(android.view.MotionEvent.obtain(now, now + 100, android.view.MotionEvent.ACTION_UP,
+                    x, y + 150 * density(), 0));
+            },
+            () -> { refreshSeen[0] = refreshShown(); findButton("Loaded").performClick(); },
+            () -> refreshSeen[1] = refreshShown(),
             // Scroll the feed: rows near 2000 points mount, rows from the top go.
             () -> {
                 for (View view : nodes.values()) {
@@ -560,11 +621,25 @@ public final class UiActivity extends Activity {
                         .append(round1(view.getHeight() / dd)).append(']');
                 }
                 String json = result + ",\"scrolled\":{" + scrolled + "},\"modal\":" + modal[0] +
+                    ",\"refresh\":[" + refreshSeen[0] + "," + refreshSeen[1] + "]" +
                     ",\"log\":\"" + nativeConformanceLog() + "\"}";
                 try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "conformance.json"))) {
                     out.write(json.getBytes(StandardCharsets.UTF_8));
                 } catch (Exception error) { throw new RuntimeException(error); }
             });
+    }
+
+    private View labeled(String label) {
+        for (View view : nodes.values()) {
+            if (label.contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) return view;
+        }
+        return null;
+    }
+    private boolean refreshShown() {
+        for (java.util.Map.Entry<Integer, ProgressBar> entry : refreshers.entrySet()) {
+            if (entry.getValue().getVisibility() == View.VISIBLE) return true;
+        }
+        return false;
     }
 
     // Run each step `delay` ms after the previous one.

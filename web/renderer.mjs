@@ -6,7 +6,8 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
   else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
-  else app._ui_dispatch_alert(id, value);
+  else if (kind === 6) app._ui_dispatch_alert(id, value);
+  else app._ui_dispatch_refresh(id, generation);
 }
 
 // Kinds (src/ui.esk): 0 scope, 1 column, 2 row, 3 text, 4 button, 5 text input, 6 scroll,
@@ -21,6 +22,8 @@ const SPINNER_CSS = '@keyframes ui-spin { to { transform: rotate(360deg); } }' +
   '.ui-spinner::after { content: ""; position: absolute; inset: 0; box-sizing: border-box; border-radius: 50%;' +
   ' border: 2px solid #c5cedd; border-top-color: #4a6fa5; animation: ui-spin .8s linear infinite; }' +
   '.ui-spinner[data-animating="false"]::after { visibility: hidden; animation: none; }' +
+  '.ui-refresh { position: absolute; top: 8px; left: calc(50% - 10px); z-index: 1; display: none; }' +
+  '.ui-refresh[data-animating="true"] { display: block; }' +
   '.ui-modal { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .4); }' +
   '.ui-alert { border: 0; border-radius: 12px; padding: 1rem 1.25rem; min-width: 16rem; font: inherit; }' +
   '.ui-alert p { margin: .5rem 0 1rem; } .ui-alert div { display: flex; gap: .5rem; justify-content: flex-end; }';
@@ -151,9 +154,35 @@ export function createHost(root, dispatch) {
       case 18: node.checked = value !== 0; node.setAttribute('aria-checked', String(value !== 0)); break;
       case 19: node.dataset.animating = String(value !== 0); node.setAttribute('aria-busy', String(value !== 0)); break;
       case 20: case 21: break;  // the status bar: nothing to draw in a page
+      case 22: refresh(node, value !== 0); break;
       default: throw new Error(`unknown prop ${code}`);
     }
   }
+  // Pull to refresh: a wheel or drag upward at the top of the scroll, past a threshold, once
+  // per gesture; the indicator sits over the top of the content.
+  function refresh(node, on) {
+    if (!node.uiRefresh) {
+      const spinner = document.createElement('div');
+      spinner.className = 'ui-spinner ui-refresh';
+      node.style.position = 'relative';
+      node.insertBefore(spinner, node.firstChild);
+      node.uiRefresh = spinner;
+      let pulled = 0, touchY = null;
+      const pull = amount => {
+        if (node.scrollTop > 0 || node.uiRefresh.dataset.animating === 'true') { pulled = 0; return; }
+        pulled += amount;
+        if (pulled > 80) { pulled = 0; dispatch(...ids(node), 7); }
+      };
+      node.addEventListener('wheel', event => { if (event.deltaY < 0) pull(-event.deltaY); else pulled = 0; });
+      node.addEventListener('touchstart', event => { touchY = event.touches[0].clientY; pulled = 0; });
+      node.addEventListener('touchmove', event => {
+        if (touchY !== null) { pull(event.touches[0].clientY - touchY); touchY = event.touches[0].clientY; }
+      });
+      node.addEventListener('touchend', () => { touchY = null; pulled = 0; });
+    }
+    node.uiRefresh.dataset.animating = String(on);
+  }
+
   // Commands: 1 an alert (title, message, buttons), 2 open a URL.
   function command(c) {
     if (c.command === 1) {

@@ -61,7 +61,10 @@ void Conformance() {
                 Button("Close", void() { conformance_note("close"); sheet.set(false); });
             });
         });
-        // 1000 rows, of which only those near the viewport exist.
+        *Signal<bool> loading = use_signal<bool>(false);
+        Button("Loaded", void() { loading.set(false); });
+        // 1000 rows, of which only those near the viewport exist; pull to refresh.
+        RefreshControl(loading.get(), void() { conformance_note("refresh"); loading.set(true); });
         FlatList(Style{height: 120, label: "Feed"}, 1000, 40, void(int i) {
             String label;
             defer String_free(&label);

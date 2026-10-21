@@ -17,6 +17,7 @@ extern "C" void ui_dispatch_focus(int id, int generation, int focused);
 extern "C" void ui_dispatch_toggle(int id, int generation, int on);
 extern "C" void ui_dispatch_scroll(int id, int generation, int offset, int viewport);
 extern "C" void ui_dispatch_alert(int request, int choice);
+extern "C" void ui_dispatch_refresh(int id, int generation);
 extern "C" void ui_report_link(const char *url);
 extern "C" void ui_report_window(int width, int height, int scale);
 extern "C" int ui_edge_to_edge(void);
@@ -149,6 +150,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)press:(UIControl *)sender;
 - (void)edit:(UITextField *)sender;
 - (void)toggle:(UISwitch *)sender;
+- (void)refresh:(UIRefreshControl *)sender;
 - (void)focus:(UITextField *)sender;
 - (void)blur:(UITextField *)sender;
 - (void)frame:(CADisplayLink *)sender;
@@ -164,6 +166,11 @@ static void place(YGNodeRef yoga, UIView *parent) {
     node.reportedViewport = scroll.bounds.size.height;
     ui_dispatch_scroll((int)scroll.tag, node.generation, (int)std::lround(scroll.contentOffset.y),
                        (int)std::lround(scroll.bounds.size.height));
+}
+- (void)refresh:(UIRefreshControl *)sender {
+    UIView *scroll = sender.superview;
+    UiHostNode *node = nodes[@(scroll.tag)];
+    if (node) ui_dispatch_refresh((int)scroll.tag, node.generation);
 }
 - (void)toggle:(UISwitch *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
@@ -305,6 +312,16 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         else if (kind == 19) {
             UIActivityIndicatorView *spinner = (UIActivityIndicatorView *)node.view;
             if (before) [spinner startAnimating]; else [spinner stopAnimating];
+        } else if (kind == 22) {
+            // Pull to refresh: the platform's control, attached on first use.
+            UIScrollView *scroll = (UIScrollView *)node.view;
+            if (!scroll.refreshControl) {
+                UIRefreshControl *control = [UIRefreshControl new];
+                [control addTarget:events action:@selector(refresh:) forControlEvents:UIControlEventValueChanged];
+                scroll.refreshControl = control;
+            }
+            if (before && !scroll.refreshControl.refreshing) [scroll.refreshControl beginRefreshing];
+            else if (!before && scroll.refreshControl.refreshing) [scroll.refreshControl endRefreshing];
         } else if (kind == 20 || kind == 21) {
             if (kind == 20) barStyle = before; else barHidden = before != 0;
             [rootView.window.rootViewController setNeedsStatusBarAppearanceUpdate];
@@ -584,7 +601,15 @@ static void runConformance(void) {
                             @"sheet": @[@(box.origin.x), @(box.origin.y), @(box.size.width), @(box.size.height)]};
         }
         [(UIButton *)findView(UIButton.class, @"Close") sendActionsForControlEvents:UIControlEventTouchUpInside];
+        __block NSMutableArray *refresh = [NSMutableArray new];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        // Pull the feed: what the control sends when the user pulls; "Loaded" hides it.
+        [feed.refreshControl sendActionsForControlEvents:UIControlEventValueChanged];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        [refresh addObject:@(feed.refreshControl.refreshing)];
+        [(UIButton *)findView(UIButton.class, @"Loaded") sendActionsForControlEvents:UIControlEventTouchUpInside];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        [refresh addObject:@(feed.refreshControl.refreshing)];
         // Scroll the feed: rows near 2000 points mount, rows from the top go.
         [feed setContentOffset:CGPointMake(0, 2000) animated:NO];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 400 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
@@ -598,13 +623,15 @@ static void runConformance(void) {
                 scrolled[label] = @[round1(r.origin.x), round1(r.origin.y), round1(r.size.width), round1(r.size.height)];
             }
             NSDictionary *result = @{@"status": @"DONE", @"frames": frames, @"roles": roles, @"styles": styles,
-                                     @"scrolled": scrolled, @"modal": modalReport ?: [NSNull null],
+                                     @"scrolled": scrolled, @"modal": modalReport ?: [NSNull null], @"refresh": refresh,
                                      @"log": [NSString stringWithUTF8String:ui_conformance_log()]};
             NSData *json = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingSortedKeys error:nil];
             printf("CONFORMANCE %s\n", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
             fflush(stdout);
             ui_stop();
             exit(0);
+        });
+        });
         });
         });
         });

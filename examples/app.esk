@@ -38,6 +38,12 @@ void ui_dispatch_scroll(int id, int generation, int offset, int viewport) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+void ui_dispatch_refresh(int id, int generation) {
+    if (!app_active) { return; }
+    ui_event_refresh(id, generation);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 void ui_dispatch_alert(int request, int choice) {
     if (!app_active) { return; }
     ui_event_alert(request, choice);

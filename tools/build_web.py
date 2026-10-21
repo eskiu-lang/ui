@@ -16,7 +16,8 @@ subprocess.run([compiler, str(HERE / "examples/app.esk"), "--target", "wasm32-un
                 "--link-arg=-sALLOW_MEMORY_GROWTH=1", "--link-arg=-sINVOKE_RUN=0",
                 "--link-arg=--no-entry",
                 "--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_dispatch_text,"
-                "_ui_dispatch_focus,_ui_dispatch_toggle,_ui_dispatch_scroll,_ui_dispatch_alert,_ui_report_back,"
+                "_ui_dispatch_focus,_ui_dispatch_toggle,_ui_dispatch_scroll,_ui_dispatch_alert,_ui_dispatch_refresh,"
+                "_ui_report_back,"
                 "_ui_report_link,_ui_report_window,_ui_tick,_ui_stop,"
                 "_ui_conformance_log",
                 "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall"], check=True)

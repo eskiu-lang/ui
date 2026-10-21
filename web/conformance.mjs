@@ -63,6 +63,16 @@ export async function runConformance(app, root) {
   await frame(); await frame();
   document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
   await frame(); await frame();
+  // Pull the feed at its top: the indicator shows, "Loaded" hides it.
+  const feedList = root.querySelector('[aria-label="Feed"]');
+  feedList.dispatchEvent(new WheelEvent('wheel', {deltaY: -60}));
+  feedList.dispatchEvent(new WheelEvent('wheel', {deltaY: -60}));
+  await frame(); await frame();
+  const shown = () => feedList.querySelector('.ui-refresh')?.dataset.animating === 'true';
+  const refresh = [shown()];
+  [...root.querySelectorAll('button')].find(b => b.textContent === 'Loaded').click();
+  await frame(); await frame();
+  refresh.push(shown());
   // Scroll the feed: rows near 2000 points mount, rows from the top go.
   const feed = root.querySelector('[aria-label="Feed"]');
   feed.scrollTop = 2000;
@@ -73,5 +83,5 @@ export async function runConformance(app, root) {
     const r = row.getBoundingClientRect();
     scrolled[row.getAttribute('aria-label')] = [r.left - base.left, r.top - base.top, r.width, r.height].map(v => Math.round(v * 10) / 10);
   }
-  return {status: 'DONE', frames, roles, styles, scrolled, modal, log: app.ccall('ui_conformance_log', 'string', [], [])};
+  return {status: 'DONE', frames, roles, styles, scrolled, modal, refresh, log: app.ccall('ui_conformance_log', 'string', [], [])};
 }
