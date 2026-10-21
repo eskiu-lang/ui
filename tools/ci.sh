@@ -44,7 +44,7 @@ wait_for() {
 }
 for i in 1 2 3 4 5 6 7 8 9 10; do curl -s "http://127.0.0.1:8797/" > build/serve.html && break; sleep 0.5; done
 grep -q "/__ui/serve.mjs" build/serve.html || { cat build/serve.txt; exit 1; }
-wait_for -1 '"version": 1, "error": ""'
+wait_for 0 '"version": 1, "error": ""'
 echo "// BROKEN" >> build/newapp/src/main.esk
 wait_for 1 '"version": 2, "error": "error: src/main.esk:1:1: broken'
 sed -i.bak '/BROKEN/d' build/newapp/src/main.esk
