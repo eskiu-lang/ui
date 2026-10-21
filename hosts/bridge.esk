@@ -75,8 +75,15 @@ int ui_report_back() {
     return handled ? 1 : 0;
 }
 
+// A link the host has before the app starts (the one it was opened with) waits for it.
+string pending_link;
+
 void ui_report_link(string url) {
-    if (!app_active) { return; }
+    if (!app_active) {
+        free(pending_link);
+        pending_link = url == null ? null : ui_copy(url);
+        return;
+    }
     ui_set_link(url);
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
@@ -109,6 +116,13 @@ void ui_dispatch_view(int id, int generation, string name, string payload) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// The web: the browser went back or forward to `path`, at `index` in the app's history.
+void ui_dispatch_route(string path, int index) {
+    if (!app_active) { return; }
+    ui_event_route(path, index);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 void ui_report_active(int active) {
     if (!app_active) { return; }
     ui_set_active(active != 0);
@@ -135,6 +149,11 @@ void ui_start(int which) {
         ui_host_commit(data, len);
         ui_complete(ui.sequence);
     });
+    if (pending_link != null) {
+        ui_set_link(pending_link);
+        free(pending_link);
+        pending_link = null;
+    }
     ui_app_start(which);
     ui_frame();
     if (ui_needs_frame()) { ui_host_schedule(); }
