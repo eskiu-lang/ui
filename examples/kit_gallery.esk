@@ -1,0 +1,82 @@
+import "../src/kit.esk";
+import "../src/owned_string.esk";
+
+// Every <ui/kit> component, with state, on one scrolling page.
+void KitGallery() {
+    Column(Style{grow: 1, background: kit.page, gap: 0}, void() {
+        NavBar("Kit", void() { Avatar("ED", 36); });
+        Separator();
+        Scroll(Style{grow: 1, padding: 16, gap: 16, label: "Gallery"}, void() {
+            *Signal<bool> notify = use_signal<bool>(true);
+            *Signal<bool> weekly = use_signal<bool>(false);
+            *Signal<int> plan = use_signal<int>(1);
+            *Signal<int> view = use_signal<int>(0);
+            *Signal<int> tab = use_signal<int>(0);
+            *Signal<int> steps = use_signal<int>(3);
+            *StringState email = use_string("");
+
+            Card(void() {
+                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Badges and avatars");
+                Row(Style{gap: 8, wrap: true}, void() {
+                    Badge("Neutral", ToneNeutral);
+                    Badge("Primary", TonePrimary);
+                    Badge("Success", ToneSuccess);
+                    Badge("Warning", ToneWarning);
+                    Badge("Danger", ToneDanger);
+                });
+                Row(Style{gap: 8, align: AlignCenter}, void() {
+                    Avatar("AB", 40);
+                    Avatar("CD", 40);
+                    AvatarImage("logo.png", 40, "Eskiu");
+                });
+            });
+
+            Card(void() {
+                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Buttons");
+                Row(Style{gap: 8, wrap: true}, void() {
+                    KitButton("Primary", VariantPrimary, void() { steps.set(steps.get() + 1); });
+                    KitButton("Secondary", VariantSecondary, void() { steps.set(steps.get() - 1); });
+                    KitButton("Ghost", VariantGhost, void() {});
+                    KitButton("Danger", VariantDanger, void() { steps.set(0); });
+                });
+                ProgressBar(steps.get(), 5);
+            });
+
+            Card(void() {
+                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Forms");
+                TextField(email.get(), "Email", void(string text) { email.set(text); });
+                Checkbox("Email notifications", notify.get(), void(bool on) { notify.set(on); });
+                Checkbox("Weekly summary", weekly.get(), void(bool on) { weekly.set(on); });
+                Separator();
+                RadioGroup("Free\nPro\nTeam", plan.get(), void(int i) { plan.set(i); });
+            });
+
+            Card(void() {
+                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Navigation");
+                SegmentedControl("Day\nWeek\nMonth", view.get(), void(int i) { view.set(i); });
+                TabBar("Overview\nActivity\nSettings", tab.get(), void(int i) { tab.set(i); });
+                TextWith(Style{font_size: 15, color: kit.muted},
+                    tab.get() == 0 ? "Everything at a glance." : tab.get() == 1 ? "What changed lately." : "How it works.");
+            });
+
+            Accordion(void() {
+                Collapsible("What is Eskiu?", void() {
+                    TextWith(Style{font_size: 15, color: kit.muted}, "A systems language that compiles through LLVM.");
+                });
+                Separator();
+                Collapsible("Where does ui run?", void() {
+                    TextWith(Style{font_size: 15, color: kit.muted}, "iOS, Android, the web and the desktop.");
+                });
+            });
+
+            Toolbar(void() {
+                KitButton("Bold", VariantGhost, void() {});
+                VSeparator();
+                KitButton("Italic", VariantGhost, void() {});
+            });
+
+            ListItem("Account", "Name, email and password", void() {});
+            ListItem("Notifications", "", void() {});
+        });
+    });
+}

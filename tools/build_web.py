@@ -26,6 +26,7 @@ for filename in ("index.html", "renderer.mjs", "scheduler.mjs", "benchmark.mjs",
     shutil.copyfile(HERE / "web" / filename, BUILD / filename)
 for asset in (HERE / "assets").iterdir():
     shutil.copyfile(asset, BUILD / asset.name)
-if (BUILD / "app.wasm").stat().st_size > 128 * 1024:
-    raise SystemExit("phase-0 wasm budget exceeded (128 KiB)")
+# Every example is in this module; an app built by tools/ui.esk carries only its own code.
+if (BUILD / "app.wasm").stat().st_size > 160 * 1024:
+    raise SystemExit("demo wasm budget exceeded (160 KiB)")
 print("Built:", BUILD, "wasm bytes:", (BUILD / "app.wasm").stat().st_size)

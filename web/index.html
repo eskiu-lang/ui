@@ -46,8 +46,8 @@
   host.cancel = () => scheduler.cancel();
   const app = await createApp({uiHost: host});
   const name = new URLSearchParams(location.search).get('example');
-  const example = name === 'todo' ? 1 : name === 'conformance' ? 3 : name === 'tasks' ? 4 : 0;
-  if (example === 4) document.body.classList.add('showcase');
+  const example = {todo: 1, conformance: 3, tasks: 4, kit: 5}[name] ?? 0;
+  if (example >= 4) document.body.classList.add('showcase');
   if (example === 3) root.classList.add('conformance');
   window.uiDemo = {app, host, scheduler};
   app._ui_start(example);

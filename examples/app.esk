@@ -1,12 +1,14 @@
 import "components.esk";
 import "conformance.esk";
 import "tasks.esk";
+import "kit_gallery.esk";
 import "../hosts/bridge.esk";
 
 // The examples behind one host app: `which` picks one (0 counter, 1 TODO, 2 a scheduler
-// probe, 3 the conformance scene, 4 the Tasks showcase).
+// probe, 3 the conformance scene, 4 the Tasks showcase, 5 the kit gallery).
 void ui_app_start(int example) {
     if (example == 0) { ui_mount(void() { Counter(); }); }
+    else if (example == 5) { ui_mount(void() { KitGallery(); }); }
     else if (example == 4) {
         tasks_seed(&task_store);
         ui_mount(void() { TasksApp(&task_store); });
