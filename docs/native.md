@@ -151,6 +151,7 @@ From Java and Kotlin, `org.eskiu.ui.UiActivity` has:
 UiActivity.registerView(String type, UiActivity.ViewFactory factory);
 UiActivity.emit(String channel, String payload);   // any thread
 UiActivity.current();                              // the activity, for a Context
+UiActivity.requestPermissions(String[] permissions, Consumer<Boolean> done);   // runtime permissions
 ```
 
 ```java

@@ -275,6 +275,32 @@ public final class UiActivity extends Activity {
     }
     // The running activity, for a Context.
     public static UiActivity current() { return current; }
+    // Runtime permissions for native code: `done` gets whether every one was granted, on the
+    // UI thread (at once when they already are).
+    private final HashMap<Integer, java.util.function.Consumer<Boolean>> permissionRequests = new HashMap<>();
+    private int nextPermissionRequest = 1;
+    public static void requestPermissions(String[] permissions, java.util.function.Consumer<Boolean> done) {
+        mainThread.post(() -> {
+            UiActivity activity = current;
+            if (activity == null) { done.accept(false); return; }
+            boolean all = true;
+            for (String permission : permissions) {
+                if (activity.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) all = false;
+            }
+            if (all) { done.accept(true); return; }
+            int request = activity.nextPermissionRequest++;
+            activity.permissionRequests.put(request, done);
+            activity.requestPermissions(permissions, request);
+        });
+    }
+    @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(request, permissions, results);
+        java.util.function.Consumer<Boolean> done = permissionRequests.remove(request);
+        if (done == null) return;
+        boolean all = results.length > 0;
+        for (int result : results) if (result != PackageManager.PERMISSION_GRANTED) all = false;
+        done.accept(all);
+    }
     private final HashMap<Integer, View> nativeViews = new HashMap<>();
     private final HashMap<Integer, String> nativeTypes = new HashMap<>();
     // The classes `ui build` lists in the manifest: each one's static setup() runs once.
