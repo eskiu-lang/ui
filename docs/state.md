@@ -73,7 +73,7 @@ tick reaches the handler on the UI thread like any event, so it may set signals.
 ## The hooks rule
 
 Hooks (`use_signal`, `use_memo`, `use_effect`, `use_string`, `use_back`,
-`use_native_event`, `use_interval`, `use_timeout`) are matched by the order a block calls
+`use_native_event`, `use_interval`, `use_timeout`, `use_animated`) are matched by the order a block calls
 them in. A block must call the
 same hooks, of the same types, in the same order every time it renders. The core checks it:
 a block that calls a different hook, or the same hook with another type, at a slot stops

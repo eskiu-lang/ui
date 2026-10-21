@@ -92,6 +92,19 @@ ui_on_pan(void(Pan p) {
 Row(Style{translate_x: dx.get(), transition_ms: held.get() ? 0 : 250, easing: EaseSpring}, void() { ... });
 ```
 
+For a value the host cannot animate (a number drawn as text, a share of a row),
+`use_animated(target, ms, easing)` is the value on its way to `target`: when the target
+changes, it moves there over `ms` milliseconds along the curve, rendering its readers about
+sixty times a second until it arrives.
+
+```eskiu
+int shown = use_animated(score.get(), 600, EaseOut);
+String text;
+defer String_free(&text);
+String_format(&text, "%d points", shown);
+Text(text.data);
+```
+
 The transforms are drawn, not laid out: the element keeps its place and its siblings do not
 move. Layout changes (a size, a position from the flow) are not animated yet.
 

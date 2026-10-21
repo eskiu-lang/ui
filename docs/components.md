@@ -133,7 +133,7 @@ variants `VariantPrimary`, `VariantSecondary`, `VariantGhost`, `VariantDanger`.
 | `Badge(text, tone)` | A small label in a tone's colors. |
 | `Avatar(initials, size)`, `AvatarImage(source, size, label)` | Initials, or an image, in a circle. |
 | `Separator()`, `VSeparator()` | A hairline across a column, or down a row. |
-| `ProgressBar(value, max)` | `value` of `max` as a filled track. |
+| `ProgressBar(value, max)` | `value` of `max` as a filled track, which moves to a new value. |
 | `KitButton(text, variant, on_press)` | A button in a variant's style. |
 | `TextField(value, placeholder, on_change)` | A text field in the theme's style; the placeholder is its accessible name. |
 | `Checkbox(label, checked, fn(bool)->void)` | A checkbox and its label. |
