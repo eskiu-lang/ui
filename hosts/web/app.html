@@ -16,12 +16,20 @@
   import createApp from './app.mjs';
   import {createHost, uiDispatch} from './renderer.mjs';
   import {createFrameScheduler} from './scheduler.mjs';
+  import {setupNative} from './native.mjs';
   const root = document.querySelector('#app');
-  const host = createHost(root, (...event) => uiDispatch(app, ...event));
+  // Native code (native/web): views by type, and events on channels for use_native_event.
+  const views = {};
+  const emit = (channel, payload = '') => {
+    if (app) app.ccall('ui_dispatch_native', null, ['string', 'string'], [String(channel), String(payload)]);
+  };
+  setupNative({registerView: (type, factory) => { views[type] = factory; }, emit});
+  let app;
+  const host = createHost(root, (...event) => uiDispatch(app, ...event), views);
   const scheduler = createFrameScheduler(() => app._ui_tick());
   host.schedule = () => scheduler.request();
   host.cancel = () => scheduler.cancel();
-  const app = await createApp({uiHost: host});
+  app = await createApp({uiHost: host, uiEmit: emit});
   app._ui_start(0);
   const reportWindow = () => app._ui_report_window(innerWidth, innerHeight, Math.round(devicePixelRatio * 100));
   reportWindow();

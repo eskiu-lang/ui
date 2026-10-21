@@ -1,5 +1,6 @@
 // Events back into the wasm app: 1 press, 2 change (text), 3 focus (1 or 0), 4 toggle
-// (1 or 0), 5 scroll (the offset in value, the viewport height in extra).
+// (1 or 0), 5 scroll (the offset in value, the viewport height in extra), 6 alert, 7 refresh,
+// 9 a native view's event (the payload in text, its name in extra).
 export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
@@ -7,11 +8,13 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
   else if (kind === 6) app._ui_dispatch_alert(id, value);
+  else if (kind === 9) app.ccall('ui_dispatch_view', null, ['number', 'number', 'string', 'string'], [id, generation, extra, text]);
   else app._ui_dispatch_refresh(id, generation);
 }
 
 // Kinds (src/ui.esk): 0 scope, 1 column, 2 row, 3 text, 4 button, 5 text input, 6 scroll,
-// 7 image, 8 pressable, 9 switch, 10 activity indicator, 11 status bar, 12 modal.
+// 7 image, 8 pressable, 9 switch, 10 activity indicator, 11 status bar, 12 modal, 13 native
+// view.
 const TAGS = {3: 'span', 4: 'button', 5: 'input', 7: 'img', 9: 'input'};
 const CONTAINERS = new Set([0, 1, 2, 6, 8, 12]);
 const ALIGN = {1: 'flex-start', 2: 'center', 3: 'flex-end', 4: 'stretch'};
@@ -36,9 +39,26 @@ function cssColor(value) {
 }
 
 // A deliberately small synchronous renderer shared by the demos and browser tests.
-// dispatch(id, generation, kind, text, value), with the kinds of uiDispatch.
-export function createHost(root, dispatch) {
+// dispatch(id, generation, kind, text, value, extra), with the kinds of uiDispatch.
+// `views` maps a NativeView type to its factory: create(emit) returns {element, set(name,
+// value), dispose()} (set and dispose optional); emit(name, payload) sends the view's events.
+export function createHost(root, dispatch, views = {}) {
   const nodes = new Map();
+  // A native view's instance by node id.
+  const natives = new Map();
+  function mountNative(node, type) {
+    natives.get(Number(node.dataset.uiId))?.dispose?.();
+    node.replaceChildren();
+    const factory = views[type];
+    if (!factory) { console.warn(`ui: no native view registered as ${type}`); return; }
+    const emit = (name, payload = '') => dispatch(...ids(node), 9, String(payload), 0, String(name));
+    const instance = factory.create(emit);
+    instance.element.style.width = '100%';
+    instance.element.style.height = '100%';
+    instance.element.style.boxSizing = 'border-box';
+    node.appendChild(instance.element);
+    natives.set(Number(node.dataset.uiId), instance);
+  }
   let rootId;
   const pending = [];
   if (document.head && !document.getElementById('ui-spinner-css')) {
@@ -124,6 +144,7 @@ export function createHost(root, dispatch) {
     if (m.kind === 9) { node.type = 'checkbox'; node.setAttribute('role', 'switch'); }
     if (m.kind === 10) { node.className = 'ui-spinner'; node.setAttribute('role', 'progressbar'); }
     if (m.kind === 11) node.style.display = 'none';
+    if (m.kind === 13) node.style.overflow = 'hidden';
     if (m.kind === 12) { node.className = 'ui-modal'; node.setAttribute('role', 'dialog'); node.setAttribute('aria-modal', 'true'); modals.push(node); }
     nodes.set(m.id, node);
   }
@@ -231,6 +252,8 @@ export function createHost(root, dispatch) {
         if (m.op === 2) prop(node, m.kind, m.before);
         else if (m.op === 3 && kindOf(node) === 5) { if (node.value !== m.text) node.value = m.text; }
         else if (m.op === 3) node.textContent = m.text;
+        else if (m.op === 9 && m.kind === 4) mountNative(node, m.text);
+        else if (m.op === 11) natives.get(m.id)?.set?.(m.name, m.text);
         else if (m.op === 9) {
           // String props: 1 label (an image's alt text), 2 placeholder, 3 image source.
           const name = m.kind === 1 ? (kindOf(node) === 7 ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';
@@ -238,6 +261,7 @@ export function createHost(root, dispatch) {
         } else if (m.op === 4 || m.op === 5) {
           parentNode(m.parent).insertBefore(node, m.before ? nodes.get(m.before) : null);
         } else if (m.op === 6) {
+          natives.get(m.id)?.dispose?.(); natives.delete(m.id);
           node.remove(); nodes.delete(m.id);
           if (modals.includes(node)) modals.splice(modals.indexOf(node), 1);
         }
