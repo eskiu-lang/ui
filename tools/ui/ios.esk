@@ -38,6 +38,25 @@ string build_ios(Project* p) {
     cmd.add("-c"); cmd.add(join(p.ui.data, "hosts/ios/host.mm")); cmd.add("-o"); cmd.add(host);
     cmd.must(null);
     cmd.free();
+    // Native code: native/ios/*.m and *.mm of every package, with ui_native.h on the path.
+    List<String> sources;
+    defer fs_list_free(&sources);
+    p.native("ios", ".m", &sources);
+    p.native("ios", ".mm", &sources);
+    List<String> native_objects;
+    defer fs_list_free(&native_objects);
+    for (i in 0..sources.size) {
+        String object;
+        String_appendf(&object, "%s/native-%d.o", out, i);
+        Cmd compile;
+        for (j in 0..compiler.size) { compile.add(compiler.data[j]); }
+        compile.add("-fobjc-arc"); compile.add("-I"); compile.add(join(p.ui.data, "hosts/ios"));
+        if (String_ends_with(&sources.data[i], ".mm") == 1) { compile.add("-std=c++17"); }
+        compile.add("-c"); compile.add(sources.data[i].data); compile.add("-o"); compile.add(object.data);
+        compile.must(null);
+        compile.free();
+        native_objects.push(object);
+    }
     string app = join(out, "app.o");
     Cmd esk;
     esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add("-O2");
@@ -66,6 +85,7 @@ string build_ios(Project* p) {
     Cmd link;
     for (i in 0..compiler.size) { link.add(compiler.data[i]); }
     link.add(host); link.add(app);
+    for (i in 0..native_objects.size) { link.add(native_objects.data[i].data); }
     for (i in 0..objects.size) { link.add(objects.data[i].data); }
     link.add("-framework"); link.add("UIKit"); link.add("-framework"); link.add("Foundation");
     link.add("-framework"); link.add("CoreGraphics"); link.add("-framework"); link.add("QuartzCore");
@@ -114,16 +134,27 @@ void ios_simulator() {
 void run_ios(Project* p) {
     string bundle = build_ios(p);
     ios_simulator();
-    // Simulator.app lives inside Xcode, where `open -a` does not always find it by name.
+    // The simulator's window: Simulator.app inside Xcode, DeviceHub.app from Xcode 27.
     Cmd developer;
     developer.add("xcode-select"); developer.add("-p");
     String dir;
     developer.output(&dir);
     developer.free();
-    Cmd show;
-    show.add("open"); show.add("-a"); show.add(join(dir.data, "Applications/Simulator.app"));
-    show.run(null);
-    show.free();
+    String contents;
+    path_dirname(&contents, dir.data);
+    List<string> apps;
+    apps.push(join(dir.data, "Applications/Simulator.app"));
+    apps.push(join(contents.data, "Applications/DeviceHub.app"));
+    for (i in 0..apps.size) {
+        if (fs_is_dir(apps.data[i]) != 1) { continue; }
+        Cmd show;
+        show.add("open"); show.add("-a"); show.add(apps.data[i]);
+        String ignored;
+        show.output(&ignored);
+        show.free();
+        break;
+    }
+    apps.free();
     Cmd install;
     install.add("xcrun"); install.add("simctl"); install.add("install"); install.add("booted"); install.add(bundle);
     install.must(null);
