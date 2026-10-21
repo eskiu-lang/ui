@@ -1,0 +1,596 @@
+// Phase-0 executable model. Single UI thread; synchronous recording/web hosts.
+import <io>;
+import <list>;
+import <mem>;
+
+extern void abort();
+
+struct Key { bool set; int64 value; }
+Key key(int64 value) { return Key{true, value}; }
+struct Style { Key key; int gap = 8; int padding = 0; }
+
+struct Source { List<*Observer> readers; *Observer memo; }
+struct Observer {
+    int kind;
+    *Node owner;
+    List<*Source> deps;
+    bool dirty;
+    bool evaluating;
+    fn()->void compute;
+    fn()->void cleanup;
+    bool has_cleanup;
+    *Source output;
+}
+struct Slot { int kind; *void tag; *void data; fn()->void dispose; }
+struct Node {
+    int id;
+    int generation;
+    int kind;
+    Key key;
+    int gap;
+    int padding;
+    *Node parent;
+    List<*Node> children;
+    List<*Node> emitted;
+    List<Slot> slots;
+    int cursor;
+    bool mounted;
+    bool seen;
+    bool fresh;
+    bool next;
+    bool current;
+    int runs;
+    int loop_frames;
+    bool render_write;
+    *Observer observer;
+    fn()->void block;
+    fn()->void handler;
+    fn()->void handler_cleanup;
+    string text;
+}
+struct Mutation { int op; int id; int generation; int parent; int before; int kind; string text; }
+struct Event { int id; int generation; }
+struct Ui {
+    *Node root;
+    *Node builder;
+    *Observer tracking;
+    List<*Node> nodes;
+    List<*Observer> observers;
+    List<Mutation> mutations;
+    List<fn()->void> writes;
+    List<fn()->void> retired;
+    List<fn()->void> finalizers;
+    List<Event> events;
+    fn(*Mutation, int)->void apply;
+    int phase;
+    int sequence;
+    bool in_flight;
+    int next_id;
+}
+*Ui ui;
+
+void ui_require(bool ok, string message) {
+    if (!ok) { printf("ui: %s\n", message); abort(); }
+}
+
+string ui_copy(string text) {
+    int64 n = strlen(text);
+    *char copy = alloc<char>(n + 1);
+    memcpy(copy, text, (size_t)(n + 1));
+    return (string)copy;
+}
+
+void ui_release_closure(escaping fn()->void callback) { free_closure(callback); }
+
+void ui_retire(escaping fn()->void dispose) { ui.retired.push(dispose); }
+void ui_emit(int op, *Node node, int before) {
+    ui.mutations.push(Mutation{op, node.id, node.generation,
+        node.parent == null ? 0 : node.parent.id, before, node.kind, node.text});
+}
+
+void ui_untrack(*Observer observer) {
+    for (i in 0..observer.deps.size) {
+        *Source source = observer.deps.data[i];
+        for (int j = source.readers.size - 1; j >= 0; j--) {
+            if (source.readers.data[j] == observer) { source.readers.remove(j); }
+        }
+    }
+    observer.deps.size = 0;
+}
+
+void ui_track(*Source source) {
+    if (ui == null) { return; }
+    *Observer observer = ui.tracking;
+    if (observer == null) { return; }
+    for (i in 0..observer.deps.size) {
+        if (observer.deps.data[i] == source) { return; }
+    }
+    observer.deps.push(source);
+    source.readers.push(observer);
+}
+
+void ui_changed(*Source source) {
+    for (i in 0..source.readers.size) {
+        *Observer observer = source.readers.data[i];
+        observer.dirty = true;
+        if (observer.kind == 1) { ui_stale_memos(observer.output); }
+        if (observer.kind == 0) {
+            observer.owner.next = true;
+            if (ui != null && ui.phase == 1) { observer.owner.render_write = true; }
+        }
+    }
+}
+
+void ui_stale_memos(*Source source) {
+    for (i in 0..source.readers.size) {
+        *Observer reader = source.readers.data[i];
+        if (reader.kind == 1 && !reader.dirty) {
+            reader.dirty = true;
+            ui_stale_memos(reader.output);
+        }
+    }
+}
+
+// Forget a source that is being freed: no observer keeps it as a dependency.
+void ui_detach_source(*Source source) {
+    for (i in 0..source.readers.size) {
+        *Observer observer = source.readers.data[i];
+        for (int j = observer.deps.size - 1; j >= 0; j--) {
+            if (observer.deps.data[j] == source) { observer.deps.remove(j); }
+        }
+    }
+    source.readers.free();
+}
+
+void ui_validate(*Observer observer) {
+    ui_require(!observer.evaluating, "memo cycle");
+    if (!observer.dirty) { return; }
+    observer.evaluating = true;
+    *Observer previous = ui.tracking;
+    ui_untrack(observer);
+    ui.tracking = observer;
+    observer.dirty = false;
+    observer.compute();
+    ui.tracking = previous;
+    observer.evaluating = false;
+}
+
+*Observer ui_observer(int kind, *Node owner) {
+    *Observer observer = alloc<Observer>(1);
+    observer.kind = kind;
+    observer.owner = owner;
+    ui.observers.push(observer);
+    return observer;
+}
+
+void ui_drop_observer(*Observer observer) {
+    ui_untrack(observer);
+    for (i in 0..ui.observers.size) {
+        if (ui.observers.data[i] == observer) { ui.observers.remove(i); break; }
+    }
+    if (observer.has_cleanup) { observer.cleanup(); ui_release_closure(observer.cleanup); }
+    if (observer.kind != 0) { ui_release_closure(observer.compute); }
+    observer.deps.free();
+    free(observer);
+}
+
+*Slot ui_slot(int kind, *void tag) {
+    *Node node = ui.builder;
+    ui_require(node != null && ui.phase == 1, "hook outside render");
+    int index = node.cursor++;
+    if (index == node.slots.size) {
+        ui_require(!node.mounted, "hook count increased");
+        node.slots.push(Slot{kind: kind, tag: tag});
+    }
+    *Slot slot = &node.slots.data[index];
+    ui_require(slot.kind == kind && slot.tag == tag, "hook kind/type changed");
+    return slot;
+}
+
+struct Signal<T> { T value; Source source; }
+*Signal<T> use_signal<T>(T initial) {
+    static int tag;
+    *Slot slot = ui_slot(0, &tag);
+    if (slot.data == null) {
+        *Signal<T> signal = alloc<Signal<T>>(1);
+        signal.value = initial;
+        slot.data = signal;
+        slot.dispose = void() { ui_detach_source(&signal.source); free(signal); };
+    }
+    return (*Signal<T>)slot.data;
+}
+
+// A signal owned by the app's model rather than by a scope: it outlives any mount, works
+// with no runtime, and is freed by its owner (after the UI that reads it is shut down).
+*Signal<T> signal_new<T>(T initial) {
+    *Signal<T> signal = alloc<Signal<T>>(1);
+    signal.value = initial;
+    return signal;
+}
+
+void Signal_free<T>(Signal<T>* self) {
+    ui_detach_source(&self.source);
+    free(self);
+}
+
+T Signal_get<T>(Signal<T>* self) {
+    if (self.source.memo != null) { ui_validate(self.source.memo); }
+    ui_track(&self.source);
+    return self.value;
+}
+
+void Signal_apply<T>(Signal<T>* self, T value) {
+    if (self.value == value) { return; }
+    self.value = value;
+    ui_changed(&self.source);
+}
+
+void Signal_set<T>(Signal<T>* self, T value) {
+    ui_require(ui == null || ui.tracking == null || ui.tracking.kind != 1, "memo must be pure");
+    if (ui != null && ui.phase == 1) {
+        ui.writes.push(void() { self.apply(value); });
+    } else { self.apply(value); }
+}
+
+struct Memo<T> { Signal<T> signal; fn()->T callback; bool initialized; }
+*Signal<T> use_memo<T>(escaping fn()->T callback) {
+    static int tag;
+    *Slot slot = ui_slot(1, &tag);
+    *Memo<T> memo = (*Memo<T>)slot.data;
+    if (memo == null) {
+        memo = alloc<Memo<T>>(1);
+        slot.data = memo;
+        *Observer observer = ui_observer(1, ui.builder);
+        observer.output = &memo.signal.source;
+        memo.signal.source.memo = observer;
+        observer.compute = void() {
+            T value = memo.callback();
+            bool changed = !memo.initialized || memo.signal.value != value;
+            memo.signal.value = value;
+            memo.initialized = true;
+            if (changed) { ui_changed(&memo.signal.source); }
+        };
+        slot.dispose = void() {
+            ui_drop_observer(memo.signal.source.memo);
+            ui_detach_source(&memo.signal.source);
+            free_closure(memo.callback);
+            free(memo);
+        };
+    } else { free_closure(memo.callback); }
+    memo.callback = callback;
+    memo.signal.source.memo.dirty = true;
+    return &memo.signal;
+}
+
+void use_effect(escaping fn()->void callback) {
+    static int tag;
+    *Slot slot = ui_slot(2, &tag);
+    *Observer effect = (*Observer)slot.data;
+    if (effect == null) {
+        effect = ui_observer(2, ui.builder);
+        slot.data = effect;
+        slot.dispose = void() { ui_drop_observer(effect); };
+    } else { ui_release_closure(effect.compute); }
+    effect.compute = callback;
+    effect.dirty = true;
+}
+
+void on_cleanup(escaping fn()->void callback) {
+    ui_require(ui.tracking != null && ui.tracking.kind == 2, "on_cleanup outside effect");
+    ui_require(!ui.tracking.has_cleanup, "only one cleanup per effect");
+    ui.tracking.cleanup = callback;
+    ui.tracking.has_cleanup = true;
+}
+
+void ui_run(*Node node) {
+    node.current = false;
+    node.runs++;
+    node.cursor = 0;
+    for (i in 0..node.children.size) { node.children.data[i].seen = false; }
+    *Node previous_builder = ui.builder;
+    *Observer previous_tracking = ui.tracking;
+    ui.builder = node;
+    ui_untrack(node.observer);
+    ui.tracking = node.observer;
+    node.block();
+    ui_require(node.cursor == node.slots.size, "hook count decreased");
+    ui.builder = previous_builder;
+    ui.tracking = previous_tracking;
+    for (int i = node.children.size - 1; i >= 0; i--) {
+        if (!node.children.data[i].seen) { ui_unmount(node.children.data[i]); }
+    }
+    List<*Node> order;
+    for (i in 0..node.children.size) {
+        if (node.children.data[i].seen) { order.push(node.children.data[i]); }
+    }
+    for (i in 0..node.emitted.size) {
+        *Node child = node.emitted.data[i];
+        int at = -1;
+        for (j in 0..order.size) { if (order.data[j] == child) { at = j; break; } }
+        if (at != i) {
+            if (at >= 0) { order.remove(at); }
+            int before = i < order.size ? order.data[i].id : 0;
+            ui_emit(child.fresh ? 4 : 5, child, before);
+            order.push(child);
+            for (int j = order.size - 1; j > i; j--) { order.data[j] = order.data[j - 1]; }
+            order.data[i] = child;
+        }
+        child.fresh = false;
+    }
+    order.free();
+    node.children.free();
+    node.children = node.emitted;
+    node.emitted = List<*Node>{};
+    node.mounted = true;
+}
+
+void ui_unmount(*Node node) {
+    for (int i = node.children.size - 1; i >= 0; i--) { ui_unmount(node.children.data[i]); }
+    ui_emit(6, node, 0);
+    node.next = false;
+    node.current = false;
+    node.seen = false;
+    // Detach dependencies immediately, destroy resources after renderer completion.
+    ui_untrack(node.observer);
+    for (i in 0..ui.observers.size) {
+        if (ui.observers.data[i].owner == node) { ui_untrack(ui.observers.data[i]); }
+    }
+    for (i in 0..ui.nodes.size) {
+        if (ui.nodes.data[i] == node) { ui.nodes.remove(i); break; }
+    }
+    // Every unmount cleanup runs while ALL retired state is still alive. A cleanup
+    // may read a signal registered after its own hook, or state in a sibling scope.
+    ui.finalizers.push(void() {
+        for (i in 0..node.slots.size) {
+            Slot slot = node.slots.data[i];
+            if (slot.kind == 2) {
+                *Observer effect = (*Observer)slot.data;
+                if (effect.has_cleanup) {
+                    effect.cleanup(); ui_release_closure(effect.cleanup);
+                    effect.has_cleanup = false;
+                }
+            }
+        }
+        node.handler_cleanup();
+    });
+    ui_retire(void() {
+        for (int i = node.slots.size - 1; i >= 0; i--) {
+            Slot slot = node.slots.data[i];
+            slot.dispose(); ui_release_closure(slot.dispose);
+        }
+        ui_drop_observer(node.observer);
+        ui_release_closure(node.block);
+        ui_release_closure(node.handler);
+        ui_release_closure(node.handler_cleanup);
+        free(node.text);
+        node.slots.free(); node.children.free(); node.emitted.free();
+        free(node);
+    });
+}
+
+*Node ui_element(int kind, Style style, string text,
+    escaping fn()->void block, escaping fn()->void handler, escaping fn()->void handler_cleanup) {
+    *Node parent = ui.builder;
+    ui_require(parent != null, "element outside render");
+    *Node node = null;
+    for (i in 0..parent.emitted.size) {
+        *Node sibling = parent.emitted.data[i];
+        ui_require(!style.key.set || !sibling.key.set || sibling.key.value != style.key.value,
+            "duplicate key");
+    }
+    int unkeyed = 0;
+    for (i in 0..parent.emitted.size) { if (!parent.emitted.data[i].key.set) { unkeyed++; } }
+    int position = 0;
+    for (i in 0..parent.children.size) {
+        *Node candidate = parent.children.data[i];
+        bool match_key = style.key.set && candidate.key.set && style.key.value == candidate.key.value;
+        bool match_pos = !style.key.set && !candidate.key.set && position == unkeyed;
+        if (!candidate.key.set) { position++; }
+        if (!candidate.seen && (match_key || match_pos)) {
+            if (candidate.kind == kind) { node = candidate; }
+            break;
+        }
+    }
+    bool fresh = node == null;
+    if (fresh) {
+        node = alloc<Node>(1);
+        node.id = ++ui.next_id;
+        node.generation = 1;
+        node.kind = kind; node.key = style.key; node.parent = parent;
+        node.fresh = true;
+        node.observer = ui_observer(0, node);
+        ui.nodes.push(node);
+        ui_emit(1, node, 0);
+    } else {
+        fn()->void old_block = node.block;
+        fn()->void old_handler = node.handler;
+        fn()->void old_cleanup = node.handler_cleanup;
+        ui_retire(void() { ui_release_closure(old_block); });
+        ui_retire(void() { ui_release_closure(old_handler); old_cleanup(); ui_release_closure(old_cleanup); });
+    }
+    node.seen = true;
+    if (fresh || node.gap != style.gap || node.padding != style.padding) {
+        node.gap = style.gap; node.padding = style.padding;
+        ui.mutations.push(Mutation{2, node.id, node.generation, parent.id,
+            style.padding, style.gap, null});
+    }
+    node.block = block;
+    node.handler = handler;
+    node.handler_cleanup = handler_cleanup;
+    if (kind == 4) { ui_emit(7, node, 0); }
+    if (text != null && (node.text == null || strcmp(text, node.text) != 0)) {
+        string previous = node.text;
+        if (previous != null) { ui_retire(void() { free(previous); }); }
+        node.text = ui_copy(text);
+        ui_emit(3, node, 0);
+    }
+    parent.emitted.push(node);
+    ui_run(node);
+    return node;
+}
+
+void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
+void Row(Style style, escaping fn()->void block) { ui_element(2, style, null, block, void() {}, void() {}); }
+void Scope(Key k, escaping fn()->void block) { ui_element(0, Style{key: k}, null, block, void() {}, void() {}); }
+void Text(string text) { ui_element(3, Style{}, text, void() {}, void() {}, void() {}); }
+void Button(string text, escaping fn()->void handler) { ui_element(4, Style{}, text, void() {}, handler, void() {}); }
+void Button_owned(string text, escaping fn()->void handler, escaping fn()->void cleanup) {
+    ui_element(4, Style{}, text, void() {}, handler, cleanup);
+}
+
+void ui_init(*Ui runtime, escaping fn(*Mutation, int)->void apply) {
+    ui = runtime;
+    ui.apply = apply;
+    *Node root = alloc<Node>(1);
+    root.id = ++ui.next_id;
+    root.block = void() {}; root.handler = void() {}; root.handler_cleanup = void() {};
+    root.observer = ui_observer(0, root);
+    ui.root = root;
+    ui.nodes.push(root);
+}
+
+void ui_mount(escaping fn()->void block) {
+    ui_require(!ui.root.next && !ui.root.mounted, "already mounted");
+    ui.root.block = block;
+    ui.root.next = true;
+}
+
+void ui_complete(int sequence) {
+    ui_require(ui.in_flight && sequence == ui.sequence, "invalid commit completion");
+    ui.in_flight = false;
+    for (i in 0..ui.finalizers.size) {
+        fn()->void finalize = ui.finalizers.data[i];
+        finalize(); ui_release_closure(finalize);
+    }
+    ui.finalizers.size = 0;
+    for (i in 0..ui.retired.size) {
+        fn()->void dispose = ui.retired.data[i];
+        dispose(); ui_release_closure(dispose);
+    }
+    ui.retired.size = 0;
+    ui.mutations.size = 0;
+    ui.phase = 2;
+    ui_run_effects(ui.root);
+    ui.phase = 0;
+    // Events that arrived while the commit was in flight, in arrival order.
+    for (i in 0..ui.events.size) {
+        Event event = ui.events.data[i];
+        ui_dispatch_now(event.id, event.generation);
+    }
+    ui.events.size = 0;
+}
+
+void ui_run_effects(*Node node) {
+    if (node == null) { return; }
+    for (i in 0..node.slots.size) {
+        Slot slot = node.slots.data[i];
+        if (slot.kind == 2) {
+            *Observer effect = (*Observer)slot.data;
+            if (!effect.dirty) { continue; }
+            if (effect.has_cleanup) {
+                effect.cleanup(); ui_release_closure(effect.cleanup); effect.has_cleanup = false;
+            }
+            ui_validate(effect);
+        }
+    }
+    for (i in 0..node.children.size) { ui_run_effects(node.children.data[i]); }
+}
+
+// A throw out of a block, handler or effect is not caught by the runtime: the program
+// stops through the uncaught-exception reporter. A caller that catches it anyway leaves
+// the runtime mid-phase, and the next entry point stops here instead of running on it.
+void ui_require_consistent() {
+    ui_require(ui.phase == 0 && ui.builder == null && ui.tracking == null,
+        "runtime left mid-phase (an exception escaped a block, handler or effect)");
+}
+
+bool ui_frame() {
+    ui_require_consistent();
+    ui_require(!ui.in_flight, "frame while commit in flight");
+    // Validate observed memos even when their consumers have not been scheduled yet.
+    for (i in 0..ui.observers.size) {
+        *Observer memo = ui.observers.data[i];
+        if (memo.kind == 1 && memo.dirty && memo.output.readers.size > 0) { ui_validate(memo); }
+    }
+    bool work = false;
+    for (i in 0..ui.nodes.size) {
+        *Node node = ui.nodes.data[i];
+        node.current = node.next; node.next = false;
+        if (node.current) { work = true; }
+    }
+    if (!work) {
+        for (i in 0..ui.observers.size) {
+            if (ui.observers.data[i].kind == 2 && ui.observers.data[i].dirty) { work = true; }
+        }
+    }
+    if (!work) { return false; }
+    ui.phase = 1;
+    // Tree traversal instead of allocation order: keyed moves can change tree order.
+    ui_render_dirty(ui.root);
+    for (i in 0..ui.writes.size) {
+        fn()->void write = ui.writes.data[i];
+        write(); ui_release_closure(write);
+    }
+    ui.writes.size = 0;
+    for (i in 0..ui.nodes.size) {
+        *Node node = ui.nodes.data[i];
+        node.loop_frames = node.render_write ? node.loop_frames + 1 : 0;
+        node.render_write = false;
+        ui_require(node.loop_frames < 100, "render loop (100 frames)");
+    }
+    ui.phase = 0;
+    ui.sequence++;
+    ui.in_flight = true;
+    ui.apply(ui.mutations.data, ui.mutations.size);
+    return true;
+}
+
+void ui_render_dirty(*Node node) {
+    if (node.current) { ui_run(node); return; }
+    for (i in 0..node.children.size) { ui_render_dirty(node.children.data[i]); }
+}
+
+// Dispatch now, or queue until the commit in flight completes. Returns false only for an
+// event dispatched now whose node is gone or stale; a queued one is checked when it runs.
+bool ui_event(int id, int generation) {
+    if (ui.in_flight || ui.phase != 0) {
+        ui.events.push(Event{id, generation});
+        return true;
+    }
+    ui_require_consistent();
+    return ui_dispatch_now(id, generation);
+}
+
+bool ui_dispatch_now(int id, int generation) {
+    for (i in 0..ui.nodes.size) {
+        *Node node = ui.nodes.data[i];
+        if (node.id == id && node.generation == generation && node.kind == 4) {
+            node.handler(); return true;
+        }
+    }
+    return false;
+}
+
+bool ui_needs_frame() {
+    if (ui == null || ui.in_flight) { return false; }
+    for (i in 0..ui.nodes.size) { if (ui.nodes.data[i].next) { return true; } }
+    for (i in 0..ui.observers.size) {
+        *Observer observer = ui.observers.data[i];
+        if (observer.dirty && (observer.kind == 2 ||
+            (observer.kind == 1 && observer.output.readers.size > 0))) { return true; }
+    }
+    return false;
+}
+
+void ui_shutdown() {
+    ui_require(!ui.in_flight, "shutdown while commit in flight");
+    ui_unmount(ui.root);
+    ui.root = null;
+    ui.sequence++; ui.in_flight = true;
+    ui.apply(ui.mutations.data, ui.mutations.size);
+    ui_require(!ui.in_flight, "prototype shutdown requires synchronous renderer");
+    free_closure(ui.apply);
+    ui.nodes.free(); ui.observers.free(); ui.mutations.free(); ui.writes.free(); ui.retired.free();
+    ui.finalizers.free(); ui.events.free();
+    ui = null;
+}

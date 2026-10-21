@@ -1,0 +1,42 @@
+import "ui.esk";
+
+// Borrowed get() values last until set(). Retain a snapshot for escaping captures.
+struct UiString { string text; int references; }
+*UiString ui_string(string text) {
+    *UiString value = alloc<UiString>(1);
+    value.text = ui_copy(text); value.references = 1;
+    return value;
+}
+*UiString UiString_retain(*UiString self) { self.references++; return self; }
+void UiString_release(*UiString self) {
+    self.references--;
+    if (self.references == 0) { free(self.text); free(self); }
+}
+
+struct StringState { Signal<*UiString> signal; }
+*StringState use_string(string initial) {
+    static int tag;
+    *Slot slot = ui_slot(3, &tag);
+    if (slot.data == null) {
+        *StringState state = alloc<StringState>(1);
+        state.signal.value = ui_string(initial);
+        slot.data = state;
+        slot.dispose = void() {
+            state.signal.value.release(); ui_detach_source(&state.signal.source); free(state);
+        };
+    }
+    return (*StringState)slot.data;
+}
+string StringState_get(*StringState self) { return self.signal.get().text; }
+*UiString StringState_snapshot(*StringState self) { return self.signal.get().retain(); }
+void StringState_apply(*StringState self, *UiString value) {
+    *UiString old = self.signal.value;
+    self.signal.apply(value);
+    old.release();
+}
+void StringState_set(*StringState self, string text) {
+    ui_require(ui == null || ui.tracking == null || ui.tracking.kind != 1, "memo must be pure");
+    *UiString value = ui_string(text);
+    if (ui != null && ui.phase == 1) { ui.writes.push(void() { self.apply(value); }); }
+    else { self.apply(value); }
+}
