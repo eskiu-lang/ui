@@ -11,6 +11,8 @@
 
 extern "C" void ui_start(int example);
 extern "C" void ui_dispatch(int id, int generation);
+extern "C" void ui_dispatch_text(int id, int generation, const char *text);
+extern "C" void ui_dispatch_focus(int id, int generation, int focused);
 extern "C" void ui_tick(void);
 extern "C" void ui_stop(void);
 
@@ -53,12 +55,27 @@ static void place(YGNodeRef yoga, UIView *parent) {
 
 @interface UiEvents : NSObject
 - (void)press:(UIButton *)sender;
+- (void)edit:(UITextField *)sender;
+- (void)focus:(UITextField *)sender;
+- (void)blur:(UITextField *)sender;
 - (void)frame:(CADisplayLink *)sender;
 @end
 @implementation UiEvents
 - (void)press:(UIButton *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
     if (node) ui_dispatch((int)sender.tag, node.generation);
+}
+- (void)edit:(UITextField *)sender {
+    UiHostNode *node = nodes[@(sender.tag)];
+    if (node) ui_dispatch_text((int)sender.tag, node.generation, sender.text.UTF8String ?: "");
+}
+- (void)focus:(UITextField *)sender {
+    UiHostNode *node = nodes[@(sender.tag)];
+    if (node) ui_dispatch_focus((int)sender.tag, node.generation, 1);
+}
+- (void)blur:(UITextField *)sender {
+    UiHostNode *node = nodes[@(sender.tag)];
+    if (node) ui_dispatch_focus((int)sender.tag, node.generation, 0);
 }
 - (void)frame:(CADisplayLink *)sender {
     [sender invalidate]; frameLink = nil;
@@ -87,6 +104,15 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             button.tag = id;
             [button addTarget:events action:@selector(press:) forControlEvents:UIControlEventTouchUpInside];
             node.view = button;
+        } else if (kind == 5) {
+            UITextField *field = [UITextField new];
+            field.borderStyle = UITextBorderStyleRoundedRect;
+            field.font = [UIFont systemFontOfSize:18];
+            field.tag = id;
+            [field addTarget:events action:@selector(edit:) forControlEvents:UIControlEventEditingChanged];
+            [field addTarget:events action:@selector(focus:) forControlEvents:UIControlEventEditingDidBegin];
+            [field addTarget:events action:@selector(blur:) forControlEvents:UIControlEventEditingDidEnd];
+            node.view = field;
         } else if (kind == 3) {
             UILabel *label = [UILabel new];
             label.numberOfLines = 0;
@@ -98,19 +124,29 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
         }
         YGNodeSetContext(node.yoga, (__bridge void *)node);
-        if (kind == 3 || kind == 4) YGNodeSetMeasureFunc(node.yoga, measure);
+        if (kind >= 3) YGNodeSetMeasureFunc(node.yoga, measure);
         nodes[@(id)] = node;
         return;
     }
     UiHostNode *node = nodes[@(id)];
-    if (!node) { if (op == 6) return; abort(); }
+    if (!node) { if (op == 6) return; fprintf(stderr, "ui host: op %d on unknown node %d\n", op, id); abort(); }
     if (op == 2) {
-        // Props: the code in kind (1 gap, 2 padding), the value in before.
+        // Props: the code in kind (1 gap, 2 padding, 3 focused), the value in before.
         if (kind == 1) YGNodeStyleSetGap(node.yoga, YGGutterAll, before);
         else if (kind == 2) YGNodeStyleSetPadding(node.yoga, YGEdgeAll, before);
+        else if (kind == 3) {
+            if (before) [node.view becomeFirstResponder]; else [node.view resignFirstResponder];
+        }
+    } else if (op == 9) {
+        NSString *value = text && text[0] ? [NSString stringWithUTF8String:text] : nil;
+        if (kind == 1) node.view.accessibilityLabel = value;
+        else if (kind == 2 && [node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).placeholder = value;
     } else if (op == 3) {
         NSString *value = [NSString stringWithUTF8String:text ? text : ""];
-        if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).text = value;
+        if ([node.view isKindOfClass:UITextField.class]) {
+            UITextField *field = (UITextField *)node.view;
+            if (![field.text isEqualToString:value]) field.text = value;
+        } else if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).text = value;
         else [(UIButton *)node.view setTitle:value forState:UIControlStateNormal];
         YGNodeMarkDirty(node.yoga);
     } else if (op == 4 || op == 5) {
@@ -132,7 +168,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         YGNodeFree(node.yoga);
         [nodes removeObjectForKey:@(id)];
     } else if (op == 7 || op == 8) { node.view.userInteractionEnabled = op == 7; }
-    else abort();
+    else { fprintf(stderr, "ui host: unknown op %d\n", op); abort(); }
 }
 
 extern "C" void ui_host_ready(void);
@@ -152,6 +188,41 @@ extern "C" void ui_host_ready(void) {
         testCompletion = nil;
         dispatch_async(dispatch_get_main_queue(), completion);
     }
+}
+
+static UIView *findView(Class kind, NSString *text) {
+    for (UiHostNode *node in nodes.allValues) {
+        if (![node.view isKindOfClass:kind]) continue;
+        if (!text) return node.view;
+        NSString *shown = [node.view isKindOfClass:UIButton.class] ? [(UIButton *)node.view titleForState:UIControlStateNormal]
+                        : [node.view isKindOfClass:UILabel.class] ? ((UILabel *)node.view).text : ((UITextField *)node.view).text;
+        if ([shown isEqualToString:text]) return node.view;
+    }
+    return nil;
+}
+
+// Type a task into the TODO's field, press Add, and look for the new row; frames come from
+// the display link, so each step waits a little.
+static void runTodoTest(void) {
+    ui_start(1);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        UITextField *field = (UITextField *)findView(UITextField.class, nil);
+        bool ok = field && [field.accessibilityLabel isEqualToString:@"New task"] && [field.placeholder isEqualToString:@"New task"];
+        field.text = @"Write the docs";
+        [field sendActionsForControlEvents:UIControlEventEditingChanged];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            [(UIButton *)findView(UIButton.class, @"Add") sendActionsForControlEvents:UIControlEventTouchUpInside];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                bool added = findView(UILabel.class, @"Write the docs") != nil && field.text.length == 0;
+                bool pass = ok && added;
+                printf("iOS todo: %s label=%d added=%d\n", pass ? "PASS" : "FAIL", ok, added);
+                fflush(stdout);
+                ui_stop();
+                YGNodeFree(rootYoga);
+                exit(pass ? 0 : 1);
+            });
+        });
+    });
 }
 
 @interface UiDelegate : UIResponder <UIApplicationDelegate>
@@ -199,8 +270,8 @@ extern "C" void ui_host_ready(void) {
                    frameTimes.empty() ? 0 : frameTimes[frameTimes.size() * 95 / 100]);
             fflush(stdout);
             ui_stop();
-            YGNodeFree(rootYoga);
-            exit(found ? 0 : 1);
+            if (!found) { YGNodeFree(rootYoga); exit(1); }
+            runTodoTest();
             };
             for (int i = 0; i < 100; ++i) [button sendActionsForControlEvents:UIControlEventTouchUpInside];
         });

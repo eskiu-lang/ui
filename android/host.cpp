@@ -7,6 +7,8 @@
 
 extern "C" void ui_start(int);
 extern "C" void ui_dispatch(int, int);
+extern "C" void ui_dispatch_text(int, int, const char *);
+extern "C" void ui_dispatch_focus(int, int, int);
 extern "C" void ui_tick();
 extern "C" void ui_stop();
 
@@ -41,7 +43,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         YGNodeRef node = YGNodeNew();
         nodes[id] = node;
         YGNodeSetContext(node, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
-        if (kind == 3 || kind == 4) YGNodeSetMeasureFunc(node, measure);
+        if (kind >= 3) YGNodeSetMeasureFunc(node, measure);
         else YGNodeStyleSetFlexDirection(node, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
     } else if (nodes.count(id)) {
         YGNodeRef node = nodes.at(id);
@@ -80,6 +82,8 @@ extern "C" void ui_host_ready() {
 
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeStart(JNIEnv *current, jobject self, jint example) {
     env = current;
+    // A second start (the self-test's TODO) reuses the activity and the root.
+    if (activity) { ui_start(example); return; }
     activity = env->NewGlobalRef(self);
     jclass cls = env->GetObjectClass(self);
     applyMethod = env->GetMethodID(cls, "apply", "(IIIIIILjava/lang/String;)V");
@@ -96,6 +100,15 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeS
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeEvent(JNIEnv *current, jobject, jint id, jint generation) {
     env = current; ui_dispatch(id, generation);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeText(JNIEnv *current, jobject, jint id, jint generation, jstring text) {
+    env = current;
+    const char *chars = env->GetStringUTFChars(text, nullptr);
+    ui_dispatch_text(id, generation, chars);
+    env->ReleaseStringUTFChars(text, chars);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeFocus(JNIEnv *current, jobject, jint id, jint generation, jint focused) {
+    env = current; ui_dispatch_focus(id, generation, focused);
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeTick(JNIEnv *current, jobject) { env = current; ui_tick(); }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeLayout(JNIEnv *current, jobject, jfloat width, jfloat height) {

@@ -24,11 +24,11 @@
 </aside>
 <script type="module">
   import createApp from './app.mjs';
-  import {createHost} from './renderer.mjs';
+  import {createHost, uiDispatch} from './renderer.mjs';
   import {createFrameScheduler} from './scheduler.mjs';
   import {benchmarkFrames} from './benchmark.mjs';
   const root = document.querySelector('#app');
-  const host = createHost(document.querySelector('#app'), (id, generation) => app._ui_dispatch(id, generation));
+  const host = createHost(document.querySelector('#app'), (...event) => uiDispatch(app, ...event));
   const scheduler = createFrameScheduler(() => app._ui_tick(), {afterTick: () => root.getBoundingClientRect()});
   host.schedule = () => scheduler.request();
   host.cancel = () => scheduler.cancel();

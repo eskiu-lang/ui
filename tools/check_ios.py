@@ -20,7 +20,7 @@ result = subprocess.run(["xcrun", "simctl", "launch", "--terminate-running-proce
 output = result.stdout + result.stderr
 (HERE / "build/ios-results.txt").write_text(output)
 print(output)
-if result.returncode or "iOS counter: PASS" not in output or "Count: 100" not in output:
+if result.returncode or "iOS counter: PASS" not in output or "Count: 100" not in output or "iOS todo: PASS" not in output:
     raise SystemExit("iOS counter self-test failed")
 match = re.search(r"frame_p95_ms=([\d.]+)", output)
 report = {"device": device, "simulator": True, "frameP95Ms": float(match[1]), "output": output}

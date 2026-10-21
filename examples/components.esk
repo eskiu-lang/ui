@@ -1,4 +1,5 @@
 import "../src/ui.esk";
+import "../src/owned_string.esk";
 import <string>;
 
 // Text takes finished text; formatting goes through <string>, which -Wformat checks.
@@ -25,14 +26,16 @@ Store todo_store;
 
 void Store_init(*Store self) { self.revision = signal_new<int>(0); }
 void Store_free(*Store self) {
+    for (i in 0..self.items.size) { free(self.items.data[i].title); }
     self.items.free();
     self.revision.free();
     self.revision = null;
 }
 
 void Store_changed(*Store self) { self.revision.set(self.revision.get() + 1); }
-void Store_add(*Store self) {
-    self.items.push(Todo{self.next_id++, false, "New task"});
+// The store owns its titles: a title is copied in and freed with its item.
+void Store_add(*Store self, string title) {
+    self.items.push(Todo{self.next_id++, false, ui_copy(title)});
     self.changed();
 }
 void Store_toggle(*Store self, int id) {
@@ -43,7 +46,11 @@ void Store_toggle(*Store self, int id) {
 }
 void Store_remove(*Store self, int id) {
     for (i in 0..self.items.size) {
-        if (self.items.data[i].id == id) { self.items.remove(i); break; }
+        if (self.items.data[i].id == id) {
+            free(self.items.data[i].title);
+            self.items.remove(i);
+            break;
+        }
     }
     self.changed();
 }
@@ -67,7 +74,12 @@ void TodoApp(*Store store) {
             });
         }
         if (store.items.size == 0) { Text("Nothing to do"); }
-        Button("Add", void() { store.add(); });
+        *StringState draft = use_string("");
+        TextInput(Input{value: draft.get(), placeholder: "New task", label: "New task"},
+            void(string text) { draft.set(text); });
+        Button("Add", void() {
+            if (draft.get()[0] != 0) { store.add(draft.get()); draft.set(""); }
+        });
         Button("Reverse", void() {
             for (int i = 0; i < store.items.size / 2; i++) {
                 int j = store.items.size - 1 - i;

@@ -11,6 +11,16 @@ void ui_dispatch(int id, int generation) {
     ui_event(id, generation);
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
+void ui_dispatch_text(int id, int generation, string text) {
+    if (!app_active) { return; }
+    ui_event_text(id, generation, text);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+void ui_dispatch_focus(int id, int generation, int focused) {
+    if (!app_active) { return; }
+    ui_event_focus(id, generation, focused != 0);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
 void ui_tick() {
     if (!app_active) { return; }
     ui_frame();
@@ -45,9 +55,8 @@ void ui_start(int example) {
     }
     else {
         todo_store.init();
-        todo_store.items.push(Todo{0, false, "Try Eskiu UI"});
-        todo_store.items.push(Todo{1, false, "Reorder without losing state"});
-        todo_store.next_id = 2;
+        todo_store.add("Try Eskiu UI");
+        todo_store.add("Reorder without losing state");
         ui_mount(void() { TodoApp(&todo_store); });
     }
     ui_frame();

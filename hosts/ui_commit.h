@@ -12,7 +12,8 @@ static inline int ui_commit_u32(const uint8_t *p) {
                  ((uint32_t)p[3] << 24));
 }
 
-// Props arrive as op 2 with the prop code in `kind` and its value in `before`.
+// Props arrive as op 2 with the prop code in `kind` and its value in `before`; string props
+// (op 9) with the prop code in `kind` and the value in `text`.
 static inline void ui_commit_each(const uint8_t *data, int len, ui_commit_fn apply) {
     int at = 0;
     while (at < len) {
@@ -29,6 +30,11 @@ static inline void ui_commit_each(const uint8_t *data, int len, ui_commit_fn app
             at += 4 + n + 1;
         } else if (op == 4 || op == 5) {
             parent = ui_commit_u32(data + at); before = ui_commit_u32(data + at + 4); at += 8;
+        } else if (op == 9) {
+            kind = data[at];
+            int n = ui_commit_u32(data + at + 1);
+            text = (const char *)(data + at + 5);
+            at += 5 + n + 1;
         }
         apply(op, id, generation, parent, before, kind, text);
     }

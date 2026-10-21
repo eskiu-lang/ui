@@ -15,8 +15,9 @@ subprocess.run([compiler, str(HERE / "examples/app.esk"), "--target", "wasm32-un
                 "--link-arg=-sMODULARIZE=1", "--link-arg=-sEXPORT_ES6=1",
                 "--link-arg=-sALLOW_MEMORY_GROWTH=1", "--link-arg=-sINVOKE_RUN=0",
                 "--link-arg=--no-entry",
-                "--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_tick,_ui_stop",
-                "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString"], check=True)
+                "--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_dispatch_text,"
+                "_ui_dispatch_focus,_ui_tick,_ui_stop",
+                "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall"], check=True)
 for filename in ("index.html", "renderer.mjs", "scheduler.mjs", "benchmark.mjs", "platform-test.mjs"):
     shutil.copyfile(HERE / "web" / filename, BUILD / filename)
 if (BUILD / "app.wasm").stat().st_size > 128 * 1024:

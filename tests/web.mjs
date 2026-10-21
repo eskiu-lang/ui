@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {performance} from 'node:perf_hooks';
 import {writeFileSync} from 'node:fs';
 import createApp from '../build/web/app.mjs';
-import {createHost} from '../web/renderer.mjs';
+import {createHost, uiDispatch} from '../web/renderer.mjs';
 import {createFrameScheduler} from '../web/scheduler.mjs';
 
 function fakeFrames(tick) {
@@ -24,7 +24,11 @@ function fakeFrames(tick) {
 }
 
 class Element {
-  constructor(tag) { this.tagName = tag; this.children = []; this.dataset = {}; this.style = {}; this.textContent = ''; this.parentNode = null; this.listeners = {}; }
+  constructor(tag) { this.tagName = tag; this.children = []; this.dataset = {}; this.style = {}; this.textContent = ''; this.parentNode = null; this.listeners = {}; this.attributes = {}; this.value = ''; }
+  setAttribute(name, value) { this.attributes[name] = value; }
+  removeAttribute(name) { delete this.attributes[name]; }
+  focus() { globalThis.document.activeElement = this; }
+  blur() { if (globalThis.document.activeElement === this) globalThis.document.activeElement = null; }
   addEventListener(kind, callback) { this.listeners[kind] = callback; }
   insertBefore(node, before) {
     node.remove();
@@ -37,12 +41,12 @@ class Element {
     this.parentNode = null;
   }
   contains(node) { return this === node || this.children.some(child => child.contains(node)); }
-  closest(selector) { return this.tagName === 'button' ? this : this.parentNode?.closest(selector); }
+  closest(selector) { return selector.startsWith(this.tagName + '[') ? this : this.parentNode?.closest(selector); }
 }
 globalThis.document = {createElement: tag => new Element(tag)};
 const root = new Element('root');
 let app;
-const host = createHost(root, (id, generation) => app._ui_dispatch(id, generation));
+const host = createHost(root, (...event) => uiDispatch(app, ...event));
 const frames = fakeFrames(() => app._ui_tick());
 host.schedule = () => frames.scheduler.request();
 host.cancel = () => frames.scheduler.cancel();
@@ -86,7 +90,7 @@ assert.equal(host.nodes.size, 0);
 // New wasm instance resets the synthetic root ID.
 const todoRoot = new Element('root');
 let todo;
-const todoHost = createHost(todoRoot, (id, generation) => todo._ui_dispatch(id, generation));
+const todoHost = createHost(todoRoot, (...event) => uiDispatch(todo, ...event));
 const todoFrames = fakeFrames(() => todo._ui_tick());
 todoHost.schedule = () => todoFrames.scheduler.request();
 todoHost.cancel = () => todoFrames.scheduler.cancel();
@@ -108,7 +112,18 @@ assert.equal(firstRow.parentNode.children.filter(node => node.dataset.kind === 2
 todoClick('Done');
 assert.equal(todoFind('Pending: 1').length, 1);
 todoClick('Add');
+assert.equal(todoFind('Pending: 1').length, 1, 'Add with an empty draft does nothing');
+const field = [...todoHost.nodes.values()].find(node => node.tagName === 'input');
+assert.equal(field.attributes['aria-label'], 'New task');
+assert.equal(field.attributes.placeholder, 'New task');
+todoRoot.listeners.focusin({target: field});
+field.value = 'Write the docs';
+todoRoot.listeners.input({target: field});
+todoFrames.frame();
+todoClick('Add');
 assert.equal(todoFind('Pending: 2').length, 1);
+assert.equal(todoFind('Write the docs').length, 1, 'the typed title is a new row');
+assert.equal(field.value, '', 'the draft clears after Add');
 const todoStart = performance.now();
 for (let i = 0; i < 1000; i++) todoClick('Reverse');
 timings.todoReverse1000Ms = performance.now() - todoStart;

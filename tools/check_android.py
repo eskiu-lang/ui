@@ -43,7 +43,7 @@ while time.monotonic() < deadline:
         if candidate.get("session") == session:
             report = candidate; break
     time.sleep(.2)
-if not report or report.get("status") != "PASS":
+if not report or report.get("status") != "PASS" or report.get("todo") != "PASS":
     raise SystemExit("Android UI self-test failed or timed out. Inspect adb logcat -d -s AndroidRuntime.")
 report["serial"] = serial
 report["model"] = subprocess.check_output([*adb, "shell", "getprop", "ro.product.model"], text=True).strip()

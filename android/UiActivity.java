@@ -5,7 +5,10 @@ import android.os.Bundle;
 import android.view.Choreographer;
 import android.view.View;
 import android.view.ViewGroup;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 import java.util.HashMap;
 import java.io.File;
@@ -17,6 +20,8 @@ public final class UiActivity extends Activity {
     static { System.loadLibrary("eskiu_ui"); }
     private native void nativeStart(int example);
     private native void nativeEvent(int id, int generation);
+    private native void nativeText(int id, int generation, String text);
+    private native void nativeFocus(int id, int generation, int focused);
     private native void nativeTick();
     private native void nativeLayout(float width, float height);
     private native void nativeStop();
@@ -26,6 +31,8 @@ public final class UiActivity extends Activity {
     private boolean active;
     private boolean pending;
     private boolean testing;
+    // Set while a commit writes an EditText, so the change does not echo back as an edit.
+    private boolean applying;
     private int commits;
     private int frames;
     private double lastFrameMs;
@@ -89,6 +96,21 @@ public final class UiActivity extends Activity {
                 view = button;
             } else if (kind == 3) {
                 TextView label = new TextView(this); label.setTextSize(18); view = label;
+            } else if (kind == 5) {
+                EditText field = new EditText(this);
+                field.setSingleLine(true);
+                field.setTextSize(18);
+                field.addTextChangedListener(new TextWatcher() {
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    @Override public void afterTextChanged(Editable text) {
+                        if (!applying && active) nativeText(id, generations.get(id), text.toString());
+                    }
+                });
+                field.setOnFocusChangeListener((v, focused) -> {
+                    if (active && generations.containsKey(id)) nativeFocus(id, generations.get(id), focused ? 1 : 0);
+                });
+                view = field;
             } else view = new YogaGroup();
             view.setId(View.generateViewId());
             nodes.put(id, view); generations.put(id, generation);
@@ -96,7 +118,22 @@ public final class UiActivity extends Activity {
         }
         View view = nodes.get(id);
         if (view == null) { require(op == 6, "unknown node " + id); return; }
-        if (op == 3) ((TextView)view).setText(text);
+        if (op == 3 && view instanceof EditText) {
+            EditText field = (EditText)view;
+            if (!field.getText().toString().equals(text)) {
+                applying = true;
+                field.setText(text);
+                field.setSelection(text.length());
+                applying = false;
+            }
+        } else if (op == 3) ((TextView)view).setText(text);
+        else if (op == 9) {
+            // String props: 1 label, 2 placeholder.
+            if (kind == 1) view.setContentDescription(text.isEmpty() ? null : text);
+            else if (kind == 2 && view instanceof EditText) ((EditText)view).setHint(text);
+        } else if (op == 2 && kind == 3) {
+            if (before != 0) view.requestFocus(); else view.clearFocus();
+        }
         else if (op == 4 || op == 5) {
             ViewGroup group = nodes.containsKey(parent) ? (ViewGroup)nodes.get(parent) : root;
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
@@ -134,8 +171,40 @@ public final class UiActivity extends Activity {
             }
         }
         require(found && commits == 2 && frames == 1, "counter, layout or frame batching failed");
+        runTodoTest();
+    }
+
+    // Type a task into the TODO's field, press Add, and look for the new row.
+    private void runTodoTest() {
+        nativeStart(1);
+        root.postDelayed(() -> {
+            EditText field = null;
+            for (View view : nodes.values()) if (view instanceof EditText) field = (EditText)view;
+            require(field != null, "todo field");
+            require("New task".contentEquals(field.getContentDescription()) && "New task".contentEquals(field.getHint()),
+                "field label and hint");
+            field.setText("Write the docs");
+            final EditText typed = field;
+            root.postDelayed(() -> {
+                Button add = findButton("Add");
+                require(add != null, "add button");
+                add.performClick();
+                root.postDelayed(() -> {
+                    boolean added = false;
+                    for (View view : nodes.values()) {
+                        if (view instanceof TextView && !(view instanceof EditText) && !(view instanceof Button)
+                            && ((TextView)view).getText().toString().equals("Write the docs")) added = true;
+                    }
+                    require(added && typed.getText().length() == 0, "typed task added and draft cleared");
+                    writeResult();
+                }, 300);
+            }, 300);
+        }, 300);
+    }
+
+    private void writeResult() {
         String result = "{\"status\":\"PASS\",\"session\":\"" + getIntent().getStringExtra("session") + "\",\"events\":100,\"commits\":" + commits +
-            ",\"frames\":" + frames + ",\"frameWorkMs\":" + lastFrameMs + ",\"renderer\":\"android.view + JNI + Yoga\"}";
+            ",\"frames\":" + frames + ",\"frameWorkMs\":" + lastFrameMs + ",\"todo\":\"PASS\",\"renderer\":\"android.view + JNI + Yoga\"}";
         try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "selftest.json"))) {
             out.write(result.getBytes(StandardCharsets.UTF_8));
         } catch (Exception error) { throw new RuntimeException(error); }

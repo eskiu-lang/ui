@@ -13,6 +13,7 @@ mergeInto(LibraryManager.library, {
       if (m.op === 1) { m.generation = u32(at); m.kind = bytes[at + 4]; at += 5; }
       else if (m.op === 2) { m.kind = bytes[at]; m.before = u32(at + 1) | 0; at += 5; }
       else if (m.op === 3) { const n = u32(at); m.text = UTF8ToString(ptr + at + 4, n); at += 4 + n + 1; }
+      else if (m.op === 9) { m.kind = bytes[at]; const n = u32(at + 1); m.text = UTF8ToString(ptr + at + 5, n); at += 5 + n + 1; }
       else if (m.op === 4 || m.op === 5) { m.parent = u32(at); m.before = u32(at + 4); at += 8; }
       host.apply(m);
     }
