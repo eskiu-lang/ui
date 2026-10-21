@@ -23,6 +23,9 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}, 
 | `opacity` | 100 | Percent. |
 | `align` | `AlignDefault` | Children across the axis: `AlignStart`, `AlignCenter`, `AlignEnd`, `AlignStretch`. |
 | `justify` | `JustifyDefault` | Children along the axis: `JustifyStart`, `JustifyCenter`, `JustifyEnd`, `JustifyBetween`, `JustifyAround`. |
+| `absolute` | false | Out of the parent's flow, placed by `left`, `top`, `right`, `bottom`. |
+| `left`, `top`, `right`, `bottom` | `kUnset` | Offsets from the parent's edges, in points, for an absolute element (0 is an offset). |
+| `aspect_ratio` | 0 | Width over height: the side that is not set comes from the one that is. |
 
 A field left at its default is not sent to the host, and changing one sends only that
 field. Styles are plain values, so shared styles are functions or globals:
@@ -48,6 +51,16 @@ over the native views; on the web the renderer sets CSS flexbox with Yoga's defa
 - children do not shrink (`flex-shrink: 0`) and have no minimum size, so a long text in a
   row needs `grow: 1` to take the remaining space and wrap within it;
 - children stretch across the axis unless `align` says otherwise.
+
+An absolute element is placed against its parent's padding edges and the other children are
+laid out as if it were not there, as in React Native; it draws over the siblings before it:
+
+```eskiu
+Row(Style{height: 160, radius: 16, background: kit.primary}, void() {
+    Row(Style{absolute: true, top: 12, right: 12, padding: 6, radius: 10, background: rgb(255, 255, 255)},
+        void() { Text("New"); });
+});
+```
 
 Text, buttons, inputs, images, switches and indicators are measured by the platform: their
 size comes from their content unless `width` or `height` is given. A `Modal` is laid out on

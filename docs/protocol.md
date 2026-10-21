@@ -63,6 +63,9 @@ it into `Mutation` records for tests and tools.
 | 10 | font size | 21 | status bar hidden (1 or 0) |
 | 11 | font weight | 22 | refreshing (a scroll with a RefreshControl) |
 | | | 23 | active (1 or 0: the screen on top of its navigator) |
+| | | 24 | absolute (1 or 0) |
+| | | 25 to 28 | left, top, right, bottom (points; -1000000: not set) |
+| | | 29 | aspect ratio (width over height, in thousandths; 0: none) |
 
 A text input's value is its text (op 3). Sizes are points.
 
