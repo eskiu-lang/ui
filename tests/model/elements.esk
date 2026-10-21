@@ -185,6 +185,30 @@ void layouts() {
     ui_shutdown(); balanced("layout leak");
 }
 
+bool hovered;
+
+void hovers() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        *Signal<bool> over = use_signal<bool>(false);
+        hovered = over.get();
+        ui_on_hover(void(bool inside) { over.set(inside); });
+        Row(Style{key: key(1)}, void() {});
+    });
+    ui_frame();
+    check(count_prop(2, 31) == 1 && prop_value(2, 31) == 1, "the host is asked to report hovers");
+    *Node row = keyed(1);
+    check(ui_event_hover(row.id, row.generation, true), "a pointer enters");
+    ui_frame();
+    check(hovered, "the handler ran");
+    ui_event_hover(row.id, row.generation, false);
+    ui_frame();
+    check(!hovered, "and leaves");
+    ui_on_hover(void(bool inside) {});
+    ui_shutdown(); balanced("hover leak");
+}
+
 *Signal<bool> switch_on;
 
 bool accept_toggle;

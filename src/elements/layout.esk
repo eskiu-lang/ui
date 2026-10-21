@@ -12,6 +12,15 @@ void ui_on_layout(escaping fn(Frame)->void handler) {
     ui.has_next_layout = true;
 }
 
+// For the element right after it: `handler` gets true when a pointer (a mouse, a trackpad,
+// an iPad's pointer, a stylus) moves over it and false when it leaves. Touch screens have
+// no hover.
+void ui_on_hover(escaping fn(bool)->void handler) {
+    if (ui.has_next_hover) { ui_release_bool(ui.next_hover); }
+    ui.next_hover = handler;
+    ui.has_next_hover = true;
+}
+
 void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
 
 void Row(Style style, escaping fn()->void block) { ui_element(2, style, null, block, void() {}, void() {}); }

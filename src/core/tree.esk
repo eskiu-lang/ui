@@ -73,6 +73,9 @@ struct Node {
     // ui_on_layout's handler, told the node's frame after the host lays it out.
     fn(Frame)->void on_layout;
     bool has_on_layout;
+    // ui_on_hover's handler, told when a pointer enters and leaves.
+    fn(bool)->void on_hover;
+    bool has_on_hover;
     int focused;
     string text;
 }
@@ -324,6 +327,7 @@ void ui_unmount(*Node node) {
         ui_free_pairs(&node.native_props);
         ui_release_view(node.on_view);
         if (node.has_on_layout) { ui_release_frame(node.on_layout); }
+        if (node.has_on_hover) { ui_release_bool(node.on_hover); }
         node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
         free(node);
     });
@@ -443,6 +447,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             fn(Frame)->void old_layout = node.on_layout;
             ui_retire(void() { ui_release_frame(old_layout); });
         }
+        if (node.has_on_hover) {
+            fn(bool)->void old_hover = node.on_hover;
+            ui_retire(void() { ui_release_bool(old_hover); });
+        }
         if (node.virtual) {
             fn(int)->void old_item = node.on_item;
             fn(int, int)->void old_cell = node.on_cell;
@@ -491,6 +499,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     node.on_layout = ui.next_layout;
     ui.has_next_layout = false;
     ui_prop(node, fresh, 30, node.has_on_layout ? 1 : 0, 0);
+    node.has_on_hover = ui.has_next_hover;
+    node.on_hover = ui.next_hover;
+    ui.has_next_hover = false;
+    ui_prop(node, fresh, 31, node.has_on_hover ? 1 : 0, 0);
     // What the caller gave this element to free with its block.
     for (i in 0..ui.next_owned.size) { node.owned.push(ui.next_owned.data[i]); }
     ui.next_owned.size = 0;
