@@ -113,6 +113,7 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_route(route, index)` | the browser went back or forward to `route`, at `index` in the app's history entries |
 | `ui_report_back()` | Android's back: returns 1 when the app handled it |
 | `ui_report_insets(top, right, bottom, left, keyboard)`, `ui_report_window(w, h, scale)`, `ui_report_active(active)`, `ui_report_link(url)` | the environment |
+| `ui_report_appearance(dark)`, `ui_report_accessibility(reader, reduce_motion, font_scale)`, `ui_report_locale(tag, rtl)` | the system's settings |
 | `ui_tick()` | render the frame the host scheduled |
 
 After a call that leaves work, the bridge calls the host's `ui_host_schedule()`, and the host

@@ -24,6 +24,39 @@ void ui_app_start(int which) {
 }
 ```
 
+## Light and dark
+
+```eskiu
+bool dark = ui_color_scheme() == SchemeDark;
+```
+
+`ui_color_scheme()` is the system's appearance, `SchemeLight` or `SchemeDark`, and it changes
+while the app runs (the activity is not recreated on Android). `<ui/kit>` has a light and a
+dark theme: `kit_follow_system()` at the top of the root block sets `kit` to the one the
+system asks for, and the root renders again when it changes.
+
+```eskiu
+void App() {
+    kit_follow_system();
+    StatusBar(kit.dark ? BarLight : BarDark, false);
+    Column(Style{grow: 1, background: kit.page}, void() { ... });
+}
+```
+
+## Accessibility
+
+`ui_screen_reader()` is true while VoiceOver or TalkBack runs, `ui_reduce_motion()` when the
+user asked for less motion (on Android, animations turned off), and `ui_font_scale()` is the
+text size the user chose, in percent (100 by default). The web reports reduced motion from
+its media query and no screen reader.
+
+## The platform and the language
+
+`ui_platform()` is `PlatformIos`, `PlatformAndroid` or `PlatformWeb` (macOS runs the web
+host), known when the app is compiled; `ui_platform_name()` spells it. `ui_locale()` is the
+user's language as a BCP 47 tag (`"es-MX"`), and `ui_is_rtl()` says whether it is written
+right to left. Layout does not mirror for a right-to-left language yet.
+
 ## The window
 
 `ui_window()` gives the window's `width` and `height` in points and its `scale` (pixels per

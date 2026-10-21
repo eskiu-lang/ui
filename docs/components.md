@@ -145,7 +145,9 @@ variants `VariantPrimary`, `VariantSecondary`, `VariantGhost`, `VariantDanger`.
 | `Collapsible(title, content)` | A header that shows or hides its content. |
 | `Accordion(sections)` | Collapsibles in one card. |
 
-`examples/kit-gallery` shows every one of them.
+`kit_light()` and `kit_dark()` are the two themes; `kit_follow_system()` picks the one for the
+system's appearance ([the platform](platform.md)). `examples/kit-gallery` shows every
+component, in both.
 
 ## Writing a component
 
