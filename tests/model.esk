@@ -479,6 +479,37 @@ void shared_subscriptions() {
     balanced("shared subscriptions leak");
 }
 
+// Ids come back after the removing commit completes, with a new generation.
+void id_reuse() {
+    Ui runtime;
+    async_apply = true;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        a = use_signal<int>(1);
+        if (a.get() > 0) { Button("old", void() { observed = 1; }); }
+        else { Text("gap"); Button("new", void() { observed = 2; }); }
+    });
+    ui_frame(); ui_complete(ui.sequence);
+    *Node old = ui.root.children.data[0];
+    int id = old.id;
+    int generation = old.generation;
+    a.set(0); ui_frame();
+    check(ui.free_ids.size == 0, "a removed id waits for its commit");
+    ui_complete(ui.sequence);
+    a.set(2); ui_frame(); ui_complete(ui.sequence);
+    a.set(0); ui_frame(); ui_complete(ui.sequence);
+    *Node button = ui.root.children.data[1];
+    check(button.id <= 4, "ids are reused");
+    observed = 0;
+    check(!ui_event(id, generation) || observed != 2, "an old generation never reaches a new node");
+    check(ui_event(button.id, button.generation) && observed == 2, "the current generation dispatches");
+    int size = ui.by_id.size;
+    for (i in 0..1000) { a.set(i % 2 + 1); ui_frame(); ui_complete(ui.sequence); a.set(0); ui_frame(); ui_complete(ui.sequence); }
+    check(ui.by_id.size == size, "churn does not grow the id table");
+    async_apply = false;
+    ui_shutdown(); balanced("id reuse leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -490,6 +521,7 @@ int main() {
     identity(); printf("PASS identity\n");
     large_lists(); printf("PASS large lists\n");
     shared_subscriptions(); printf("PASS shared subscriptions\n");
+    id_reuse(); printf("PASS id reuse\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");
