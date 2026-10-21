@@ -1,5 +1,6 @@
 import "../src/ui.esk";
 import "../examples/components.esk";
+import "../examples/tasks.esk";
 extern int64 ui_live_allocations();
 extern bool ui_allocations_counted();
 extern double ui_clock_ms();
@@ -925,6 +926,44 @@ void refresh_control() {
     ui_shutdown(); balanced("refresh leak");
 }
 
+*Node find_label(*Node node, string label) {
+    if (node.label != null && strcmp(node.label, label) == 0) { return node; }
+    for (i in 0..node.children.size) {
+        *Node found = find_label(node.children.data[i], label);
+        if (found != null) { return found; }
+    }
+    return null;
+}
+
+// The showcase app: filters, toggling, adding; no leaks.
+void tasks_app() {
+    TaskStore model;
+    *TaskStore store = &model;
+    tasks_seed(store);
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() { TasksApp(store); });
+    ui_frame();
+    check(find_label(ui.root, "Tasks").row_count == 7, "seven tasks");
+    *Node active = find_label(ui.root, "Active");
+    ui_event(active.id, active.generation); ui_frame();
+    check(store.visible.size == 3 && find_label(ui.root, "Tasks").row_count == 3, "three active");
+    *Node row = find_label(ui.root, "Book flights to Mexico City");
+    *Node toggle = row.children.data[0];
+    ui_event(toggle.id, toggle.generation); ui_frame();
+    check(store.visible.size == 2, "marking one done leaves two active");
+    *Node all = find_label(ui.root, "All");
+    ui_event(all.id, all.generation); ui_frame();
+    *Node field = find_label(ui.root, "New task");
+    ui_event_text(field.id, field.generation, "Plan the launch"); ui_frame();
+    *Node add = field.parent.children.data[1];
+    ui_event(add.id, add.generation); ui_frame();
+    check(store.tasks.size == 8 && find_label(ui.root, "Plan the launch") != null, "a typed task is added");
+    ui_shutdown();
+    store.free();
+    balanced("tasks app leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -953,6 +992,7 @@ int main() {
     links_and_status_bar(); printf("PASS links, status bar\n");
     back_and_modal(); printf("PASS back, modal\n");
     refresh_control(); printf("PASS refresh\n");
+    tasks_app(); printf("PASS tasks app\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");
