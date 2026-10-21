@@ -13,6 +13,9 @@ extern "C" void ui_start(int example);
 extern "C" void ui_dispatch(int id, int generation);
 extern "C" void ui_dispatch_text(int id, int generation, const char *text);
 extern "C" void ui_dispatch_focus(int id, int generation, int focused);
+extern "C" int ui_edge_to_edge(void);
+extern "C" void ui_report_insets(int top, int right, int bottom, int left, int keyboard);
+extern "C" void ui_report_active(int active);
 extern "C" void ui_tick(void);
 extern "C" void ui_stop(void);
 
@@ -287,6 +290,37 @@ static void runTodoTest(void) {
     });
 }
 
+// Places the root: inside the safe area and above the keyboard, unless the app draws edge
+// to edge; either way the raw insets go to the app.
+@interface UiController : UIViewController
+@property(nonatomic) CGFloat keyboard;
+@end
+@implementation UiController
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardChanged:)
+        name:UIKeyboardWillChangeFrameNotification object:nil];
+}
+- (void)keyboardChanged:(NSNotification *)note {
+    CGRect end = [self.view convertRect:[note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue] fromView:nil];
+    self.keyboard = std::max<CGFloat>(0, CGRectGetMaxY(self.view.bounds) - CGRectGetMinY(end));
+    [self.view setNeedsLayout];
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    if (!rootView) return;
+    UIEdgeInsets safe = self.view.safeAreaInsets;
+    CGRect frame = self.view.bounds;
+    if (!ui_edge_to_edge()) {
+        frame = UIEdgeInsetsInsetRect(frame, safe);
+        frame.size.height -= std::max<CGFloat>(0, self.keyboard - safe.bottom);
+    }
+    rootView.frame = frame;
+    relayout();
+    ui_report_insets(safe.top, safe.right, safe.bottom, safe.left, self.keyboard);
+}
+@end
+
 @interface UiDelegate : UIResponder <UIApplicationDelegate>
 @end
 @implementation UiDelegate
@@ -297,15 +331,17 @@ static void runTodoTest(void) {
 @property(nonatomic, strong) UIWindow *window;
 @end
 @implementation UiSceneDelegate
+- (void)sceneDidBecomeActive:(UIScene *)scene { ui_report_active(1); }
+- (void)sceneWillResignActive:(UIScene *)scene { ui_report_active(0); }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     nodes = [NSMutableDictionary new];
     events = [UiEvents new];
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-    UIViewController *controller = [UIViewController new];
+    UiController *controller = [UiController new];
     controller.view.backgroundColor = UIColor.systemBackgroundColor;
     self.window.rootViewController = controller;
     [self.window makeKeyAndVisible];
-    rootView = [[UIView alloc] initWithFrame:CGRectInset(controller.view.bounds, 12, 80)];
+    rootView = [[UIView alloc] initWithFrame:controller.view.bounds];
     [controller.view addSubview:rootView];
     rootYoga = YGNodeNew();
     YGNodeStyleSetFlexDirection(rootYoga, YGFlexDirectionColumn);
@@ -326,7 +362,10 @@ static void runTodoTest(void) {
                 }
             }
             std::sort(frameTimes.begin(), frameTimes.end());
-            found = found && commitCount == 2 && frameTimes.size() == 1;
+            UIEdgeInsets safe = rootView.superview.safeAreaInsets;
+            bool inside = safe.top > 0 && rootView.frame.origin.y == safe.top;
+            printf("safe top=%.0f root y=%.0f\n", safe.top, rootView.frame.origin.y);
+            found = found && inside && commitCount == 2 && frameTimes.size() == 1;
             printf("iOS counter: %s events=100 commits=%d layout_total_ms=%.3f frame_p95_ms=%.3f\n",
                    found ? "PASS" : "FAIL", commitCount, commitTime,
                    frameTimes.empty() ? 0 : frameTimes[frameTimes.size() * 95 / 100]);

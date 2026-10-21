@@ -21,6 +21,22 @@ void ui_dispatch_focus(int id, int generation, int focused) {
     ui_event_focus(id, generation, focused != 0);
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
+// Host policy: 0 puts the root inside the safe area and above the keyboard; 1 gives it the
+// whole screen and leaves the insets to the app (ui_insets).
+int ui_edge_to_edge() { return 0; }
+
+void ui_report_insets(int top, int right, int bottom, int left, int keyboard) {
+    if (!app_active) { return; }
+    ui_set_insets(Insets{top, right, bottom, left, keyboard});
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+void ui_report_active(int active) {
+    if (!app_active) { return; }
+    ui_set_active(active != 0);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 void ui_tick() {
     if (!app_active) { return; }
     ui_frame();

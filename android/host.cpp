@@ -10,6 +10,9 @@ extern "C" void ui_start(int);
 extern "C" void ui_dispatch(int, int);
 extern "C" void ui_dispatch_text(int, int, const char *);
 extern "C" void ui_dispatch_focus(int, int, int);
+extern "C" int ui_edge_to_edge();
+extern "C" void ui_report_insets(int, int, int, int, int);
+extern "C" void ui_report_active(int);
 extern "C" void ui_tick();
 extern "C" void ui_stop();
 
@@ -127,6 +130,15 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeT
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeFocus(JNIEnv *current, jobject, jint id, jint generation, jint focused) {
     env = current; ui_dispatch_focus(id, generation, focused);
+}
+extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeEdgeToEdge(JNIEnv *, jobject) {
+    return ui_edge_to_edge();
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeInsets(JNIEnv *current, jobject, jint top, jint right, jint bottom, jint left, jint keyboard) {
+    env = current; ui_report_insets(top, right, bottom, left, keyboard);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeActive(JNIEnv *current, jobject, jint value) {
+    env = current; ui_report_active(value);
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeTick(JNIEnv *current, jobject) { env = current; ui_tick(); }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_prototype_UiActivity_nativeLayout(JNIEnv *current, jobject, jfloat width, jfloat height) {

@@ -1,7 +1,9 @@
 package org.eskiu.ui.prototype;
 
 import android.app.Activity;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.WindowInsets;
 import android.view.Choreographer;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,12 +31,20 @@ public final class UiActivity extends Activity {
     private native void nativeTick();
     private native void nativeLayout(float width, float height);
     private native void nativeStop();
+    private native int nativeEdgeToEdge();
+    private native void nativeInsets(int top, int right, int bottom, int left, int keyboard);
+    private native void nativeActive(int active);
     private final HashMap<Integer, View> nodes = new HashMap<>();
     private final HashMap<Integer, Integer> generations = new HashMap<>();
     private YogaGroup root;
     private boolean active;
     private boolean pending;
     private boolean testing;
+    // The insets last applied, reported again when the app starts.
+    private int[] lastInsets;
+    private void reportInsets() {
+        if (lastInsets != null) nativeInsets(lastInsets[0], lastInsets[1], lastInsets[2], lastInsets[3], lastInsets[4]);
+    }
     // Set while a commit writes an EditText, so the change does not echo back as an edit.
     private boolean applying;
     private int commits;
@@ -58,7 +68,7 @@ public final class UiActivity extends Activity {
             setMeasuredDimension(MeasureSpec.getSize(width), MeasureSpec.getSize(height));
         }
         @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
-            if (this == root && active) nativeLayout((r - l) / density(), (b - t) / density());
+            if (this == root && active) nativeLayout(width(), height());
         }
     }
     private float density() { return getResources().getDisplayMetrics().density; }
@@ -66,10 +76,30 @@ public final class UiActivity extends Activity {
         super.onCreate(state);
         root = new YogaGroup();
         setContentView(root);
+        // System bars, display cutouts and the keyboard: padding on the root unless the app
+        // draws edge to edge; the raw insets go to the app either way.
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            int top, right, bottom, left, keyboard;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                android.graphics.Insets ime = insets.getInsets(WindowInsets.Type.ime());
+                top = bars.top; right = bars.right; bottom = bars.bottom; left = bars.left; keyboard = ime.bottom;
+            } else {
+                top = insets.getSystemWindowInsetTop(); right = insets.getSystemWindowInsetRight();
+                bottom = insets.getSystemWindowInsetBottom(); left = insets.getSystemWindowInsetLeft(); keyboard = 0;
+            }
+            if (nativeEdgeToEdge() == 0) root.setPadding(left, top, right, Math.max(bottom, keyboard));
+            float d = density();
+            lastInsets = new int[] {Math.round(top / d), Math.round(right / d), Math.round(bottom / d),
+                                    Math.round(left / d), Math.round(keyboard / d)};
+            if (active) reportInsets();
+            return insets;
+        });
         testing = getIntent().getBooleanExtra("selftest", false);
         root.post(() -> {
             active = true;
             nativeStart(getIntent().getIntExtra("example", 0));
+            reportInsets();
             if (testing) {
                 Button button = findButton("Increment");
                 require(button != null, "increment button");
@@ -79,6 +109,8 @@ public final class UiActivity extends Activity {
             }
         });
     }
+    @Override protected void onResume() { super.onResume(); if (active) nativeActive(1); }
+    @Override protected void onPause() { if (active) nativeActive(0); super.onPause(); }
     @Override protected void onDestroy() {
         if (active) { nativeStop(); active = false; }
         super.onDestroy();
@@ -192,6 +224,8 @@ public final class UiActivity extends Activity {
         int l = Math.round(x * density()), t = Math.round(y * density());
         int w = Math.round(width * density()), h = Math.round(height * density());
         view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
+        // The root's own children sit inside its padding.
+        if (view.getParent() == root) { l += root.getPaddingLeft(); t += root.getPaddingTop(); }
         view.layout(l, t, l + w, t + h);
     }
     public void content(int id, float width, float height) {
@@ -202,8 +236,8 @@ public final class UiActivity extends Activity {
                         View.MeasureSpec.makeMeasureSpec(content.contentHeight, View.MeasureSpec.EXACTLY));
         content.layout(0, 0, content.contentWidth, content.contentHeight);
     }
-    public float width() { return root.getWidth() / density(); }
-    public float height() { return root.getHeight() / density(); }
+    public float width() { return (root.getWidth() - root.getPaddingLeft() - root.getPaddingRight()) / density(); }
+    public float height() { return (root.getHeight() - root.getPaddingTop() - root.getPaddingBottom()) / density(); }
     public float scale() { return density(); }
     public void committed() { commits++; root.invalidate(); }
 
@@ -215,6 +249,7 @@ public final class UiActivity extends Activity {
             }
         }
         require(found && commits == 2 && frames == 1, "counter, layout or frame batching failed");
+        require(root.getPaddingTop() > 0, "root below the status bar");
         runTodoTest();
     }
 
