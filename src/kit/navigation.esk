@@ -1,0 +1,65 @@
+// Moving around: SegmentedControl, TabBar, Toolbar, NavBar, ListItem.
+// Part of <ui/kit> (src/kit.esk imports every part).
+
+// Options side by side in a track, the selected one raised (a toggle group).
+void SegmentedControl(string options, int selected, escaping fn(int)->void on_change) {
+    ui_own(void() { ui_release_int(on_change); });
+    Row(Style{background: kit.track, radius: kit.radius, padding: 4, gap: 4}, void() {
+        List<String> items;
+        kit_options(options, &items);
+        for (i in 0..items.size) {
+            int index = i;
+            bool on = index == selected;
+            string name = items.data[i].data;
+            Pressable(Style{grow: 1, padding: 8, radius: kit.radius - 4, background: on ? kit.surface : -1,
+                            align: AlignCenter, label: name},
+                void() { on_change(index); }, void() {
+                    TextWith(Style{font_size: 14, font_weight: 600, color: on ? kit.ink : kit.muted}, name);
+                });
+        }
+        kit_free_options(&items);
+    });
+}
+
+// Tabs over content the caller shows for `selected`: the selected one underlined.
+void TabBar(string tabs, int selected, escaping fn(int)->void on_change) {
+    ui_own(void() { ui_release_int(on_change); });
+    Row(Style{gap: 20}, void() {
+        List<String> items;
+        kit_options(tabs, &items);
+        for (i in 0..items.size) {
+            int index = i;
+            bool on = index == selected;
+            string name = items.data[i].data;
+            Pressable(Style{gap: 6, label: name}, void() { on_change(index); }, void() {
+                TextWith(Style{font_size: 15, font_weight: 600, color: on ? kit.primary : kit.muted}, name);
+                Row(Style{height: 2, radius: 1, background: on ? kit.primary : -1}, void() {});
+            });
+        }
+        kit_free_options(&items);
+    });
+}
+
+// A bar of controls.
+void Toolbar(escaping fn()->void block) {
+    Row(Style{padding: 8, gap: 8, background: kit.surface, border_width: 1, border_color: kit.line,
+              radius: kit.radius, align: AlignCenter}, block);
+}
+
+// A title bar; `actions` puts controls at its end.
+void NavBar(string title, escaping fn()->void actions) {
+    ui_own(void() { ui_release_closure(actions); });
+    Row(Style{padding: 16, gap: 12, align: AlignCenter, background: kit.surface, label: title}, void() {
+        TextWith(Style{grow: 1, font_size: 20, font_weight: 700, color: kit.ink}, title);
+        actions();
+    });
+}
+
+// A pressable row with a title and an optional subtitle.
+void ListItem(string title, string subtitle, escaping fn()->void on_press) {
+    Pressable(Style{padding: 14, radius: kit.radius, background: kit.surface, border_width: 1, border_color: kit.line,
+                    gap: 2, label: title}, on_press, void() {
+        TextWith(Style{font_size: 16, font_weight: 500, color: kit.ink}, title);
+        if (subtitle != null && subtitle[0] != 0) { TextWith(Style{font_size: 14, color: kit.muted}, subtitle); }
+    });
+}

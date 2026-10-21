@@ -1,0 +1,23 @@
+// Showing and hiding: Collapsible and Accordion.
+// Part of <ui/kit> (src/kit.esk imports every part).
+
+// A header that shows or hides its content (one section of an Accordion).
+void Collapsible(string title, escaping fn()->void content) {
+    ui_own(void() { ui_release_closure(content); });
+    Scope("Collapsible", Key{}, void() {
+        *Signal<bool> open = use_signal<bool>(false);
+        Pressable(Style{padding: 14, label: title}, void() { open.set(!open.get()); }, void() {
+            Row(Style{align: AlignCenter}, void() {
+                TextWith(Style{grow: 1, font_size: 16, font_weight: 600, color: kit.ink}, title);
+                TextWith(Style{font_size: 18, color: kit.muted}, open.get() ? "−" : "+");
+            });
+        });
+        if (open.get()) { Column(Style{padding: 14, gap: 8}, void() { content(); }); }
+    });
+}
+
+// Sections (Collapsibles) in one card.
+void Accordion(escaping fn()->void sections) {
+    Column(Style{background: kit.surface, radius: kit.radius + 4, border_width: 1, border_color: kit.line, gap: 0},
+        sections);
+}

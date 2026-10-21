@@ -1,0 +1,14 @@
+// Buttons in the theme's variants.
+// Part of <ui/kit> (src/kit.esk imports every part).
+
+// A button in one of the Variant styles.
+void KitButton(string text, int variant, escaping fn()->void on_press) {
+    int64 background = variant == VariantPrimary ? kit.primary : variant == VariantDanger ? kit.danger
+                     : variant == VariantSecondary ? kit.surface : 0xFFFFFF00;  // ghost: transparent
+    int64 color = variant == VariantPrimary || variant == VariantDanger ? kit.on_primary
+                : variant == VariantGhost ? kit.primary : kit.ink;
+    ButtonWith(Style{background: background, color: color, radius: kit.radius, padding: 12, font_size: 16,
+                     font_weight: 600, border_width: variant == VariantSecondary ? 1 : 0, border_color: kit.line,
+                     label: text},
+        text, on_press);
+}

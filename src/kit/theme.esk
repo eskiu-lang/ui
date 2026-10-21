@@ -1,0 +1,53 @@
+// The theme every kit component reads, tones and variants, and option lists.
+// Part of <ui/kit> (src/kit.esk imports every part).
+
+// The theme: change its fields before mounting (colors are rgb()/rgba() values).
+struct Theme {
+    int64 primary = 0x4F46E5FF;
+    int64 on_primary = 0xFFFFFFFF;
+    int64 primary_soft = 0xE0E7FFFF;
+    int64 ink = 0x111827FF;
+    int64 muted = 0x6B7280FF;
+    int64 page = 0xF5F6FAFF;
+    int64 surface = 0xFFFFFFFF;
+    int64 line = 0xE5E7EBFF;
+    int64 control = 0xCBD5E1FF;
+    int64 track = 0xF1F2F6FF;
+    int64 danger = 0xDC2626FF;
+    int radius = 12;
+}
+
+Theme kit;
+
+enum Tone { ToneNeutral, TonePrimary, ToneSuccess, ToneWarning, ToneDanger }
+
+enum Variant { VariantPrimary, VariantSecondary, VariantGhost, VariantDanger }
+
+int64 kit_tone_text(int tone) {
+    if (tone == TonePrimary) { return 0x4338CAFF; }
+    if (tone == ToneSuccess) { return 0x047857FF; }
+    if (tone == ToneWarning) { return 0xB45309FF; }
+    if (tone == ToneDanger) { return 0xB91C1CFF; }
+    return 0x374151FF;
+}
+
+int64 kit_tone_background(int tone) {
+    if (tone == TonePrimary) { return 0xE0E7FFFF; }
+    if (tone == ToneSuccess) { return 0xD1FAE5FF; }
+    if (tone == ToneWarning) { return 0xFEF3C7FF; }
+    if (tone == ToneDanger) { return 0xFEE2E2FF; }
+    return 0xF3F4F6FF;
+}
+
+// The lines of `options`, as copies the caller frees with fs_list_free-style loops.
+void kit_options(string options, List<String>* out) {
+    String all;
+    defer String_free(&all);
+    String_from(&all, options == null ? "" : options);
+    String_split(&all, '\n', out);
+}
+
+void kit_free_options(List<String>* options) {
+    for (i in 0..options.size) { String_free(&options.data[i]); }
+    options.free();
+}

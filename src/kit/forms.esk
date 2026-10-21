@@ -1,0 +1,49 @@
+// Forms: TextField, Checkbox, RadioGroup.
+// Part of <ui/kit> (src/kit.esk imports every part).
+
+// A text field in the theme's style; `placeholder` is also its accessible name.
+void TextField(string value, string placeholder, escaping fn(string)->void on_change) {
+    TextInput(Input{value: value, placeholder: placeholder, label: placeholder,
+                    style: Style{padding: 12, radius: kit.radius, background: kit.surface, border_width: 1,
+                                 border_color: kit.line, font_size: 16}}, on_change);
+}
+
+// A checkbox with its label; on_change gets the new state.
+void Checkbox(string label, bool checked, escaping fn(bool)->void on_change) {
+    ui_own(void() { ui_release_bool(on_change); });
+    Pressable(Style{label: label}, void() { on_change(!checked); }, void() {
+        Row(Style{gap: 10, align: AlignCenter}, void() {
+            Row(Style{width: 22, height: 22, radius: 6, border_width: 2,
+                      border_color: checked ? kit.primary : kit.control, background: checked ? kit.primary : kit.surface,
+                      align: AlignCenter, justify: JustifyCenter}, void() {
+                if (checked) { TextWith(Style{font_size: 13, font_weight: 700, color: kit.on_primary}, "✓"); }
+            });
+            TextWith(Style{font_size: 16, color: kit.ink}, label);
+        });
+    });
+}
+
+// One choice among `options` (a line each); on_change gets the index chosen.
+void RadioGroup(string options, int selected, escaping fn(int)->void on_change) {
+    ui_own(void() { ui_release_int(on_change); });
+    Column(Style{gap: 10}, void() {
+        List<String> items;
+        kit_options(options, &items);
+        for (i in 0..items.size) {
+            int index = i;
+            bool on = index == selected;
+            string name = items.data[i].data;
+            Pressable(Style{label: name}, void() { on_change(index); }, void() {
+                Row(Style{gap: 10, align: AlignCenter}, void() {
+                    Row(Style{width: 22, height: 22, radius: 11, border_width: 2,
+                              border_color: on ? kit.primary : kit.control, background: kit.surface,
+                              align: AlignCenter, justify: JustifyCenter}, void() {
+                        if (on) { Row(Style{width: 10, height: 10, radius: 5, background: kit.primary}, void() {}); }
+                    });
+                    TextWith(Style{font_size: 16, color: kit.ink}, name);
+                });
+            });
+        }
+        kit_free_options(&items);
+    });
+}

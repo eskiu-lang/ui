@@ -1,0 +1,42 @@
+// Showing things: Card, Badge, Avatar, Separator, ProgressBar.
+// Part of <ui/kit> (src/kit.esk imports every part).
+
+// A surface with the theme's border and radius; the block is its content.
+void Card(escaping fn()->void block) {
+    Column(Style{background: kit.surface, radius: kit.radius + 4, padding: 16, gap: 12, border_width: 1,
+                 border_color: kit.line}, block);
+}
+
+// A small label in a tone's colors.
+void Badge(string text, int tone) {
+    Row(Style{padding: 6, radius: 8, background: kit_tone_background(tone), label: text}, void() {
+        TextWith(Style{font_size: 12, font_weight: 600, color: kit_tone_text(tone)}, text);
+    });
+}
+
+// Initials in a circle of `size` points.
+void Avatar(string initials, int size) {
+    Row(Style{width: size, height: size, radius: size / 2, background: kit.primary_soft, align: AlignCenter,
+              justify: JustifyCenter, label: initials}, void() {
+        TextWith(Style{font_size: size * 2 / 5, font_weight: 700, color: kit.primary}, initials);
+    });
+}
+
+// An image (a bundled file or a URL) in a circle of `size` points.
+void AvatarImage(string source, int size, string label) {
+    Image(Style{width: size, height: size, radius: size / 2, label: label}, source);
+}
+
+// A hairline across a column (Separator) or down a row (VSeparator).
+void Separator() { Row(Style{height: 1, background: kit.line}, void() {}); }
+
+void VSeparator() { Row(Style{width: 1, background: kit.line}, void() {}); }
+
+// `value` of `max` as a filled track.
+void ProgressBar(int value, int max) {
+    int done = value < 0 ? 0 : value > max ? max : value;
+    Row(Style{height: 8, radius: 4, gap: 0, background: kit.track, label: "Progress"}, void() {
+        if (done > 0) { Row(Style{grow: done, background: kit.primary, radius: 4}, void() {}); }
+        if (max - done > 0) { Row(Style{grow: max - done}, void() {}); }
+    });
+}
