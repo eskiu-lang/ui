@@ -2,6 +2,9 @@ import <ui/kit>;
 
 // Every <ui/kit> component, with state, on one scrolling page.
 void KitGallery() {
+    // Light or dark, as the system is.
+    kit_follow_system();
+    StatusBar(kit.dark ? BarLight : BarDark, false);
     Column(Style{grow: 1, background: kit.page, gap: 0}, void() {
         NavBar("Kit", void() { Avatar("ED", 36); });
         Separator();
