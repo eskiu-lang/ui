@@ -94,6 +94,21 @@ void ui_report_window(int width, int height, int scale) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// A native module posted `payload` on `channel` (use_native_event); both are read during
+// the call. Hosts call it on the UI thread (ui_native_emit gets there from any thread).
+void ui_dispatch_native(string channel, string payload) {
+    if (!app_active) { return; }
+    ui_event_native(channel, payload == null ? "" : payload);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+// A NativeView sent an event: its name and payload, read during the call.
+void ui_dispatch_view(int id, int generation, string name, string payload) {
+    if (!app_active) { return; }
+    ui_event_view(id, generation, name, payload == null ? "" : payload);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 void ui_report_active(int active) {
     if (!app_active) { return; }
     ui_set_active(active != 0);
