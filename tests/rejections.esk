@@ -29,6 +29,7 @@ int main(int argc, string* argv) {
                 });
             });
         }
+        if (mode == 9) { RefreshControl(false, void() {}); Text("not a scroll"); }
         if (mode == 7) {
             for (i in 0..20) { Row(Style{key: key(i == 15 ? 3 : i)}, void() {}); }
         }

@@ -11,7 +11,7 @@ eskiuc tests/tags.esk -o build/tags
 build/tags
 eskiuc tests/rejections.esk -o build/rejections
 for case in "1:render loop" "2:hook kind/type changed" "3:duplicate key" "4:memo cycle" \
-            "5:uncaught exception" "6:runtime left mid-phase" "7:duplicate key" "8:in Column\[0\] > TodoRow\[key 3\]"; do
+            "5:uncaught exception" "6:runtime left mid-phase" "7:duplicate key" "9:RefreshControl must come right before" "8:in Column\[0\] > TodoRow\[key 3\]"; do
     mode=${case%%:*}
     message=${case#*:}
     if build/rejections "$mode" > build/rejection.txt 2>&1; then

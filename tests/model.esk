@@ -903,6 +903,28 @@ void conditional_siblings() {
     ui_shutdown(); balanced("conditional siblings leak");
 }
 
+*Signal<bool> loading;
+int refreshes;
+void refresh_control() {
+    Ui runtime;
+    refreshes = 0;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        loading = use_signal<bool>(false);
+        RefreshControl(loading.get(), void() { refreshes++; loading.set(true); });
+        FlatList(Style{height: 200}, 50, 40, void(int i) { text_number(i); });
+    });
+    ui_frame();
+    *Node list = ui.root.children.data[0];
+    check(count_prop(2, 22) == 1 && prop_value(2, 22) == 0, "the list says it can refresh");
+    check(ui_event_refresh(list.id, list.generation) && refreshes == 1, "a pull runs on_refresh");
+    ui_frame();
+    check(count_prop(2, 22) == 1 && prop_value(2, 22) == 1, "the indicator shows");
+    loading.set(false); ui_frame();
+    check(prop_value(2, 22) == 0, "and goes away");
+    ui_shutdown(); balanced("refresh leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -930,6 +952,7 @@ int main() {
     commands(); printf("PASS commands\n");
     links_and_status_bar(); printf("PASS links, status bar\n");
     back_and_modal(); printf("PASS back, modal\n");
+    refresh_control(); printf("PASS refresh\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");

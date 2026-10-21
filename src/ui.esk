@@ -181,7 +181,8 @@ struct Node {
 // 7 wrap (1 or 0), 8 background and 9 text color (RGBA, 0: platform default), 10 font size,
 // 11 font weight, 12 border width, 13 border color, 14 radius, 15 opacity (percent),
 // 16 align and 17 justify (Align / Justify), 18 switch on (1 or 0), 19 spinning (1 or 0),
-// 20 status bar style (BarStyle), 21 status bar hidden (1 or 0).
+// 20 status bar style (BarStyle), 21 status bar hidden (1 or 0), 22 refreshing (1 or 0, a
+// scroll with a RefreshControl).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal
@@ -258,7 +259,8 @@ void ui_decode(*uint8 data, int len, List<Mutation>* out) {
 }
 // Event kinds: 1 press, 2 change (text), 3 focus (value 1 focused, 0 blurred), 4 toggle
 // (value 1 on, 0 off), 5 scroll (value the offset, extra the viewport height), 6 alert
-// answered (the id is the request, value the button's index, -1 dismissed).
+// answered (the id is the request, value the button's index, -1 dismissed), 7 refresh
+// (the user pulled a scroll's RefreshControl).
 struct Event { int id; int generation; int kind; int value; string text; int extra; }
 // What the host reports about the screen, in points: the system bars and display cutouts
 // on each side, and the software keyboard over the bottom.
@@ -310,6 +312,9 @@ struct Ui {
     *ListExtra next_list;
     int next_bar_style;
     bool next_bar_hidden;
+    // The RefreshControl for the next Scroll or FlatList.
+    *RefreshExtra next_refresh;
+    RefreshExtra refresh_slot;
     // Commands for the host (alerts, URLs), written between frames and sent with the next
     // commit; the alerts waiting for an answer.
     Commit commands;
@@ -799,6 +804,7 @@ void ui_run(*Node node) {
     ui_untrack(node.observer);
     ui.tracking = node.observer;
     node.block();
+    ui_require(ui.next_refresh == null, "RefreshControl must come right before a Scroll or FlatList");
     ui_require(node.cursor == node.slots.size, "hook count decreased");
     ui.builder = previous_builder;
     ui.tracking = previous_tracking;
@@ -904,6 +910,7 @@ void ui_unmount(*Node node) {
 
 struct SwitchExtra { bool value; fn(bool)->void on_change; }
 struct Pending { int id; fn(int)->void on_choice; }
+struct RefreshExtra { bool refreshing; fn()->void on_refresh; }
 struct BackEntry { fn()->bool handler; bool removed; }
 struct ListExtra { int count; int item_height; int header_height; *List<int> sizes;
     fn(int)->void on_item; fn(int, int)->void on_cell; }
@@ -915,6 +922,18 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
 *Node ui_element(int kind, Style style, string text,
     escaping fn()->void block, escaping fn()->void handler, escaping fn()->void handler_cleanup) {
     *Node parent = ui.builder;
+    // A scroll takes the RefreshControl that came right before it: its handler is the
+    // scroll's handler, its state a prop.
+    bool refresh = false;
+    bool refreshing = false;
+    ui_require(kind == 6 || ui.next_refresh == null, "RefreshControl must come right before a Scroll or FlatList");
+    if (kind == 6 && ui.next_refresh != null) {
+        ui_release_closure(handler);
+        handler = ui.next_refresh.on_refresh;
+        refreshing = ui.next_refresh.refreshing;
+        refresh = true;
+        ui.next_refresh = null;
+    }
     ui_require(parent != null, "element outside render");
     // A keyed child matches the old child with its key, an unkeyed one the old unkeyed
     // child at its position; either only if the kind is the same.
@@ -1059,6 +1078,11 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     if (kind == 10) {
         ui_prop(node, fresh, 19, ui.next_animating ? 1 : 0, -1);
     }
+    if (kind == 6 && (refresh || node.props[22] != 0)) {
+        // A new scroll with a RefreshControl always sends it (the host attaches the control);
+        // a scroll that loses its RefreshControl is sent "not refreshing".
+        ui_prop(node, fresh, 22, refresh && refreshing ? 1 : 0, refresh && fresh ? -1 : 0);
+    }
     if (kind == 11) {
         ui_prop(node, fresh, 20, ui.next_bar_style, -1);
         ui_prop(node, fresh, 21, ui.next_bar_hidden ? 1 : 0, -1);
@@ -1196,6 +1220,16 @@ void SectionList(Style style, *List<int> sizes, int header_height, int item_heig
     style.gap = 0;
     ui_element(6, style, null, void() { ui_section_rows(ui.builder); }, void() {}, void() {});
 }
+
+// Pull to refresh for the Scroll or FlatList that comes right after it: on_refresh runs when
+// the user pulls at the top, and the platform's indicator shows while `refreshing`.
+void RefreshControl(bool refreshing, escaping fn()->void on_refresh) {
+    if (ui.next_refresh != null) { ui_release_closure(ui.next_refresh.on_refresh); }
+    ui.refresh_slot = RefreshExtra{refreshing, on_refresh};
+    ui.next_refresh = &ui.refresh_slot;
+}
+
+bool ui_event_refresh(int id, int generation) { return ui_post(Event{id, generation, 7, 0, null}); }
 
 // The system status bar: its content style and whether it shows. The last one rendered
 // wins; it has no view.
@@ -1620,6 +1654,7 @@ bool ui_dispatch_event(*Event event) {
         if (node.has_on_bool) { node.on_bool(event.value != 0); }
         return true;
     }
+    if (event.kind == 7 && node.kind == 6) { node.handler(); return true; }
     if (event.kind == 5 && node.kind == 6) {
         if (!node.virtual) { return true; }
         // A new window only after the view moved a row's height or was resized: the overscan

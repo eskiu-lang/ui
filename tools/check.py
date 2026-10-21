@@ -62,6 +62,7 @@ def main():
                           ("3", "duplicate key"), ("4", "memo cycle"),
                           ("5", "uncaught exception"), ("6", "runtime left mid-phase"),
                           ("7", "duplicate key"),
+                          ("9", "RefreshControl must come right before"),
                           ("8", "slot 0: expected use_signal, found use_memo\n  in Column[0] > TodoRow[key 3]")]:
         result = subprocess.run([BUILD / "rejections", mode], env=ENV, capture_output=True, text=True, timeout=10)
         if result.returncode == 0 or message not in result.stdout + result.stderr:
