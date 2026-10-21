@@ -22,7 +22,9 @@
 // 11 font weight, 12 border width, 13 border color, 14 radius, 15 opacity (percent),
 // 16 align and 17 justify (Align / Justify), 18 switch on (1 or 0), 19 spinning (1 or 0),
 // 20 status bar style (BarStyle), 21 status bar hidden (1 or 0), 22 refreshing (1 or 0, a
-// scroll with a RefreshControl), 23 active (1 or 0: a screen on top of its navigator).
+// scroll with a RefreshControl), 23 active (1 or 0: a screen on top of its navigator),
+// 24 absolute (1 or 0), 25 left, 26 top, 27 right, 28 bottom (points; kUnset: not set),
+// 29 aspect ratio (width over height, in thousandths; 0: none).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal

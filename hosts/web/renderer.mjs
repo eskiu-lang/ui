@@ -18,11 +18,16 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
 // 7 image, 8 pressable, 9 switch, 10 activity indicator, 11 status bar, 12 modal, 13 native
 // view, 14 screen.
 const TAGS = {3: 'span', 4: 'button', 5: 'input', 7: 'img', 9: 'input'};
+// An edge offset that is not set (kUnset in src/core/state.esk).
+const UNSET = -1000000;
 const CONTAINERS = new Set([0, 1, 2, 6, 8, 12, 14]);
 const ALIGN = {1: 'flex-start', 2: 'center', 3: 'flex-end', 4: 'stretch'};
 const JUSTIFY = {1: 'flex-start', 2: 'center', 3: 'flex-end', 4: 'space-between', 5: 'space-around'};
 // The ring turns inside the node, so the node keeps its box for layout.
-const SPINNER_CSS = '@keyframes ui-spin { to { transform: rotate(360deg); } }' +
+// Every node is a containing block for its absolute children, as in Yoga; the classes after
+// this rule (a modal's fixed layer) take precedence.
+const SPINNER_CSS = '[data-ui-id] { position: relative; }' +
+  '@keyframes ui-spin { to { transform: rotate(360deg); } }' +
   '.ui-spinner { position: relative; width: 20px; height: 20px; }' +
   '.ui-spinner::after { content: ""; position: absolute; inset: 0; box-sizing: border-box; border-radius: 50%;' +
   ' border: 2px solid #c5cedd; border-top-color: #4a6fa5; animation: ui-spin .8s linear infinite; }' +
@@ -179,6 +184,13 @@ export function createHost(root, dispatch, views = {}) {
       case 20: case 21: break;  // the status bar: nothing to draw in a page
       case 22: refresh(node, value !== 0); break;
       case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
+      case 24: s.position = value ? 'absolute' : ''; break;
+      case 25: s.left = value === UNSET ? '' : `${value}px`; break;
+      case 26: s.top = value === UNSET ? '' : `${value}px`; break;
+      case 27: s.right = value === UNSET ? '' : `${value}px`; break;
+      case 28: s.bottom = value === UNSET ? '' : `${value}px`; break;
+      // Yoga sizes a stretched child from its ratio; CSS would stretch it, so it starts.
+      case 29: s.aspectRatio = value ? String(value / 1000) : ''; s.alignSelf = value ? 'flex-start' : ''; break;
       default: throw new Error(`unknown prop ${code}`);
     }
   }

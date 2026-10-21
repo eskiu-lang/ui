@@ -12,7 +12,7 @@ struct Node {
     int gap;
     int padding;
     // The value last sent for each int prop (by code), so only a change is sent again.
-    int64[24] props;
+    int64[40] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -471,6 +471,12 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 15, style.opacity, 100);
     ui_prop(node, fresh, 16, style.align, 0);
     ui_prop(node, fresh, 17, style.justify, 0);
+    ui_prop(node, fresh, 24, style.absolute ? 1 : 0, 0);
+    ui_prop(node, fresh, 25, style.left, kUnset);
+    ui_prop(node, fresh, 26, style.top, kUnset);
+    ui_prop(node, fresh, 27, style.right, kUnset);
+    ui_prop(node, fresh, 28, style.bottom, kUnset);
+    ui_prop(node, fresh, 29, (int)(style.aspect_ratio * 1000.0 + 0.5), 0);
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
     // What the caller gave this element to free with its block.
     for (i in 0..ui.next_owned.size) { node.owned.push(ui.next_owned.data[i]); }

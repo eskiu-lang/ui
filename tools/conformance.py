@@ -39,6 +39,12 @@ EXPECTED_FRAMES = {
     "Painted": [10, None, 60, 30],
     "Title": [10, None, None, None],
     "Feed": [10, None, 300, 120],
+    "Stage": [10, None, 300, 60],
+}
+# [x, y, width, height] relative to another element's frame.
+RELATIVE_FRAMES = {
+    "Pinned": ("Stage", [250, 5, 40, 30]),
+    "Ratio": ("Stage", [0, 0, 100, 50]),
 }
 EXPECTED_ROLES = {"Suite": "group", "Boxes": "group", "Fixed": "group", "Grow": "group", "List": "scroll",
                   "Item 0": "group", "Item 1": "group", "Item 2": "group", "Logo": "image",
@@ -66,6 +72,15 @@ def differences(report, host=""):
         for name, want, have in zip(("x", "y", "width", "height"), expected, got):
             if want is not None and abs(want - have) > TOLERANCE:
                 out.append(f"{label}.{name}: expected {want}, got {have}")
+    for label, (base, expected) in RELATIVE_FRAMES.items():
+        got, origin = report["frames"].get(label), report["frames"].get(base)
+        if got is None or origin is None:
+            out.append(f"{label}: missing")
+            continue
+        relative = [got[0] - origin[0], got[1] - origin[1], got[2], got[3]]
+        for name, want, have in zip(("x", "y", "width", "height"), expected, relative):
+            if abs(want - have) > TOLERANCE:
+                out.append(f"{label}.{name} from {base}: expected {want}, got {have}")
     for label, role in EXPECTED_ROLES.items():
         if report["roles"].get(label) != role:
             out.append(f"{label}: role {report['roles'].get(label)}, expected {role}")

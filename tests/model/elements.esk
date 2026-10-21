@@ -135,6 +135,28 @@ void visual_styles() {
     ui_shutdown(); balanced("visual styles leak");
 }
 
+*Signal<int> place_version;
+
+void positions() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        place_version = use_signal<int>(0);
+        int v = place_version.get();
+        Row(Style{absolute: true, left: v == 0 ? 20 : kUnset, top: 0, aspect_ratio: 1.5}, void() {});
+        Row(Style{}, void() {});
+    });
+    ui_frame();
+    check(count_prop(2, 24) == 1 && prop_value(2, 24) == 1, "absolute");
+    check(prop_value(2, 25) == 20 && prop_value(2, 26) == 0, "left and top, 0 included");
+    check(count_prop(2, 27) == 0 && count_prop(2, 28) == 0, "unset edges are not sent");
+    check(prop_value(2, 29) == 1500, "the aspect ratio in thousandths");
+    place_version.set(1); ui_frame();
+    check(count_prop(2, 25) == 1 && prop_value(2, 25) == kUnset, "an edge no longer set is sent unset");
+    check(count_prop(2, 24) == 0 && count_prop(2, 26) == 0 && count_prop(2, 29) == 0, "the rest is unchanged");
+    ui_shutdown(); balanced("positions leak");
+}
+
 *Signal<bool> switch_on;
 
 bool accept_toggle;

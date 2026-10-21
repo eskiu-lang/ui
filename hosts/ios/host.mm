@@ -78,6 +78,8 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
 }
 
 static void relayout(void);
+// An edge offset that is not set (kUnset in src/core/state.esk).
+static const int kUnset = -1000000;
 
 // Native views by type, registered before the app starts (UI_NATIVE_SETUP).
 @interface UiViewType : NSObject
@@ -469,6 +471,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (before && !scroll.refreshControl.refreshing) [scroll.refreshControl beginRefreshing];
             else if (!before && scroll.refreshControl.refreshing) [scroll.refreshControl endRefreshing];
         } else if (kind == 23) screenActive(node, before);
+        else if (kind == 24) YGNodeStyleSetPositionType(node.yoga, before ? YGPositionTypeAbsolute : YGPositionTypeRelative);
+        else if (kind >= 25 && kind <= 28) {
+            const YGEdge edges[] = {YGEdgeLeft, YGEdgeTop, YGEdgeRight, YGEdgeBottom};
+            YGNodeStyleSetPosition(node.yoga, edges[kind - 25], before == kUnset ? YGUndefined : (float)before);
+        } else if (kind == 29) YGNodeStyleSetAspectRatio(node.yoga, before ? before / 1000.0f : YGUndefined);
         else if (kind == 20 || kind == 21) {
             if (kind == 20) barStyle = before; else barHidden = before != 0;
             [rootView.window.rootViewController setNeedsStatusBarAppearanceUpdate];

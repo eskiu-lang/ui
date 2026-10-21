@@ -69,5 +69,10 @@ void Conformance() {
             String_appendf(&label, "Row %d", i);
             Row(Style{height: 40, label: label.data}, void() {});
         });
+        // Out of the flow: pinned to the stage's top right; a ratio gives the height.
+        Row(Style{height: 60, label: "Stage"}, void() {
+            Row(Style{absolute: true, right: 10, top: 5, width: 40, height: 30, label: "Pinned"}, void() {});
+            Row(Style{width: 100, aspect_ratio: 2.0, label: "Ratio"}, void() {});
+        });
     });
 }

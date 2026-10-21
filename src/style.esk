@@ -12,12 +12,18 @@ Key key(int64 value) { return Key{true, value}; }
 // default), font_size in points and font_weight 100 to 900 (0: default), border_width and
 // radius in points, opacity in percent, align (children across the axis) and justify
 // (children along it) from the Align and Justify members (0: default).
+// `absolute` takes the element out of its parent's flow: left, top, right and bottom
+// (points, kUnset: not set) place it against the parent's edges, and the other children are
+// laid out as if it were not there. `aspect_ratio` (width over height, 0: none) gives the
+// side that is not set from the one that is.
 struct Style {
     Key key; int gap = 8; int padding = 0; string label;
     int width; int height; int grow; bool wrap;
     int64 background = -1; int64 color = -1; int font_size; int font_weight;
     int border_width; int64 border_color = -1; int radius; int opacity = 100;
     int align; int justify;
+    bool absolute; int left = kUnset; int top = kUnset; int right = kUnset; int bottom = kUnset;
+    double aspect_ratio;
 }
 
 enum Align { AlignDefault, AlignStart, AlignCenter, AlignEnd, AlignStretch }

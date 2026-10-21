@@ -40,6 +40,8 @@ static std::unordered_map<int, int> scrolls;
 // Modals: each its own layout root, laid out over the whole screen.
 static std::vector<int> modals;
 
+// An edge offset that is not set (kUnset in src/core/state.esk).
+static const int kUnset = -1000000;
 static JavaVM *vm;
 static jclass activityClass;
 static jobject classLoader;
@@ -102,6 +104,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             else if ((kind == 10 || kind == 11) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
             else if (kind == 12) YGNodeStyleSetBorder(node, YGEdgeAll, before);
             else if (kind == 23) YGNodeStyleSetDisplay(node, before ? YGDisplayFlex : YGDisplayNone);
+            else if (kind == 24) YGNodeStyleSetPositionType(node, before ? YGPositionTypeAbsolute : YGPositionTypeRelative);
+            else if (kind >= 25 && kind <= 28) {
+                const YGEdge edges[] = {YGEdgeLeft, YGEdgeTop, YGEdgeRight, YGEdgeBottom};
+                YGNodeStyleSetPosition(node, edges[kind - 25], before == kUnset ? YGUndefined : static_cast<float>(before));
+            } else if (kind == 29) YGNodeStyleSetAspectRatio(node, before ? before / 1000.0f : YGUndefined);
             else if (kind == 16) {
                 const YGAlign aligns[] = {YGAlignStretch, YGAlignFlexStart, YGAlignCenter, YGAlignFlexEnd, YGAlignStretch};
                 YGNodeStyleSetAlignItems(node, aligns[std::min(4, std::max(0, before))]);
