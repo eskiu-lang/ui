@@ -3,6 +3,7 @@
 #import <QuartzCore/CADisplayLink.h>
 #include <yoga/Yoga.h>
 #include "../commit.h"
+#include "ui_native.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -26,6 +27,8 @@ extern "C" void ui_report_active(int active);
 extern "C" const char *ui_conformance_log(void);
 extern "C" void ui_tick(void);
 extern "C" void ui_stop(void);
+extern "C" void ui_dispatch_native(const char *channel, const char *payload);
+extern "C" void ui_dispatch_view(int id, int generation, const char *name, const char *payload);
 
 @interface UiHostNode : NSObject
 @property(nonatomic, strong) UIView *view;
@@ -36,6 +39,9 @@ extern "C" void ui_stop(void);
 @property(nonatomic) bool listening;
 @property(nonatomic) int kind;
 @property(nonatomic) CGFloat reportedViewport;
+// A native view's type and the view its factory made (kind 13).
+@property(nonatomic, copy) NSString *nativeType;
+@property(nonatomic, strong) UIView *nativeView;
 @end
 @implementation UiHostNode
 @end
@@ -62,6 +68,62 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
 }
 
 static void relayout(void);
+
+// Native views by type, registered before the app starts (UI_NATIVE_SETUP).
+@interface UiViewType : NSObject
+@property(nonatomic, copy) UIView *(^create)(UiViewEmit emit);
+@property(nonatomic, copy) void (^set)(UIView *view, NSString *name, NSString *value);
+@end
+@implementation UiViewType
+@end
+
+static NSMutableDictionary<NSString *, UiViewType *> *viewTypes(void) {
+    static NSMutableDictionary *types;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ types = [NSMutableDictionary new]; });
+    return types;
+}
+
+extern "C" void ui_register_view(NSString *type, UIView *(^create)(UiViewEmit emit),
+                                 void (^set)(UIView *view, NSString *name, NSString *value)) {
+    UiViewType *entry = [UiViewType new];
+    entry.create = create;
+    entry.set = set;
+    viewTypes()[type] = entry;
+}
+
+extern "C" void ui_native_emit(const char *channel, const char *payload) {
+    NSString *c = [NSString stringWithUTF8String:channel ? channel : ""];
+    NSString *p = [NSString stringWithUTF8String:payload ? payload : ""];
+    dispatch_async(dispatch_get_main_queue(), ^{ ui_dispatch_native(c.UTF8String, p.UTF8String); });
+}
+
+// The view a NativeView's type makes, filling its node's view.
+static void mountNative(UiHostNode *node, int id, NSString *type) {
+    [node.nativeView removeFromSuperview];
+    node.nativeView = nil;
+    node.nativeType = type;
+    UiViewType *entry = type ? viewTypes()[type] : nil;
+    if (!entry) { fprintf(stderr, "ui: no native view registered as %s\n", type.UTF8String); return; }
+    int generation = node.generation;
+    UiViewEmit emit = ^(NSString *name, NSString *payload) {
+        NSString *n = name ?: @"", *p = payload ?: @"";
+        void (^send)(void) = ^{ ui_dispatch_view(id, generation, n.UTF8String, p.UTF8String); };
+        if (NSThread.isMainThread) send(); else dispatch_async(dispatch_get_main_queue(), send);
+    };
+    UIView *view = entry.create(emit);
+    view.frame = node.view.bounds;
+    view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [node.view addSubview:view];
+    node.nativeView = view;
+}
+
+static void ui_host_named(int id, const char *name, const char *value) {
+    UiHostNode *node = nodes[@(id)];
+    UiViewType *entry = node.nativeType ? viewTypes()[node.nativeType] : nil;
+    if (!node.nativeView || !entry.set) return;
+    entry.set(node.nativeView, [NSString stringWithUTF8String:name], [NSString stringWithUTF8String:value]);
+}
 // Modals: their views sit over the whole controller view, each laid out as its own root.
 static NSMutableArray<UiHostNode *> *modals;
 // The status bar the app asked for (BarStyle), read by the controller.
@@ -262,6 +324,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view.backgroundColor = [UIColor colorWithWhite:0 alpha:0.4];
             node.view.accessibilityViewIsModal = YES;
             YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
+        } else if (kind == 13) {
+            node.view = [UIView new];
+            node.view.clipsToBounds = YES;
         } else if (kind == 6) {
             UIScrollView *scroll = [UIScrollView new];
             scroll.tag = id;
@@ -337,7 +402,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         }
     } else if (op == 9) {
         NSString *value = text && text[0] ? [NSString stringWithUTF8String:text] : nil;
-        if (kind == 1) node.view.accessibilityLabel = value;
+        if (kind == 4 && node.kind == 13) mountNative(node, id, value);
+        else if (kind == 1) node.view.accessibilityLabel = value;
         else if (kind == 2 && [node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).placeholder = value;
         else if (kind == 3 && [node.view isKindOfClass:UIImageView.class]) loadImage((UIImageView *)node.view, node.yoga, value);
     } else if (op == 3) {
@@ -416,7 +482,7 @@ static void ui_host_command(int request, int command, int count, const char **st
 }
 
 extern "C" void ui_host_commit(const uint8_t *data, int len) {
-    ui_commit_each(data, len, ui_host_apply, ui_host_command);
+    ui_commit_each(data, len, ui_host_apply, ui_host_command, ui_host_named);
     ui_host_ready();
 }
 
