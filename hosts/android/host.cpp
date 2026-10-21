@@ -33,7 +33,7 @@ extern "C" void ui_tick();
 extern "C" void ui_stop();
 extern "C" void ui_dispatch_native(const char *, const char *);
 extern "C" void ui_dispatch_view(int, int, const char *, const char *);
-extern "C" void ui_dispatch_layout(int, int, int, int, int, int);
+extern "C" void ui_dispatch_layout(int, int, int, int, int, int, int, int);
 extern "C" void ui_dispatch_timer(int);
 extern "C" void ui_dispatch_hover(int, int, int);
 extern "C" void ui_dispatch_pan(int, int, int, int, int, int, int);
@@ -55,14 +55,14 @@ static std::vector<int> modals;
 // Each node's generation, and the frames last reported for the nodes the app listens to
 // (ui_on_layout): x, y, width, height in points, relative to the parent.
 static std::unordered_map<int, int> generations;
-static std::unordered_map<int, std::array<int, 4>> layouts;
+static std::unordered_map<int, std::array<int, 6>> layouts;
 
 // An edge offset that is not set (kUnset in src/core/state.esk).
 static const int kUnset = -1000000;
 static JavaVM *vm;
 static jclass activityClass;
 static jobject classLoader;
-static jmethodID namedMethod, emitMethod, loadClassMethod, timerStartMethod, timerStopMethod;
+static jmethodID namedMethod, emitMethod, loadClassMethod, timerStartMethod, timerStopMethod, windowMethod;
 static void checked() { if (env->ExceptionCheck()) { env->ExceptionDescribe(); std::abort(); } }
 static YGSize measure(YGNodeConstRef node, float width, YGMeasureMode wm, float height, YGMeasureMode hm) {
     int id = static_cast<int>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
@@ -82,13 +82,17 @@ static void place(YGNodeRef parent) {
         checked(); place(node);
         auto listening = layouts.find(id);
         if (listening != layouts.end()) {
-            std::array<int, 4> frame = {static_cast<int>(std::lround(YGNodeLayoutGetLeft(node))),
+            // Laid out now, with its ancestors: its window position is final.
+            jlong window = env->CallLongMethod(activity, windowMethod, id);
+            checked();
+            std::array<int, 6> frame = {static_cast<int>(std::lround(YGNodeLayoutGetLeft(node))),
                                         static_cast<int>(std::lround(YGNodeLayoutGetTop(node))),
                                         static_cast<int>(std::lround(YGNodeLayoutGetWidth(node))),
-                                        static_cast<int>(std::lround(YGNodeLayoutGetHeight(node)))};
+                                        static_cast<int>(std::lround(YGNodeLayoutGetHeight(node))),
+                                        static_cast<int>(window >> 32), static_cast<int>(window & 0xffffffff)};
             if (frame != listening->second) {
                 listening->second = frame;
-                ui_dispatch_layout(id, generations[id], frame[0], frame[1], frame[2], frame[3]);
+                ui_dispatch_layout(id, generations[id], frame[0], frame[1], frame[2], frame[3], frame[4], frame[5]);
             }
         }
         // A scroll view's content is as tall as its lowest child.
@@ -137,7 +141,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             else if ((kind == 10 || kind == 11) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
             else if (kind == 12) YGNodeStyleSetBorder(node, YGEdgeAll, before);
             else if (kind == 23) YGNodeStyleSetDisplay(node, before ? YGDisplayFlex : YGDisplayNone);
-            else if (kind == 30) { if (before) layouts[id] = {-1, -1, -1, -1}; else layouts.erase(id); }
+            else if (kind == 30) { if (before) layouts[id] = {-1, -1, -1, -1, -1, -1}; else layouts.erase(id); }
+            else if (kind == 42) YGNodeStyleSetMinWidth(node, before);
+            else if (kind == 43) YGNodeStyleSetMaxWidth(node, before ? static_cast<float>(before) : YGUndefined);
+            else if (kind == 44) YGNodeStyleSetMinHeight(node, before);
+            else if (kind == 45) YGNodeStyleSetMaxHeight(node, before ? static_cast<float>(before) : YGUndefined);
             else if (kind == 24) YGNodeStyleSetPositionType(node, before ? YGPositionTypeAbsolute : YGPositionTypeRelative);
             else if (kind >= 25 && kind <= 28) {
                 const YGEdge edges[] = {YGEdgeLeft, YGEdgeTop, YGEdgeRight, YGEdgeBottom};
@@ -227,6 +235,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStart(JNIEn
     namedMethod = env->GetMethodID(cls, "named", "(ILjava/lang/String;Ljava/lang/String;)V");
     timerStartMethod = env->GetMethodID(cls, "timerStart", "(IIZ)V");
     timerStopMethod = env->GetMethodID(cls, "timerStop", "(I)V");
+    windowMethod = env->GetMethodID(cls, "windowOf", "(I)J");
     emitMethod = env->GetStaticMethodID(cls, "emit", "(Ljava/lang/String;Ljava/lang/String;)V");
     activityClass = (jclass)env->NewGlobalRef(cls);
     // The app's class loader, for ui_find_class on threads native code starts.
@@ -370,4 +379,18 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeFetch(JNIEn
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativePan(JNIEnv *current, jobject, jint id, jint generation, jint phase, jint dx, jint dy, jint vx, jint vy) {
     env = current; ui_dispatch_pan(id, generation, phase, dx, dy, vx, vy);
+}
+// Scrolling moves what is inside in the window without a layout: the listened nodes' window
+// positions are checked again.
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeScrolled(JNIEnv *current, jobject) {
+    env = current;
+    for (auto &entry : layouts) {
+        if (entry.second[2] < 0) continue;
+        jlong window = env->CallLongMethod(activity, windowMethod, entry.first);
+        checked();
+        int x = static_cast<int>(window >> 32), y = static_cast<int>(window & 0xffffffff);
+        if (x == entry.second[4] && y == entry.second[5]) continue;
+        entry.second[4] = x; entry.second[5] = y;
+        ui_dispatch_layout(entry.first, generations[entry.first], entry.second[0], entry.second[1], entry.second[2], entry.second[3], x, y);
+    }
 }

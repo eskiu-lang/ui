@@ -241,6 +241,14 @@ public final class UiActivity extends Activity {
         timers.put(token, tick[0]);
         mainThread.postDelayed(tick[0], ms);
     }
+    // A view's position in the window, in points, packed as x << 32 | y.
+    public long windowOf(int id) {
+        View view = nodes.get(id);
+        int[] at = new int[2];
+        if (view != null) view.getLocationInWindow(at);
+        float d = density();
+        return ((long)Math.round(at[0] / d) << 32) | (Math.round(at[1] / d) & 0xffffffffL);
+    }
     public void timerStop(int token) {
         Runnable tick = timers.remove(token);
         if (tick != null) mainThread.removeCallbacks(tick);
@@ -343,7 +351,13 @@ public final class UiActivity extends Activity {
         }
         // The size Yoga gave a scroll view's content; 0 for every other group.
         int contentWidth, contentHeight;
-        YogaGroup() { super(UiActivity.this); }
+        YogaGroup() {
+            super(UiActivity.this);
+            // Overflow is visible, as in Yoga: an absolute child may draw outside (a radius clips
+            // through the outline).
+            setClipChildren(false);
+            setClipToPadding(false);
+        }
         @Override protected void onMeasure(int width, int height) {
             if (contentHeight > 0) { setMeasuredDimension(contentWidth, contentHeight); return; }
             setMeasuredDimension(MeasureSpec.getSize(width), MeasureSpec.getSize(height));
@@ -757,6 +771,18 @@ public final class UiActivity extends Activity {
                 YogaGroup modal = new YogaGroup();
                 modal.setBackgroundColor(0x66000000);
                 modal.setClickable(true);
+                // A tap on the backdrop (outside every child) asks it to close.
+                modal.setOnTouchListener((v, e) -> {
+                    if (e.getActionMasked() != android.view.MotionEvent.ACTION_UP || !active) return false;
+                    ViewGroup group = (ViewGroup)v;
+                    for (int i = 0; i < group.getChildCount(); i++) {
+                        View child = group.getChildAt(i);
+                        if (e.getX() >= child.getLeft() && e.getX() < child.getRight() && e.getY() >= child.getTop() &&
+                            e.getY() < child.getBottom()) return false;
+                    }
+                    if (generations.containsKey(id)) nativeEvent(id, generations.get(id));
+                    return false;
+                });
                 modalIds.add(id);
                 view = modal;
             } else if (kind == 7) {
@@ -850,7 +876,10 @@ public final class UiActivity extends Activity {
         if (view.getParent() == root) { l += root.getPaddingLeft(); t += root.getPaddingTop(); }
         view.layout(l, t, l + w, t + h);
     }
+    private native void nativeScrolled();
     private void reportScroll(int id, ScrollView view) {
+        // What is inside moved in the window: listened nodes report their new positions.
+        if (active) nativeScrolled();
         if (!active || !scrollViewports.containsKey(id)) return;
         float d = density();
         int viewport = Math.round(view.getHeight() / d);

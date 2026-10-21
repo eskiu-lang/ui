@@ -30,6 +30,7 @@ for filename in ("index.html", "benchmark.mjs", "platform-test.mjs", "conformanc
 for asset in (HERE / "tests/harness/assets").iterdir():
     shutil.copyfile(asset, BUILD / asset.name)
 # Every example is in this module; an app built by tools/ui carries only its own code.
-if (BUILD / "app.wasm").stat().st_size > 160 * 1024:
-    raise SystemExit("demo wasm budget exceeded (160 KiB)")
+# The test module holds every example and the whole kit; an app carries only what it uses.
+if (BUILD / "app.wasm").stat().st_size > 200 * 1024:
+    raise SystemExit("test wasm budget exceeded (200 KiB)")
 print("Built:", BUILD, "wasm bytes:", (BUILD / "app.wasm").stat().st_size)

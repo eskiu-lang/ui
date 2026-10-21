@@ -32,7 +32,7 @@ extern "C" void ui_tick(void);
 extern "C" void ui_stop(void);
 extern "C" void ui_dispatch_native(const char *channel, const char *payload);
 extern "C" int ui_report_back(void);
-extern "C" void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height);
+extern "C" void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height, int window_x, int window_y);
 extern "C" void ui_dispatch_timer(int token);
 extern "C" void ui_dispatch_hover(int id, int generation, int inside);
 extern "C" void ui_dispatch_value(int id, int generation, int value);
@@ -66,6 +66,7 @@ extern "C" void ui_dispatch_view(int id, int generation, const char *name, const
 // that animates changes (ms, Easing).
 @property(nonatomic) int translateX, translateY, scalePercent, rotateDegrees, transitionMs, easing;
 @property(nonatomic) CGRect reportedFrame;
+@property(nonatomic) CGPoint reportedWindow;
 @end
 @implementation UiHostNode
 @end
@@ -98,6 +99,21 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
 }
 
 static void relayout(void);
+
+// Scrolling moves what is inside in the window without a layout: the listened nodes' window
+// positions are checked again.
+static void reportWindows(void) {
+    for (UiHostNode *node in nodes.allValues) {
+        if (!node.layoutListening || !node.view.superview || CGRectIsNull(node.reportedFrame)) continue;
+        CGPoint at = [node.view.superview convertPoint:node.reportedFrame.origin toView:nil];
+        CGPoint window = CGPointMake(std::lround(at.x), std::lround(at.y));
+        if (CGPointEqualToPoint(window, node.reportedWindow)) continue;
+        node.reportedWindow = window;
+        CGRect f = node.reportedFrame;
+        ui_dispatch_layout(node.nodeId, node.generation, (int)f.origin.x, (int)f.origin.y, (int)f.size.width, (int)f.size.height,
+                           (int)window.x, (int)window.y);
+    }
+}
 
 // A change animated by the node's transition, when it has one and is on screen.
 static void animated(UiHostNode *node, void (^change)(void)) {
@@ -315,10 +331,14 @@ static void place(YGNodeRef yoga, UIView *parent) {
         if (node.layoutListening) {
             CGRect frame = CGRectMake(std::lround(YGNodeLayoutGetLeft(child)), std::lround(YGNodeLayoutGetTop(child)),
                                       std::lround(YGNodeLayoutGetWidth(child)), std::lround(YGNodeLayoutGetHeight(child)));
-            if (!CGRectEqualToRect(frame, node.reportedFrame)) {
+            // The ancestors are placed already: the window position is final.
+            CGPoint at = [node.view.superview convertPoint:CGPointMake(YGNodeLayoutGetLeft(child), YGNodeLayoutGetTop(child)) toView:nil];
+            CGPoint window = CGPointMake(std::lround(at.x), std::lround(at.y));
+            if (!CGRectEqualToRect(frame, node.reportedFrame) || !CGPointEqualToPoint(window, node.reportedWindow)) {
                 node.reportedFrame = frame;
+                node.reportedWindow = window;
                 ui_dispatch_layout(node.nodeId, node.generation, (int)frame.origin.x, (int)frame.origin.y,
-                                   (int)frame.size.width, (int)frame.size.height);
+                                   (int)frame.size.width, (int)frame.size.height, (int)window.x, (int)window.y);
             }
         }
         place(child, node.view);
@@ -348,6 +368,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)hover:(UIHoverGestureRecognizer *)gesture;
 - (void)slide:(UISlider *)sender;
 - (void)pan:(UIPanGestureRecognizer *)gesture;
+- (void)backdrop:(UITapGestureRecognizer *)gesture;
 - (void)edit:(UITextField *)sender;
 - (void)toggle:(UISwitch *)sender;
 - (void)refresh:(UIRefreshControl *)sender;
@@ -356,6 +377,12 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)frame:(CADisplayLink *)sender;
 @end
 @implementation UiEvents
+- (void)backdrop:(UITapGestureRecognizer *)gesture {
+    UIView *view = gesture.view;
+    if ([view hitTest:[gesture locationInView:view] withEvent:nil] != view) return;
+    UiHostNode *node = nodes[@(view.tag)];
+    if (node && node.listening) ui_dispatch((int)view.tag, node.generation);
+}
 // A drag on a node with a pan handler, measured in its superview (the node itself may move).
 - (void)pan:(UIPanGestureRecognizer *)gesture {
     UiHostNode *node = nodes[@(gesture.view.tag)];
@@ -389,6 +416,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
     if (node) ui_dispatch((int)sender.tag, node.generation);
 }
 - (void)scrollViewDidScroll:(UIScrollView *)scroll {
+    reportWindows();
     UiHostNode *node = nodes[@(scroll.tag)];
     if (!node || !node.listening) return;
     node.reportedViewport = scroll.bounds.size.height;
@@ -511,6 +539,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view = [UIView new];
             node.view.backgroundColor = [UIColor colorWithWhite:0 alpha:0.4];
             node.view.accessibilityViewIsModal = YES;
+            node.view.tag = id;
+            // A tap on the backdrop (outside the content) asks it to close.
+            UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:events action:@selector(backdrop:)];
+            tap.cancelsTouchesInView = NO;
+            [node.view addGestureRecognizer:tap];
             YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
         } else if (kind == 13) {
             node.view = [UIView new];
@@ -616,6 +649,10 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
                 [node.view addGestureRecognizer:[[UIHoverGestureRecognizer alloc] initWithTarget:events action:@selector(hover:)]];
             }
         } else if (kind == 30) { node.layoutListening = before != 0; node.reportedFrame = CGRectNull; }
+        else if (kind == 42) YGNodeStyleSetMinWidth(node.yoga, before);
+        else if (kind == 43) YGNodeStyleSetMaxWidth(node.yoga, before ? (float)before : YGUndefined);
+        else if (kind == 44) YGNodeStyleSetMinHeight(node.yoga, before);
+        else if (kind == 45) YGNodeStyleSetMaxHeight(node.yoga, before ? (float)before : YGUndefined);
         else if (kind == 24) YGNodeStyleSetPositionType(node.yoga, before ? YGPositionTypeAbsolute : YGPositionTypeRelative);
         else if (kind >= 25 && kind <= 28) {
             const YGEdge edges[] = {YGEdgeLeft, YGEdgeTop, YGEdgeRight, YGEdgeBottom};
@@ -670,8 +707,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         [modals removeObject:node];
         [nodes removeObjectForKey:@(id)];
     } else if (op == 7 || op == 8) {
-        if ([node.view isKindOfClass:UIScrollView.class]) node.listening = op == 7;
-        else node.view.userInteractionEnabled = op == 7;
+        node.listening = op == 7;
+        if (![node.view isKindOfClass:UIScrollView.class]) node.view.userInteractionEnabled = op == 7;
     }
     else { fprintf(stderr, "ui host: unknown op %d\n", op); abort(); }
 }

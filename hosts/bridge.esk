@@ -96,9 +96,9 @@ void ui_dispatch_timer(int token) {
 
 // A node with a layout listener (ui_on_layout) was laid out at a new frame, in points
 // relative to its parent.
-void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height) {
+void ui_dispatch_layout(int id, int generation, int x, int y, int width, int height, int window_x, int window_y) {
     if (!app_active) { return; }
-    ui_event_layout(id, generation, x, y, width, height);
+    ui_event_layout(id, generation, x, y, width, height, window_x, window_y);
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 

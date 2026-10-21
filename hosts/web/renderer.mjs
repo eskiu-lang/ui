@@ -5,7 +5,7 @@
 // extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value,
 // 15 an answer (the request in id, its text), 16 a fetch's answer (status in value, the body
 // in text, the headers in extra), 17 a pan (the phase in value, then dx, dy, vx, vy).
-export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0, more = 0) {
+export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0, more = 0, rest = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) app.ccall('ui_dispatch_text', null, ['number', 'number', 'string'], [id, generation, text]);
   else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
@@ -17,7 +17,7 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 17) app._ui_dispatch_pan(id, generation, value, extra, width, height, more);
   else if (kind === 16) app.ccall('ui_dispatch_fetch', null, ['number', 'number', 'string', 'string'], [id, value, text, extra]);
   else if (kind === 15) app.ccall('ui_dispatch_answer', null, ['number', 'string'], [id, text]);
-  else if (kind === 11) app._ui_dispatch_layout(id, generation, value, extra, width, height);
+  else if (kind === 11) app._ui_dispatch_layout(id, generation, value, extra, width, height, more, rest);
   else if (kind === 10) app.ccall('ui_dispatch_route', null, ['string', 'number'], [text, value]);
   else if (kind === 9) app.ccall('ui_dispatch_view', null, ['number', 'number', 'string', 'string'], [id, generation, extra, text]);
   else app._ui_dispatch_refresh(id, generation);
@@ -124,13 +124,18 @@ export function createHost(root, dispatch, views = {}) {
     for (const [id, last] of layouts) {
       const node = nodes.get(id);
       if (!node || node.offsetWidth === undefined) continue;
-      const frame = [node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight];
+      const box = node.getBoundingClientRect?.() ?? {left: 0, top: 0};
+      const frame = [node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight, Math.round(box.left), Math.round(box.top)];
       if (last && frame.every((v, i) => v === last[i])) continue;
       layouts.set(id, frame);
       dispatch(...ids(node), 11, null, ...frame);
     }
   }
-  if (typeof addEventListener === 'function') addEventListener('resize', () => reportLayouts());
+  if (typeof addEventListener === 'function') {
+    addEventListener('resize', () => reportLayouts());
+    // Scrolling moves what is inside in the window: positions are checked again.
+    addEventListener('scroll', () => { if (layouts.size) reportLayouts(); }, true);
+  }
   function mountNative(node, type) {
     natives.get(Number(node.dataset.uiId))?.dispose?.();
     node.replaceChildren();
@@ -170,6 +175,9 @@ export function createHost(root, dispatch, views = {}) {
   root.addEventListener('click', event => {
     const node = listening(event, 'button[data-ui-id], div[data-ui-id]');
     if (node && (kindOf(node) === 4 || kindOf(node) === 8)) dispatch(...ids(node), 1);
+    // A click on a modal's backdrop (outside its content) asks it to close.
+    const target = event.target;
+    if (target?.dataset?.kind === '12' && target.dataset.listening === 'true') dispatch(...ids(target), 1);
   });
   root.addEventListener('keydown', event => {
     const node = listening(event, 'div[data-ui-id]');
@@ -267,6 +275,10 @@ export function createHost(root, dispatch, views = {}) {
       case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
       case 31: hover(node, value !== 0); break;
       case 41: pan(node, value !== 0); break;
+      case 42: s.minWidth = value ? `${value}px` : '0'; break;
+      case 43: s.maxWidth = value ? `${value}px` : ''; break;
+      case 44: s.minHeight = value ? `${value}px` : '0'; break;
+      case 45: s.maxHeight = value ? `${value}px` : ''; break;
       case 35: case 36: case 37: case 38: {
         // Transforms: translate in points, scale in percent, rotate in degrees.
         const t = node.uiTransform ??= {35: 0, 36: 0, 37: 100, 38: 0};
