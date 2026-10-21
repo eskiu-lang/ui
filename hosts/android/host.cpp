@@ -25,6 +25,9 @@ extern "C" void ui_report_window(int, int, int);
 extern "C" int ui_edge_to_edge();
 extern "C" void ui_report_insets(int, int, int, int, int);
 extern "C" void ui_report_active(int);
+extern "C" void ui_report_appearance(int);
+extern "C" void ui_report_accessibility(int, int, int);
+extern "C" void ui_report_locale(const char *, int);
 extern "C" const char *ui_conformance_log();
 extern "C" void ui_tick();
 extern "C" void ui_stop();
@@ -335,4 +338,12 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeHover(JNIEn
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeValue(JNIEnv *current, jobject, jint id, jint generation, jint value) {
     env = current; ui_dispatch_value(id, generation, value);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeSystem(JNIEnv *current, jobject, jint dark, jint reader, jint still, jint scale, jstring locale, jint rtl) {
+    env = current;
+    ui_report_appearance(dark);
+    ui_report_accessibility(reader, still, scale);
+    const char *tag = env->GetStringUTFChars(locale, nullptr);
+    ui_report_locale(tag, rtl);
+    env->ReleaseStringUTFChars(locale, tag);
 }

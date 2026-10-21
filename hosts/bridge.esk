@@ -152,6 +152,26 @@ void ui_dispatch_route(string path, int index) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// The system's appearance (1 dark), accessibility settings (a screen reader, reduced motion,
+// the text scale in percent) and language (a BCP 47 tag; 1 right to left).
+void ui_report_appearance(int dark) {
+    if (!app_active) { return; }
+    ui_set_appearance(dark != 0 ? SchemeDark : SchemeLight);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+void ui_report_accessibility(int screen_reader, int reduce_motion, int font_scale) {
+    if (!app_active) { return; }
+    ui_set_accessibility(screen_reader != 0, reduce_motion != 0, font_scale);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
+void ui_report_locale(string locale, int rtl) {
+    if (!app_active) { return; }
+    ui_set_locale(locale, rtl != 0);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 void ui_report_active(int active) {
     if (!app_active) { return; }
     ui_set_active(active != 0);

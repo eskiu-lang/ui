@@ -49,6 +49,26 @@ public final class UiActivity extends Activity {
     private native int nativeEdgeToEdge();
     private native void nativeInsets(int top, int right, int bottom, int left, int keyboard);
     private native void nativeActive(int active);
+    private native void nativeSystem(int dark, int screenReader, int reduceMotion, int fontScale, String locale, int rtl);
+    // The system's appearance, accessibility settings and language, to the core.
+    private void reportSystem() {
+        if (!active) return;
+        android.content.res.Configuration config = getResources().getConfiguration();
+        boolean dark = (config.uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        android.view.accessibility.AccessibilityManager a11y = (android.view.accessibility.AccessibilityManager)getSystemService(ACCESSIBILITY_SERVICE);
+        boolean reader = a11y != null && a11y.isTouchExplorationEnabled();
+        float animations = android.provider.Settings.Global.getFloat(getContentResolver(), android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
+        java.util.Locale locale = config.getLocales().get(0);
+        boolean rtl = android.text.TextUtils.getLayoutDirectionFromLocale(locale) == View.LAYOUT_DIRECTION_RTL;
+        nativeSystem(dark ? 1 : 0, reader ? 1 : 0, animations == 0f ? 1 : 0, Math.round(config.fontScale * 100),
+                     locale.toLanguageTag(), rtl ? 1 : 0);
+    }
+    // Dark mode, the language, the text size and rotation do not recreate the activity: the
+    // app keeps its state and hears about the change.
+    @Override public void onConfigurationChanged(android.content.res.Configuration config) {
+        super.onConfigurationChanged(config);
+        reportSystem();
+    }
     private native String nativeConformanceLog();
     private native void nativeToggle(int id, int generation, int on);
     private native void nativeScroll(int id, int generation, int offset, int viewport);
@@ -226,6 +246,7 @@ public final class UiActivity extends Activity {
             // The app sets its edge policy as it starts: apply the insets again under it.
             root.requestApplyInsets();
             reportInsets();
+            reportSystem();
             if (getIntent().getData() != null) nativeLink(getIntent().getData().toString());
             if (conformance) root.postDelayed(this::runConformance, 400);
             if (testing) {
@@ -353,6 +374,8 @@ public final class UiActivity extends Activity {
         else if (code == 8) paintOf(id, view).setColor(value == 0 ? 0 : argb(value));
         else if (code == 9 && view instanceof TextView) {
             if (value != 0) ((TextView)view).setTextColor(argb(value));
+            // A field's placeholder: its text color, faded.
+            if (value != 0 && view instanceof EditText) ((EditText)view).setHintTextColor((argb(value) & 0x00ffffff) | 0x80000000);
         } else if (code == 10 || code == 11) {
             int[] font = fonts.computeIfAbsent(id, k -> new int[] {0, 0});
             font[code - 10] = value;

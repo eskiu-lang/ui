@@ -34,6 +34,20 @@
   // The page's route is the link the app was opened with (the first Navigator shows it).
   app.ccall('ui_report_link', null, ['string'], [host.route()]);
   app._ui_start(0);
+  // The system: dark mode and reduced motion from media queries, the language from the browser.
+  const dark = matchMedia('(prefers-color-scheme: dark)');
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  const reportSystem = () => {
+    app._ui_report_appearance(dark.matches ? 1 : 0);
+    app._ui_report_accessibility(0, still.matches ? 1 : 0, 100);
+    const language = navigator.language || 'en';
+    const rtl = /^(ar|fa|he|ur|ps|yi|dv|ku|sd|ug)(-|$)/.test(language);
+    app.ccall('ui_report_locale', null, ['string', 'number'], [language, rtl ? 1 : 0]);
+  };
+  reportSystem();
+  dark.addEventListener('change', reportSystem);
+  still.addEventListener('change', reportSystem);
+  addEventListener('languagechange', reportSystem);
   const reportWindow = () => app._ui_report_window(innerWidth, innerHeight, Math.round(devicePixelRatio * 100));
   reportWindow();
   addEventListener('resize', reportWindow);

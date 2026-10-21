@@ -24,6 +24,9 @@ extern "C" void ui_report_window(int width, int height, int scale);
 extern "C" int ui_edge_to_edge(void);
 extern "C" void ui_report_insets(int top, int right, int bottom, int left, int keyboard);
 extern "C" void ui_report_active(int active);
+extern "C" void ui_report_appearance(int dark);
+extern "C" void ui_report_accessibility(int screen_reader, int reduce_motion, int font_scale);
+extern "C" void ui_report_locale(const char *locale, int rtl);
 extern "C" const char *ui_conformance_log(void);
 extern "C" void ui_tick(void);
 extern "C" void ui_stop(void);
@@ -736,7 +739,23 @@ static void runNativeTest(void) {
 @interface UiController : UIViewController
 @property(nonatomic) CGFloat keyboard;
 @end
+
+// The system's appearance, accessibility settings and language, to the core.
+static void reportSystem(UITraitCollection *traits) {
+    ui_report_appearance(traits.userInterfaceStyle == UIUserInterfaceStyleDark ? 1 : 0);
+    int scale = (int)std::lround([UIFontMetrics.defaultMetrics scaledValueForValue:100]);
+    ui_report_accessibility(UIAccessibilityIsVoiceOverRunning() ? 1 : 0, UIAccessibilityIsReduceMotionEnabled() ? 1 : 0, scale);
+    NSString *language = NSLocale.preferredLanguages.firstObject ?: @"en";
+    bool rtl = [NSLocale characterDirectionForLanguage:language] == NSLocaleLanguageDirectionRightToLeft;
+    ui_report_locale(language.UTF8String, rtl ? 1 : 0);
+}
+
 @implementation UiController
+- (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    [super traitCollectionDidChange:previous];
+    if (rootView) reportSystem(self.traitCollection);
+}
+- (void)systemChanged:(NSNotification *)note { reportSystem(self.traitCollection); }
 - (UIStatusBarStyle)preferredStatusBarStyle {
     return barStyle == 1 ? UIStatusBarStyleLightContent : barStyle == 2 ? UIStatusBarStyleDarkContent : UIStatusBarStyleDefault;
 }
@@ -750,6 +769,11 @@ static void runNativeTest(void) {
     [self.view addGestureRecognizer:edge];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardChanged:)
         name:UIKeyboardWillChangeFrameNotification object:nil];
+    for (NSNotificationName name in @[UIAccessibilityVoiceOverStatusDidChangeNotification,
+                                      UIAccessibilityReduceMotionStatusDidChangeNotification,
+                                      UIContentSizeCategoryDidChangeNotification, NSCurrentLocaleDidChangeNotification]) {
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(systemChanged:) name:name object:nil];
+    }
 }
 - (void)edgeBack:(UIScreenEdgePanGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateEnded) ui_report_back();
@@ -771,6 +795,7 @@ static void runNativeTest(void) {
     rootView.frame = frame;
     relayout();
     ui_report_insets(safe.top, safe.right, safe.bottom, safe.left, self.keyboard);
+    reportSystem(self.traitCollection);
     ui_report_window(self.view.bounds.size.width, self.view.bounds.size.height,
                      (int)std::lround(UIScreen.mainScreen.scale * 100));
 }
