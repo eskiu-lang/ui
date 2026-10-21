@@ -2,6 +2,7 @@
 import <io>;
 import <list>;
 import <mem>;
+import <string>;
 
 extern void abort();
 
@@ -82,6 +83,8 @@ struct Node {
     int kind;
     int depth;
     Key key;
+    // A component's name for diagnostics (Scope); a literal, not copied.
+    string name;
     int gap;
     int padding;
     *Node parent;
@@ -137,15 +140,60 @@ struct Ui {
     fn(*Mutation, int)->void apply;
     int phase;
     int sequence;
+    // Release behavior: a duplicate key warns and is treated as unkeyed instead of
+    // stopping the program.
+    bool lenient;
+    // The name the next element takes (Scope), cleared as soon as it is taken.
+    string next_name;
     bool in_flight;
 }
 *Ui ui;
 int64 ui_epochs;
 const int kSmall = 8;
 
-void ui_require(bool ok, string message) {
+string ui_kind_name(int kind) {
+    if (kind == 1) { return "Column"; }
+    if (kind == 2) { return "Row"; }
+    if (kind == 3) { return "Text"; }
+    if (kind == 4) { return "Button"; }
+    return "Scope";
+}
+
+// Where the running block is, from the root down: `Column[0] > Row[key 3]`, each step
+// the component name or element kind with its key or its index among its siblings.
+void ui_scope_path(*String out) {
+    List<*Node> steps;
+    *Node node = ui == null ? null : ui.builder;
+    while (node != null && node.parent != null) { steps.push(node); node = node.parent; }
+    if (steps.size == 0) { String_append(out, "the root block"); }
+    for (int i = steps.size - 1; i >= 0; i--) {
+        *Node step = steps.data[i];
+        String_append(out, step.name != null ? step.name : ui_kind_name(step.kind));
+        if (step.key.set) {
+            String_appendf(out, "[key %lld]", step.key.value);
+        } else {
+            *Node parent = step.parent;
+            int index = -1;
+            List<*Node>* siblings = parent.emitted.size > 0 ? &parent.emitted : &parent.children;
+            for (j in 0..siblings.size) { if (siblings.data[j] == step) { index = j; break; } }
+            String_appendf(out, "[%d]", index);
+        }
+        if (i > 0) { String_append(out, " > "); }
+    }
+    steps.free();
+}
+
+void ui_fail(string message) {
     // stderr is unbuffered: the message survives the abort when output goes to a file.
-    if (!ok) { print_err("ui: "); println_err(message); abort(); }
+    String text;
+    String_appendf(&text, "ui: %s\n  in ", message);
+    ui_scope_path(&text);
+    println_err(text.data);
+    abort();
+}
+
+void ui_require(bool ok, string message) {
+    if (!ok) { ui_fail(message); }
 }
 
 string ui_copy(string text) {
@@ -308,6 +356,13 @@ void ui_drop_observer(*Observer observer) {
     free(observer);
 }
 
+string ui_hook_name(int kind) {
+    if (kind == 0) { return "use_signal"; }
+    if (kind == 1) { return "use_memo"; }
+    if (kind == 2) { return "use_effect"; }
+    return "use_string";
+}
+
 *Slot ui_slot(int kind, *void tag) {
     *Node node = ui.builder;
     ui_require(node != null && ui.phase == 1, "hook outside render");
@@ -317,7 +372,17 @@ void ui_drop_observer(*Observer observer) {
         node.slots.push(Slot{kind: kind, tag: tag});
     }
     *Slot slot = &node.slots.data[index];
-    ui_require(slot.kind == kind && slot.tag == tag, "hook kind/type changed");
+    if (slot.kind != kind || slot.tag != tag) {
+        String message;
+        if (slot.kind != kind) {
+            String_appendf(&message, "hook kind/type changed at slot %d: expected %s, found %s",
+                index, ui_hook_name(slot.kind), ui_hook_name(kind));
+        } else {
+            String_appendf(&message, "hook kind/type changed at slot %d: %s with another type",
+                index, ui_hook_name(kind));
+        }
+        ui_fail(message.data);
+    }
     return slot;
 }
 
@@ -582,14 +647,28 @@ void ui_unmount(*Node node) {
                 if (sibling.key.set) { parent.new_keys.put(sibling.key.value, sibling); }
             }
         }
+        bool duplicate = false;
         if (parent.new_keys.mask != 0) {
-            ui_require(parent.new_keys.get(k) == null, "duplicate key");
+            duplicate = parent.new_keys.get(k) != null;
         } else {
             for (i in 0..parent.emitted.size) {
                 *Node sibling = parent.emitted.data[i];
-                ui_require(!sibling.key.set || sibling.key.value != k, "duplicate key");
+                if (sibling.key.set && sibling.key.value == k) { duplicate = true; }
             }
         }
+        if (duplicate) {
+            String message;
+            String_appendf(&message, "duplicate key %lld at child %d", k, parent.emitted.size);
+            if (!ui.lenient) { ui_fail(message.data); }
+            String_append(&message, ", treated as unkeyed\n  in ");
+            ui_scope_path(&message);
+            print_err("ui: warning: "); println_err(message.data);
+            String_free(&message);
+            style.key = Key{};
+        }
+    }
+    if (style.key.set) {
+        int64 k = style.key.value;
         if (parent.indexed) {
             if (parent.old_keys.mask != 0) { candidate = parent.old_keys.get(k); }
         } else {
@@ -630,6 +709,8 @@ void ui_unmount(*Node node) {
         ui_retire(void() { ui_release_closure(old_handler); old_cleanup(); ui_release_closure(old_cleanup); });
     }
     node.seen = true;
+    node.name = ui.next_name;
+    ui.next_name = null;
     if (style.key.set && parent.new_keys.mask != 0) { parent.new_keys.put(style.key.value, node); }
     if (fresh || node.gap != style.gap || node.padding != style.padding) {
         node.gap = style.gap; node.padding = style.padding;
@@ -653,7 +734,11 @@ void ui_unmount(*Node node) {
 
 void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
 void Row(Style style, escaping fn()->void block) { ui_element(2, style, null, block, void() {}, void() {}); }
-void Scope(Key k, escaping fn()->void block) { ui_element(0, Style{key: k}, null, block, void() {}, void() {}); }
+// A component's own scope: state, identity and its name in diagnostics.
+void Scope(string name, Key k, escaping fn()->void block) {
+    ui.next_name = name;
+    ui_element(0, Style{key: k}, null, block, void() {}, void() {});
+}
 void Text(string text) { ui_element(3, Style{}, text, void() {}, void() {}, void() {}); }
 void Button(string text, escaping fn()->void handler) { ui_element(4, Style{}, text, void() {}, handler, void() {}); }
 void Button_owned(string text, escaping fn()->void handler, escaping fn()->void cleanup) {
