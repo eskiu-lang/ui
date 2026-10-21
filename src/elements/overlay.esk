@@ -10,7 +10,7 @@ void Modal(bool visible, escaping fn()->void on_request_close, escaping fn()->vo
         ui_release_closure(block);
         return;
     }
-    ui_element(12, Style{padding: 0}, null, block, on_request_close, void() {});
+    ui_element(12, Style{padding: 0}, null, block, on_request_close) {}
 }
 
 void ui_command(int request, int command, List<string>* strings) {
@@ -71,5 +71,5 @@ void Overlay(bool visible, escaping fn()->void on_dismiss, escaping fn()->void b
         return;
     }
     // A backdrop the eye cannot see (an alpha of 1 of 255; 0 would be the platform's dim).
-    ui_element(12, Style{padding: 0, background: rgba(0, 0, 0, 1)}, null, block, on_dismiss, void() {});
+    ui_element(12, Style{padding: 0, background: rgba(0, 0, 0, 1)}, null, block, on_dismiss) {}
 }

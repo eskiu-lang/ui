@@ -309,7 +309,7 @@ void Navigator(*Router router, escaping fn(string)->void screen) {
             string route = router.stack.data[i].data;
             ui.next_active = index == depth - 1;
             ui_element(14, Style{key: key(index), grow: 1, gap: 0}, null, void() { screen(route); },
-                void() {}, void() {});
+                void() {}) {}
         }
-    }, void() {}, void() {});
+    }, void() {}) {}
 }

@@ -6,18 +6,18 @@
 // band behind it.
 void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->void content) {
     ui_own(void() { ui_release_closure(on_delete); ui_release_closure(content); });
-    Scope("SwipeToDelete", Key{}, void() {
+    Scope("SwipeToDelete", Key{}) {
         *Signal<int> offset = use_signal<int>(0);
         *Signal<bool> dragging = use_signal<bool>(false);
         *Signal<bool> removing = use_signal<bool>(false);
         *Signal<int> width = use_signal<int>(0);
         // Gone after the slide out.
-        use_timeout(removing.get() ? 220 : 0, void() { on_delete(); });
+        use_timeout(removing.get() ? 220 : 0) { on_delete(); }
         ui_on_layout(void(Frame f) { width.set(f.width); });
-        Row(Style{radius: kit.radius, background: kit.danger, gap: 0, label: label}, void() {
-            Row(Style{absolute: true, top: 0, bottom: 0, right: 20, align: AlignCenter}, void() {
+        Row(Style{radius: kit.radius, background: kit.danger, gap: 0, label: label}) {
+            Row(Style{absolute: true, top: 0, bottom: 0, right: 20, align: AlignCenter}) {
                 TextWith(Style{font_size: 15, font_weight: 700, color: kit.on_primary}, label);
-            });
+            }
             ui_on_pan(void(Pan p) {
                 if (removing.get()) { return; }
                 if (p.phase == PanMoved) {
@@ -33,8 +33,7 @@ void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->v
                 }
             });
             Column(Style{grow: 1, gap: 0, radius: kit.radius, background: kit.surface, translate_x: offset.get(),
-                         transition_ms: dragging.get() ? 0 : 220, easing: removing.get() ? EaseIn : EaseSpring},
-                void() { content(); });
-        });
-    });
+                         transition_ms: dragging.get() ? 0 : 220, easing: removing.get() ? EaseIn : EaseSpring}) { content(); }
+        }
+    }
 }

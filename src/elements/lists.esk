@@ -20,7 +20,7 @@ void ui_list_rows(*Node list) {
     if (start > 0) { Row(Style{key: key(-1), gap: 0, height: start * h}, void() {}); }
     for (i in start..end) {
         int index = i;
-        Column(Style{key: key(index), gap: 0, height: h}, void() { list.on_item(index); });
+        Column(Style{key: key(index), gap: 0, height: h}) { list.on_item(index); }
     }
     if (end < list.row_count) { Row(Style{key: key(-2), gap: 0, height: (list.row_count - end) * h}, void() {}); }
 }
@@ -46,7 +46,7 @@ void ui_section_rows(*Node list) {
             else {
                 if (skipped > 0) { Row(Style{key: key(-1), gap: 0, height: skipped}, void() {}); skipped = 0; }
                 int64 cell = ((int64)section << 32) | (int64)(item + 1);
-                Column(Style{key: key(cell), gap: 0, height: h}, void() { list.on_cell(section, item); });
+                Column(Style{key: key(cell), gap: 0, height: h}) { list.on_cell(section, item); }
             }
             y += h;
         }
@@ -60,7 +60,7 @@ void FlatList(Style style, int count, int item_height, escaping fn(int)->void re
     ListExtra list = ListExtra{count: count, item_height: item_height < 1 ? 1 : item_height, on_item: render};
     ui.next_list = &list;
     style.gap = 0;
-    ui_element(6, style, null, void() { ui_list_rows(ui.builder); }, void() {}, void() {});
+    ui_element(6, style, null, void() { ui_list_rows(ui.builder); }, void() {}) {}
 }
 
 // Sections from `sizes` (the app keeps it alive), each a header of `header_height` and its
@@ -71,7 +71,7 @@ void SectionList(Style style, *List<int> sizes, int header_height, int item_heig
         sizes: sizes, on_cell: render};
     ui.next_list = &list;
     style.gap = 0;
-    ui_element(6, style, null, void() { ui_section_rows(ui.builder); }, void() {}, void() {});
+    ui_element(6, style, null, void() { ui_section_rows(ui.builder); }, void() {}) {}
 }
 
 // Pull to refresh for the Scroll or FlatList that comes right after it: on_refresh runs when

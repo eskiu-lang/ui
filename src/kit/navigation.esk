@@ -4,7 +4,7 @@
 // Options side by side in a track, the selected one raised (a toggle group).
 void SegmentedControl(string options, int selected, escaping fn(int)->void on_change) {
     ui_own(void() { ui_release_int(on_change); });
-    Row(Style{background: kit.track, radius: kit.radius, padding: 4, gap: 4}, void() {
+    Row(Style{background: kit.track, radius: kit.radius, padding: 4, gap: 4}) {
         List<String> items;
         kit_options(options, &items);
         for (i in 0..items.size) {
@@ -13,31 +13,31 @@ void SegmentedControl(string options, int selected, escaping fn(int)->void on_ch
             string name = items.data[i].data;
             Pressable(Style{grow: 1, padding: 8, radius: kit.radius - 4, background: on ? kit.surface : -1,
                             align: AlignCenter, label: name},
-                void() { on_change(index); }, void() {
-                    TextWith(Style{font_size: 14, font_weight: 600, color: on ? kit.ink : kit.muted}, name);
-                });
+                void() { on_change(index); }) {
+                TextWith(Style{font_size: 14, font_weight: 600, color: on ? kit.ink : kit.muted}, name);
+            }
         }
         kit_free_options(&items);
-    });
+    }
 }
 
 // Tabs over content the caller shows for `selected`: the selected one underlined.
 void TabBar(string tabs, int selected, escaping fn(int)->void on_change) {
     ui_own(void() { ui_release_int(on_change); });
-    Row(Style{gap: 20}, void() {
+    Row(Style{gap: 20}) {
         List<String> items;
         kit_options(tabs, &items);
         for (i in 0..items.size) {
             int index = i;
             bool on = index == selected;
             string name = items.data[i].data;
-            Pressable(Style{gap: 6, label: name}, void() { on_change(index); }, void() {
+            Pressable(Style{gap: 6, label: name}, void() { on_change(index); }) {
                 TextWith(Style{font_size: 15, font_weight: 600, color: on ? kit.primary : kit.muted}, name);
-                Row(Style{height: 2, radius: 1, background: on ? kit.primary : -1}, void() {});
-            });
+                Row(Style{height: 2, radius: 1, background: on ? kit.primary : -1}) {}
+            }
         }
         kit_free_options(&items);
-    });
+    }
 }
 
 // A bar of controls.
@@ -49,22 +49,22 @@ void Toolbar(escaping fn()->void block) {
 // A title bar; `actions` puts controls at its end.
 void NavBar(string title, escaping fn()->void actions) {
     ui_own(void() { ui_release_closure(actions); });
-    Row(Style{padding: 16, gap: 12, align: AlignCenter, background: kit.surface, label: title}, void() {
+    Row(Style{padding: 16, gap: 12, align: AlignCenter, background: kit.surface, label: title}) {
         TextWith(Style{grow: 1, font_size: 20, font_weight: 700, color: kit.ink}, title);
         actions();
-    });
+    }
 }
 
 // A pressable row with a title and an optional subtitle; it lights up under a pointer.
 void ListItem(string title, string subtitle, escaping fn()->void on_press) {
     ui_own(void() { ui_release_closure(on_press); });
-    Scope("ListItem", Key{}, void() {
+    Scope("ListItem", Key{}) {
         *Signal<bool> over = use_signal<bool>(false);
         ui_on_hover(void(bool inside) { over.set(inside); });
         Pressable(Style{padding: 14, radius: kit.radius, background: over.get() ? kit.track : kit.surface, border_width: 1,
-                        border_color: kit.line, gap: 2, label: title}, void() { on_press(); }, void() {
+                        border_color: kit.line, gap: 2, label: title}, void() { on_press(); }) {
             TextWith(Style{font_size: 16, font_weight: 500, color: kit.ink}, title);
             if (subtitle != null && subtitle[0] != 0) { TextWith(Style{font_size: 14, color: kit.muted}, subtitle); }
-        });
-    });
+        }
+    }
 }

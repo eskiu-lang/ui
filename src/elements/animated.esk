@@ -30,13 +30,13 @@ int use_animated(int target, int ms, int easing) {
         elapsed.set(0);
     }
     bool running = goal.value != target || shown.get() != target;
-    use_interval(running ? 16 : 0, void() {
+    use_interval(running ? 16 : 0) {
         int e = elapsed.value + 16;
         int t = ms <= 0 || e >= ms ? 1000 : e * 1000 / ms;
         int start = from.value;
         int end = goal.value;
         elapsed.set(e);
         shown.set(t >= 1000 ? end : start + (int)((int64)(end - start) * ui_ease(easing, t) / 1000));
-    });
+    }
     return shown.get();
 }

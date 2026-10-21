@@ -37,7 +37,7 @@ enum BarStyle { BarDefault, BarLight, BarDark }
 void StatusBar(int bar_style, bool hidden) {
     ui.next_bar_style = bar_style;
     ui.next_bar_hidden = hidden;
-    ui_element(11, Style{}, null, void() {}, void() {}, void() {});
+    ui_element(11, Style{}, null, void() {}, void() {}) {}
 }
 
 // A back handler for as long as the scope is mounted (Android's back button, and a modal's

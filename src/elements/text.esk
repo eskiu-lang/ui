@@ -9,7 +9,7 @@ void Button(string text, escaping fn()->void handler) { ui_element(4, Style{}, t
 void TextWith(Style style, string text) { ui_element(3, style, text, void() {}, void() {}, void() {}); }
 
 void ButtonWith(Style style, string text, escaping fn()->void handler) {
-    ui_element(4, style, text, void() {}, handler, void() {});
+    ui_element(4, style, text, void() {}, handler) {}
 }
 
 void Button_owned(string text, escaping fn()->void handler, escaping fn()->void cleanup) {

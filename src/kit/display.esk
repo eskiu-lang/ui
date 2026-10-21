@@ -9,17 +9,17 @@ void Card(escaping fn()->void block) {
 
 // A small label in a tone's colors.
 void Badge(string text, int tone) {
-    Row(Style{padding: 6, radius: 8, background: kit_tone_background(tone), label: text}, void() {
+    Row(Style{padding: 6, radius: 8, background: kit_tone_background(tone), label: text}) {
         TextWith(Style{font_size: 12, font_weight: 600, color: kit_tone_text(tone)}, text);
-    });
+    }
 }
 
 // Initials in a circle of `size` points.
 void Avatar(string initials, int size) {
     Row(Style{width: size, height: size, radius: size / 2, background: kit.primary_soft, align: AlignCenter,
-              justify: JustifyCenter, label: initials}, void() {
+              justify: JustifyCenter, label: initials}) {
         TextWith(Style{font_size: size * 2 / 5, font_weight: 700, color: kit.primary}, initials);
-    });
+    }
 }
 
 // An image (a bundled file or a URL) in a circle of `size` points.
@@ -35,11 +35,11 @@ void VSeparator() { Row(Style{width: 1, background: kit.line}, void() {}); }
 // `value` of `max` as a filled track, which moves to a new value.
 void ProgressBar(int value, int max) {
     int done = max <= 0 ? 0 : value < 0 ? 0 : value > max ? 1000 : value * 1000 / max;
-    Scope("ProgressBar", Key{}, void() {
+    Scope("ProgressBar", Key{}) {
         int shown = use_animated(done, 300, EaseOut);
-        Row(Style{height: 8, radius: 4, gap: 0, background: kit.track, label: "Progress"}, void() {
+        Row(Style{height: 8, radius: 4, gap: 0, background: kit.track, label: "Progress"}) {
             if (shown > 0) { Row(Style{grow: shown, background: kit.primary, radius: 4}, void() {}); }
             if (1000 - shown > 0) { Row(Style{grow: 1000 - shown}, void() {}); }
-        });
-    });
+        }
+    }
 }

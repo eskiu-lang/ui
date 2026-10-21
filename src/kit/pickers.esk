@@ -40,66 +40,66 @@ string kit_month_name(int month) {
 // least 280 points.
 void Calendar(Date selected, escaping fn(Date)->void on_select) {
     ui_own(void() { kit_release_date(on_select); });
-    Scope("Calendar", Key{}, void() {
+    Scope("Calendar", Key{}) {
         // The month shown, as year * 12 + month - 1.
         *Signal<int> shown = use_signal<int>(selected.year * 12 + selected.month - 1);
         int year = shown.get() / 12;
         int month = shown.get() % 12 + 1;
-        Column(Style{gap: 8, min_width: 280}, void() {
-            Row(Style{align: AlignCenter, gap: 4}, void() {
+        Column(Style{gap: 8, min_width: 280}) {
+            Row(Style{align: AlignCenter, gap: 4}) {
                 String title;
                 defer String_free(&title);
                 String_format(&title, "%s %d", kit_month_name(month), year);
                 TextWith(Style{grow: 1, font_size: 16, font_weight: 700, color: kit.ink}, title.data);
-                KitButton("‹", VariantGhost, void() { shown.set(shown.get() - 1); });
-                KitButton("›", VariantGhost, void() { shown.set(shown.get() + 1); });
-            });
-            Row(Style{gap: 0}, void() {
+                KitButton("‹", VariantGhost) { shown.set(shown.get() - 1); }
+                KitButton("›", VariantGhost) { shown.set(shown.get() + 1); }
+            }
+            Row(Style{gap: 0}) {
                 string names = "SMTWTFS";
                 for (i in 0..7) {
                     String letter;
                     defer String_free(&letter);
                     String_push(&letter, names[i]);
                     string text = letter.data;
-                    Row(Style{width: 1, grow: 1, justify: JustifyCenter}, void() {
+                    Row(Style{width: 1, grow: 1, justify: JustifyCenter}) {
                         TextWith(Style{font_size: 12, font_weight: 600, color: kit.muted}, text);
-                    });
+                    }
                 }
-            });
+            }
             int first = kit_weekday(year, month, 1);
             int days = kit_days_in_month(year, month);
             int cells = (first + days + 6) / 7 * 7;
             for (int week = 0; week < cells / 7; week++) {
-                Row(Style{key: key(week), gap: 0}, void() {
+                Row(Style{key: key(week), gap: 0}) {
                     for (i in 0..7) {
                         int day = week * 7 + i - first + 1;
                         if (day < 1 || day > days) {
-                            Row(Style{key: key(i), width: 1, grow: 1, height: 40}, void() {});
+                            Row(Style{key: key(i), width: 1, grow: 1, height: 40}) {}
                             continue;
                         }
                         bool on = selected.year == year && selected.month == month && selected.day == day;
                         String number;
                         defer String_free(&number);
                         String_format(&number, "%d", day);
-                        Row(Style{key: key(i), width: 1, grow: 1, justify: JustifyCenter}, void() {
+                        Row(Style{key: key(i), width: 1, grow: 1, justify: JustifyCenter}) {
                             Pressable(Style{width: 40, height: 40, radius: 20, align: AlignCenter, justify: JustifyCenter,
                                             background: on ? kit.primary : -1, label: number.data},
-                                void() { on_select(Date{year, month, day}); }, void() {
-                                    TextWith(Style{font_size: 15, font_weight: on ? 700 : 400, color: on ? kit.on_primary : kit.ink},
-                                        number.data);
-                                });
-                        });
+                                void() { on_select(Date{year, month, day}); }) {
+                                TextWith(Style{font_size: 15, font_weight: on ? 700 : 400, color: on ? kit.on_primary : kit.ink},
+                                    number.data);
+                            }
+                        }
                     }
-                });
+                }
             }
-        });
-    });
+        }
+    }
 }
 
 // A field showing `value` that opens a Calendar.
 void DatePicker(Date value, escaping fn(Date)->void on_change) {
     ui_own(void() { kit_release_date(on_change); });
-    Scope("DatePicker", Key{}, void() {
+    Scope("DatePicker", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
         String text;
         defer String_free(&text);
@@ -107,13 +107,13 @@ void DatePicker(Date value, escaping fn(Date)->void on_change) {
         string shown = text.data;
         Popover(open.get(), void() { open.set(false); }, void() {
             Pressable(Style{padding: 12, radius: kit.radius, background: kit.surface, border_width: 1, border_color: kit.line,
-                            label: shown}, void() { open.set(true); }, void() {
+                            label: shown}, void() { open.set(true); }) {
                 TextWith(Style{font_size: 16, color: kit.ink}, shown);
-            });
-        }, void() {
+            }
+        }) {
             Calendar(value, void(Date d) { open.set(false); on_change(d); });
-        });
-    });
+        }
+    }
 }
 
 // The swatches ColorPicker offers.
@@ -126,13 +126,13 @@ int64 kit_swatch(int i) {
 // A swatch showing `color` that opens a grid of colors to choose from.
 void ColorPicker(int64 color, escaping fn(int64)->void on_change) {
     ui_own(void() { kit_release_int64(on_change); });
-    Scope("ColorPicker", Key{}, void() {
+    Scope("ColorPicker", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
         Popover(open.get(), void() { open.set(false); }, void() {
             Pressable(Style{width: 44, height: 44, radius: 22, background: color, border_width: 2, border_color: kit.line,
-                            label: "Color"}, void() { open.set(true); }, void() {});
-        }, void() {
-            Row(Style{wrap: true, gap: 8, padding: 4}, void() {
+                            label: "Color"}, void() { open.set(true); }) {}
+        }) {
+            Row(Style{wrap: true, gap: 8, padding: 4}) {
                 for (i in 0..12) {
                     int64 swatch = kit_swatch(i);
                     bool on = swatch == color;
@@ -141,9 +141,9 @@ void ColorPicker(int64 color, escaping fn(int64)->void on_change) {
                     String_format(&name, "Color %d", i + 1);
                     Pressable(Style{key: key(i), width: 36, height: 36, radius: 18, background: swatch,
                                     border_width: on ? 3 : 0, border_color: kit.ink, label: name.data},
-                        void() { open.set(false); on_change(swatch); }, void() {});
+                        void() { open.set(false); on_change(swatch); }) {}
                 }
-            });
-        });
-    });
+            }
+        }
+    }
 }

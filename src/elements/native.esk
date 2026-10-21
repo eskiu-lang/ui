@@ -54,7 +54,7 @@ void ui_native_prop(string name, string value) {
 // a leaf: give it a size. on_event gets the events the view sends (name and payload).
 void NativeView(Style style, string type, escaping fn(string, string)->void on_event) {
     ui.next_view_type = type;
-    ui_element(13, style, null, void() {}, void() {}, void() {});
+    ui_element(13, style, null, void() {}, void() {}) {}
     *Node node = ui.builder.emitted.data[ui.builder.emitted.size - 1];
     node.on_view = on_event;
 }

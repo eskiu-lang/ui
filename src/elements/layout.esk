@@ -32,10 +32,10 @@ void Scroll(Style style, escaping fn()->void block) { ui_element(6, style, null,
 // A component's own scope: state, identity and its name in diagnostics.
 void Scope(string name, Key k, escaping fn()->void block) {
     ui.next_name = name;
-    ui_element(0, Style{key: k}, null, block, void() {}, void() {});
+    ui_element(0, Style{key: k}, null, block, void() {}) {}
 }
 
 // A container that reacts to a press anywhere in it (the children are its content).
 void Pressable(Style style, escaping fn()->void on_press, escaping fn()->void block) {
-    ui_element(8, style, null, block, on_press, void() {});
+    ui_element(8, style, null, block, on_press) {}
 }

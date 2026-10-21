@@ -5,7 +5,7 @@
 void Switch(Style style, bool value, escaping fn(bool)->void on_change) {
     SwitchExtra extra = SwitchExtra{value, on_change};
     ui.next_switch = &extra;
-    ui_element(9, style, null, void() {}, void() {}, void() {});
+    ui_element(9, style, null, void() {}, void() {}) {}
 }
 
 // A controlled slider from `min` to `max` in whole steps: it shows `value`, and on_change
@@ -13,7 +13,7 @@ void Switch(Style style, bool value, escaping fn(bool)->void on_change) {
 void Slider(Style style, int value, int min, int max, escaping fn(int)->void on_change) {
     SliderExtra extra = SliderExtra{value, min, max, on_change};
     ui.next_slider = &extra;
-    ui_element(15, style, null, void() {}, void() {}, void() {});
+    ui_element(15, style, null, void() {}, void() {}) {}
 }
 
 // A controlled text field: `value` is what it shows, `on_change` gets each edit (the text
@@ -34,7 +34,7 @@ void TextInput(Input input, escaping fn(string)->void on_change) {
         focused: input.focused};
     ui.next_input = &extra;
     ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
-        void() {}, void() {}, void() {});
+        void() {}, void() {}) {}
 }
 
 // The same, with `on_focus` told when the field gains (true) or loses (false) focus.
@@ -43,5 +43,5 @@ void TextInput_focus(Input input, escaping fn(string)->void on_change, escaping 
         placeholder: input.placeholder, focused: input.focused};
     ui.next_input = &extra;
     ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
-        void() {}, void() {}, void() {});
+        void() {}, void() {}) {}
 }
