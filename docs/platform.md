@@ -173,7 +173,8 @@ Modal(open.get(), void() { open.set(false); }, void() {
 ```
 
 While `visible`, the block is drawn on a layer over the whole window. Back on Android and
-Escape on the web call `on_request_close`; the app decides whether it closes.
+Escape on the web and a tap on the backdrop call `on_request_close`; the app decides whether
+it closes. `Overlay` is the same layer with no dim, for menus and popovers.
 
 ## Lifecycle
 

@@ -26,6 +26,7 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}, 
 | `absolute` | false | Out of the parent's flow, placed by `left`, `top`, `right`, `bottom`. |
 | `left`, `top`, `right`, `bottom` | `kUnset` | Offsets from the parent's edges, in points, for an absolute element (0 is an offset). |
 | `aspect_ratio` | 0 | Width over height: the side that is not set comes from the one that is. |
+| `min_width`, `max_width`, `min_height`, `max_height` | 0 | Bounds on the size the layout gives, in points; 0 is no bound. |
 | `translate_x`, `translate_y` | 0 | Moves the drawn element, in points, without changing the layout. |
 | `scale` | 100 | Scales the drawn element about its center, in percent. |
 | `rotate` | 0 | Turns the drawn element about its center, in degrees. |

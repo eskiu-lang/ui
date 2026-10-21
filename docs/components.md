@@ -17,7 +17,7 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 | `Scope(name, Key, block)` | A component's own scope: state, identity, and `name` in diagnostics. No view. |
 | `ui_on_pan(fn(Pan)->void)` | For the element right after it: a drag on it, from `PanBegan` (past the platform's slop) through `PanMoved` to `PanEnded` or `PanCancelled`, with `dx`, `dy` (points since it began) and `vx`, `vy` (points per second). A press that does not move is still a press, and a drag takes over from a pressable inside. |
 | `ui_on_hover(fn(bool)->void)` | For the element right after it: true when a pointer (a mouse, a trackpad, an iPad's pointer, a stylus) moves over it, false when it leaves. Touch screens have no hover. |
-| `ui_on_layout(fn(Frame)->void)` | For the element right after it: the handler gets its `Frame{x, y, width, height}` (points, relative to the parent) after each layout that changes it, as React Native's `onLayout`. |
+| `ui_on_layout(fn(Frame)->void)` | For the element right after it: the handler gets its `Frame{x, y, width, height, window_x, window_y}` (points; x and y relative to the parent, the window position from the window's top left, also after a scroll) after each change, as React Native's `onLayout`. |
 
 ### Text and buttons
 
@@ -59,7 +59,8 @@ view returns to it.
 
 | Element | What it is |
 |---|---|
-| `Modal(bool visible, on_request_close, block)` | Content on a layer over the whole screen while `visible`. Back on Android and Escape on the web call `on_request_close`. |
+| `Modal(bool visible, on_request_close, block)` | Content on a layer over the whole screen while `visible`, over a dim backdrop. Back on Android, Escape on the web and a tap on the backdrop (outside the content) call `on_request_close`. |
+| `Overlay(bool visible, on_dismiss, block)` | The same layer without the dim, for content placed next to something: the block positions itself (absolute, from a `Frame`'s `window_x` and `window_y`). |
 | `Alert(title, message, buttons, fn(int)->void)` | A native alert. `buttons` are separated by newlines (null: "OK"); the handler gets the index pressed, -1 when it was dismissed. |
 
 ### The platform
@@ -144,6 +145,15 @@ variants `VariantPrimary`, `VariantSecondary`, `VariantGhost`, `VariantDanger`.
 | `NavBar(title, actions)` | A title bar with controls at its end. |
 | `ListItem(title, subtitle, on_press)` | A pressable row with a title and an optional subtitle; it lights up under a pointer. |
 | `Collapsible(title, content)` | A header that shows or hides its content; its plus turns into a cross. |
+| `Popover(open, on_dismiss, trigger, content)` | `content` in a panel next to `trigger` while `open`: below it, or above when there is no room, at least as wide as the trigger and kept in the window. |
+| `DropdownMenu(label, options, fn(int)->void)` | A button that opens a menu of options (a line each). |
+| `Select(options, selected, fn(int)->void)` | A field showing the chosen option, with a menu to change it. |
+| `MenuItem(text, checked, on_press)` | A row of a menu, lit under a pointer. |
+| `Tooltip(text, content)` | `text` in a bubble above `content` while a pointer is over it. |
+| `kit_toast(text)`, `ToastHost()` | A short message at the bottom for a few seconds; the app puts `ToastHost()` last in its root. |
+| `Calendar(Date, fn(Date)->void)` | A month's days with arrows to the months around it. |
+| `DatePicker(Date, fn(Date)->void)` | A field showing a date that opens a `Calendar`. |
+| `ColorPicker(int64 color, fn(int64)->void)` | A swatch that opens a grid of colors. |
 | `SwipeToDelete(label, on_delete, content)` | A row the user drags left: past a third of its width, or flicked, it slides out and `on_delete` runs; short of that it springs back. Key each row. |
 | `Accordion(sections)` | Collapsibles in one card. |
 

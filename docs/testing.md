@@ -36,7 +36,7 @@ A new element or behavior gets a model test in the file for its area.
 
 | Command | Checks |
 |---|---|
-| `python3 tools/build_web.py` then `node tests/web.mjs` | the wasm module against a recording DOM; the build fails when the demo module passes 160 KiB |
+| `python3 tools/build_web.py` then `node tests/web.mjs` | the wasm module against a recording DOM; the build fails when the test module (every example and the whole kit) passes 200 KiB |
 | `python3 tools/check_ios.py` | a booted simulator (`DEVICE` picks one) |
 | `python3 tools/check_android.py` | a booted arm64 device or emulator (`ANDROID_SERIAL`), SDK 35, NDK 28.2 |
 | `python3 tools/check_native.py` | the native example on the simulator and the Android device: module events, a view's props and events |

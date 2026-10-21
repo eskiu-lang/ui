@@ -75,6 +75,7 @@ it into `Mutation` records for tests and tools.
 | | | 38 | rotate (degrees) |
 | | | 39, 40 | transition (ms; 0 none), easing (`Easing`); sent before the props they animate |
 | | | 41 | pan listener (1: report drags on the node) |
+| | | 42 to 45 | minimum width, maximum width, minimum height, maximum height (points; 0: no bound) |
 
 A text input's value is its text (op 3). Sizes are points.
 
@@ -111,7 +112,7 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_alert(request, choice)` | an alert was answered (-1 dismissed) |
 | `ui_dispatch_native(channel, payload)` | a native module posted an event (`use_native_event`) |
 | `ui_dispatch_view(id, gen, name, payload)` | a native view sent an event (`NativeView`'s `on_event`) |
-| `ui_dispatch_layout(id, gen, x, y, width, height)` | a listened node's frame changed (points, relative to its parent) |
+| `ui_dispatch_layout(id, gen, x, y, width, height, window_x, window_y)` | a listened node's frame changed (points, relative to its parent, then from the window's top left; also sent when a scroll moves it) |
 | `ui_dispatch_fetch(request, status, body, headers)` | a fetch finished (status 0: `body` is the error) |
 | `ui_dispatch_answer(request, text)` | the text a request asked for (a paste) |
 | `ui_dispatch_pan(id, gen, phase, dx, dy, vx, vy)` | a drag on a node with a pan handler |
