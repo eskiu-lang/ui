@@ -27,6 +27,10 @@
     [self.web loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:self.url]]];
 }
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender { return YES; }
+// The window takes the page's title (an app's name).
+- (void)webView:(WKWebView *)web didFinishNavigation:(WKNavigation *)navigation {
+    if (web.title.length) self.window.title = web.title;
+}
 - (void)webView:(WKWebView *)web didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
     fprintf(stderr, "desktop load failed: %s\n", error.description.UTF8String);
     if (self.testing) exit(1);
