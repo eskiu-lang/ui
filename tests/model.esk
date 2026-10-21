@@ -638,6 +638,28 @@ void images() {
     ui_shutdown(); balanced("images leak");
 }
 
+int env_top;
+bool env_active;
+void environment() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount(void() {
+        Row(Style{key: key(1)}, void() { env_top = ui_insets().top; });
+        Row(Style{key: key(2)}, void() { env_active = ui_is_active(); });
+    });
+    ui_frame();
+    check(env_top == 0 && env_active, "defaults");
+    ui_set_insets(Insets{top: 47, bottom: 34});
+    check(ui_needs_frame(), "an inset change schedules a frame");
+    ui_frame();
+    check(env_top == 47 && keyed(1).runs == 2, "readers see the insets");
+    ui_set_insets(Insets{top: 47, bottom: 34});
+    check(!ui_needs_frame(), "the same insets change nothing");
+    ui_set_active(false); ui_frame();
+    check(!env_active, "background");
+    ui_shutdown(); balanced("environment leak");
+}
+
 int main() {
     independent(); printf("PASS independent\n");
     parent_child(); printf("PASS parent-child\n");
@@ -655,6 +677,7 @@ int main() {
     labels(); printf("PASS labels\n");
     sizes(); printf("PASS sizes\n");
     images(); printf("PASS images\n");
+    environment(); printf("PASS environment\n");
     commit_lifetime(); printf("PASS async commit\n");
     queued_events(); printf("PASS queued events\n");
     model_signal(); printf("PASS model signal\n");

@@ -203,8 +203,17 @@ void ui_decode(*uint8 data, int len, List<Mutation>* out) {
 }
 // Event kinds: 1 press, 2 change (text), 3 focus (value 1 focused, 0 blurred).
 struct Event { int id; int generation; int kind; int value; string text; }
+// What the host reports about the screen, in points: the system bars and display cutouts
+// on each side, and the software keyboard over the bottom.
+struct Insets { int top; int right; int bottom; int left; int keyboard; }
+
 struct Ui {
     *Node root;
+    // The host's environment, read through ui_insets and ui_is_active: a change of either
+    // bumps `environment`, which those reads subscribe to.
+    Insets insets;
+    bool inactive;
+    *Signal<int> environment;
     *Node builder;
     *Observer tracking;
     // Index = node id; null once the node is unmounted. An id is reused only after the
@@ -924,6 +933,25 @@ void Image(Style style, string source) {
     ui_element(7, style, null, void() {}, void() {}, void() {});
 }
 
+// The host's side: report the insets (whatever the host policy, so an edge-to-edge app can
+// pad itself) and whether the app is in the foreground. Readers re-run on a change.
+void ui_set_insets(Insets insets) {
+    Insets old = ui.insets;
+    if (old.top == insets.top && old.right == insets.right && old.bottom == insets.bottom &&
+        old.left == insets.left && old.keyboard == insets.keyboard) { return; }
+    ui.insets = insets;
+    ui.environment.set(ui.environment.value + 1);
+}
+
+void ui_set_active(bool active) {
+    if (ui.inactive == !active) { return; }
+    ui.inactive = !active;
+    ui.environment.set(ui.environment.value + 1);
+}
+
+Insets ui_insets() { ui.environment.get(); return ui.insets; }
+bool ui_is_active() { ui.environment.get(); return !ui.inactive; }
+
 // A column whose content scrolls when it is taller than the space it gets.
 void Scroll(Style style, escaping fn()->void block) { ui_element(6, style, null, block, void() {}, void() {}); }
 // A component's own scope: state, identity and its name in diagnostics.
@@ -974,6 +1002,7 @@ void ui_assign_id(*Node node) {
 void ui_init(*Ui runtime, escaping fn(*uint8, int)->void apply) {
     ui = runtime;
     ui.apply = apply;
+    ui.environment = signal_new<int>(0);
     ui.by_id.push(null);
     ui.generations.push(0);
     *Node root = alloc<Node>(1);
@@ -1180,6 +1209,7 @@ void ui_shutdown() {
     ui.apply(ui.commit.data, ui.commit.len);
     ui_require(!ui.in_flight, "prototype shutdown requires synchronous renderer");
     free_closure(ui.apply);
+    ui.environment.free();
     ui.by_id.free(); ui.generations.free(); ui.retired_ids.free(); ui.free_ids.free();
     ui.next_nodes.free(); ui.render_writes.free(); ui.looping.free();
     ui.dirty_memos.free(); ui.dirty_effects.free();
