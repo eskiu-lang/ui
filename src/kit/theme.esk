@@ -15,15 +15,37 @@ struct Theme {
     int64 track = 0xF1F2F6FF;
     int64 danger = 0xDC2626FF;
     int radius = 12;
+    // Dark tones for badges and the like.
+    bool dark;
 }
 
 Theme kit;
+
+// The light theme (Theme's defaults) and a dark one.
+Theme kit_light() { return Theme{}; }
+
+Theme kit_dark() {
+    return Theme{primary: 0x818CF8FF, on_primary: 0x111827FF, primary_soft: 0x312E81FF, ink: 0xF3F4F6FF,
+                 muted: 0x9CA3AFFF, page: 0x0B0F19FF, surface: 0x161B26FF, line: 0x2A3140FF, control: 0x4B5563FF,
+                 track: 0x1F2533FF, danger: 0xF87171FF, radius: 12, dark: true};
+}
+
+// The theme for the system's appearance; called at the top of the app's root block (which then
+// renders again when the appearance changes). Changes to `kit` go after it.
+void kit_follow_system() { kit = ui_color_scheme() == SchemeDark ? kit_dark() : kit_light(); }
 
 enum Tone { ToneNeutral, TonePrimary, ToneSuccess, ToneWarning, ToneDanger }
 
 enum Variant { VariantPrimary, VariantSecondary, VariantGhost, VariantDanger }
 
 int64 kit_tone_text(int tone) {
+    if (kit.dark) {
+        if (tone == TonePrimary) { return 0xC7D2FEFF; }
+        if (tone == ToneSuccess) { return 0x6EE7B7FF; }
+        if (tone == ToneWarning) { return 0xFCD34DFF; }
+        if (tone == ToneDanger) { return 0xFCA5A5FF; }
+        return 0xD1D5DBFF;
+    }
     if (tone == TonePrimary) { return 0x4338CAFF; }
     if (tone == ToneSuccess) { return 0x047857FF; }
     if (tone == ToneWarning) { return 0xB45309FF; }
@@ -32,6 +54,13 @@ int64 kit_tone_text(int tone) {
 }
 
 int64 kit_tone_background(int tone) {
+    if (kit.dark) {
+        if (tone == TonePrimary) { return 0x312E81FF; }
+        if (tone == ToneSuccess) { return 0x064E3BFF; }
+        if (tone == ToneWarning) { return 0x78350FFF; }
+        if (tone == ToneDanger) { return 0x7F1D1DFF; }
+        return 0x374151FF;
+    }
     if (tone == TonePrimary) { return 0xE0E7FFFF; }
     if (tone == ToneSuccess) { return 0xD1FAE5FF; }
     if (tone == ToneWarning) { return 0xFEF3C7FF; }
