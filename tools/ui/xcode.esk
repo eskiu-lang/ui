@@ -337,6 +337,7 @@ string ios_object_step(Project* p, string out) {
     compiler.push("-isysroot"); compiler.push(sdk.data); compiler.push("-O2");
     List<String> objects;
     yoga_objects(&compiler, join(eskiu_home(), device ? "cache/yoga-iphoneos-arm64" : join("cache/yoga-ios", arch)), &objects);
+    p.native_archives(device ? "ios-arm64" : (strcmp(arch, "arm64") == 0 ? "ios-arm64-simulator" : "ios-x86_64-simulator"), &objects);
     string dir = join(join(out, "xcode/lib"), platform);
     fs_mkdir_p(dir);
     string app = join(dir, "app.o");

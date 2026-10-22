@@ -76,6 +76,9 @@ string build_android(Project* p) {
     compiler.push(clang); compiler.push("-fPIC"); compiler.push("-O2");
     List<String> objects;
     yoga_objects(&compiler, join(eskiu_home(), "cache/yoga-android-arm64"), &objects);
+    List<String> archives;
+    defer fs_list_free(&archives);
+    p.native_archives("android-arm64", &archives);
     // The host, the native code and the Java classes are built again only when they changed.
     string host = join(out, dev ? "host-dev.o" : "host.o");
     string header = join(p.ui.data, "hosts/android/ui_native.h");
@@ -140,7 +143,10 @@ string build_android(Project* p) {
         if (dev) { link.add("-Wl,-soname,libeskiu_ui.so"); } else { link.add(app); }
         for (i in 0..native_objects.size) { link.add(native_objects.data[i].data); }
         for (i in 0..objects.size) { link.add(objects.data[i].data); }
-        link.add("-llog"); link.add("-o"); link.add(host_library);
+        if (!dev) {
+            for (i in 0..archives.size) { link.add(archives.data[i].data); }
+        }
+        link.add("-llog"); link.add("-landroid"); link.add("-o"); link.add(host_library);
         link.must(null);
         link.free();
         if (dev) { built(host_library, &host_inputs); }
@@ -154,7 +160,9 @@ string build_android(Project* p) {
         android_core = join(reload, name.data);
         Cmd core;
         core.add(clang); core.add("-shared"); core.add("-static-libstdc++"); core.add("-Wl,-z,max-page-size=16384");
-        core.add(app); core.add("-L"); core.add(libs); core.add("-leskiu_ui"); core.add("-llog");
+        core.add(app);
+        for (i in 0..archives.size) { core.add(archives.data[i].data); }
+        core.add("-L"); core.add(libs); core.add("-leskiu_ui"); core.add("-llog"); core.add("-landroid");
         core.add("-o"); core.add(android_core);
         core.must(null);
         core.free();

@@ -77,6 +77,14 @@ void ios_core(Project* p, string out, string app, string executable, List<string
     Cmd link;
     for (i in 0..compiler.size) { link.add(compiler.data[i]); }
     link.add("-bundle"); link.add("-bundle_loader"); link.add(executable); link.add(app);
+    List<String> archives;
+    defer fs_list_free(&archives);
+    p.native_archives(strcmp(ios_arch(), "arm64") == 0 ? "ios-arm64-simulator" : "ios-x86_64-simulator", &archives);
+    for (i in 0..archives.size) { link.add(archives.data[i].data); }
+    List<string> frameworks;
+    defer frameworks.free();
+    p.config.all("ios.frameworks", &frameworks);
+    for (i in 0..frameworks.size) { link.add("-framework"); link.add(frameworks.data[i]); }
     link.add("-o"); link.add(library);
     link.must(null);
     link.free();
@@ -103,6 +111,7 @@ string build_ios(Project* p) {
     compiler.push("-isysroot"); compiler.push(sdk.data); compiler.push("-O2");
     List<String> objects;
     yoga_objects(&compiler, join(eskiu_home(), ui_release ? "cache/yoga-iphoneos-arm64" : join("cache/yoga-ios", ios_arch())), &objects);
+    p.native_archives(ui_release ? "ios-arm64" : (strcmp(ios_arch(), "arm64") == 0 ? "ios-arm64-simulator" : "ios-x86_64-simulator"), &objects);
     string app = join(out, ui_release ? "app-release.o" : "app.o");
     Cmd esk;
     esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add(ui_release ? "-O2" : app_opt());

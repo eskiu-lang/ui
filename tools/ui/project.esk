@@ -156,3 +156,115 @@ void Project_native(Project* self, string platform, string ext, List<String>* ou
         fs_list_free(&names);
     }
 }
+
+// The value of `key = "..."` inside an inline table line, or "".
+void toml_inline_value(String* line, string key, String* out) {
+    String_clear(out);
+    int64 at = String_find(line, key, 0);
+    if (at < 0) { return; }
+    int64 eq = -1;
+    for (int64 i = at + (int64)strlen(key); i < line.len; i++) {
+        char c = line.data[i];
+        if (c == ' ' || c == '\t') { continue; }
+        if (c == '=') { eq = i; }
+        break;
+    }
+    if (eq < 0) { return; }
+    int64 quote = -1;
+    for (int64 i = eq + 1; i < line.len; i++) {
+        char c = line.data[i];
+        if (c == ' ' || c == '\t') { continue; }
+        if (c == '"') { quote = i; }
+        break;
+    }
+    if (quote < 0) { return; }
+    for (int64 j = quote + 1; j < line.len && line.data[j] != '"'; j++) {
+        char[2] one;
+        one[0] = line.data[j]; one[1] = 0;
+        String_append(out, (string)&one[0]);
+    }
+}
+
+// The prebuilt static archives (`libNAME.a`) from `[native.NAME]` in every package's
+// eskiu.toml for `platform` ("ios-arm64", "ios-arm64-simulator", "ios-x86_64-simulator",
+// "android-arm64"), downloaded and unpacked into $ESKIU_HOME/native/SHA256 when missing.
+void Project_native_archives(Project* self, string platform, List<String>* out) {
+    for (i in 0..self.roots.size) {
+        string toml = join(self.roots.data[i].data, "eskiu.toml");
+        if (fs_exists(toml) != 1) { continue; }
+        String text;
+        if (fs_read_text(toml, &text) != 0) { continue; }
+        List<String> lines;
+        String_lines(&text, &lines);
+        String lib_name;
+        for (j in 0..lines.size) {
+            String* line = &lines.data[j];
+            String_trim(line);
+            if (line.len == 0 || line.data[0] == '#') { continue; }
+            if (line.data[0] == '[') {
+                String_clear(&lib_name);
+                if (String_starts_with(line, "[native.") == 1 && String_ends_with(line, "]") == 1) {
+                    for (int64 k = 8; k < line.len - 1; k++) {
+                        char[2] one;
+                        one[0] = line.data[k]; one[1] = 0;
+                        String_append(&lib_name, (string)&one[0]);
+                    }
+                }
+                continue;
+            }
+            if (lib_name.len == 0 || String_starts_with(line, platform) != 1) { continue; }
+            int64 plen = (int64)strlen(platform);
+            if (line.len <= plen || (line.data[plen] != ' ' && line.data[plen] != '\t' && line.data[plen] != '=')) {
+                continue;
+            }
+            String url;
+            String sha256;
+            String sub;
+            toml_inline_value(line, "url", &url);
+            toml_inline_value(line, "sha256", &sha256);
+            toml_inline_value(line, "lib", &sub);
+            if (sub.len == 0) { String_from(&sub, "lib"); }
+            if (url.len > 0 && sha256.len == 64) {
+                string base = join(eskiu_home(), "native");
+                string dir = join(base, sha256.data);
+                string lib_dir = join(dir, sub.data);
+                if (fs_is_dir(lib_dir) != 1) {
+                    fs_mkdir_p(base);
+                    String dl;
+                    String_appendf(&dl, "%s.download", dir);
+                    String tmp;
+                    String_appendf(&tmp, "%s.tmp", dir);
+                    fs_remove_all(dl.data);
+                    fs_remove_all(tmp.data);
+                    fs_mkdir_p(tmp.data);
+                    Cmd curl;
+                    curl.add("curl"); curl.add("-fsSL"); curl.add("--retry"); curl.add("2");
+                    curl.add("-o"); curl.add(dl.data); curl.add(url.data);
+                    curl.must(null);
+                    curl.free();
+                    Cmd tar;
+                    tar.add("tar"); tar.add("-xf"); tar.add(dl.data); tar.add("-C"); tar.add(tmp.data);
+                    tar.must(null);
+                    tar.free();
+                    fs_remove_all(dl.data);
+                    Cmd mv;
+                    mv.add("mv"); mv.add(tmp.data); mv.add(dir);
+                    mv.must(null);
+                    mv.free();
+                    String_free(&dl);
+                    String_free(&tmp);
+                }
+                String archive;
+                String_appendf(&archive, "%s/lib%s.a", lib_dir, lib_name.data);
+                if (fs_exists(archive.data) == 1) { out.push(archive); }
+                else { String_free(&archive); }
+            }
+            String_free(&url);
+            String_free(&sha256);
+            String_free(&sub);
+        }
+        String_free(&lib_name);
+        fs_list_free(&lines);
+        String_free(&text);
+    }
+}
