@@ -9,7 +9,8 @@ shim: the app, its components and its state are the same Eskiu code everywhere.
 | iOS | `hosts/ios/host.mm`: UIKit, Objective-C++ | Yoga 3.2.1 |
 | Android | `hosts/android/`: `UiActivity.java` over `android.view`, `host.cpp` the JNI shim | Yoga 3.2.1 |
 | macOS | `hosts/macos/host.m`: the web host in a `WKWebView` window | the web's |
-| Windows, Linux | not yet | |
+| Linux | `hosts/linux/host.c`: the web host in a GTK / WebKitGTK window | the web's |
+| Windows | `hosts/windows/host.cpp`: the web host in a Win32 / WebView2 window | the web's |
 
 ## Elements per host
 
@@ -112,8 +113,23 @@ changed.
 
 ## macOS
 
-`ui build macos` builds the web host and a small Cocoa app whose window is a `WKWebView`
-loading it. The title comes from the page.
+`ui build macos` builds the web host and a Cocoa app (`.app` bundle and binary) whose
+window is a `WKWebView` loading it. The window takes the page's title and configures
+native menu items (Quit, Edit with standard shortcuts Cmd+C, Cmd+V, Cmd+Z).
+
+## Linux
+
+`ui build linux` builds the web host and a native GTK 3 application using WebKitGTK
+(`hosts/linux/host.c`). It connects to `webkit2gtk-4.1` (or `webkit2gtk-4.0`) via
+`pkg-config`. The window synchronizes its title with the document title and supports
+snapshot testing.
+
+## Windows
+
+`ui build windows` builds the web host and a native Win32 application using Microsoft
+Edge WebView2 (`hosts/windows/host.cpp`). It can be compiled using MSVC (`cl.exe`) or
+MinGW (`g++` / `clang++`). It dynamically loads `WebView2Loader.dll` and handles window
+resizing, document title changes, and message pumping.
 
 ## Writing a host
 

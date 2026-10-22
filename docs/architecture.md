@@ -8,7 +8,7 @@
  elements       <ui>: Column, Text, TextInput, FlatList, Modal, NativeView...
  core           the tree, reactivity, frames and commits, the wire format
  ── commit (bytes) ──▶                     ◀── events (calls) ──
- hosts          web (DOM), iOS (UIKit + Yoga), Android (android.view + Yoga), macOS (WKWebView)
+ hosts          web (DOM), iOS (UIKit + Yoga), Android (android.view + Yoga), macOS (WKWebView), Linux (WebKitGTK), Windows (WebView2)
  tool           tools/ui: new, build, run, serve; compiles the app and links it into each host
 ```
 
@@ -70,8 +70,8 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `hosts/commit.h` | A C decoder of commits, shared by the native hosts |
 | `hosts/core.h` | The core's entry points for the native hosts: linked, or loaded from the app's library in a reload build |
 | `hosts/ios/ui_native.h`, `hosts/android/ui_native.h` | The C API native code includes ([native code](native.md)) |
-| `hosts/web/`, `hosts/ios/`, `hosts/android/`, `hosts/macos/` | The hosts |
-| `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `web`, `macos`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload) |
+| `hosts/web/`, `hosts/ios/`, `hosts/android/`, `hosts/macos/`, `hosts/linux/`, `hosts/windows/` | The hosts |
+| `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `web`, `macos`, `linux`, `windows`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload) |
 | `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery`, `native`, `navigation` |
 | `tests/` | The model tests, the host harness and the conformance scene ([testing](testing.md)) |
 

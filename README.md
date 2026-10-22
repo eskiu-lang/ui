@@ -69,7 +69,7 @@ passes the block as the call's last argument, `Column(Style{padding: 16}, void()
 ```bash
 git clone https://github.com/eskiu-lang/ui && eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
 ui new myapp && cd myapp
-ui run web        # or macos, ios, android
+ui run web        # or macos, linux, windows, ios, android
 ui serve          # builds again and reloads on each change
 ui open ios       # in Xcode (or android, in Android Studio)
 ui release        # for the App Store and Google Play
@@ -101,7 +101,8 @@ layout; [Releasing](docs/releasing.md), what a release needs and makes.
 | iOS | UIKit + Yoga | iPhone simulator, iOS 27 |
 | Android | `android.view` + Yoga | arm64 emulator, API 35 |
 | macOS | the web renderer in WKWebView | macOS 27 |
-| Windows, Linux | not yet | |
+| Linux | the web renderer in WebKitGTK | GTK 3, WebKit2GTK |
+| Windows | the web renderer in WebView2 | Edge WebView2 |
 
 Every host draws the same conformance scene and matches its frames within one point.
 

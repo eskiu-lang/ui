@@ -15,6 +15,8 @@ What each platform needs:
 |---|---|
 | `web` | emscripten (`emcc`) |
 | `macos` | Xcode's command-line tools |
+| `linux` | `gcc` or `clang`, `pkg-config`, `libwebkit2gtk-4.1-dev` (or `4.0`) |
+| `windows` | MSVC (`cl`) or MinGW (`g++` / `clang++`), Microsoft Edge WebView2 runtime |
 | `ios` | Xcode, with an iPhone simulator |
 | `android` | the Android SDK with an NDK, build tools and a platform (`ANDROID_HOME`, `ANDROID_NDK_HOME`), and an emulator or a device |
 
@@ -28,6 +30,8 @@ ui new myapp          # a project that depends on github.com/eskiu-lang/ui
 cd myapp
 ui run web            # serves build/ui/web and opens the browser (UI_PORT to change the port)
 ui run macos          # a WKWebView window
+ui run linux          # a WebKitGTK window
+ui run windows        # a WebView2 window
 ui run ios            # the simulator; boots the first iPhone when none is running
 ui run android        # a device, or the first emulator it finds
 ```
@@ -40,6 +44,8 @@ builds without running.
 ```bash
 ui serve              # the web: builds, serves, and reloads the page after each change
 ui serve macos        # the same in the macOS window
+ui serve linux        # the same in the Linux window
+ui serve windows      # the same in the Windows window
 ui serve ios          # each change installs and launches the app on the simulator again
 ui serve android      # the same on the device or emulator
 ```
@@ -112,7 +118,7 @@ myapp/
   native/             optional: code per platform (native/web, native/ios, native/android)
   src/main.esk        the app: ui_app_start and ui_app_stop
   assets/             files the app loads by name (Image("logo.png") ...), shipped on every platform
-  build/ui/           what `ui build` makes: web/, macos/, ios/, android/ (ignored by git)
+  build/ui/           what `ui build` makes: web/, macos/, linux/, windows/, ios/, android/ (ignored by git)
 ```
 
 `ui_app_start(which)` runs when a host starts the app (which is 0 unless a host was told

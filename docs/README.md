@@ -1,8 +1,8 @@
 # ui documentation
 
 `ui` is a reactive UI framework in Eskiu: components are functions, state lives in signals,
-and the same code draws native views on iOS and Android, the DOM on the web and a webview
-window on macOS.
+and the same code draws native views on iOS and Android, the DOM on the web and desktop
+windows on macOS, Linux and Windows.
 
 | Guide | What it covers |
 |---|---|
@@ -15,7 +15,7 @@ window on macOS.
 | [Navigation](navigation.md) | Screens and pages: routers, navigators, back, links, the browser's history |
 | [Native code](native.md) | Modules and views per platform, `ui.toml`, Gradle and Swift packages |
 | [Protocol](protocol.md) | The commit format a renderer reads, events back, commits and ids |
-| [Hosts](hosts.md) | How each platform draws the tree: web, iOS, Android, macOS |
+| [Hosts](hosts.md) | How each platform draws the tree: web, iOS, Android, macOS, Linux, Windows |
 | [Testing](testing.md) | The model tests, the host checks, the conformance suite, CI |
 | [Releasing](releasing.md) | `ui release`: the App Store and Google Play, signing, build numbers, uploading |
 
