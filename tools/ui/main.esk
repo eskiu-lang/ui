@@ -41,8 +41,26 @@ import "release.esk";
 
 void usage() {
     println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|ios|android\n       ui run web|macos|ios|android\n"
-                "       ui serve [web|macos|ios|android]\n       ui release [ios|android] [--upload]");
+                "       ui serve [web|macos|ios|android]\n       ui open ios|android\n       ui release [ios|android] [--upload]");
     exit(2);
+}
+
+// The project `ui open` made, in Xcode or Android Studio (or where it is, without them).
+void open_project(string path, bool ios) {
+    printf("Made %s\n", path);
+    printf("Each Run there builds the Eskiu code first; open it again with ui open after changing ui.toml.\n");
+    // UI_NO_OPEN=1 only makes it (CI, scripts).
+    string no_open = env_get("UI_NO_OPEN");
+    if (no_open != null && strcmp(no_open, "1") == 0) { return; }
+    Cmd cmd;
+    defer cmd.free();
+#ifdef __APPLE__
+    cmd.add("open"); cmd.add("-a"); cmd.add(ios ? "Xcode" : "Android Studio"); cmd.add(path);
+    if (cmd.run(null) != 0) { printf("Open it in %s.\n", ios ? "Xcode" : "Android Studio"); }
+#else
+    cmd.add("studio.sh"); cmd.add(path);
+    if (ios || cmd.run(null) != 0) { printf("Open it in Android Studio.\n"); }
+#endif
 }
 
 // The server runs on a thread while the macOS window is open.
@@ -68,6 +86,20 @@ int main(int argc, string* argv) {
         return 0;
     }
     if (argc < 3) { usage(); }
+    if (String_eq_cstr(&command, "open") == 1 || String_eq_cstr(&command, "object") == 1) {
+        Project p;
+        p.find();
+        bool ios = strcmp(argv[2], "ios") == 0;
+        if (!ios && strcmp(argv[2], "android") != 0) { usage(); }
+        if (String_eq_cstr(&command, "object") == 1) {
+            ui_object = true;
+            if (ios) { build_ios(&p); } else { build_android(&p); }
+            return 0;
+        }
+        ui_open = true;
+        open_project(ios ? build_ios(&p) : build_android(&p), ios);
+        return 0;
+    }
     if (String_eq_cstr(&command, "new") == 1) {
         string ui_path = null;
         if (argc >= 5 && strcmp(argv[3], "--ui") == 0) { ui_path = argv[4]; }

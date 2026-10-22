@@ -9,12 +9,46 @@ const string kYogaGit = "https://github.com/react/yoga.git";
 
 const string kYogaTag = "v3.2.1";
 
+// The tool itself (argv[0]): `ui serve` runs each build as a child of it (a failed build stops
+// the child, not the server), and the IDE projects of `ui open` run its object step.
+string serve_self;
+
 // `ui release`: builds for the stores (an iOS archive and IPA, an Android App Bundle and APK,
 // signed for release), never reload builds.
 bool ui_release;
 
 // `ui release --upload`: the iOS export goes to App Store Connect with Xcode's account.
 bool ui_upload;
+
+// `ui open`: the project is made for Xcode or Android Studio, with a step that builds the
+// Eskiu side on each Run there (`ui object`), and opened in it.
+bool ui_open;
+
+// `ui object`: what that step runs: only the Eskiu side, for the build the IDE is making.
+bool ui_object;
+
+// `name` as an absolute path, for commands an IDE runs with its own PATH: a path with a slash
+// made absolute, else the first match on PATH.
+string tool_path(string name) {
+    if (name[0] == '/') { return name; }
+    if (strchr(name, '/') != null) {
+        String cwd;
+        fs_cwd(&cwd);
+        return join(cwd.data, name);
+    }
+    string path = env_get("PATH");
+    if (path == null) { return name; }
+    String text;
+    String_from(&text, path);
+    List<String> dirs;
+    String_split(&text, ':', &dirs);
+    string found = name;
+    for (i in 0..dirs.size) {
+        string candidate = join(dirs.data[i].data, name);
+        if (fs_exists(candidate) == 1) { found = candidate; break; }
+    }
+    return found;
+}
 
 void fail(string message) {
     println_err(message);

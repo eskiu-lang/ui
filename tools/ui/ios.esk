@@ -85,6 +85,10 @@ void ios_core(Project* p, string out, string app, string executable, List<string
 
 string build_ios(Project* p) {
     string out = p.out("ios");
+    // `ui open ios` makes the Xcode project (Xcode builds the rest); `ui object ios` is the step
+    // that project runs before each build.
+    if (ui_object) { return ios_object_step(p, out); }
+    if (ui_open) { return build_ios_xcode(p, out, null, null); }
     bool dev = ios_dev();
     ios_reinstall = true;
     String sdk;

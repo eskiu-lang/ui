@@ -58,7 +58,7 @@ string build_android(Project* p) {
     p.native("android", ".kt", &kotlin);
     string gradle = env_get("UI_GRADLE");
     // A release always is: an App Bundle is Gradle's to make.
-    bool use_gradle = ui_release || maven.size > 0 || kotlin.size > 0 || (gradle != null && strcmp(gradle, "1") == 0);
+    bool use_gradle = ui_release || ui_open || ui_object || maven.size > 0 || kotlin.size > 0 || (gradle != null && strcmp(gradle, "1") == 0);
     bool dev = ios_dev() && !use_gradle;
     android_reinstall = true;
     android_core = null;
@@ -181,6 +181,9 @@ string build_android(Project* p) {
     p.copy_assets(assets);
     // The icon at each density, as the res/ the manifest names.
     string res = android_icon_res(p, out);
+    // `ui object android`, the step of the Gradle project `ui open android` makes: the library,
+    // the assets and the icon are what Gradle takes from here; it compiles the Java itself.
+    if (ui_object) { return host_library; }
     if (use_gradle) {
         return build_android_gradle(p, out, setup_classes.data, &java, &maven);
     }

@@ -102,9 +102,10 @@ void apple_teams(List<AppleTeam>* out) {
     fs_remove(pem);
 }
 
-// The team a release is signed for: ui.toml [ios] team, else the only team this Mac has a
-// valid certificate for. With several, it stops and lists them to pick from.
-string ios_release_team(Project* p) {
+// The team a build is signed for: ui.toml [ios] team, else the only team this Mac has a
+// valid certificate for. With none or several, a release stops (listing the teams to pick
+// from); an opened project says so and is left for the simulator (null).
+string ios_find_team(Project* p, bool required) {
     string team = p.config.string("ios.team");
     if (team != null && team[0] != 0) { return team; }
     List<AppleTeam> teams;
@@ -113,16 +114,22 @@ string ios_release_team(Project* p) {
         printf("Signing for %s (%s); set [ios] team in ui.toml to choose another.\n", teams.data[0].name.data, teams.data[0].id.data);
         return teams.data[0].id.data;
     }
+    string what = required ? "ui release ios" : "ui open ios";
     String message;
     if (teams.size == 0) {
-        String_append(&message, "ui release ios: this Mac has no valid Apple signing certificate. Sign in to your Apple "
-            "developer account in Xcode (Settings, Accounts), or set your team's id in ui.toml:\n\n  [ios]\n  team = \"ABCDE12345\"");
+        String_appendf(&message, "%s: this Mac has no valid Apple signing certificate. Sign in to your Apple "
+            "developer account in Xcode (Settings, Accounts), or set your team's id in ui.toml:\n\n  [ios]\n  team = \"ABCDE12345\"", what);
     } else {
-        String_append(&message, "ui release ios: this Mac can sign for several teams; choose one in ui.toml:\n\n  [ios]\n");
+        String_appendf(&message, "%s: this Mac can sign for several teams; choose one in ui.toml:\n\n  [ios]\n", what);
         for (i in 0..teams.size) {
             String_appendf(&message, "  team = \"%s\"   # %s%s\n", teams.data[i].id.data, teams.data[i].name.data,
                 teams.data[i].distribution ? " (has a distribution certificate)" : "");
         }
+    }
+    if (!required) {
+        println_err(message.data);
+        println_err("Until then the project builds for the simulator; a device needs a team.");
+        return null;
     }
     fail(message.data);
     return null;

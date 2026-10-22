@@ -88,10 +88,30 @@ string build_android_gradle(Project* p, string out, string setup_classes, List<S
         groovy_escape(p.id.data), groovy_escape(p.id.data), app_build(p), groovy_escape(app_version(p)),
         groovy_escape(android_keystore()), release_signing.data, release_type.data, sources.data, sources.data, groovy_escape(join(out, "lib")),
         groovy_escape(join(out, "assets")), groovy_escape(join(out, "res")), dependencies.data == null ? "" : dependencies.data);
+    // Before each build Android Studio runs `ui object android`, which builds the library with
+    // the Eskiu code, the assets and the icon again (only what changed). The tool's own Gradle
+    // run (-PuiBuilt) has done that already. So a project the tool made for a build still works
+    // when opened.
+    String_appendf(&build, "\ndef uiObject = tasks.register('uiObject', Exec) {\n"
+        "    description = 'Builds the Eskiu code into the app\\'s library'\n"
+        "    onlyIf { !project.hasProperty('uiBuilt') }\n"
+        "    workingDir = file('%s')\n    environment 'ESKIUC', '%s'\n    commandLine '%s', 'object', 'android'\n}\n"
+        "tasks.matching { it.name == 'preBuild' }.configureEach { dependsOn uiObject }\n",
+        groovy_escape(p.root.data), groovy_escape(tool_path(eskiuc())), groovy_escape(tool_path(serve_self)));
     fs_write_text(join(app, "build.gradle"), build.data);
+    if (ui_open) {
+        // The Gradle wrapper, which Android Studio syncs with, from the Gradle installed here.
+        if (fs_exists(join(dir, "gradlew")) != 1) {
+            Cmd wrapper;
+            wrapper.add("gradle"); wrapper.add("--quiet"); wrapper.add("-p"); wrapper.add(dir); wrapper.add("wrapper");
+            if (wrapper.run(null) != 0) { println_err("ui open android: no Gradle wrapper (install Gradle 9); Android Studio can use its own Gradle"); }
+            wrapper.free();
+        }
+        return dir;
+    }
     Cmd cmd;
     defer cmd.free();
-    cmd.add("gradle"); cmd.add("--quiet"); cmd.add("-p"); cmd.add(dir);
+    cmd.add("gradle"); cmd.add("--quiet"); cmd.add("-p"); cmd.add(dir); cmd.add("-PuiBuilt");
     if (ui_release) { cmd.add("bundleRelease"); cmd.add("assembleRelease"); } else { cmd.add("assembleDebug"); }
     if (cmd.run(null) != 0) { fail("ui: gradle failed (install Gradle 9 and a JDK 17, or open build/ui/android/gradle in Android Studio)"); }
     if (ui_release) {

@@ -4,9 +4,6 @@
 // and launched again.
 // Part of the ui tool (tools/ui/main.esk imports every part).
 
-// The tool itself, which runs each build as a child: a failed build stops the child, not the
-// server.
-string serve_self;
 
 // The builds so far, and the last one's output when it failed ("" when it built). The pages'
 // requests read them on the server's threads.

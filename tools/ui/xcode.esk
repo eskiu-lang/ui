@@ -104,7 +104,7 @@ void swift_class_name(string path, String* out) {
 // release (ui release ios) is archived for devices, signed by Xcode for the ui.toml [ios]
 // team, and exported as an IPA for App Store Connect.
 string build_ios_xcode(Project* p, string out, string app_object, List<String>* yoga) {
-    string team = ui_release ? ios_release_team(p) : null;
+    string team = ui_release ? ios_find_team(p, true) : ui_open ? ios_find_team(p, false) : null;
     string dir = join(out, ui_release ? "xcode-release" : "xcode");
     String project_name;
     String_appendf(&project_name, "%s.xcodeproj", p.name.data);
@@ -141,8 +141,18 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
     // The app's object and Yoga's are linked as they are; frameworks from ui.toml too.
     String flags;
     defer String_free(&flags);
-    String_appendf(&flags, "%s", pbx_quote(app_object));
-    for (i in 0..yoga.size) { String_appendf(&flags, ", %s", pbx_quote(yoga.data[i].data)); }
+    // The app's object and Yoga's, listed by the object step for the SDK being built (or by
+    // the tool, when it runs xcodebuild itself).
+    String_append(&flags, "\"-filelist\", \"$(PROJECT_DIR)/lib/$(PLATFORM_NAME)/objects.txt\"");
+    if (!ui_open) {
+        string listed = join(join(dir, "lib"), ui_release ? "iphoneos" : "iphonesimulator");
+        fs_mkdir_p(listed);
+        String list;
+        String_appendf(&list, "%s\n", app_object);
+        for (i in 0..yoga.size) { String_appendf(&list, "%s\n", yoga.data[i].data); }
+        fs_write_text(join(listed, "objects.txt"), list.data);
+        String_free(&list);
+    }
     String_append(&flags, ", \"-framework\", UIKit, \"-framework\", Foundation, \"-framework\", CoreGraphics, \"-framework\", QuartzCore");
     List<string> frameworks;
     defer frameworks.free();
@@ -155,6 +165,26 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
     string sources_phase = pbx.id();
     string frameworks_phase = pbx.id();
     string assets_phase = pbx.id();
+    string object_phase = pbx.id();
+    String phases;
+    defer String_free(&phases);
+    String object_definition;
+    defer String_free(&object_definition);
+    String_from(&object_definition, "");
+    {
+        // Before each build Xcode runs `ui object ios`, which compiles the Eskiu code for the SDK
+        // and architecture it is building; the link reads what that made. The tool's own
+        // xcodebuild (UI_BUILT=1) has made them already. So a project the tool made for a build
+        // still works when opened.
+        String script;
+        String_appendf(&script, "[ \"$UI_BUILT\" = 1 ] && exit 0\ncd '%s' && ESKIUC='%s' '%s' object ios\n",
+            p.root.data, tool_path(eskiuc()), tool_path(serve_self));
+        String_appendf(&object_definition, "\t\t%s = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); "
+            "inputPaths = (); outputPaths = (); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; alwaysOutOfDate = 1; "
+            "name = \"Build the Eskiu code\"; shellScript = %s; };\n", object_phase, pbx_quote(script.data));
+        String_appendf(&phases, "%s, ", object_phase);
+        String_free(&script);
+    }
     string target_list = pbx.id();
     string project_list = pbx.id();
     string target_config = pbx.id();
@@ -167,13 +197,17 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
             pbx_quote(join(p.ui.data, "hosts/ios/ui_native.h")));
     }
     // A release: devices only, optimized, signed by Xcode with the team's identity and profile.
+    // An opened project is signed for its team too, to run on a phone.
     string configuration = ui_release ? "Release" : "Debug";
     String signing;
     defer String_free(&signing);
+    if (team != null) {
+        String_appendf(&signing, "\t\t\t\tCODE_SIGN_STYLE = Automatic;\n\t\t\t\tDEVELOPMENT_TEAM = %s;\n", pbx_quote(team));
+    }
     if (ui_release) {
-        String_appendf(&signing, "\t\t\t\tCODE_SIGN_STYLE = Automatic;\n\t\t\t\tDEVELOPMENT_TEAM = %s;\n"
-            "\t\t\t\tGCC_OPTIMIZATION_LEVEL = s;\n\t\t\t\tDEBUG_INFORMATION_FORMAT = \"dwarf-with-dsym\";\n"
-            "\t\t\t\tSWIFT_OPTIMIZATION_LEVEL = \"-O\";\n", pbx_quote(team));
+        String_append(&signing, "\t\t\t\tGCC_OPTIMIZATION_LEVEL = s;\n\t\t\t\tDEBUG_INFORMATION_FORMAT = \"dwarf-with-dsym\";\n"
+            "\t\t\t\tSWIFT_OPTIMIZATION_LEVEL = \"-O\";\n");
+    } else if (team != null) {
     } else {
         String_append(&signing, "\t\t\t\tCODE_SIGN_IDENTITY = \"-\";\n\t\t\t\tCODE_SIGN_STYLE = Manual;\n");
     }
@@ -187,8 +221,8 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
         "\t\t%s = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (\n%s\t\t\t); runOnlyForDeploymentPostprocessing = 0; };\n"
         "\t\t%s = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); outputPaths = (); "
         "runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; alwaysOutOfDate = 1; "
-        "shellScript = %s; };\n"
-        "\t\t%s = {isa = PBXNativeTarget; buildConfigurationList = %s; buildPhases = (%s, %s, %s); buildRules = (); dependencies = (); "
+        "shellScript = %s; };\n%s"
+        "\t\t%s = {isa = PBXNativeTarget; buildConfigurationList = %s; buildPhases = (%s%s, %s, %s); buildRules = (); dependencies = (); "
         "name = %s; packageProductDependencies = (\n%s\t\t\t); productName = %s; productReference = %s; productType = \"com.apple.product-type.application\"; };\n"
         "\t\t%s = {isa = PBXProject; buildConfigurationList = %s; compatibilityVersion = \"Xcode 14.0\"; mainGroup = %s; "
         "packageReferences = (%s); projectDirPath = \"\"; projectRoot = \"\"; targets = (%s); };\n"
@@ -210,8 +244,8 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
         main_group, pbx.groups.data == null ? "" : pbx.groups.data,
         sources_phase, pbx.sources.data == null ? "" : pbx.sources.data,
         frameworks_phase, pbx.frameworks.data == null ? "" : pbx.frameworks.data,
-        assets_phase, pbx_quote(ios_assets_script(assets, ios_icon_catalog(p, dir))),
-        target, target_list, sources_phase, frameworks_phase, assets_phase,
+        assets_phase, pbx_quote(ios_assets_script(assets, ios_icon_catalog(p, dir))), object_definition.data,
+        target, target_list, phases.data == null ? "" : phases.data, sources_phase, frameworks_phase, assets_phase,
         pbx_quote(p.name.data), pbx.products.data == null ? "" : pbx.products.data, pbx_quote(p.name.data), product,
         project_id, project_list, main_group, pbx_refs(&pbx), target,
         pbx.packages.data == null ? "" : pbx.packages.data,
@@ -223,11 +257,12 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
     fs_write_text(join(project, "project.pbxproj"), text.data);
     string derived = join(dir, "DerivedData");
     if (ui_release) { return ios_archive(p, dir, project, derived, team); }
+    if (ui_open) { return project; }
     Cmd cmd;
     defer cmd.free();
     cmd.add("xcodebuild"); cmd.add("-quiet"); cmd.add("-project"); cmd.add(project); cmd.add("-scheme"); cmd.add(p.name.data);
     cmd.add("-configuration"); cmd.add("Debug"); cmd.add("-sdk"); cmd.add("iphonesimulator");
-    cmd.add("-derivedDataPath"); cmd.add(derived); cmd.add("build");
+    cmd.add("-derivedDataPath"); cmd.add(derived); cmd.add("UI_BUILT=1"); cmd.add("build");
     if (cmd.run(null) != 0) { fail("ui: xcodebuild failed (open build/ui/ios/xcode in Xcode to see why)"); }
     String bundle_name;
     String_appendf(&bundle_name, "%s.app", p.name.data);
@@ -246,7 +281,7 @@ string ios_archive(Project* p, string dir, string project, string derived, strin
     cmd.add("xcodebuild"); cmd.add("-quiet"); cmd.add("-project"); cmd.add(project); cmd.add("-scheme"); cmd.add(p.name.data);
     cmd.add("-configuration"); cmd.add("Release"); cmd.add("-destination"); cmd.add("generic/platform=iOS");
     cmd.add("-derivedDataPath"); cmd.add(derived); cmd.add("-archivePath"); cmd.add(archive);
-    cmd.add("-allowProvisioningUpdates"); cmd.add("archive");
+    cmd.add("-allowProvisioningUpdates"); cmd.add("UI_BUILT=1"); cmd.add("archive");
     if (cmd.run(null) != 0) {
         fail("ui release ios: xcodebuild archive failed. Sign in to your Apple account in Xcode (Settings, Accounts), "
              "or open build/ui/ios/xcode-release in Xcode to see why.");
@@ -280,6 +315,43 @@ string ios_archive(Project* p, string dir, string project, string derived, strin
     fs_glob(join(release, "*.ipa"), &ipas);
     if (ipas.size == 0) { fail("ui release ios: xcodebuild exported no IPA"); }
     return ipas.data[0].data;
+}
+
+// `ui object ios`, the step of the project `ui open ios` makes: the app's object and Yoga's for
+// the SDK and architecture Xcode is building (PLATFORM_NAME, CURRENT_ARCH), listed in
+// lib/PLATFORM/objects.txt for the link. A Debug build compiles the Eskiu code at -O0.
+string ios_object_step(Project* p, string out) {
+    string platform = env_get("PLATFORM_NAME");
+    if (platform == null || platform[0] == 0) { platform = "iphonesimulator"; }
+    bool device = strcmp(platform, "iphoneos") == 0;
+    string arch = env_get("CURRENT_ARCH");
+    if (arch == null || arch[0] == 0 || strcmp(arch, "undefined_arch") == 0) { arch = device ? "arm64" : ios_arch(); }
+    String sdk;
+    String clang;
+    ios_toolchain(p, platform, &sdk, &clang);
+    String target;
+    if (device) { String_from(&target, "arm64-apple-ios15.0"); }
+    else { String_appendf(&target, "%s-apple-ios15.0-simulator", arch); }
+    List<string> compiler;
+    compiler.push(clang.data); compiler.push("-target"); compiler.push(target.data);
+    compiler.push("-isysroot"); compiler.push(sdk.data); compiler.push("-O2");
+    List<String> objects;
+    yoga_objects(&compiler, join(eskiu_home(), device ? "cache/yoga-iphoneos-arm64" : join("cache/yoga-ios", arch)), &objects);
+    string dir = join(join(out, "xcode/lib"), platform);
+    fs_mkdir_p(dir);
+    string app = join(dir, "app.o");
+    string configuration = env_get("CONFIGURATION");
+    bool release = configuration != null && strcmp(configuration, "Release") == 0;
+    Cmd esk;
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add(release ? "-O2" : "-O0");
+    esk.add("-o"); esk.add(app);
+    esk.must(null);
+    esk.free();
+    String list;
+    String_appendf(&list, "%s\n", app);
+    for (i in 0..objects.size) { String_appendf(&list, "%s\n", objects.data[i].data); }
+    fs_write_text(join(dir, "objects.txt"), list.data);
+    return app;
 }
 
 // The XCRemoteSwiftPackageReference ids, for the project's packageReferences.
