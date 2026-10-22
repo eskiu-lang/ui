@@ -59,6 +59,12 @@ right to left. Layout does not mirror for a right-to-left language yet.
 
 ## The window
 
+`ui_wide()` is true when the window is at least `kUiWideWidth` (768) points wide: a tablet,
+or a browser on a computer. Choose the layout by it rather than by the platform, since the
+web also runs on phones and a tablet is wide: a sidebar and denser text when wide, tabs at
+the bottom when not. Reading it subscribes, so a resize across the line renders the reader
+again. The kit follows it in `kit_follow_system` (see components.md).
+
 `ui_window()` gives the window's `width` and `height` in points and its `scale` (pixels per
 point, times 100: 300 on a 3x phone). A layout that changes with the size reads it:
 

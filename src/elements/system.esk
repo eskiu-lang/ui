@@ -28,6 +28,13 @@ void ui_set_window(Window window) {
 
 Window ui_window() { ui.environment.get(); return ui.window; }
 
+// The width, in points, from which a window is wide: a tablet, or a browser on a computer.
+const int kUiWideWidth = 768;
+
+// Whether the window is wide enough for a desktop layout (a sidebar, denser text). Reading it
+// subscribes, so the reader renders again when the window is resized across the line.
+bool ui_wide() { return ui_window().width >= kUiWideWidth; }
+
 bool ui_is_active() { ui.environment.get(); return !ui.inactive; }
 
 // The system status bar: its content style and whether it shows. The last one rendered
