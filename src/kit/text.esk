@@ -1,0 +1,17 @@
+// Text in the theme's type scale: Title, Heading, Body, Secondary, Caption.
+// Part of <ui/kit> (src/kit.esk imports every part). For another size or color, use TextWith.
+
+// A screen's title.
+void Title(string text) { TextWith(Style{font_size: 34, font_weight: 800, color: kit.ink}, text); }
+
+// A section's heading.
+void Heading(string text) { TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, text); }
+
+// Running text.
+void Body(string text) { TextWith(Style{font_size: 16, color: kit.ink}, text); }
+
+// Text that explains or qualifies, in the muted color.
+void Secondary(string text) { TextWith(Style{font_size: 15, color: kit.muted}, text); }
+
+// A small note: a version, a timestamp, a hint under a field.
+void Caption(string text) { TextWith(Style{font_size: 13, color: kit.muted}, text); }

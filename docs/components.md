@@ -129,6 +129,17 @@ Options (`RadioGroup`, `SegmentedControl`, `TabBar`) are one string with a line 
 Tones are `ToneNeutral`, `TonePrimary`, `ToneSuccess`, `ToneWarning`, `ToneDanger`;
 variants `VariantPrimary`, `VariantSecondary`, `VariantGhost`, `VariantDanger`.
 
+Text in the theme's type scale, in its colors (so it follows the dark theme). For another
+size or color, use `TextWith`.
+
+| Component | Size, weight, color | For |
+|---|---|---|
+| `Title(text)` | 34, 800, `ink` | a screen's title |
+| `Heading(text)` | 18, 700, `ink` | a section's heading |
+| `Body(text)` | 16, `ink` | running text |
+| `Secondary(text)` | 15, `muted` | text that explains or qualifies |
+| `Caption(text)` | 13, `muted` | a small note: a version, a time, a hint |
+
 | Component | What it is |
 |---|---|
 | `Card(block)` | A surface with the theme's border and radius. |

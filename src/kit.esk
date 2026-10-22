@@ -3,6 +3,7 @@
 // SegmentedControl, TabBar) are one string with a line per option. Its parts:
 //
 //   theme        Theme and the global `kit`, Tone and Variant
+//   text         Title, Heading, Body, Secondary, Caption
 //   display      Card, Badge, Avatar, AvatarImage, Separator, VSeparator, ProgressBar
 //   buttons      KitButton
 //   forms        TextField, Checkbox, RadioGroup
@@ -11,6 +12,7 @@
 import "ui.esk";
 
 import "kit/theme.esk";
+import "kit/text.esk";
 import "kit/display.esk";
 import "kit/buttons.esk";
 import "kit/forms.esk";
