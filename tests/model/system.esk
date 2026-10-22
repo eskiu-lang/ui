@@ -238,6 +238,14 @@ void environment_apis() {
     check(!ui_needs_frame() && keyed(1).runs == runs, "the same appearance changes nothing");
     kit_follow_system();
     check(kit.dark, "the kit follows");
+    // A wide window gets the dense sizes; a phone's keeps the touch ones.
+    ui_set_window(Window{1280, 800, 200});
+    check(ui_wide(), "a computer's window is wide");
+    kit_follow_system();
+    check(kit.dense && kit.body_size == 14 && kit.control_padding == 8, "the kit is dense in a wide window");
+    ui_set_window(Window{390, 844, 300});
+    kit_follow_system();
+    check(!ui_wide() && !kit.dense && kit.body_size == 16, "and touch-sized on a phone");
     kit = kit_light();
     ui_shutdown(); balanced("environment apis leak");
 }

@@ -7,7 +7,7 @@ void KitButton(string text, int variant, escaping fn()->void on_press) {
                      : variant == VariantSecondary ? kit.surface : 0xFFFFFF00;  // ghost: transparent
     int64 color = variant == VariantPrimary || variant == VariantDanger ? kit.on_primary
                 : variant == VariantGhost ? kit.primary : kit.ink;
-    ButtonWith(Style{background: background, color: color, radius: kit.radius, padding: 12, font_size: 16,
+    ButtonWith(Style{background: background, color: color, radius: kit.radius, padding: kit.control_padding, font_size: kit.body_size,
                      font_weight: 600, border_width: variant == VariantSecondary ? 1 : 0, border_color: kit.line,
                      label: text},
         text, on_press);

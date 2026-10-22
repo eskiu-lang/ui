@@ -130,7 +130,8 @@ Tones are `ToneNeutral`, `TonePrimary`, `ToneSuccess`, `ToneWarning`, `ToneDange
 variants `VariantPrimary`, `VariantSecondary`, `VariantGhost`, `VariantDanger`.
 
 Text in the theme's type scale, in its colors (so it follows the dark theme). For another
-size or color, use `TextWith`.
+size or color, use `TextWith`. The sizes below are for touch; in a wide window they are
+smaller (see density below).
 
 | Component | Size, weight, color | For |
 |---|---|---|
@@ -170,8 +171,15 @@ size or color, use `TextWith`.
 | `Accordion(sections)` | Collapsibles in one card. |
 
 `kit_light()` and `kit_dark()` are the two themes; `kit_follow_system()` picks the one for the
-system's appearance ([the platform](platform.md)). `examples/kit-gallery` shows every
-component, in both.
+system's appearance ([the platform](platform.md)) and the density for the window's width.
+`examples/kit-gallery` shows every component, in both.
+
+Density: the theme's `title_size`, `heading_size`, `body_size`, `secondary_size`,
+`caption_size` and `control_padding` hold the sizes for touch (34, 18, 16, 15, 13, 12).
+`kit_dense()` sets the smaller ones of a desktop layout (28, 16, 14, 13, 12, 8) and
+`kit.dense`; `kit_follow_window()` calls it when `ui_wide()`. An app that sets `kit` itself
+(a light or dark choice of its own) calls `kit_follow_window()` after it. The kit's text,
+buttons, fields and rows read these sizes.
 
 ## Writing a component
 

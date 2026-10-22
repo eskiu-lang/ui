@@ -14,7 +14,7 @@ void SegmentedControl(string options, int selected, escaping fn(int)->void on_ch
             Pressable(Style{grow: 1, padding: 8, radius: kit.radius - 4, background: on ? kit.surface : -1,
                             align: AlignCenter, label: name},
                 void() { on_change(index); }) {
-                TextWith(Style{font_size: 14, font_weight: 600, color: on ? kit.ink : kit.muted}, name);
+                TextWith(Style{font_size: kit.body_size - 2, font_weight: 600, color: on ? kit.ink : kit.muted}, name);
             }
         }
         kit_free_options(&items);
@@ -32,7 +32,7 @@ void TabBar(string tabs, int selected, escaping fn(int)->void on_change) {
             bool on = index == selected;
             string name = items.data[i].data;
             Pressable(Style{gap: 6, label: name}, void() { on_change(index); }) {
-                TextWith(Style{font_size: 15, font_weight: 600, color: on ? kit.primary : kit.muted}, name);
+                TextWith(Style{font_size: kit.secondary_size, font_weight: 600, color: on ? kit.primary : kit.muted}, name);
                 Row(Style{height: 2, radius: 1, background: on ? kit.primary : -1}) {}
             }
         }
@@ -50,7 +50,7 @@ void Toolbar(escaping fn()->void block) {
 void NavBar(string title, escaping fn()->void actions) {
     ui_own(void() { ui_release_closure(actions); });
     Row(Style{padding: 16, gap: 12, align: AlignCenter, background: kit.surface, label: title}) {
-        TextWith(Style{grow: 1, font_size: 20, font_weight: 700, color: kit.ink}, title);
+        TextWith(Style{grow: 1, font_size: kit.heading_size + 2, font_weight: 700, color: kit.ink}, title);
         actions();
     }
 }
@@ -61,10 +61,10 @@ void ListItem(string title, string subtitle, escaping fn()->void on_press) {
     Scope("ListItem", Key{}) {
         *Signal<bool> over = use_signal<bool>(false);
         ui_on_hover(void(bool inside) { over.set(inside); });
-        Pressable(Style{padding: 14, radius: kit.radius, background: over.get() ? kit.track : kit.surface, border_width: 1,
+        Pressable(Style{padding: kit.control_padding + 2, radius: kit.radius, background: over.get() ? kit.track : kit.surface, border_width: 1,
                         border_color: kit.line, gap: 2, label: title}, void() { on_press(); }) {
-            TextWith(Style{font_size: 16, font_weight: 500, color: kit.ink}, title);
-            if (subtitle != null && subtitle[0] != 0) { TextWith(Style{font_size: 14, color: kit.muted}, subtitle); }
+            TextWith(Style{font_size: kit.body_size, font_weight: 500, color: kit.ink}, title);
+            if (subtitle != null && subtitle[0] != 0) { TextWith(Style{font_size: kit.body_size - 2, color: kit.muted}, subtitle); }
         }
     }
 }

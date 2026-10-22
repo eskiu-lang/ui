@@ -17,6 +17,15 @@ struct Theme {
     int radius = 12;
     // Dark tones for badges and the like.
     bool dark;
+    // The type scale and the padding inside controls: sizes for touch, or smaller ones when
+    // `dense` (kit_dense, for a wide window).
+    int title_size = 34;
+    int heading_size = 18;
+    int body_size = 16;
+    int secondary_size = 15;
+    int caption_size = 13;
+    int control_padding = 12;
+    bool dense;
 }
 
 Theme kit;
@@ -30,9 +39,27 @@ Theme kit_dark() {
                  track: 0x1F2533FF, danger: 0xF87171FF, radius: 12, dark: true};
 }
 
-// The theme for the system's appearance; called at the top of the app's root block (which then
-// renders again when the appearance changes). Changes to `kit` go after it.
-void kit_follow_system() { kit = ui_color_scheme() == SchemeDark ? kit_dark() : kit_light(); }
+// The smaller sizes of a desktop layout, for a pointer rather than a finger.
+void kit_dense() {
+    kit.title_size = 28;
+    kit.heading_size = 16;
+    kit.body_size = 14;
+    kit.secondary_size = 13;
+    kit.caption_size = 12;
+    kit.control_padding = 8;
+    kit.dense = true;
+}
+
+// The dense sizes when the window is wide (ui_wide), the touch sizes otherwise. Call it after
+// setting `kit`; the caller renders again when the window crosses the line.
+void kit_follow_window() { if (ui_wide()) { kit_dense(); } }
+
+// The theme for the system's appearance and the window's width; called at the top of the
+// app's root block (which then renders again when either changes). Changes to `kit` go after it.
+void kit_follow_system() {
+    kit = ui_color_scheme() == SchemeDark ? kit_dark() : kit_light();
+    kit_follow_window();
+}
 
 enum Tone { ToneNeutral, TonePrimary, ToneSuccess, ToneWarning, ToneDanger }
 
