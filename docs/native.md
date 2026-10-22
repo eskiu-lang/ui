@@ -96,6 +96,42 @@ export function setup(ui) {
 
 macOS runs the web host, so it uses the web's native code.
 
+Arguments reach a `.js` extern as JavaScript numbers: an integer or a float as itself, a
+`string` as a pointer into the app's memory, read with `UTF8ToString(pointer)`. Send text
+back as an event (`Module.uiEmit`), which the Eskiu side receives as a `string`, rather than
+as a return value.
+
+```js
+mergeInto(LibraryManager.library, {
+  page_title_set: function(text) { document.title = UTF8ToString(text); },
+  online_watch: function() {
+    addEventListener('online', () => Module.uiEmit('net', 'online'));
+    addEventListener('offline', () => Module.uiEmit('net', 'offline'));
+  },
+});
+```
+
+An extern only the web defines is declared under `#if defined(__wasm__)`, and so are its
+calls, so the iOS and Android builds do not look for it when they link:
+
+```eskiu
+#if defined(__wasm__)
+extern void page_title_set(string text);
+#endif
+
+void ShowTitle(string title) {
+#if defined(__wasm__)
+    page_title_set(title);
+#endif
+}
+```
+
+A `.mjs` is an ordinary ES module, so it can import a library served from a URL
+(`import {Chart} from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';`) and draw into the
+element of a view it registers. There is no npm or bundler step, so a library has to come as
+an ES module from a URL. Each module in `native/web/` is copied under a new name, so one
+cannot import another by its file name.
+
 ## iOS
 
 | File | What it is |
