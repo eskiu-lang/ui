@@ -3,9 +3,12 @@
 `ui release` builds an app for the App Store and Google Play:
 
 ```bash
-ui release              # both (iOS only on a Mac)
+ui release              # both iOS and Android (iOS only on a Mac)
 ui release ios          # an IPA for App Store Connect
 ui release android      # an App Bundle for Google Play, and an APK
+ui release macos        # an ad-hoc signed .app and distributable .zip
+ui release linux        # a release binary and distributable .tar.gz
+ui release windows      # a release .exe and distributable .zip
 ui release ios --upload # straight to App Store Connect, for TestFlight
 ```
 
@@ -81,6 +84,13 @@ UI_ANDROID_KEY_PASSWORD=...        # when it differs from the keystore's
 ```
 
 Upload the `.aab` in Play Console (Test and release); the first one makes the app's record.
+
+## Desktop
+
+- **macOS**: `ui release macos` packages the standalone binary inside the `NAME.app` bundle with
+  its `Info.plist` and `AppIcon.icns`, ad-hoc codesigns the bundle, and creates `NAME-VERSION-macos.zip`.
+- **Linux**: `ui release linux` compiles the release binary and packages `NAME-VERSION-linux.tar.gz`.
+- **Windows**: `ui release windows` compiles the release executable and packages `NAME-VERSION-windows.zip`.
 
 ## What is not there yet
 
