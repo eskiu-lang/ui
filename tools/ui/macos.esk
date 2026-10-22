@@ -42,12 +42,16 @@ string build_macos(Project* p) {
     String_appendf(&plist, "    <key>CFBundleVersion</key>\n    <string>%s</string>\n", xml_escape(version));
     String_appendf(&plist, "    <key>CFBundleShortVersionString</key>\n    <string>%s</string>\n", xml_escape(version));
     String_appendf(&plist, "    <key>CFBundleExecutable</key>\n    <string>%s</string>\n", xml_escape(p.name.data));
+    // Assets & icon if present
+    string icns = macos_icon(p, resources);
+    if (icns != null) {
+        String_append(&plist, "    <key>CFBundleIconFile</key>\n    <string>AppIcon</string>\n");
+    }
     String_append(&plist, "    <key>CFBundlePackageType</key>\n    <string>APPL</string>\n"
                           "    <key>NSHighResolutionCapable</key>\n    <true/>\n"
                           "</dict>\n</plist>\n");
     fs_write_text(join(contents, "Info.plist"), plist.data);
 
-    // Assets & icon if present
     string web_out = join(p.root.data, "build/ui/web");
     string icon_path = join(web_out, "apple-touch-icon.png");
     if (fs_exists(icon_path) == 1) {

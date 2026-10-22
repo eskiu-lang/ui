@@ -48,5 +48,10 @@ string build_windows(Project* p) {
     }
 
     cmd.must(null);
+
+    string icon = app_icon(p);
+    if (icon != null) {
+        fs_copy(icon, join(out, "icon.png"));
+    }
     return binary;
 }

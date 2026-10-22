@@ -132,6 +132,10 @@ int main(int argc, char *argv[]) {
     g_signal_connect(host.window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(host.window, "key-press-event", G_CALLBACK(on_key_press), &host);
 
+    if (g_file_test("icon.png", G_FILE_TEST_EXISTS)) {
+        gtk_window_set_icon_from_file(GTK_WINDOW(host.window), "icon.png", NULL);
+    }
+
     WebKitUserContentManager *ucm = webkit_user_content_manager_new();
     webkit_user_content_manager_register_script_message_handler(ucm, "results");
     g_signal_connect(ucm, "script-message-received::results", G_CALLBACK(on_script_message_received), &host);

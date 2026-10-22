@@ -44,5 +44,10 @@ string build_linux(Project* p) {
 
     cmd.add("-o"); cmd.add(binary);
     cmd.must(null);
+
+    string icon = app_icon(p);
+    if (icon != null) {
+        fs_copy(icon, join(out, "icon.png"));
+    }
     return binary;
 }

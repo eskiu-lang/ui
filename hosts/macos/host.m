@@ -99,6 +99,14 @@
     [self.window makeKeyAndOrderFront:nil];
     [self setupMenu];
 
+    // Set dock application icon if bundled
+    NSString *iconPath = [[NSBundle mainBundle] pathForResource:@"AppIcon" ofType:@"icns"];
+    if (!iconPath) iconPath = [[NSBundle mainBundle] pathForResource:@"icon" ofType:@"png"];
+    if (iconPath) {
+        NSImage *icon = [[NSImage alloc] initWithContentsOfFile:iconPath];
+        if (icon) [NSApp setApplicationIconImage:icon];
+    }
+
     // Observe title dynamically for SPA route changes
     [self.web addObserver:self forKeyPath:@"title" options:NSKeyValueObservingOptionNew context:nil];
 

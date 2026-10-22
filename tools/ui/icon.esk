@@ -95,6 +95,47 @@ string app_build(Project* p) {
     return build;
 }
 
+// ---- macOS ----
+
+// An .icns file in `out`, or null without an icon. Made from the 1024 icon using iconutil.
+string macos_icon(Project* p, string out) {
+    string path = app_icon(p);
+    if (path == null) { return null; }
+    string made = join(p.out("icon"), "macos");
+    string iconset = join(made, "AppIcon.iconset");
+    string icns = join(out, "AppIcon.icns");
+    string marker = join(made, "icon.made");
+    if (icon_stale(marker, path)) {
+        fs_mkdir_p(iconset);
+        PngImage icon;
+        icon_load(p, path, &icon);
+        int[5] sizes = {16, 32, 128, 256, 512};
+        for (i in 0..5) {
+            String f1;
+            String_appendf(&f1, "%s/icon_%dx%d.png", iconset, sizes[i], sizes[i]);
+            icon_write(&icon, sizes[i], false, f1.data);
+            String f2;
+            String_appendf(&f2, "%s/icon_%dx%d@2x.png", iconset, sizes[i], sizes[i]);
+            icon_write(&icon, sizes[i] * 2, false, f2.data);
+            String_free(&f1); String_free(&f2);
+        }
+        PngImage_free(&icon);
+#ifdef __APPLE__
+        Cmd cmd;
+        cmd.add("iconutil"); cmd.add("-c"); cmd.add("icns"); cmd.add(iconset); cmd.add("-o"); cmd.add(join(made, "AppIcon.icns"));
+        cmd.run(null);
+        cmd.free();
+#endif
+        icon_built(marker, path);
+    }
+    string built_icns = join(made, "AppIcon.icns");
+    if (fs_exists(built_icns) == 1) {
+        fs_copy(built_icns, icns);
+        return icns;
+    }
+    return null;
+}
+
 // ---- iOS ----
 
 // An asset catalog in `dir` with the icon as AppIcon (one 1024 image; Xcode 14 and later make

@@ -309,6 +309,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                              WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                              posX, posY, width, height, NULL, NULL, hInstance, NULL);
 
+    HICON hIcon = (HICON)LoadImageW(NULL, L"icon.ico", IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+    if (hIcon) {
+        SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+        SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+    }
+
     HMODULE hLoader = LoadLibraryW(L"WebView2Loader.dll");
     CreateCoreWebView2EnvironmentWithOptionsFn createEnv = NULL;
     if (hLoader) {
