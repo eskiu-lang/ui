@@ -51,3 +51,18 @@ sed -i.bak '/BROKEN/d' build/newapp/src/main.esk
 wait_for 2 '"version": 3, "error": ""'
 kill "$(cat build/serve.pid)"
 echo "PASS ui serve"
+# The icon and the version from ui.toml: the web build writes the icons, the manifest and
+# the links to them; an icon that is not square stops the build and says why.
+printf '[app]\nicon = "icon.png"\nversion = "2.0.0"\n' > build/newapp/ui.toml
+cp tests/icon.png build/newapp/icon.png
+(cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build web) > build/icon.txt 2>&1 || { cat build/icon.txt; exit 1; }
+for f in favicon.png apple-touch-icon.png icon-192.png icon-512.png manifest.webmanifest; do
+    test -f "build/newapp/build/ui/web/$f" || { echo "FAIL icon: no $f"; exit 1; }
+done
+file build/newapp/build/ui/web/icon-192.png | grep -q "192 x 192" || { echo "FAIL icon: icon-192.png size"; exit 1; }
+grep -q 'rel="manifest"' build/newapp/build/ui/web/index.html || { echo "FAIL icon: no manifest link"; exit 1; }
+ls build/newapp/build/ui/web | grep -q "made\|stamp" && { echo "FAIL icon: a marker among the page's files"; exit 1; }
+cp screenshots/tasks-web.png build/newapp/icon.png
+if (cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build web) > build/icon.txt 2>&1; then echo "FAIL icon: a wide icon was accepted"; exit 1; fi
+grep -q "it must be square" build/icon.txt || { cat build/icon.txt; exit 1; }
+echo "PASS ui icon"

@@ -232,6 +232,9 @@ Next to `eskiu.toml`, in the app and in any package. The tool merges every packa
 name = "Tasks"                   # the name people see (default: the package's name)
 id = "com.example.tasks"         # bundle id and Android package (default: org.eskiu.app.NAME)
 scheme = "tasks"                 # links tasks://route open the app (see navigation.md)
+icon = "icon.png"                # the app's icon (below)
+version = "1.2.0"                # the version people see (default: the package's version)
+build = "12"                     # the build number the stores order releases by (default "1")
 
 [web]
 base = "/tasks/"                 # where the page is served from (default "/")
@@ -254,6 +257,26 @@ receivers = ["org.example.Alarm"]   # broadcast receivers in native/android, for
 Values are strings and arrays of strings, and a table's key may take an inline table of
 them. A Swift package takes `url` and one of `from` (up to the next major version), `exact`
 or `branch`; its products are `products = [...]`, or the key's name.
+
+## The icon
+
+`[app] icon` names a square PNG of at least 1024 × 1024 pixels (from the project's root;
+keep it out of `assets/`, which is copied into the app as it is). Draw it to the edges: each
+platform cuts its own shape. From it the build makes:
+
+- **iOS**: an asset catalog compiled with `actool` into the bundle (Xcode's tools; one
+  1024 image, from which iOS makes every size), over white, since the App Store takes no
+  transparency in an icon.
+- **Android**: `mipmap` icons at the five densities (48 to 192 pixels), and an adaptive icon
+  for Android 8 and later: the image as its foreground, at the 72 of 108 points the
+  launcher's mask shows, over its border's average color. Without it, launchers shrink an
+  icon into a white circle.
+- **The web**: `favicon.png`, `apple-touch-icon.png` (180, for a phone's home screen) and a
+  web app manifest with the 192 and 512 sizes, linked from the page.
+
+The PNG can be gray, RGB, a palette or have alpha, 8 bits a channel and not interlaced; the
+tool reads and scales it itself, so building for Android needs no image tools. It is
+redone when the file changes.
 
 ## Dependencies: Gradle and Xcode
 

@@ -89,7 +89,7 @@ signals and [Components](components.md) for what there is.
 myapp/
   eskiu.toml          the package, with ui as a dependency
   eskiu.lock          the resolved dependencies (commit it)
-  ui.toml             optional: the app's name and id, frameworks, permissions, native dependencies
+  ui.toml             optional: the app's name, id, icon and version, frameworks, permissions, native dependencies
   native/             optional: code per platform (native/web, native/ios, native/android)
   src/main.esk        the app: ui_app_start and ui_app_stop
   assets/             files the app loads by name (Image("logo.png") ...), shipped on every platform
