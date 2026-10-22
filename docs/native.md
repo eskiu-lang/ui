@@ -128,9 +128,11 @@ void ShowTitle(string title) {
 
 A `.mjs` is an ordinary ES module, so it can import a library served from a URL
 (`import {Chart} from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';`) and draw into the
-element of a view it registers. There is no npm or bundler step, so a library has to come as
-an ES module from a URL. Each module in `native/web/` is copied under a new name, so one
-cannot import another by its file name.
+element of a view it registers. There is no npm or bundler step: a library comes as an ES
+module, from a URL or as a `.mjs` file in `native/web/`. The modules of one `native/web/`
+(the app's, or a package's) are copied together under their own names, so one imports
+another by its file name (`import {plot} from './plot.mjs';`). A module with no `setup` is
+only imported.
 
 ## iOS
 

@@ -47,26 +47,36 @@ string build_web(Project* p) {
     return out;
 }
 
-// native.mjs: imports each native/web/*.mjs (copied to native/) and calls its setup(ui),
-// where ui is {registerView(type, factory), emit(channel, payload)}.
+// native.mjs: imports each native/web/*.mjs and calls its setup(ui), where ui is
+// {registerView(type, factory), emit(channel, payload)}. The modules of each native/web
+// directory (the app's, each package's) are copied together to native/N/ under their own
+// names, so one can import another (`import {f} from './helpers.mjs'`).
 void write_web_native(Project* p, string out) {
     List<String> modules;
     defer fs_list_free(&modules);
     p.native("web", ".mjs", &modules);
     string dir = join(out, "native");
     fs_remove_all(dir);
+    List<String> dirs;
+    defer fs_list_free(&dirs);
     String text;
     defer String_free(&text);
     String_append(&text, "// Made by ui: the app's native web modules.\n");
     for (i in 0..modules.size) {
         String name;
+        String parent;
         path_basename(&name, modules.data[i].data);
-        if (i == 0) { fs_mkdir_p(dir); }
-        String copied;
-        String_appendf(&copied, "%d-%s", i, name.data);
-        fs_copy(modules.data[i].data, join(dir, copied.data));
-        String_appendf(&text, "import * as m%d from './native/%s';\n", i, copied.data);
-        String_free(&name); String_free(&copied);
+        path_dirname(&parent, modules.data[i].data);
+        int at = -1;
+        for (j in 0..dirs.size) { if (String_eq(&dirs.data[j], &parent) == 1) { at = j; } }
+        if (at < 0) { at = dirs.size; String kept; String_from(&kept, parent.data); dirs.push(kept); }
+        String into;
+        String_format(&into, "%d", at);
+        fs_mkdir_p(join(dir, into.data));
+        String_appendf(&into, "/%s", name.data);
+        fs_copy(modules.data[i].data, join(dir, into.data));
+        String_appendf(&text, "import * as m%d from './native/%s';\n", i, into.data);
+        String_free(&name); String_free(&parent); String_free(&into);
     }
     String_append(&text, "export function setupNative(ui) {\n");
     for (i in 0..modules.size) { String_appendf(&text, "  m%d.setup?.(ui);\n", i); }
