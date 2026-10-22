@@ -19,5 +19,6 @@ window on macOS.
 | [Testing](testing.md) | The model tests, the host checks, the conformance suite, CI |
 | [Releasing](releasing.md) | `ui release`: the App Store and Google Play, signing, build numbers, uploading |
 
-The design behind it is in the UI plan, `docs/dev/ui-plan.md` in the
+What comes next for ui (recoverable exceptions, prerendering and server-side rendering, more
+hosts) is in the roadmap, `docs/dev/roadmap.md` in the
 [compiler repository](https://github.com/eskiu-lang/eskiu).
