@@ -66,3 +66,10 @@ cp screenshots/tasks-web.png build/newapp/icon.png
 if (cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build web) > build/icon.txt 2>&1; then echo "FAIL icon: a wide icon was accepted"; exit 1; fi
 grep -q "it must be square" build/icon.txt || { cat build/icon.txt; exit 1; }
 echo "PASS ui icon"
+# A release checks what the stores need before building: an iOS release without an icon
+# stops at once, saying how to add one.
+printf '[app]\nname = "New app"\n' > build/newapp/ui.toml
+if (cd build/newapp && ../ui release ios) > build/release.txt 2>&1; then echo "FAIL release: no icon accepted"; exit 1; fi
+grep -q "the App Store needs an icon" build/release.txt || { cat build/release.txt; exit 1; }
+grep -q "warning: the app's id is org.eskiu.app.newapp" build/release.txt || { cat build/release.txt; exit 1; }
+echo "PASS ui release checks"

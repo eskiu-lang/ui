@@ -71,10 +71,11 @@ git clone https://github.com/eskiu-lang/ui && eskiuc ui/tools/ui/main.esk -o ~/.
 ui new myapp && cd myapp
 ui run web        # or macos, ios, android
 ui serve          # builds again and reloads on each change
+ui release        # for the App Store and Google Play
 ```
 
 [Getting started](docs/getting-started.md) has what each platform needs and a project's
-layout.
+layout; [Releasing](docs/releasing.md), what a release needs and makes.
 
 ## Documentation
 

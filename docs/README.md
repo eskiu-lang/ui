@@ -17,6 +17,7 @@ window on macOS.
 | [Protocol](protocol.md) | The commit format a renderer reads, events back, commits and ids |
 | [Hosts](hosts.md) | How each platform draws the tree: web, iOS, Android, macOS |
 | [Testing](testing.md) | The model tests, the host checks, the conformance suite, CI |
+| [Releasing](releasing.md) | `ui release`: the App Store and Google Play, signing, build numbers, uploading |
 
 The design behind it is in the UI plan, `docs/dev/ui-plan.md` in the
 [compiler repository](https://github.com/eskiu-lang/eskiu).
