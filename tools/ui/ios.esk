@@ -167,6 +167,21 @@ string build_ios(Project* p) {
     bool plist_changed = fs_read_text(join(bundle, "Info.plist"), &before) != 0 || String_eq_cstr(&before, plist.data) != 1;
     if (plist_changed) { fs_write_text(join(bundle, "Info.plist"), plist.data); }
     p.copy_assets(bundle);
+    // The icon: actool compiles its catalog into the bundle, which is signed with the rest.
+    string catalog = ios_icon_catalog(p, out);
+    string compiled = join(bundle, "Assets.car");
+    if (catalog != null) {
+        // Its marker sits beside the bundle, so nothing but the icon goes into it.
+        string marker = join(out, "icon-compiled.made");
+        string image = join(catalog, "AppIcon.appiconset/icon.png");
+        if (fs_exists(compiled) != 1 || icon_stale(marker, image)) {
+            Cmd actool;
+            ios_icon_command(&actool, catalog, bundle, "iphonesimulator", join(out, "icon-partial.plist"));
+            actool.must(null);
+            actool.free();
+            icon_built(marker, image);
+        }
+    }
     // A dev build links, signs and installs the executable again only when the host, the native
     // code or the Info.plist changed; the app's code goes to its bundle either way.
     List<string> exe_inputs;
@@ -177,6 +192,7 @@ string build_ios(Project* p) {
     defer fs_list_free(&asset_files);
     fs_glob(join(p.root.data, "assets/**/*"), &asset_files);
     for (i in 0..asset_files.size) { exe_inputs.push(asset_files.data[i].data); }
+    if (catalog != null) { exe_inputs.push(compiled); }
     if (dev && !plist_changed && !stale(executable, &exe_inputs)) {
         ios_reinstall = false;
         ios_core(p, out, app, executable, &compiler);
@@ -217,18 +233,18 @@ string ios_plist(Project* p, string classes, bool family) {
     String_appendf(&plist, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\n"
         "<key>CFBundleIdentifier</key><string>%s</string>\n<key>CFBundleName</key><string>%s</string>\n"
         "<key>CFBundleDisplayName</key><string>%s</string>\n<key>CFBundleExecutable</key><string>%s</string>\n"
-        "<key>CFBundlePackageType</key><string>APPL</string>\n<key>CFBundleVersion</key><string>1</string>\n"
-        "<key>CFBundleShortVersionString</key><string>0.1.0</string>\n<key>LSRequiresIPhoneOS</key><true/>\n"
+        "<key>CFBundlePackageType</key><string>APPL</string>\n<key>CFBundleVersion</key><string>%s</string>\n"
+        "<key>CFBundleShortVersionString</key><string>%s</string>\n<key>LSRequiresIPhoneOS</key><true/>\n"
         "<key>UILaunchScreen</key><dict/>\n<key>UIApplicationSceneManifest</key><dict>\n"
         "<key>UIApplicationSupportsMultipleScenes</key><false/>\n<key>UISceneConfigurations</key><dict>\n"
         "<key>UIWindowSceneSessionRoleApplication</key><array><dict>\n"
         "<key>UISceneConfigurationName</key><string>Default</string>\n"
         "<key>UISceneDelegateClassName</key><string>UiSceneDelegate</string>\n</dict></array></dict></dict>\n"
         "<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>\n"
-        "%s<key>UiNativeClasses</key><array>%s</array>\n%s</dict></plist>\n",
-        p.id.data, p.name.data, xml_escape(p.display.data), p.name.data,
+        "%s<key>UiNativeClasses</key><array>%s</array>\n%s%s</dict></plist>\n",
+        p.id.data, p.name.data, xml_escape(p.display.data), p.name.data, xml_escape(app_build(p)), xml_escape(app_version(p)),
         family ? "<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>\n" : "",
-        classes, ios_plist_entries(p));
+        classes, ios_plist_entries(p), ios_icon_plist(p));
     return plist.data;
 }
 

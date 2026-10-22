@@ -20,10 +20,14 @@ import <time>;
 import <map>;
 import <threading>;
 import <atomic>;
+import <bytes>;
+import <mem>;
 
 import "common.esk";
 import "config.esk";
 import "project.esk";
+import "png.esk";
+import "icon.esk";
 import "web.esk";
 import "macos.esk";
 import "yoga.esk";

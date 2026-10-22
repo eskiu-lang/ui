@@ -42,6 +42,7 @@ string build_web(Project* p) {
     // Where the app is served from (ui.toml [web] base), for the routes' URLs.
     string base = p.config.string("web.base");
     String_replace_all(&page, "{{base}}", xml_escape(base != null ? base : "/"));
+    String_replace_all(&page, "{{icons}}", web_icon_links(p, out));
     fs_write_text(join(out, "index.html"), page.data);
     p.copy_assets(out);
     return out;

@@ -178,6 +178,8 @@ string build_android(Project* p) {
     string assets = join(out, "assets");
     fs_mkdir_p(assets);
     p.copy_assets(assets);
+    // The icon at each density, as the res/ the manifest names.
+    string res = android_icon_res(p, out);
     if (use_gradle) {
         return build_android_gradle(p, out, setup_classes.data, &java, &maven);
     }
@@ -230,6 +232,7 @@ string build_android(Project* p) {
     defer fs_list_free(&asset_files);
     fs_glob(join(p.root.data, "assets/**/*"), &asset_files);
     for (i in 0..asset_files.size) { apk_inputs.push(asset_files.data[i].data); }
+    if (res != null) { apk_inputs.push(join(res, "mipmap-xxxhdpi/ic_launcher.png")); }
     if (dev && !stale(apk, &apk_inputs)) {
         android_reinstall = false;
         return apk;
@@ -238,6 +241,7 @@ string build_android(Project* p) {
     Cmd aapt;
     aapt.add(join(tools, "aapt")); aapt.add("package"); aapt.add("-f"); aapt.add("-M"); aapt.add(join(out, "AndroidManifest.xml"));
     aapt.add("-A"); aapt.add(assets); aapt.add("-I"); aapt.add(jar); aapt.add("-F"); aapt.add(unsigned_apk);
+    if (res != null) { aapt.add("-S"); aapt.add(res); }
     aapt.must(null);
     aapt.free();
     Cmd add;
@@ -267,12 +271,13 @@ string android_manifest(Project* p, string setup_classes, bool package) {
     String attribute;
     // The same version as the Gradle build's, so either can be installed over the other.
     if (package) {
-        String_appendf(&attribute, " package=\"%s\" android:versionCode=\"1\" android:versionName=\"0.1.0\"", p.id.data);
+        String_appendf(&attribute, " package=\"%s\" android:versionCode=\"%s\" android:versionName=\"%s\"", p.id.data,
+            app_build(p), xml_escape(app_version(p)));
     }
     String manifest;
     String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"%s>\n"
         "%s%s"
-        "  <application android:label=\"%s\" android:theme=\"@android:style/Theme.Material.Light.NoActionBar\"%s"
+        "  <application android:label=\"%s\"%s android:theme=\"@android:style/Theme.Material.Light.NoActionBar\"%s"
         " android:usesCleartextTraffic=\"true\">\n"
         "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\" android:launchMode=\"singleTask\"\n"
         "      android:configChanges=\"uiMode|locale|layoutDirection|fontScale|orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|density\" >\n"
@@ -282,7 +287,8 @@ string android_manifest(Project* p, string setup_classes, bool package) {
         "    </activity>\n%s  </application>\n</manifest>\n",
         attribute.data == null ? "" : attribute.data,
         package ? "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n" : "",
-        android_permissions(p), xml_escape(p.display.data), package ? " android:debuggable=\"true\"" : "", setup_classes,
+        android_permissions(p), xml_escape(p.display.data), app_icon(p) != null ? " android:icon=\"@mipmap/ic_launcher\"" : "",
+        package ? " android:debuggable=\"true\"" : "", setup_classes,
         android_scheme(p), android_receivers(p));
     return manifest.data;
 }

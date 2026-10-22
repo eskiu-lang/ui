@@ -196,7 +196,7 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
         main_group, pbx.groups.data == null ? "" : pbx.groups.data,
         sources_phase, pbx.sources.data == null ? "" : pbx.sources.data,
         frameworks_phase, pbx.frameworks.data == null ? "" : pbx.frameworks.data,
-        assets_phase, pbx_quote(ios_assets_script(assets)),
+        assets_phase, pbx_quote(ios_assets_script(assets, ios_icon_catalog(p, dir))),
         target, target_list, sources_phase, frameworks_phase, assets_phase,
         pbx_quote(p.name.data), pbx.products.data == null ? "" : pbx.products.data, pbx_quote(p.name.data), product,
         project_id, project_list, main_group, pbx_refs(&pbx), target,
@@ -241,10 +241,24 @@ string pbx_refs(Pbx* self) {
 }
 
 // A build phase that copies the project's assets into the bundle's top level, where Image
-// finds them by name.
-string ios_assets_script(string assets) {
+// finds them by name, and compiles the icon's catalog (null: no icon) into it.
+string ios_assets_script(string assets, string catalog) {
     String script;
     String_appendf(&script, "if [ -d '%s' ]; then cp -R '%s'/ \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/\"; fi\n",
         assets, assets);
+    if (catalog != null) {
+        Cmd actool;
+        ios_icon_command(&actool, "CATALOG", "INTO", "PLATFORM", "PARTIAL");
+        for (i in 0..actool.parts.size) {
+            string part = actool.parts.data[i].data;
+            if (strcmp(part, "CATALOG") == 0) { String_appendf(&script, "'%s' ", catalog); }
+            else if (strcmp(part, "INTO") == 0) { String_append(&script, "\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\" "); }
+            else if (strcmp(part, "PLATFORM") == 0) { String_append(&script, "\"$PLATFORM_NAME\" "); }
+            else if (strcmp(part, "PARTIAL") == 0) { String_append(&script, "\"$DERIVED_FILE_DIR/icon-partial.plist\" "); }
+            else { String_appendf(&script, "%s ", part); }
+        }
+        String_append(&script, "\n");
+        actool.free();
+    }
     return script.data;
 }

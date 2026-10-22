@@ -54,14 +54,15 @@ string build_android_gradle(Project* p, string out, string setup_classes, List<S
     String_appendf(&build, "// Made by ui.\nplugins { id 'com.android.application' }\n\nandroid {\n"
         "    namespace = '%s'\n    compileSdk = 35\n"
         "    defaultConfig {\n        applicationId = '%s'\n        minSdk = 24\n        targetSdk = 35\n"
-        "        versionCode = 1\n        versionName = '0.1.0'\n    }\n"
+        "        versionCode = %s\n        versionName = '%s'\n    }\n"
         "    signingConfigs {\n        debug {\n            storeFile = file('%s')\n            storePassword = 'android'\n"
         "            keyAlias = 'debug'\n            keyPassword = 'android'\n        }\n    }\n"
         "    sourceSets {\n        main {\n            manifest.srcFile 'AndroidManifest.xml'\n"
-        "            java.srcDirs = [%s]\n            kotlin.srcDirs = [%s]\n            jniLibs.srcDirs = ['%s']\n            assets.srcDirs = ['%s']\n"
+        "            java.srcDirs = [%s]\n            kotlin.srcDirs = [%s]\n            jniLibs.srcDirs = ['%s']\n            assets.srcDirs = ['%s']\n            res.srcDirs = ['%s']\n"
         "        }\n    }\n}\n\ndependencies {\n%s}\n",
-        groovy_escape(p.id.data), groovy_escape(p.id.data), groovy_escape(android_keystore()), sources.data, sources.data, groovy_escape(join(out, "lib")),
-        groovy_escape(join(out, "assets")), dependencies.data == null ? "" : dependencies.data);
+        groovy_escape(p.id.data), groovy_escape(p.id.data), app_build(p), groovy_escape(app_version(p)),
+        groovy_escape(android_keystore()), sources.data, sources.data, groovy_escape(join(out, "lib")),
+        groovy_escape(join(out, "assets")), groovy_escape(join(out, "res")), dependencies.data == null ? "" : dependencies.data);
     fs_write_text(join(app, "build.gradle"), build.data);
     Cmd cmd;
     defer cmd.free();

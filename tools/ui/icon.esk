@@ -1,0 +1,231 @@
+// The app's icon (ui.toml [app] icon) and version ([app] version and build) on each platform.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// The icon's path (a square PNG of at least 1024 points, from the project's root), or null.
+string app_icon(Project* p) {
+    string icon = p.config.string("app.icon");
+    if (icon == null || icon[0] == 0) { return null; }
+    string path = join(p.root.data, icon);
+    if (fs_exists(path) != 1) {
+        String message;
+        String_appendf(&message, "ui.toml: [app] icon: %s does not exist", icon);
+        fail(message.data);
+    }
+    return path;
+}
+
+// The icon at 1024 × 1024, for the platforms to scale down.
+void icon_load(Project* p, string path, PngImage* out) {
+    PngImage source;
+    string error = png_read(path, &source);
+    String message;
+    if (error != null) { String_appendf(&message, "ui.toml: [app] icon: %s %s", path, error); fail(message.data); }
+    if (source.width != source.height || source.width < 1024) {
+        String_appendf(&message, "ui.toml: [app] icon: %s is %d × %d; it must be square and at least 1024 × 1024",
+            path, source.width, source.height);
+        fail(message.data);
+    }
+    if (source.width == 1024) { *out = source; return; }
+    png_scale(&source, 1024, out);
+    PngImage_free(&source);
+}
+
+// `icon` at `size` points into `path`; `opaque` puts it over white.
+void icon_write(PngImage* icon, int size, bool opaque, string path) {
+    PngImage scaled;
+    if (size == icon.width) {
+        scaled.width = size; scaled.height = size;
+        scaled.rgba = alloc<uint8>((int64)size * size * 4);
+        memcpy((*void)scaled.rgba, (*void)icon.rgba, (int64)size * size * 4);
+    } else {
+        png_scale(icon, size, &scaled);
+    }
+    if (opaque) { png_flatten(&scaled); }
+    if (!png_write(path, &scaled)) {
+        String message;
+        String_appendf(&message, "ui: cannot write %s", path);
+        fail(message.data);
+    }
+    PngImage_free(&scaled);
+}
+
+// Whether the files made from the icon at `path` must be made again. `marker` records the icon
+// they were made from; it sits beside them, not among them, so it is never packaged.
+bool icon_stale(string marker, string path) {
+    List<string> inputs;
+    defer inputs.free();
+    inputs.push(path);
+    return stale(marker, &inputs);
+}
+
+void icon_built(string marker, string path) {
+    fs_write_text(marker, path);
+    List<string> inputs;
+    defer inputs.free();
+    inputs.push(path);
+    built(marker, &inputs);
+}
+
+// The version people see: [app] version, else the package's version, else 0.1.0.
+string app_version(Project* p) {
+    string version = p.config.string("app.version");
+    if (version != null && version[0] != 0) { return version; }
+    String text;
+    defer String_free(&text);
+    String value;
+    if (fs_read_text(join(p.root.data, "eskiu.toml"), &text) == 0) { toml_value(text.data, "version", &value); }
+    return value.len > 0 ? value.data : "0.1.0";
+}
+
+// The build number the stores order releases by ([app] build, a whole number; 1 by default).
+string app_build(Project* p) {
+    string build = p.config.string("app.build");
+    if (build == null || build[0] == 0) { return "1"; }
+    for (int i = 0; build[i] != 0; i++) {
+        if (build[i] < '0' || build[i] > '9') { fail("ui.toml: [app] build must be a whole number, as \"12\""); }
+    }
+    return build;
+}
+
+// ---- iOS ----
+
+// An asset catalog in `dir` with the icon as AppIcon (one 1024 image; Xcode 14 and later make
+// the other sizes from it), or null without an icon. Made again when the icon changed.
+string ios_icon_catalog(Project* p, string dir) {
+    string path = app_icon(p);
+    if (path == null) { return null; }
+    string catalog = join(dir, "Icon.xcassets");
+    string set = join(catalog, "AppIcon.appiconset");
+    string image = join(set, "icon.png");
+    string marker = join(dir, "icon-catalog.made");
+    if (icon_stale(marker, path)) {
+        fs_mkdir_p(set);
+        fs_write_text(join(catalog, "Contents.json"), "{\"info\": {\"author\": \"ui\", \"version\": 1}}\n");
+        fs_write_text(join(set, "Contents.json"),
+            "{\"images\": [{\"filename\": \"icon.png\", \"idiom\": \"universal\", \"platform\": \"ios\", "
+            "\"size\": \"1024x1024\"}], \"info\": {\"author\": \"ui\", \"version\": 1}}\n");
+        PngImage icon;
+        icon_load(p, path, &icon);
+        // The App Store takes no transparency in an app's icon.
+        icon_write(&icon, 1024, true, image);
+        PngImage_free(&icon);
+        icon_built(marker, path);
+    }
+    return catalog;
+}
+
+// actool's command for `catalog` into `into` (the bundle) for `platform` (iphonesimulator,
+// iphoneos, or "$PLATFORM_NAME" in an Xcode build phase).
+void ios_icon_command(Cmd* cmd, string catalog, string into, string platform, string partial) {
+    cmd.add("xcrun"); cmd.add("actool"); cmd.add(catalog); cmd.add("--compile"); cmd.add(into);
+    cmd.add("--platform"); cmd.add(platform); cmd.add("--minimum-deployment-target"); cmd.add("15.0");
+    cmd.add("--app-icon"); cmd.add("AppIcon"); cmd.add("--output-partial-info-plist"); cmd.add(partial);
+    cmd.add("--target-device"); cmd.add("iphone"); cmd.add("--target-device"); cmd.add("ipad");
+    cmd.add("--output-format"); cmd.add("human-readable-text");
+}
+
+// The Info.plist keys that name the compiled icon (as actool's partial Info.plist has them).
+string ios_icon_plist(Project* p) {
+    if (app_icon(p) == null) { return ""; }
+    return "<key>CFBundleIcons</key><dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconFiles</key>"
+        "<array><string>AppIcon60x60</string></array><key>CFBundleIconName</key><string>AppIcon</string></dict></dict>\n"
+        "<key>CFBundleIcons~ipad</key><dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconFiles</key>"
+        "<array><string>AppIcon60x60</string><string>AppIcon76x76</string></array><key>CFBundleIconName</key>"
+        "<string>AppIcon</string></dict></dict>\n";
+}
+
+// ---- Android ----
+
+// res/mipmap-*/ic_launcher.png in `out` at each density (48 to 192 pixels), or null without an
+// icon. Made again when the icon changed. Android 8 and later use the adaptive icon: the
+// image is its foreground, at the 72 of 108 points the launcher's mask shows, over its
+// border's color; without it, launchers shrink the icon into a white circle.
+string android_icon_res(Project* p, string out) {
+    string path = app_icon(p);
+    if (path == null) { return null; }
+    string res = join(out, "res");
+    string marker = join(out, "icon-res.made");
+    if (icon_stale(marker, path)) {
+        PngImage icon;
+        icon_load(p, path, &icon);
+        string[5] densities = {"mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"};
+        int[5] sizes = {48, 72, 96, 144, 192};
+        for (i in 0..5) {
+            String dir;
+            String_appendf(&dir, "mipmap-%s", densities[i]);
+            string folder = join(res, dir.data);
+            fs_mkdir_p(folder);
+            icon_write(&icon, sizes[i], false, join(folder, "ic_launcher.png"));
+            PngImage layer;
+            png_place(&icon, sizes[i] * 3 / 2, sizes[i] * 9 / 4, &layer);
+            if (!png_write(join(folder, "ic_launcher_foreground.png"), &layer)) { fail("ui: cannot write the adaptive icon"); }
+            PngImage_free(&layer);
+            String_free(&dir);
+        }
+        string adaptive = join(res, "mipmap-anydpi-v26");
+        fs_mkdir_p(adaptive);
+        fs_write_text(join(adaptive, "ic_launcher.xml"),
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+            "<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n"
+            "  <background android:drawable=\"@color/ic_launcher_background\"/>\n"
+            "  <foreground android:drawable=\"@mipmap/ic_launcher_foreground\"/>\n</adaptive-icon>\n");
+        string values = join(res, "values");
+        fs_mkdir_p(values);
+        String colors;
+        String_appendf(&colors, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
+            "  <color name=\"ic_launcher_background\">%s</color>\n</resources>\n", png_edge_color(&icon));
+        fs_write_text(join(values, "ic_launcher_colors.xml"), colors.data);
+        String_free(&colors);
+        PngImage_free(&icon);
+        icon_built(marker, path);
+    }
+    return res;
+}
+
+// ---- web ----
+
+// The icon for the page: a favicon, the icon a phone puts on its home screen, and the web
+// app manifest's two sizes; the <link> tags for the page's head ("" without an icon).
+string web_icon_links(Project* p, string out) {
+    string path = app_icon(p);
+    if (path == null) { return ""; }
+    // Made in build/ui/icon/web, whose marker stays out of the page's files, then copied.
+    string made = join(p.out("icon"), "web");
+    string marker = join(made, "icons.made");
+    string[4] names = {"favicon.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png"};
+    if (icon_stale(marker, path)) {
+        fs_mkdir_p(made);
+        PngImage icon;
+        icon_load(p, path, &icon);
+        icon_write(&icon, 64, false, join(made, names[0]));
+        icon_write(&icon, 180, true, join(made, names[1]));
+        icon_write(&icon, 192, false, join(made, names[2]));
+        icon_write(&icon, 512, false, join(made, names[3]));
+        PngImage_free(&icon);
+        icon_built(marker, path);
+    }
+    for (i in 0..4) { fs_copy(join(made, names[i]), join(out, names[i])); }
+    String manifest;
+    defer String_free(&manifest);
+    String_appendf(&manifest, "{\n  \"name\": \"%s\",\n  \"short_name\": \"%s\",\n  \"start_url\": \".\",\n"
+        "  \"display\": \"standalone\",\n  \"icons\": [\n"
+        "    {\"src\": \"icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\"},\n"
+        "    {\"src\": \"icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\"}\n  ]\n}\n",
+        json_quote_inner(p.display.data), json_quote_inner(p.display.data));
+    fs_write_text(join(out, "manifest.webmanifest"), manifest.data);
+    return "<link rel=\"icon\" type=\"image/png\" href=\"favicon.png\">\n"
+        "<link rel=\"apple-touch-icon\" href=\"apple-touch-icon.png\">\n"
+        "<link rel=\"manifest\" href=\"manifest.webmanifest\">\n";
+}
+
+// `text` escaped for the inside of a JSON string.
+string json_quote_inner(string text) {
+    String out;
+    for (int i = 0; text[i] != 0; i++) {
+        char c = text[i];
+        if (c == '"' || c == '\\') { String_appendf(&out, "\\%c", c); }
+        else if ((int)c < 32 && (int)c >= 0) { String_appendf(&out, "\\u%04x", (int)c); }
+        else { String_appendf(&out, "%c", c); }
+    }
+    return out.data == null ? "" : out.data;
+}

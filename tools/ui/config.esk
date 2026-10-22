@@ -6,6 +6,9 @@
 //   name = "Tasks"                       the name people see (default: the package's name)
 //   id = "com.example.tasks"             bundle id and Android package (default: org.eskiu.app.NAME)
 //   scheme = "tasks"                     links tasks://route open the app (ui_link, Navigator)
+//   icon = "assets/icon.png"             the app's icon: a square PNG, 1024 × 1024 or larger
+//   version = "1.2.0"                    the version people see (default: the package's version)
+//   build = "12"                         the build number stores order releases by (default "1")
 //
 //   [web]
 //   base = "/tasks/"                     where the page is served from (default "/")
