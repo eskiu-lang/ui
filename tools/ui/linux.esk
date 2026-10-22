@@ -45,6 +45,9 @@ string build_linux(Project* p) {
     cmd.add("-o"); cmd.add(binary);
     cmd.must(null);
 
+    string web_out = join(p.root.data, "build/ui/web");
+    copy_dir_all(web_out, join(out, "web"));
+
     string icon = app_icon(p);
     if (icon != null) {
         fs_copy(icon, join(out, "icon.png"));

@@ -94,7 +94,7 @@ export function setup(ui) {
 }
 ```
 
-macOS runs the web host, so it uses the web's native code.
+macOS, Linux and Windows run the web host, so they use the web's native code.
 
 Arguments reach a `.js` extern as JavaScript numbers: an integer or a float as itself, a
 `string` as a pointer into the app's memory, read with `UTF8ToString(pointer)`. Send text
@@ -264,6 +264,9 @@ or `branch`; its products are `products = [...]`, or the key's name.
 keep it out of `assets/`, which is copied into the app as it is). Draw it to the edges: each
 platform cuts its own shape. From it the build makes:
 
+- **macOS**: an `AppIcon.icns` bundle icon generated from the 1024 × 1024 source (using `iconutil`).
+- **Linux**: an `icon.png` application and window icon.
+- **Windows**: an `icon.ico` multi-resolution icon (16, 32, 48, 256) built directly into the output folder.
 - **iOS**: an asset catalog compiled with `actool` into the bundle (Xcode's tools; one
   1024 image, from which iOS makes every size), over white, since the App Store takes no
   transparency in an icon.
@@ -320,6 +323,12 @@ can replace and the Android permissions, tests that run on the computer with sta
 native side, and an example app. A package like it starts and stops its service with
 `use_mount` ([state](state.md)), so the service runs while a component that uses it is
 mounted.
+
+If a package in `eskiu.lock` also declares prebuilt native archives in its `eskiu.toml`
+(`[native.NAME]` for `ios-arm64`, `ios-arm64-simulator`, `ios-x86_64-simulator` or
+`android-arm64`, as [`eskiu-lang/gpu`](https://github.com/eskiu-lang/gpu) does for
+`wgpu_native`), `ui build ios` and `ui build android` download the archive into
+`~/.eskiu/native/` when missing and link its `libNAME.a` into the app bundle automatically.
 
 ## Hooks in a package
 

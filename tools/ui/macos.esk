@@ -53,6 +53,7 @@ string build_macos(Project* p) {
     fs_write_text(join(contents, "Info.plist"), plist.data);
 
     string web_out = join(p.root.data, "build/ui/web");
+    copy_dir_all(web_out, join(resources, "web"));
     string icon_path = join(web_out, "apple-touch-icon.png");
     if (fs_exists(icon_path) == 1) {
         fs_copy(icon_path, join(resources, "icon.png"));

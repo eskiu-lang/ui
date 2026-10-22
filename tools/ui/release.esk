@@ -257,7 +257,14 @@ void release_linux(Project* p) {
     String_appendf(&tar_name, "%s-%s-linux.tar.gz", p.name.data, app_version(p));
     string tar_path = join(p.out("linux"), tar_name.data);
     Cmd tar;
-    tar.add("tar"); tar.add("-czf"); tar.add(tar_path); tar.add("-C"); tar.add(p.out("linux")); tar.add(p.name.data);
+    tar.add("tar"); tar.add("-czf"); tar.add(tar_path); tar.add("-C"); tar.add(p.out("linux"));
+    tar.add(p.name.data);
+    if (fs_is_dir(join(p.out("linux"), "web")) == 1) {
+        tar.add("web");
+    }
+    if (fs_exists(join(p.out("linux"), "icon.png")) == 1) {
+        tar.add("icon.png");
+    }
     tar.run(null);
     tar.free();
     printf("\nlinux: %s (%s)\n  %s (%s), to distribute\n  version %s, build %s\n",
@@ -275,7 +282,17 @@ void release_windows(Project* p) {
     defer String_free(&exe_name);
     String_appendf(&exe_name, "%s.exe", p.name.data);
     Cmd zip;
-    zip.add("tar"); zip.add("-a"); zip.add("-cf"); zip.add(zip_path); zip.add("-C"); zip.add(p.out("windows")); zip.add(exe_name.data);
+    zip.add("tar"); zip.add("-a"); zip.add("-cf"); zip.add(zip_path); zip.add("-C"); zip.add(p.out("windows"));
+    zip.add(exe_name.data);
+    if (fs_is_dir(join(p.out("windows"), "web")) == 1) {
+        zip.add("web");
+    }
+    if (fs_exists(join(p.out("windows"), "icon.ico")) == 1) {
+        zip.add("icon.ico");
+    }
+    if (fs_exists(join(p.out("windows"), "WebView2Loader.dll")) == 1) {
+        zip.add("WebView2Loader.dll");
+    }
     zip.run(null);
     zip.free();
     printf("\nwindows: %s (%s)\n  %s (%s), to distribute\n  version %s, build %s\n",
@@ -283,15 +300,35 @@ void release_windows(Project* p) {
     printf("  next: distribute the executable or installer (Inno Setup / MSIX).\n");
 }
 
+void release_web(Project* p) {
+    string dir = build_web(p);
+    String zip_name;
+    defer String_free(&zip_name);
+    String_appendf(&zip_name, "%s-%s-web.zip", p.name.data, app_version(p));
+    string zip_path = join(p.out("web"), zip_name.data);
+    string tmp_path = join(join(p.root.data, "build/ui"), zip_name.data);
+    Cmd zip;
+    zip.add("tar"); zip.add("-a"); zip.add("-cf"); zip.add(tmp_path); zip.add("-C"); zip.add(dir); zip.add(".");
+    zip.run(null);
+    zip.free();
+    fs_copy(tmp_path, zip_path);
+    fs_remove(tmp_path);
+    printf("\nweb: %s\n  %s (%s), to distribute or deploy\n  version %s, build %s\n",
+        dir, zip_path, release_size(zip_path), app_version(p), app_build(p));
+    printf("  next: deploy the directory or zip archive to Netlify, Vercel, Cloudflare Pages, S3 or GitHub Pages.\n");
+}
+
 void release_command(Project* p, int argc, string* argv) {
     ui_release = true;
+    bool web = false;
     bool ios = false;
     bool android = false;
     bool macos = false;
     bool linux = false;
     bool windows = false;
     for (int i = 2; i < argc; i++) {
-        if (strcmp(argv[i], "ios") == 0) { ios = true; }
+        if (strcmp(argv[i], "web") == 0) { web = true; }
+        else if (strcmp(argv[i], "ios") == 0) { ios = true; }
         else if (strcmp(argv[i], "android") == 0) { android = true; }
         else if (strcmp(argv[i], "macos") == 0) { macos = true; }
         else if (strcmp(argv[i], "linux") == 0) { linux = true; }
@@ -300,7 +337,7 @@ void release_command(Project* p, int argc, string* argv) {
         else { usage(); }
     }
     // Both, when neither is named; iOS only where Xcode runs.
-    if (!ios && !android && !macos && !linux && !windows) {
+    if (!web && !ios && !android && !macos && !linux && !windows) {
         android = true;
 #ifdef __APPLE__
         ios = true;
@@ -308,6 +345,7 @@ void release_command(Project* p, int argc, string* argv) {
     }
     // Everything the stores need is checked once, before either build.
     release_preflight(p, ios);
+    if (web) { release_web(p); }
     if (ios) { release_ios(p); }
     if (android) { release_android(p); }
     if (macos) { release_macos(p); }

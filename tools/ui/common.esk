@@ -198,3 +198,21 @@ string xml_escape(string text) {
     String_replace_all(&out, "\"", "&quot;");
     return out.data;
 }
+
+// Recursively copy a directory into `dst`.
+void copy_dir_all(string src, string dst) {
+    if (fs_is_dir(src) != 1) { return; }
+    fs_mkdir_p(dst);
+    List<String> entries;
+    defer fs_list_free(&entries);
+    fs_list_dir(src, &entries);
+    for (i in 0..entries.size) {
+        string s = join(src, entries.data[i].data);
+        string d = join(dst, entries.data[i].data);
+        if (fs_is_dir(s) == 1) {
+            copy_dir_all(s, d);
+        } else {
+            fs_copy(s, d);
+        }
+    }
+}

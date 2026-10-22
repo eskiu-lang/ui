@@ -20,7 +20,14 @@ string build_windows(Project* p) {
             cxx = "cl";
             is_msvc = true;
         } else {
-            cxx = "g++";
+            Cmd check_mingw;
+            check_mingw.add("which"); check_mingw.add("x86_64-w64-mingw32-g++");
+            if (check_mingw.run(null) == 0) {
+                cxx = "x86_64-w64-mingw32-g++";
+            } else {
+                cxx = "g++";
+            }
+            check_mingw.free();
         }
         check_cl.free();
     } else if (strstr(cxx, "cl") != null) {
@@ -49,9 +56,9 @@ string build_windows(Project* p) {
 
     cmd.must(null);
 
-    string icon = app_icon(p);
-    if (icon != null) {
-        fs_copy(icon, join(out, "icon.png"));
-    }
+    string web_out = join(p.root.data, "build/ui/web");
+    copy_dir_all(web_out, join(out, "web"));
+
+    windows_icon(p, out);
     return binary;
 }

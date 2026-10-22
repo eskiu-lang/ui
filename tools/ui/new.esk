@@ -40,5 +40,5 @@ void create(string name, string ui_path) {
     else { add.add("--git"); add.add(kUiGit); add.add("--rev"); add.add(kUiRev); }
     add.must(name);
     add.free();
-    printf("\nCreated %s. Next:\n  cd %s\n  ui run web      # or macos, ios, android\n", name, name);
+    printf("\nCreated %s. Next:\n  cd %s\n  ui run web      # or macos, linux, windows, ios, android\n", name, name);
 }

@@ -136,6 +136,91 @@ string macos_icon(Project* p, string out) {
     return null;
 }
 
+// ---- Windows ----
+
+// An .ico file in `out` (icon.ico), or null without an icon. Made from the 1024 icon.
+string windows_icon(Project* p, string out) {
+    string path = app_icon(p);
+    if (path == null) { return null; }
+    string made = join(p.out("icon"), "windows");
+    string ico_path = join(out, "icon.ico");
+    string marker = join(made, "icon.made");
+    if (icon_stale(marker, path)) {
+        fs_mkdir_p(made);
+        PngImage icon;
+        icon_load(p, path, &icon);
+        int[4] sizes = {16, 32, 48, 256};
+        List<String> png_paths;
+        defer fs_list_free(&png_paths);
+        for (i in 0..4) {
+            String pth;
+            String_appendf(&pth, "%s/icon_%d.png", made, sizes[i]);
+            icon_write(&icon, sizes[i], false, pth.data);
+            png_paths.push(pth);
+        }
+        PngImage_free(&icon);
+
+        List<int64> png_sizes;
+        defer png_sizes.free();
+        int64 total_header = 6 + 16 * 4;
+        int64 cur_offset = total_header;
+        for (i in 0..4) {
+            FileStat st;
+            fs_stat(png_paths.data[i].data, &st);
+            png_sizes.push(st.size);
+            cur_offset += st.size;
+        }
+
+        Bytes ico;
+        Bytes_init(&ico, cur_offset + 16);
+        defer Bytes_free(&ico);
+
+        // Header: reserved (0), type (1), count (4)
+        Bytes_push(&ico, 0); Bytes_push(&ico, 0);
+        Bytes_push(&ico, 1); Bytes_push(&ico, 0);
+        Bytes_push(&ico, 4); Bytes_push(&ico, 0);
+
+        int64 offset = total_header;
+        for (i in 0..4) {
+            Bytes_push(&ico, sizes[i] == 256 ? 0 : (uint8)sizes[i]); // width
+            Bytes_push(&ico, sizes[i] == 256 ? 0 : (uint8)sizes[i]); // height
+            Bytes_push(&ico, 0); // colors
+            Bytes_push(&ico, 0); // reserved
+            Bytes_push(&ico, 1); Bytes_push(&ico, 0); // planes = 1
+            Bytes_push(&ico, 32); Bytes_push(&ico, 0); // bpp = 32
+            uint32 sz = (uint32)png_sizes.data[i];
+            Bytes_push(&ico, (uint8)sz);
+            Bytes_push(&ico, (uint8)(sz >> 8));
+            Bytes_push(&ico, (uint8)(sz >> 16));
+            Bytes_push(&ico, (uint8)(sz >> 24));
+            uint32 off = (uint32)offset;
+            Bytes_push(&ico, (uint8)off);
+            Bytes_push(&ico, (uint8)(off >> 8));
+            Bytes_push(&ico, (uint8)(off >> 16));
+            Bytes_push(&ico, (uint8)(off >> 24));
+            offset += png_sizes.data[i];
+        }
+
+        for (i in 0..4) {
+            int64 read_sz = 0;
+            *uint8 data = fs_read_all(png_paths.data[i].data, &read_sz);
+            if (data != null) {
+                Bytes_append_raw(&ico, data, read_sz);
+                free(data);
+            }
+        }
+
+        fs_write_all(join(made, "icon.ico"), ico.data, ico.len);
+        icon_built(marker, path);
+    }
+    string built_ico = join(made, "icon.ico");
+    if (fs_exists(built_ico) == 1) {
+        fs_copy(built_ico, ico_path);
+        return ico_path;
+    }
+    return null;
+}
+
 // ---- iOS ----
 
 // An asset catalog in `dir` with the icon as AppIcon (one 1024 image; Xcode 14 and later make

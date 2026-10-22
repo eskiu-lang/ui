@@ -31,11 +31,13 @@ if [ "$(uname)" = "Darwin" ]; then
     (cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build macos) > build/macos.txt 2>&1 || { cat build/macos.txt; exit 1; }
     test -f build/newapp/build/ui/macos/newapp || { echo "FAIL macos: no binary"; exit 1; }
     test -f build/newapp/build/ui/macos/newapp.app/Contents/Info.plist || { echo "FAIL macos: no Info.plist"; exit 1; }
+    test -f build/newapp/build/ui/macos/newapp.app/Contents/Resources/web/index.html || { echo "FAIL macos: no bundled web"; exit 1; }
     echo "PASS ui build macos"
 fi
 if [ "$(uname)" = "Linux" ] && pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
     (cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build linux) > build/linux.txt 2>&1 || { cat build/linux.txt; exit 1; }
     test -f build/newapp/build/ui/linux/newapp || { echo "FAIL linux: no binary"; exit 1; }
+    test -f build/newapp/build/ui/linux/web/index.html || { echo "FAIL linux: no bundled web"; exit 1; }
     echo "PASS ui build linux"
 fi
 # ui.toml is read before building: a malformed one stops with its line.

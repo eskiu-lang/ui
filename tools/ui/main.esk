@@ -43,7 +43,7 @@ import "release.esk";
 
 void usage() {
     println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android\n       ui run web|macos|linux|windows|ios|android\n"
-                "       ui serve [web|macos|linux|windows|ios|android]\n       ui open ios|android\n       ui release [macos|linux|windows|ios|android] [--upload]");
+                "       ui serve [web|macos|linux|windows|ios|android]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]");
     exit(2);
 }
 
