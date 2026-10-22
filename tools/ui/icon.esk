@@ -77,10 +77,18 @@ string app_version(Project* p) {
     return value.len > 0 ? value.data : "0.1.0";
 }
 
-// The build number the stores order releases by ([app] build, a whole number; 1 by default).
+// A release's build number from the clock, taken once so every part of a run agrees.
+string app_release_build;
+
+// The build number the stores order releases by: [app] build (a whole number), else for a
+// release one from the clock (release_build_number), else 1.
 string app_build(Project* p) {
     string build = p.config.string("app.build");
-    if (build == null || build[0] == 0) { return "1"; }
+    if (build == null || build[0] == 0) {
+        if (!ui_release) { return "1"; }
+        if (app_release_build == null) { app_release_build = release_build_number(); }
+        return app_release_build;
+    }
     for (int i = 0; build[i] != 0; i++) {
         if (build[i] < '0' || build[i] > '9') { fail("ui.toml: [app] build must be a whole number, as \"12\""); }
     }

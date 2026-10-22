@@ -1,0 +1,236 @@
+// `ui release [ios|android] [--upload]`: builds for the stores, with as little to set up as
+// possible: the Apple team from the Mac's certificates, an Android upload key made and kept
+// in ESKIU_HOME, a build number from the clock. It checks what the stores need before the
+// long build, and ends with what it made and what to do next.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// The build number a release gets unless [app] build sets one: seconds since 2024-01-01 UTC,
+// so each release's is larger than the last (what both stores ask), with nothing to bump. It
+// stays under Android's limit for a version code (2100000000) until 2090.
+string release_build_number() {
+    int64 seconds = time_now_ms() / 1000 - 1704067200;
+    String number;
+    String_appendf(&number, "%lld", seconds);
+    return number.data;
+}
+
+// What the stores need, checked before the build: an icon (the App Store takes no app
+// without one) and an id of the developer's own. Warnings go first, a missing iOS icon stops.
+void release_preflight(Project* p, bool ios) {
+    if (String_starts_with(&p.id, "org.eskiu.app.") == 1 || String_starts_with(&p.id, "org.example.") == 1
+        || String_starts_with(&p.id, "com.example.") == 1) {
+        String message;
+        String_appendf(&message, "ui release: warning: the app's id is %s; the stores keep an app's id for good, so set "
+            "your own in ui.toml ([app] id = \"com.yourcompany.app\")", p.id.data);
+        println_err(message.data);
+    }
+    if (app_icon(p) == null) {
+        if (ios) {
+            fail("ui release ios: the App Store needs an icon. Add a square PNG of 1024 × 1024 or larger and name it in ui.toml:\n\n"
+                 "  [app]\n  icon = \"icon.png\"");
+        }
+        println_err("ui release: warning: no [app] icon in ui.toml; Android shows its default icon");
+    }
+}
+
+// ---- the Apple team ----
+
+struct AppleTeam { String id; String name; bool distribution; }
+
+// The teams of the valid signing certificates in the keychain, each once.
+void apple_teams(List<AppleTeam>* out) {
+    String identities;
+    defer String_free(&identities);
+    Cmd find;
+    find.add("security"); find.add("find-identity"); find.add("-v"); find.add("-p"); find.add("codesigning");
+    bool found = find.output(&identities);
+    find.free();
+    if (!found || identities.data == null) { return; }
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&identities, &lines);
+    string pem = join(eskiu_home(), "cache/ui-identity.pem");
+    for (i in 0..lines.size) {
+        // `  1) HASH "Apple Distribution: Name (ID)"`: the name between the quotes.
+        int64 open = String_index_of(&lines.data[i], '"');
+        if (open < 0) { continue; }
+        String name;
+        for (int64 j = open + 1; j < lines.data[i].len && lines.data[i].data[j] != '"'; j++) {
+            String_appendf(&name, "%c", lines.data[i].data[j]);
+        }
+        String text;
+        Cmd cert;
+        cert.add("security"); cert.add("find-certificate"); cert.add("-c"); cert.add(name.data); cert.add("-p");
+        bool ok = cert.output(&text) && text.data != null;
+        cert.free();
+        if (ok) { fs_write_text(pem, text.data); }
+        // Still valid, and its subject: the team's id (OU) and name (O).
+        Cmd check;
+        check.add("openssl"); check.add("x509"); check.add("-in"); check.add(pem); check.add("-noout"); check.add("-checkend"); check.add("0");
+        String said;
+        if (ok && !check.output(&said)) { ok = false; }
+        String_free(&said);
+        check.free();
+        String subject;
+        Cmd read;
+        read.add("openssl"); read.add("x509"); read.add("-in"); read.add(pem); read.add("-noout"); read.add("-subject");
+        read.add("-nameopt"); read.add("sep_multiline,utf8");
+        if (ok) { ok = read.output(&subject) && subject.data != null; }
+        read.free();
+        if (ok) {
+            AppleTeam team;
+            List<String> fields;
+            String_lines(&subject, &fields);
+            for (k in 0..fields.size) {
+                String_trim(&fields.data[k]);
+                if (String_starts_with(&fields.data[k], "OU=") == 1) { String_from(&team.id, &fields.data[k].data[3]); }
+                if (String_starts_with(&fields.data[k], "O=") == 1) { String_from(&team.name, &fields.data[k].data[2]); }
+            }
+            fs_list_free(&fields);
+            team.distribution = String_contains(&name, "Distribution") == 1;
+            int at = -1;
+            for (k in 0..out.size) { if (String_eq(&out.data[k].id, &team.id) == 1) { at = k; } }
+            if (team.id.len == 0) { String_free(&team.name); }
+            else if (at < 0) { out.push(team); }
+            else {
+                if (team.distribution) { out.data[at].distribution = true; }
+                String_free(&team.id); String_free(&team.name);
+            }
+        }
+        String_free(&name); String_free(&text); String_free(&subject);
+    }
+    fs_remove(pem);
+}
+
+// The team a release is signed for: ui.toml [ios] team, else the only team this Mac has a
+// valid certificate for. With several, it stops and lists them to pick from.
+string ios_release_team(Project* p) {
+    string team = p.config.string("ios.team");
+    if (team != null && team[0] != 0) { return team; }
+    List<AppleTeam> teams;
+    apple_teams(&teams);
+    if (teams.size == 1) {
+        printf("Signing for %s (%s); set [ios] team in ui.toml to choose another.\n", teams.data[0].name.data, teams.data[0].id.data);
+        return teams.data[0].id.data;
+    }
+    String message;
+    if (teams.size == 0) {
+        String_append(&message, "ui release ios: this Mac has no valid Apple signing certificate. Sign in to your Apple "
+            "developer account in Xcode (Settings, Accounts), or set your team's id in ui.toml:\n\n  [ios]\n  team = \"ABCDE12345\"");
+    } else {
+        String_append(&message, "ui release ios: this Mac can sign for several teams; choose one in ui.toml:\n\n  [ios]\n");
+        for (i in 0..teams.size) {
+            String_appendf(&message, "  team = \"%s\"   # %s%s\n", teams.data[i].id.data, teams.data[i].name.data,
+                teams.data[i].distribution ? " (has a distribution certificate)" : "");
+        }
+    }
+    fail(message.data);
+    return null;
+}
+
+// ---- the Android upload key ----
+
+// Where a release's signing key comes from: UI_ANDROID_KEYSTORE (with
+// UI_ANDROID_KEYSTORE_PASSWORD, UI_ANDROID_KEY_ALIAS, UI_ANDROID_KEY_PASSWORD), as on CI;
+// else the app's upload key in ESKIU_HOME/keys/ID/, made on the first release with a random
+// password kept beside it. Google Play re-signs apps with its own key, so this one only
+// proves the upload is the developer's; it is still worth a backup. The properties file the
+// Gradle build reads it from, or null with the environment's.
+string android_upload_key(Project* p) {
+    string keystore = env_get("UI_ANDROID_KEYSTORE");
+    if (keystore != null && keystore[0] != 0) {
+        if (env_get("UI_ANDROID_KEYSTORE_PASSWORD") == null || env_get("UI_ANDROID_KEY_ALIAS") == null) {
+            fail("ui release android: UI_ANDROID_KEYSTORE needs UI_ANDROID_KEYSTORE_PASSWORD and UI_ANDROID_KEY_ALIAS "
+                 "(and UI_ANDROID_KEY_PASSWORD when the key's password differs)");
+        }
+        return null;
+    }
+    string dir = join(join(eskiu_home(), "keys"), p.id.data);
+    string store = join(dir, "upload.jks");
+    string properties = join(dir, "upload.properties");
+    if (fs_exists(store) == 1 && fs_exists(properties) == 1) { return properties; }
+    fs_mkdir_p(dir);
+    String password;
+    Cmd rand;
+    rand.add("openssl"); rand.add("rand"); rand.add("-hex"); rand.add("24");
+    if (!rand.output(&password) || password.data == null) { fail("ui release android: openssl is needed to make the upload key's password"); }
+    rand.free();
+    String_trim(&password);
+    String dname;
+    String_appendf(&dname, "CN=%s", p.display.data);
+    Cmd key;
+    key.add("keytool"); key.add("-genkeypair"); key.add("-keystore"); key.add(store); key.add("-storetype"); key.add("PKCS12");
+    key.add("-storepass"); key.add(password.data); key.add("-alias"); key.add("upload");
+    key.add("-keyalg"); key.add("RSA"); key.add("-keysize"); key.add("4096"); key.add("-validity"); key.add("10000");
+    key.add("-dname"); key.add(dname.data); key.add("-noprompt");
+    key.must(null);
+    key.free();
+    String text;
+    String_appendf(&text, "# The upload key of %s, made by ui release. Back up this folder: Play only takes uploads\n"
+        "# signed with this key (Play Console, App integrity, can reset it if it is lost).\n"
+        "storeFile=%s\nstorePassword=%s\nkeyAlias=upload\nkeyPassword=%s\n", p.id.data, store, password.data, password.data);
+    fs_write_text(properties, text.data);
+    Cmd lock;
+    lock.add("chmod"); lock.add("600"); lock.add(properties); lock.add(store);
+    lock.run(null);
+    lock.free();
+    printf("Made the upload key for %s in %s. Back it up: Play takes only uploads signed with it.\n", p.id.data, dir);
+    return properties;
+}
+
+// ---- the command ----
+
+string release_size(string path) {
+    FileStat st;
+    String text;
+    if (fs_stat(path, &st) != 0) { return ""; }
+    if (st.size >= 1048576) { String_appendf(&text, "%.1f MB", (double)st.size / 1048576.0); }
+    else { String_appendf(&text, "%lld KB", st.size / 1024); }
+    return text.data;
+}
+
+void release_ios(Project* p) {
+    string ipa = build_ios(p);
+    printf("\nios: %s (%s)\n  version %s, build %s\n", ipa, release_size(ipa), app_version(p), app_build(p));
+    if (ui_upload) { printf("  uploaded to App Store Connect: it shows in TestFlight once Apple has processed it.\n"); }
+    else {
+        printf("  next: ui release ios --upload sends it to App Store Connect with Xcode's account, or drag the\n"
+               "  IPA into Apple's Transporter app.\n");
+    }
+}
+
+void release_android(Project* p) {
+    string bundle = build_android(p);
+    String apk;
+    String_from(&apk, bundle);
+    apk.len -= 4;
+    apk.data[apk.len] = 0;
+    String_append(&apk, ".apk");
+    printf("\nandroid: %s (%s), for Google Play\n  %s (%s), to install directly\n  version %s, build %s\n",
+        bundle, release_size(bundle), apk.data, release_size(apk.data), app_version(p), app_build(p));
+    printf("  next: upload the .aab in Play Console (Test and release); the first one makes the app's record.\n");
+    if (ui_upload) { printf("  (--upload is for iOS: Play takes uploads in its console or through its API.)\n"); }
+}
+
+void release_command(Project* p, int argc, string* argv) {
+    ui_release = true;
+    bool ios = false;
+    bool android = false;
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "ios") == 0) { ios = true; }
+        else if (strcmp(argv[i], "android") == 0) { android = true; }
+        else if (strcmp(argv[i], "--upload") == 0) { ui_upload = true; }
+        else { usage(); }
+    }
+    // Both, when neither is named; iOS only where Xcode runs.
+    if (!ios && !android) {
+        android = true;
+#ifdef __APPLE__
+        ios = true;
+#endif
+    }
+    // Everything the stores need is checked once, before either build.
+    release_preflight(p, ios);
+    if (ios) { release_ios(p); }
+    if (android) { release_android(p); }
+}

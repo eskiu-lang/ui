@@ -57,7 +57,8 @@ string build_android(Project* p) {
     defer fs_list_free(&kotlin);
     p.native("android", ".kt", &kotlin);
     string gradle = env_get("UI_GRADLE");
-    bool use_gradle = maven.size > 0 || kotlin.size > 0 || (gradle != null && strcmp(gradle, "1") == 0);
+    // A release always is: an App Bundle is Gradle's to make.
+    bool use_gradle = ui_release || maven.size > 0 || kotlin.size > 0 || (gradle != null && strcmp(gradle, "1") == 0);
     bool dev = ios_dev() && !use_gradle;
     android_reinstall = true;
     android_core = null;
@@ -286,7 +287,7 @@ string android_manifest(Project* p, string setup_classes, bool package) {
         "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n%s"
         "    </activity>\n%s  </application>\n</manifest>\n",
         attribute.data == null ? "" : attribute.data,
-        package ? "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"35\"/>\n" : "",
+        package ? "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"36\"/>\n" : "",
         android_permissions(p), xml_escape(p.display.data), app_icon(p) != null ? " android:icon=\"@mipmap/ic_launcher\"" : "",
         package ? " android:debuggable=\"true\"" : "", setup_classes,
         android_scheme(p), android_receivers(p));

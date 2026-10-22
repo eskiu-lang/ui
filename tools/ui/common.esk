@@ -9,6 +9,13 @@ const string kYogaGit = "https://github.com/react/yoga.git";
 
 const string kYogaTag = "v3.2.1";
 
+// `ui release`: builds for the stores (an iOS archive and IPA, an Android App Bundle and APK,
+// signed for release), never reload builds.
+bool ui_release;
+
+// `ui release --upload`: the iOS export goes to App Store Connect with Xcode's account.
+bool ui_upload;
+
 void fail(string message) {
     println_err(message);
     exit(1);

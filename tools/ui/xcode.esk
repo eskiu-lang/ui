@@ -100,9 +100,12 @@ void swift_class_name(string path, String* out) {
     out.data[out.len] = 0;
 }
 
-// build/ui/ios/xcode/NAME.xcodeproj and the Info.plist, then xcodebuild for the simulator.
+// build/ui/ios/xcode/NAME.xcodeproj and the Info.plist, then xcodebuild for the simulator; a
+// release (ui release ios) is archived for devices, signed by Xcode for the ui.toml [ios]
+// team, and exported as an IPA for App Store Connect.
 string build_ios_xcode(Project* p, string out, string app_object, List<String>* yoga) {
-    string dir = join(out, "xcode");
+    string team = ui_release ? ios_release_team(p) : null;
+    string dir = join(out, ui_release ? "xcode-release" : "xcode");
     String project_name;
     String_appendf(&project_name, "%s.xcodeproj", p.name.data);
     string project = join(dir, project_name.data);
@@ -163,6 +166,17 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
         String_appendf(&swift_settings, "\t\t\t\tSWIFT_VERSION = 5.0;\n\t\t\t\tSWIFT_OBJC_BRIDGING_HEADER = %s;\n",
             pbx_quote(join(p.ui.data, "hosts/ios/ui_native.h")));
     }
+    // A release: devices only, optimized, signed by Xcode with the team's identity and profile.
+    string configuration = ui_release ? "Release" : "Debug";
+    String signing;
+    defer String_free(&signing);
+    if (ui_release) {
+        String_appendf(&signing, "\t\t\t\tCODE_SIGN_STYLE = Automatic;\n\t\t\t\tDEVELOPMENT_TEAM = %s;\n"
+            "\t\t\t\tGCC_OPTIMIZATION_LEVEL = s;\n\t\t\t\tDEBUG_INFORMATION_FORMAT = \"dwarf-with-dsym\";\n"
+            "\t\t\t\tSWIFT_OPTIMIZATION_LEVEL = \"-O\";\n", pbx_quote(team));
+    } else {
+        String_append(&signing, "\t\t\t\tCODE_SIGN_IDENTITY = \"-\";\n\t\t\t\tCODE_SIGN_STYLE = Manual;\n");
+    }
     String text;
     defer String_free(&text);
     String_appendf(&text, "// !$*UTF8*$!\n// Made by ui.\n{\n\tarchiveVersion = 1;\n\tclasses = {\n\t};\n\tobjectVersion = 60;\n\tobjects = {\n"
@@ -184,12 +198,12 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
         "\t\t\t\tIPHONEOS_DEPLOYMENT_TARGET = 15.0;\n\t\t\t\tSDKROOT = iphoneos;\n\t\t\t\tSUPPORTED_PLATFORMS = \"iphonesimulator iphoneos\";\n"
         "\t\t\t\tTARGETED_DEVICE_FAMILY = \"1,2\";\n\t\t\t\tARCHS = %s;\n\t\t\t\tCLANG_ENABLE_OBJC_ARC = YES;\n\t\t\t\tALWAYS_SEARCH_USER_PATHS = NO;\n"
         "\t\t\t\tCLANG_CXX_LANGUAGE_STANDARD = \"c++17\";\n\t\t\t\tHEADER_SEARCH_PATHS = (%s, %s);\n"
-        "\t\t\t\tOTHER_LDFLAGS = (%s);\n\t\t\t\tCODE_SIGN_IDENTITY = \"-\";\n\t\t\t\tCODE_SIGN_STYLE = Manual;\n"
+        "\t\t\t\tOTHER_LDFLAGS = (%s);\n%s"
         "\t\t\t\tGENERATE_INFOPLIST_FILE = NO;\n\t\t\t\tLD_RUNPATH_SEARCH_PATHS = (\"$(inherited)\", \"@executable_path/Frameworks\");\n%s"
-        "\t\t\t}; name = Debug; };\n"
-        "\t\t%s = {isa = XCBuildConfiguration; buildSettings = {\n\t\t\t\tSDKROOT = iphoneos;\n\t\t\t\tONLY_ACTIVE_ARCH = YES;\n\t\t\t}; name = Debug; };\n"
-        "\t\t%s = {isa = XCConfigurationList; buildConfigurations = (%s); defaultConfigurationName = Debug; };\n"
-        "\t\t%s = {isa = XCConfigurationList; buildConfigurations = (%s); defaultConfigurationName = Debug; };\n"
+        "\t\t\t}; name = %s; };\n"
+        "\t\t%s = {isa = XCBuildConfiguration; buildSettings = {\n\t\t\t\tSDKROOT = iphoneos;\n\t\t\t\tONLY_ACTIVE_ARCH = %s;\n\t\t\t}; name = %s; };\n"
+        "\t\t%s = {isa = XCConfigurationList; buildConfigurations = (%s); defaultConfigurationName = %s; };\n"
+        "\t\t%s = {isa = XCConfigurationList; buildConfigurations = (%s); defaultConfigurationName = %s; };\n"
         "\t};\n\trootObject = %s;\n}\n",
         pbx.files.data == null ? "" : pbx.files.data, pbx.refs.data == null ? "" : pbx.refs.data,
         product, pbx_quote(join(p.name.data, "")),
@@ -202,11 +216,13 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
         project_id, project_list, main_group, pbx_refs(&pbx), target,
         pbx.packages.data == null ? "" : pbx.packages.data,
         target_config, pbx_quote(p.name.data), pbx_quote(p.id.data), pbx_quote(plist),
-        ios_arch(), pbx_quote(yoga_source()), pbx_quote(join(p.ui.data, "hosts/ios")),
-        flags.data, swift_settings.data == null ? "" : swift_settings.data,
-        project_config, target_list, target_config, project_list, project_config, project_id);
+        ui_release ? "arm64" : ios_arch(), pbx_quote(yoga_source()), pbx_quote(join(p.ui.data, "hosts/ios")),
+        flags.data, signing.data, swift_settings.data == null ? "" : swift_settings.data, configuration,
+        project_config, ui_release ? "NO" : "YES", configuration,
+        target_list, target_config, configuration, project_list, project_config, configuration, project_id);
     fs_write_text(join(project, "project.pbxproj"), text.data);
     string derived = join(dir, "DerivedData");
+    if (ui_release) { return ios_archive(p, dir, project, derived, team); }
     Cmd cmd;
     defer cmd.free();
     cmd.add("xcodebuild"); cmd.add("-quiet"); cmd.add("-project"); cmd.add(project); cmd.add("-scheme"); cmd.add(p.name.data);
@@ -216,6 +232,54 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
     String bundle_name;
     String_appendf(&bundle_name, "%s.app", p.name.data);
     return join(join(derived, "Build/Products/Debug-iphonesimulator"), bundle_name.data);
+}
+
+// The release: `xcodebuild archive` for devices, then the archive exported as an IPA for App
+// Store Connect, both letting Xcode make or fetch the certificate and profile it needs (it
+// asks for an Apple account in Xcode's settings the first time).
+string ios_archive(Project* p, string dir, string project, string derived, string team) {
+    String archive_name;
+    String_appendf(&archive_name, "%s.xcarchive", p.name.data);
+    string archive = join(dir, archive_name.data);
+    fs_remove_all(archive);
+    Cmd cmd;
+    cmd.add("xcodebuild"); cmd.add("-quiet"); cmd.add("-project"); cmd.add(project); cmd.add("-scheme"); cmd.add(p.name.data);
+    cmd.add("-configuration"); cmd.add("Release"); cmd.add("-destination"); cmd.add("generic/platform=iOS");
+    cmd.add("-derivedDataPath"); cmd.add(derived); cmd.add("-archivePath"); cmd.add(archive);
+    cmd.add("-allowProvisioningUpdates"); cmd.add("archive");
+    if (cmd.run(null) != 0) {
+        fail("ui release ios: xcodebuild archive failed. Sign in to your Apple account in Xcode (Settings, Accounts), "
+             "or open build/ui/ios/xcode-release in Xcode to see why.");
+    }
+    cmd.free();
+    // How the IPA is signed and for what: the App Store, by default.
+    string method = p.config.string("ios.export");
+    String options;
+    defer String_free(&options);
+    String_appendf(&options, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\n"
+        "<key>method</key><string>%s</string>\n<key>teamID</key><string>%s</string>\n"
+        "<key>signingStyle</key><string>automatic</string>\n<key>destination</key><string>%s</string>\n"
+        "</dict></plist>\n", xml_escape(method != null ? method : "app-store-connect"), xml_escape(team),
+        ui_upload ? "upload" : "export");
+    string options_path = join(dir, "ExportOptions.plist");
+    fs_write_text(options_path, options.data);
+    string release = join(p.out("ios"), "release");
+    fs_remove_all(release);
+    Cmd export;
+    export.add("xcodebuild"); export.add("-quiet"); export.add("-exportArchive"); export.add("-archivePath"); export.add(archive);
+    export.add("-exportOptionsPlist"); export.add(options_path); export.add("-exportPath"); export.add(release);
+    export.add("-allowProvisioningUpdates");
+    if (export.run(null) != 0) {
+        fail("ui release ios: the archive was made but not exported. Your team needs a distribution certificate "
+             "and an app record for this bundle id in App Store Connect; Xcode's Organizer (Window, Organizer) shows the archive.");
+    }
+    export.free();
+    // An upload leaves no IPA behind; the archive stays in build/ui/ios/xcode-release.
+    if (ui_upload) { return archive; }
+    List<String> ipas;
+    fs_glob(join(release, "*.ipa"), &ipas);
+    if (ipas.size == 0) { fail("ui release ios: xcodebuild exported no IPA"); }
+    return ipas.data[0].data;
 }
 
 // The XCRemoteSwiftPackageReference ids, for the project's packageReferences.
@@ -247,6 +311,7 @@ string ios_assets_script(string assets, string catalog) {
     String_appendf(&script, "if [ -d '%s' ]; then cp -R '%s'/ \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/\"; fi\n",
         assets, assets);
     if (catalog != null) {
+        String_append(&script, "mkdir -p \"$DERIVED_FILE_DIR\"\n");
         Cmd actool;
         ios_icon_command(&actool, "CATALOG", "INTO", "PLATFORM", "PARTIAL");
         for (i in 0..actool.parts.size) {

@@ -16,7 +16,9 @@ string groovy_escape(string text) {
 
 // build/ui/android/gradle: settings, the build file (sources from hosts/android and every
 // native/android, the library in lib/, the assets, the Maven dependencies) and the manifest;
-// `gradle assembleDebug` makes the APK, signed with the debug key.
+// `gradle assembleDebug` makes the APK, signed with the debug key. A release makes the App
+// Bundle and an APK, signed with the upload key (android_upload_key), whose secrets the build
+// file reads from its properties file or the environment, never holding them itself.
 string build_android_gradle(Project* p, string out, string setup_classes, List<String>* java, List<string>* maven) {
     string dir = join(out, "gradle");
     string app = join(dir, "app");
@@ -49,25 +51,63 @@ string build_android_gradle(Project* p, string out, string setup_classes, List<S
     String dependencies;
     defer String_free(&dependencies);
     for (i in 0..maven.size) { String_appendf(&dependencies, "    implementation '%s'\n", groovy_escape(maven.data[i])); }
+    String release_signing;
+    defer String_free(&release_signing);
+    String release_type;
+    defer String_free(&release_type);
+    String_from(&release_signing, "");
+    String_from(&release_type, "");
+    if (ui_release) {
+        string keys = android_upload_key(p);
+        if (keys != null) {
+            String_appendf(&release_signing, "        release {\n            def keys = new Properties()\n"
+                "            file('%s').withInputStream { keys.load(it) }\n            storeFile = file(keys['storeFile'])\n"
+                "            storePassword = keys['storePassword']\n            keyAlias = keys['keyAlias']\n"
+                "            keyPassword = keys['keyPassword']\n        }\n", groovy_escape(keys));
+        } else {
+            String_append(&release_signing, "        release {\n            storeFile = file(System.getenv('UI_ANDROID_KEYSTORE'))\n"
+                "            storePassword = System.getenv('UI_ANDROID_KEYSTORE_PASSWORD')\n"
+                "            keyAlias = System.getenv('UI_ANDROID_KEY_ALIAS')\n"
+                "            keyPassword = System.getenv('UI_ANDROID_KEY_PASSWORD') ?: System.getenv('UI_ANDROID_KEYSTORE_PASSWORD')\n"
+                "        }\n");
+        }
+        String_append(&release_type, "    buildTypes {\n        release {\n            signingConfig = signingConfigs.release\n"
+            "            minifyEnabled = false\n        }\n    }\n");
+    }
     String build;
     defer String_free(&build);
     String_appendf(&build, "// Made by ui.\nplugins { id 'com.android.application' }\n\nandroid {\n"
-        "    namespace = '%s'\n    compileSdk = 35\n"
-        "    defaultConfig {\n        applicationId = '%s'\n        minSdk = 24\n        targetSdk = 35\n"
+        "    namespace = '%s'\n    compileSdk = 36\n"
+        "    defaultConfig {\n        applicationId = '%s'\n        minSdk = 24\n        targetSdk = 36\n"
         "        versionCode = %s\n        versionName = '%s'\n    }\n"
         "    signingConfigs {\n        debug {\n            storeFile = file('%s')\n            storePassword = 'android'\n"
-        "            keyAlias = 'debug'\n            keyPassword = 'android'\n        }\n    }\n"
+        "            keyAlias = 'debug'\n            keyPassword = 'android'\n        }\n%s    }\n%s"
         "    sourceSets {\n        main {\n            manifest.srcFile 'AndroidManifest.xml'\n"
         "            java.srcDirs = [%s]\n            kotlin.srcDirs = [%s]\n            jniLibs.srcDirs = ['%s']\n            assets.srcDirs = ['%s']\n            res.srcDirs = ['%s']\n"
         "        }\n    }\n}\n\ndependencies {\n%s}\n",
         groovy_escape(p.id.data), groovy_escape(p.id.data), app_build(p), groovy_escape(app_version(p)),
-        groovy_escape(android_keystore()), sources.data, sources.data, groovy_escape(join(out, "lib")),
+        groovy_escape(android_keystore()), release_signing.data, release_type.data, sources.data, sources.data, groovy_escape(join(out, "lib")),
         groovy_escape(join(out, "assets")), groovy_escape(join(out, "res")), dependencies.data == null ? "" : dependencies.data);
     fs_write_text(join(app, "build.gradle"), build.data);
     Cmd cmd;
     defer cmd.free();
-    cmd.add("gradle"); cmd.add("--quiet"); cmd.add("-p"); cmd.add(dir); cmd.add("assembleDebug");
+    cmd.add("gradle"); cmd.add("--quiet"); cmd.add("-p"); cmd.add(dir);
+    if (ui_release) { cmd.add("bundleRelease"); cmd.add("assembleRelease"); } else { cmd.add("assembleDebug"); }
     if (cmd.run(null) != 0) { fail("ui: gradle failed (install Gradle 9 and a JDK 17, or open build/ui/android/gradle in Android Studio)"); }
+    if (ui_release) {
+        // build/ui/android/release/NAME.aab for Play, and NAME.apk beside it.
+        string release = join(out, "release");
+        fs_remove_all(release);
+        fs_mkdir_p(release);
+        String name;
+        String_appendf(&name, "%s.aab", p.name.data);
+        string bundle = join(release, name.data);
+        fs_copy(join(app, "build/outputs/bundle/release/app-release.aab"), bundle);
+        String_clear(&name);
+        String_appendf(&name, "%s.apk", p.name.data);
+        fs_copy(join(app, "build/outputs/apk/release/app-release.apk"), join(release, name.data));
+        return bundle;
+    }
     String apk_name;
     String_appendf(&apk_name, "%s.apk", p.name.data);
     string apk = join(out, apk_name.data);

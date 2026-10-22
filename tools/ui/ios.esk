@@ -12,10 +12,13 @@ string ios_arch() {
 #endif
 }
 
-// The simulator SDK and its clang++, from xcrun once, then from build/ui/ios/toolchain while
-// both still exist (xcrun takes a tenth of a second a call).
-void ios_toolchain(Project* p, String* sdk, String* clang) {
-    string cache = join(p.out("ios"), "toolchain");
+// The SDK (iphonesimulator, or iphoneos for a release) and its clang++, from xcrun once,
+// then from build/ui/ios/toolchain-SDK while both still exist (xcrun takes a tenth of a
+// second a call).
+void ios_toolchain(Project* p, string name, String* sdk, String* clang) {
+    String file;
+    String_appendf(&file, "toolchain-%s", name);
+    string cache = join(p.out("ios"), file.data);
     String text;
     defer String_free(&text);
     if (fs_read_text(cache, &text) == 0) {
@@ -27,11 +30,11 @@ void ios_toolchain(Project* p, String* sdk, String* clang) {
         if (ok) { return; }
     }
     Cmd find;
-    find.add("xcrun"); find.add("--sdk"); find.add("iphonesimulator"); find.add("--show-sdk-path");
-    if (!find.output(sdk)) { fail("ui: no iOS simulator SDK (install Xcode)"); }
+    find.add("xcrun"); find.add("--sdk"); find.add(name); find.add("--show-sdk-path");
+    if (!find.output(sdk)) { fail("ui: no iOS SDK (install Xcode)"); }
     find.free();
     Cmd tool;
-    tool.add("xcrun"); tool.add("--sdk"); tool.add("iphonesimulator"); tool.add("--find"); tool.add("clang++");
+    tool.add("xcrun"); tool.add("--sdk"); tool.add(name); tool.add("--find"); tool.add("clang++");
     tool.output(clang);
     tool.free();
     String_clear(&text);
@@ -46,7 +49,7 @@ bool ios_reinstall;
 
 bool ios_dev() {
     string dev = env_get("UI_DEV");
-    return dev != null && strcmp(dev, "1") == 0;
+    return !ui_release && dev != null && strcmp(dev, "1") == 0;
 }
 
 // The file the dev host polls: it holds the newest dylib's path.
@@ -86,22 +89,25 @@ string build_ios(Project* p) {
     ios_reinstall = true;
     String sdk;
     String clang;
-    ios_toolchain(p, &sdk, &clang);
+    // A release is for devices (arm64), a build for this Mac's simulator.
+    ios_toolchain(p, ui_release ? "iphoneos" : "iphonesimulator", &sdk, &clang);
     String target;
-    String_appendf(&target, "%s-apple-ios15.0-simulator", ios_arch());
+    if (ui_release) { String_from(&target, "arm64-apple-ios15.0"); }
+    else { String_appendf(&target, "%s-apple-ios15.0-simulator", ios_arch()); }
     List<string> compiler;
     compiler.push(clang.data); compiler.push("-target"); compiler.push(target.data);
     compiler.push("-isysroot"); compiler.push(sdk.data); compiler.push("-O2");
     List<String> objects;
-    yoga_objects(&compiler, join(eskiu_home(), join("cache/yoga-ios", ios_arch())), &objects);
-    string app = join(out, "app.o");
+    yoga_objects(&compiler, join(eskiu_home(), ui_release ? "cache/yoga-iphoneos-arm64" : join("cache/yoga-ios", ios_arch())), &objects);
+    string app = join(out, ui_release ? "app-release.o" : "app.o");
     Cmd esk;
-    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add(app_opt());
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add(ui_release ? "-O2" : app_opt());
     esk.add("-o"); esk.add(app);
     esk.must(null);
     esk.free();
     // Swift Package Manager packages (ui.toml [ios.spm]) and Swift sources need Xcode: the
-    // tool makes a project around the app's object. UI_XCODE=1 takes that path without them.
+    // tool makes a project around the app's object. UI_XCODE=1 takes that path without them,
+    // and a release always does (Xcode signs it with the team's certificate and profile).
     List<String> packages;
     defer fs_list_free(&packages);
     p.config.names("ios.spm.", &packages);
@@ -109,7 +115,7 @@ string build_ios(Project* p) {
     defer fs_list_free(&swift);
     p.native("ios", ".swift", &swift);
     string xcode = env_get("UI_XCODE");
-    if (packages.size > 0 || swift.size > 0 || (xcode != null && strcmp(xcode, "1") == 0)) {
+    if (ui_release || packages.size > 0 || swift.size > 0 || (xcode != null && strcmp(xcode, "1") == 0)) {
         return build_ios_xcode(p, out, app, &objects);
     }
     // The host and the native code are compiled again only when they changed.
@@ -241,6 +247,11 @@ string ios_plist(Project* p, string classes, bool family) {
         "<key>UISceneConfigurationName</key><string>Default</string>\n"
         "<key>UISceneDelegateClassName</key><string>UiSceneDelegate</string>\n</dict></array></dict></dict>\n"
         "<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>\n"
+        "<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string>"
+        "<string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>\n"
+        "<key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string>"
+        "<string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string>"
+        "<string>UIInterfaceOrientationLandscapeRight</string></array>\n"
         "%s<key>UiNativeClasses</key><array>%s</array>\n%s%s</dict></plist>\n",
         p.id.data, p.name.data, xml_escape(p.display.data), p.name.data, xml_escape(app_build(p)), xml_escape(app_version(p)),
         family ? "<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>\n" : "",
