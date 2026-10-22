@@ -141,6 +141,30 @@ ICoreWebView2DocumentTitleChangedEventHandler : public IUnknown {
 public:
     virtual HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2 *sender, IUnknown *args) = 0;
 };
+
+#ifndef __ICoreWebView2_3_INTERFACE_DEFINED__
+#define __ICoreWebView2_3_INTERFACE_DEFINED__
+typedef enum COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND {
+    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY = 0,
+    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW = 1,
+    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS = 2
+} COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND;
+
+static const IID IID_ICoreWebView2_3 = {0xA0D69F73, 0x04B0, 0x4E48, {0xAB, 0x08, 0x5F, 0x8A, 0x16, 0x8B, 0xF1, 0x2B}};
+
+MIDL_INTERFACE("A0D69F73-04B0-4E48-AB08-5F8A168BF12B")
+ICoreWebView2_3 : public IUnknown {
+public:
+    virtual HRESULT STDMETHODCALLTYPE TrySuspend(void *handler) = 0;
+    virtual HRESULT STDMETHODCALLTYPE Resume(void *handler) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsSuspended(BOOL *isSuspended) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetVirtualHostNameToFolderMapping(
+        LPCWSTR hostName,
+        LPCWSTR folderPath,
+        COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND accessKind) = 0;
+    virtual HRESULT STDMETHODCALLTYPE ClearVirtualHostNameToFolderMapping(LPCWSTR hostName) = 0;
+};
+#endif
 #endif
 
 typedef HRESULT (STDAPICALLTYPE *CreateCoreWebView2EnvironmentWithOptionsFn)(
@@ -153,6 +177,7 @@ static HWND g_hwnd = NULL;
 static ICoreWebView2Controller *g_controller = NULL;
 static ICoreWebView2 *g_webview = NULL;
 static WCHAR g_target_url[2048] = {0};
+static WCHAR g_local_web_dir[MAX_PATH] = {0};
 
 class TitleChangeHandler : public ICoreWebView2DocumentTitleChangedEventHandler {
     LONG m_refCount = 1;
@@ -214,6 +239,15 @@ public:
 
             EventRegistrationToken token;
             g_webview->add_DocumentTitleChanged(new TitleChangeHandler(), &token);
+
+            if (g_local_web_dir[0] != 0) {
+                ICoreWebView2_3 *wv3 = NULL;
+                if (SUCCEEDED(g_webview->QueryInterface(IID_ICoreWebView2_3, (void **)&wv3)) && wv3) {
+                    wv3->SetVirtualHostNameToFolderMapping(L"app.assets", g_local_web_dir, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+                    wv3->Release();
+                }
+            }
+
             g_webview->Navigate(g_target_url);
         }
         return S_OK;
@@ -283,8 +317,24 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     int argc = 0;
     LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 
-    LPCWSTR url = (argc > 1 && argv[1][0]) ? argv[1] : L"http://127.0.0.1:8765/?example=counter";
-    wcsncpy(g_target_url, url, 2047);
+    WCHAR exeDir[MAX_PATH] = {0};
+    GetModuleFileNameW(NULL, exeDir, MAX_PATH);
+    PathRemoveFileSpecW(exeDir);
+
+    WCHAR webDir[MAX_PATH] = {0};
+    PathCombineW(webDir, exeDir, L"web");
+
+    WCHAR indexPath[MAX_PATH] = {0};
+    PathCombineW(indexPath, webDir, L"index.html");
+
+    if (argc > 1 && argv[1][0]) {
+        wcsncpy(g_target_url, argv[1], 2047);
+    } else if (PathFileExistsW(indexPath)) {
+        wcsncpy(g_local_web_dir, webDir, MAX_PATH - 1);
+        wcsncpy(g_target_url, L"https://app.assets/index.html", 2047);
+    } else {
+        wcsncpy(g_target_url, L"http://127.0.0.1:8765/?example=counter", 2047);
+    }
 
     int width = 1100, height = 860;
     if (argc > 2) {
@@ -309,7 +359,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                              WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                              posX, posY, width, height, NULL, NULL, hInstance, NULL);
 
-    HICON hIcon = (HICON)LoadImageW(NULL, L"icon.ico", IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+    WCHAR iconPath[MAX_PATH] = {0};
+    PathCombineW(iconPath, exeDir, L"icon.ico");
+    HICON hIcon = (HICON)LoadImageW(NULL, iconPath, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+    if (!hIcon) {
+        hIcon = (HICON)LoadImageW(NULL, L"icon.ico", IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+    }
     if (hIcon) {
         SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
         SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);

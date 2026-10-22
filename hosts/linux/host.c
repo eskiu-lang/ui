@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <libgen.h>
 
 // A real Linux desktop host for the shared wasm/DOM renderer using GTK 3 and WebKitGTK.
 typedef struct {
@@ -115,7 +117,35 @@ int main(int argc, char *argv[]) {
     LinuxHost host;
     memset(&host, 0, sizeof(host));
 
-    const char *url = argc > 1 ? argv[1] : "http://127.0.0.1:8765/?example=counter";
+    char local_url[2048] = {0};
+    const char *url = NULL;
+    char icon_path[1024] = {0};
+
+    char exe_path[1024] = {0};
+    ssize_t exe_len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (exe_len > 0) {
+        exe_path[exe_len] = '\0';
+        char *dir = dirname(exe_path);
+        snprintf(local_url, sizeof(local_url), "%s/web/index.html", dir);
+        snprintf(icon_path, sizeof(icon_path), "%s/icon.png", dir);
+    }
+
+    if (argc > 1) {
+        url = argv[1];
+    } else if (local_url[0] && g_file_test(local_url, G_FILE_TEST_EXISTS)) {
+        static char file_uri[2048];
+        snprintf(file_uri, sizeof(file_uri), "file://%s", local_url);
+        url = file_uri;
+    } else if (g_file_test("web/index.html", G_FILE_TEST_EXISTS)) {
+        char *cwd = g_get_current_dir();
+        static char cwd_uri[2048];
+        snprintf(cwd_uri, sizeof(cwd_uri), "file://%s/web/index.html", cwd);
+        g_free(cwd);
+        url = cwd_uri;
+    } else {
+        url = "http://127.0.0.1:8765/?example=counter";
+    }
+
     host.testing = argc > 2;
     host.screenshot = argc > 2 ? argv[2] : NULL;
 
@@ -132,7 +162,9 @@ int main(int argc, char *argv[]) {
     g_signal_connect(host.window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(host.window, "key-press-event", G_CALLBACK(on_key_press), &host);
 
-    if (g_file_test("icon.png", G_FILE_TEST_EXISTS)) {
+    if (icon_path[0] && g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+        gtk_window_set_icon_from_file(GTK_WINDOW(host.window), icon_path, NULL);
+    } else if (g_file_test("icon.png", G_FILE_TEST_EXISTS)) {
         gtk_window_set_icon_from_file(GTK_WINDOW(host.window), "icon.png", NULL);
     }
 
@@ -142,9 +174,11 @@ int main(int argc, char *argv[]) {
 
     host.webview = webkit_web_view_new_with_user_content_manager(ucm);
 
-    // Enable developer extras for developer ergonomics
+    // Enable developer extras and local file access
     WebKitSettings *settings = webkit_web_view_get_settings(WEBKIT_WEB_VIEW(host.webview));
     webkit_settings_set_enable_developer_extras(settings, TRUE);
+    webkit_settings_set_allow_file_access_from_file_urls(settings, TRUE);
+    webkit_settings_set_allow_universal_access_from_file_urls(settings, TRUE);
 
     gtk_container_add(GTK_CONTAINER(host.window), host.webview);
 

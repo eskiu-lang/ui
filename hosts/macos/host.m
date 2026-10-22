@@ -1,12 +1,64 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
+// Custom scheme handler to serve bundled web assets offline without CORS restrictions.
+@interface LocalSchemeHandler : NSObject <WKURLSchemeHandler>
+@property(copy) NSString *baseDir;
+@end
+
+@implementation LocalSchemeHandler
+- (void)webView:(WKWebView *)webView startURLSchemeTask:(id<WKURLSchemeTask>)task {
+    NSURL *url = task.request.URL;
+    NSString *path = url.path;
+    if (!path.length || [path isEqualToString:@"/"]) {
+        path = @"/index.html";
+    }
+    while ([path hasPrefix:@"/"]) {
+        path = [path substringFromIndex:1];
+    }
+    NSString *fullPath = [self.baseDir stringByAppendingPathComponent:path];
+    NSData *data = [NSData dataWithContentsOfFile:fullPath];
+    if (!data) {
+        fullPath = [self.baseDir stringByAppendingPathComponent:@"index.html"];
+        data = [NSData dataWithContentsOfFile:fullPath];
+    }
+    if (!data) {
+        NSError *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        [task didFailWithError:error];
+        return;
+    }
+    NSString *mime = @"application/octet-stream";
+    NSString *ext = fullPath.pathExtension.lowercaseString;
+    if ([ext isEqualToString:@"html"]) mime = @"text/html; charset=utf-8";
+    else if ([ext isEqualToString:@"js"] || [ext isEqualToString:@"mjs"]) mime = @"application/javascript; charset=utf-8";
+    else if ([ext isEqualToString:@"wasm"]) mime = @"application/wasm";
+    else if ([ext isEqualToString:@"css"]) mime = @"text/css; charset=utf-8";
+    else if ([ext isEqualToString:@"json"] || [ext isEqualToString:@"webmanifest"]) mime = @"application/json";
+    else if ([ext isEqualToString:@"png"]) mime = @"image/png";
+    else if ([ext isEqualToString:@"svg"]) mime = @"image/svg+xml";
+    else if ([ext isEqualToString:@"ico"]) mime = @"image/x-icon";
+
+    NSDictionary *headers = @{
+        @"Content-Type": mime,
+        @"Content-Length": [NSString stringWithFormat:@"%lu", (unsigned long)data.length],
+        @"Access-Control-Allow-Origin": @"*"
+    };
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:url statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:headers];
+    [task didReceiveResponse:response];
+    [task didReceiveData:data];
+    [task didFinish];
+}
+
+- (void)webView:(WKWebView *)webView stopURLSchemeTask:(id<WKURLSchemeTask>)task {}
+@end
+
 // A real macOS desktop host for the shared wasm/DOM renderer. Native-core bridge
 // transport is a later step; this host tests WKWebView execution and rendering.
 @interface DesktopHost : NSObject <NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate>
 @property(strong) NSWindow *window;
 @property(strong) WKWebView *web;
 @property(copy) NSString *url;
+@property(copy) NSString *localWebDir;
 @property(copy) NSString *screenshot;
 @property BOOL testing;
 @property NSSize size;
@@ -76,6 +128,12 @@
     WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
     [configuration.userContentController addScriptMessageHandler:self name:@"results"];
     [configuration.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
+
+    if (self.localWebDir) {
+        LocalSchemeHandler *schemeHandler = [LocalSchemeHandler new];
+        schemeHandler.baseDir = self.localWebDir;
+        [configuration setURLSchemeHandler:schemeHandler forURLScheme:@"app"];
+    }
 
     self.web = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, self.size.width, self.size.height) configuration:configuration];
     self.web.navigationDelegate = self;
@@ -158,7 +216,25 @@
 int main(int argc, const char **argv) {
     @autoreleasepool {
         DesktopHost *host = [DesktopHost new];
-        host.url = argc > 1 ? [NSString stringWithUTF8String:argv[1]] : @"http://127.0.0.1:8765/?example=counter";
+
+        NSString *webDir = [[NSBundle mainBundle] pathForResource:@"web" ofType:nil];
+        if (!webDir) {
+            NSString *exeDir = [[[NSProcessInfo processInfo] arguments][0] stringByDeletingLastPathComponent];
+            NSString *candidate = [exeDir stringByAppendingPathComponent:@"web"];
+            if ([[NSFileManager defaultManager] fileExistsAtPath:[candidate stringByAppendingPathComponent:@"index.html"]]) {
+                webDir = candidate;
+            }
+        }
+
+        if (argc > 1) {
+            host.url = [NSString stringWithUTF8String:argv[1]];
+        } else if (webDir) {
+            host.localWebDir = webDir;
+            host.url = @"app://localhost/index.html";
+        } else {
+            host.url = @"http://127.0.0.1:8765/?example=counter";
+        }
+
         host.testing = argc > 2;
         host.screenshot = argc > 2 ? [NSString stringWithUTF8String:argv[2]] : @"desktop.png";
         // An optional window size, WIDTHxHEIGHT in points.
