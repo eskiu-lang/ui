@@ -37,7 +37,7 @@ void create(string name, string ui_path) {
     Cmd add;
     add.add(eskiuc()); add.add("add"); add.add("ui");
     if (ui_path != null) { add.add("--path"); add.add(ui_path); }
-    else { add.add("--git"); add.add(kUiGit); add.add("--rev"); add.add("main"); }
+    else { add.add("--git"); add.add(kUiGit); add.add("--rev"); add.add(kUiRev); }
     add.must(name);
     add.free();
     printf("\nCreated %s. Next:\n  cd %s\n  ui run web      # or macos, ios, android\n", name, name);

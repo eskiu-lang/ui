@@ -2,6 +2,8 @@
 // Part of the ui tool (tools/ui/main.esk imports every part).
 
 const string kUiGit = "https://github.com/eskiu-lang/ui";
+// The release `ui new` depends on.
+const string kUiRev = "v0.1.0";
 
 const string kYogaGit = "https://github.com/react/yoga.git";
 
