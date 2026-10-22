@@ -18,7 +18,7 @@ void Checkbox(string label, bool checked, escaping fn(bool)->void on_change) {
                       align: AlignCenter, justify: JustifyCenter}) {
                 if (checked) { TextWith(Style{font_size: 13, font_weight: 700, color: kit.on_primary}, "✓"); }
             }
-            TextWith(Style{font_size: 16, color: kit.ink}, label);
+            Body(label);
         }
     }
 }
@@ -40,7 +40,7 @@ void RadioGroup(string options, int selected, escaping fn(int)->void on_change) 
                               align: AlignCenter, justify: JustifyCenter}) {
                         if (on) { Row(Style{width: 10, height: 10, radius: 5, background: kit.primary}, void() {}); }
                     }
-                    TextWith(Style{font_size: 16, color: kit.ink}, name);
+                    Body(name);
                 }
             }
         }

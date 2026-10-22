@@ -18,7 +18,15 @@ void KitGallery() {
             *StringState email = use_string("");
 
             Card() {
-                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Badges and avatars");
+                Title("Text");
+                Heading("A section's heading");
+                Body("Running text, in the theme's ink.");
+                Secondary("Text that explains or qualifies.");
+                Caption("A small note: version 0.1.1");
+            }
+
+            Card() {
+                Heading("Badges and avatars");
                 Row(Style{gap: 8, wrap: true}) {
                     Badge("Neutral", ToneNeutral);
                     Badge("Primary", TonePrimary);
@@ -34,7 +42,7 @@ void KitGallery() {
             }
 
             Card() {
-                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Buttons");
+                Heading("Buttons");
                 Row(Style{gap: 8, wrap: true}) {
                     KitButton("Primary", VariantPrimary) { steps.set(steps.get() + 1); }
                     KitButton("Secondary", VariantSecondary) { steps.set(steps.get() - 1); }
@@ -45,7 +53,7 @@ void KitGallery() {
             }
 
             Card() {
-                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Forms");
+                Heading("Forms");
                 TextField(email.get(), "Email", void(string text) { email.set(text); });
                 Checkbox("Email notifications", notify.get(), void(bool on) { notify.set(on); });
                 Checkbox("Weekly summary", weekly.get(), void(bool on) { weekly.set(on); });
@@ -54,15 +62,15 @@ void KitGallery() {
             }
 
             Card() {
-                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Navigation");
+                Heading("Navigation");
                 SegmentedControl("Day\nWeek\nMonth", view.get(), void(int i) { view.set(i); });
                 TabBar("Overview\nActivity\nSettings", tab.get(), void(int i) { tab.set(i); });
-                TextWith(Style{font_size: 15, color: kit.muted},
+                Secondary(
                     tab.get() == 0 ? "Everything at a glance." : tab.get() == 1 ? "What changed lately." : "How it works.");
             }
 
             Card() {
-                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Overlays");
+                Heading("Overlays");
                 *Signal<int> sort = use_signal<int>(0);
                 *Signal<int> day = use_signal<int>(21);
                 *Signal<int64> color = use_signal<int64>(0x6366F1FF);
@@ -84,7 +92,7 @@ void KitGallery() {
             }
 
             Card() {
-                TextWith(Style{font_size: 18, font_weight: 700, color: kit.ink}, "Gestures");
+                Heading("Gestures");
                 // Swipe a row left to delete it; each row is keyed, so the others keep their state.
                 *Signal<int> deleted = use_signal<int>(0);
                 for (i in 0..3) {
@@ -101,11 +109,11 @@ void KitGallery() {
 
             Accordion() {
                 Collapsible("What is Eskiu?") {
-                    TextWith(Style{font_size: 15, color: kit.muted}, "A systems language that compiles through LLVM.");
+                    Secondary("A systems language that compiles through LLVM.");
                 }
                 Separator();
                 Collapsible("Where does ui run?") {
-                    TextWith(Style{font_size: 15, color: kit.muted}, "iOS, Android, the web and the desktop.");
+                    Secondary("iOS, Android, the web and the desktop.");
                 }
             }
 

@@ -108,7 +108,7 @@ void DatePicker(Date value, escaping fn(Date)->void on_change) {
         Popover(open.get(), void() { open.set(false); }, void() {
             Pressable(Style{padding: 12, radius: kit.radius, background: kit.surface, border_width: 1, border_color: kit.line,
                             label: shown}, void() { open.set(true); }) {
-                TextWith(Style{font_size: 16, color: kit.ink}, shown);
+                Body(shown);
             }
         }) {
             Calendar(value, void(Date d) { open.set(false); on_change(d); });
