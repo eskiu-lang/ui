@@ -1,0 +1,423 @@
+// PNG images for the app icon: read an 8-bit PNG into RGBA, scale it down, write it back.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// An image as RGBA rows, 4 bytes a pixel.
+struct PngImage { int width; int height; *uint8 rgba; }
+
+void PngImage_free(PngImage* self) { free(self.rgba); self.rgba = null; }
+
+// ---- inflate (RFC 1951), after zlib's puff ----
+
+struct Inflate { *uint8 src; int64 len; int64 pos; int bitbuf; int bitcnt; Bytes out; bool bad; }
+
+// A Huffman code: how many codes of each length, and the symbols in code order.
+struct Huff { int[16] count; int[288] symbol; }
+
+int[29] kLenBase = {3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
+int[29] kLenExtra = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
+int[30] kDistBase = {1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073,
+                     4097, 6145, 8193, 12289, 16385, 24577};
+int[30] kDistExtra = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
+int[19] kCodeOrder = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+
+// The next `need` bits, least significant first.
+int Inflate_bits(Inflate* self, int need) {
+    int val = self.bitbuf;
+    while (self.bitcnt < need) {
+        if (self.pos >= self.len) { self.bad = true; return 0; }
+        val = val | ((int)self.src[self.pos] << self.bitcnt);
+        self.pos++;
+        self.bitcnt += 8;
+    }
+    self.bitbuf = val >> need;
+    self.bitcnt -= need;
+    return val & ((1 << need) - 1);
+}
+
+int Inflate_decode(Inflate* self, Huff* h) {
+    int code = 0;
+    int first = 0;
+    int index = 0;
+    for (int len = 1; len <= 15; len++) {
+        code = code | Inflate_bits(self, 1);
+        int count = h.count[len];
+        if (code - count < first) { return h.symbol[index + (code - first)]; }
+        index += count;
+        first = (first + count) << 1;
+        code = code << 1;
+    }
+    self.bad = true;
+    return -1;
+}
+
+// The code for `n` symbols of these lengths; negative when it is over-subscribed.
+int huff_build(Huff* h, *int length, int n) {
+    for (i in 0..16) { h.count[i] = 0; }
+    for (i in 0..n) { h.count[length[i]]++; }
+    if (h.count[0] == n) { return 0; }
+    int left = 1;
+    for (int len = 1; len <= 15; len++) {
+        left = (left << 1) - h.count[len];
+        if (left < 0) { return left; }
+    }
+    int[16] offs;
+    offs[1] = 0;
+    for (int len = 1; len < 15; len++) { offs[len + 1] = offs[len] + h.count[len]; }
+    for (int symbol = 0; symbol < n; symbol++) {
+        if (length[symbol] != 0) { h.symbol[offs[length[symbol]]] = symbol; offs[length[symbol]]++; }
+    }
+    return left;
+}
+
+void Inflate_codes(Inflate* self, Huff* lencode, Huff* distcode) {
+    while (!self.bad) {
+        int symbol = Inflate_decode(self, lencode);
+        if (self.bad) { return; }
+        if (symbol < 256) { Bytes_push(&self.out, (uint8)symbol); continue; }
+        if (symbol == 256) { return; }
+        symbol -= 257;
+        if (symbol >= 29) { self.bad = true; return; }
+        int len = kLenBase[symbol] + Inflate_bits(self, kLenExtra[symbol]);
+        int dsym = Inflate_decode(self, distcode);
+        if (self.bad || dsym < 0 || dsym >= 30) { self.bad = true; return; }
+        int64 dist = kDistBase[dsym] + Inflate_bits(self, kDistExtra[dsym]);
+        if (dist > self.out.len) { self.bad = true; return; }
+        for (i in 0..len) { Bytes_push(&self.out, self.out.data[self.out.len - dist]); }
+    }
+}
+
+void Inflate_stored(Inflate* self) {
+    self.bitbuf = 0;
+    self.bitcnt = 0;
+    if (self.pos + 4 > self.len) { self.bad = true; return; }
+    int64 len = (int64)self.src[self.pos] | ((int64)self.src[self.pos + 1] << 8);
+    self.pos += 4;
+    if (self.pos + len > self.len) { self.bad = true; return; }
+    Bytes_append_raw(&self.out, &self.src[self.pos], len);
+    self.pos += len;
+}
+
+void Inflate_fixed(Inflate* self) {
+    int[288] lengths;
+    for (i in 0..144) { lengths[i] = 8; }
+    for (i in 144..256) { lengths[i] = 9; }
+    for (i in 256..280) { lengths[i] = 7; }
+    for (i in 280..288) { lengths[i] = 8; }
+    Huff lencode;
+    huff_build(&lencode, &lengths[0], 288);
+    for (i in 0..30) { lengths[i] = 5; }
+    Huff distcode;
+    huff_build(&distcode, &lengths[0], 30);
+    Inflate_codes(self, &lencode, &distcode);
+}
+
+void Inflate_dynamic(Inflate* self) {
+    int nlen = Inflate_bits(self, 5) + 257;
+    int ndist = Inflate_bits(self, 5) + 1;
+    int ncode = Inflate_bits(self, 4) + 4;
+    if (self.bad || nlen > 286 || ndist > 30) { self.bad = true; return; }
+    int[320] lengths;
+    for (i in 0..19) { lengths[i] = 0; }
+    for (i in 0..ncode) { lengths[kCodeOrder[i]] = Inflate_bits(self, 3); }
+    Huff lencode;
+    if (huff_build(&lencode, &lengths[0], 19) != 0) { self.bad = true; return; }
+    int index = 0;
+    while (index < nlen + ndist && !self.bad) {
+        int symbol = Inflate_decode(self, &lencode);
+        if (symbol < 0) { return; }
+        if (symbol < 16) { lengths[index] = symbol; index++; continue; }
+        int len = 0;
+        int repeat = 0;
+        if (symbol == 16) {
+            if (index == 0) { self.bad = true; return; }
+            len = lengths[index - 1];
+            repeat = 3 + Inflate_bits(self, 2);
+        } else if (symbol == 17) { repeat = 3 + Inflate_bits(self, 3); }
+        else { repeat = 11 + Inflate_bits(self, 7); }
+        if (index + repeat > nlen + ndist) { self.bad = true; return; }
+        for (i in 0..repeat) { lengths[index] = len; index++; }
+    }
+    if (self.bad || lengths[256] == 0) { self.bad = true; return; }
+    if (huff_build(&lencode, &lengths[0], nlen) < 0) { self.bad = true; return; }
+    Huff distcode;
+    if (huff_build(&distcode, &lengths[nlen], ndist) < 0) { self.bad = true; return; }
+    Inflate_codes(self, &lencode, &distcode);
+}
+
+// The zlib stream `src` inflated into `out`; false when it is not a valid one.
+bool zlib_inflate(*uint8 src, int64 len, Bytes* out) {
+    if (len < 2) { return false; }
+    Inflate s = Inflate{src: src, len: len, pos: 2};
+    Bytes_init(&s.out, len * 4 + 1024);
+    bool last = false;
+    while (!last && !s.bad) {
+        last = Inflate_bits(&s, 1) == 1;
+        int kind = Inflate_bits(&s, 2);
+        if (kind == 0) { Inflate_stored(&s); }
+        else if (kind == 1) { Inflate_fixed(&s); }
+        else if (kind == 2) { Inflate_dynamic(&s); }
+        else { s.bad = true; }
+    }
+    *out = s.out;
+    return !s.bad;
+}
+
+// ---- PNG ----
+
+int64 png_be32(*uint8 p) {
+    return ((int64)p[0] << 24) | ((int64)p[1] << 16) | ((int64)p[2] << 8) | (int64)p[3];
+}
+
+int png_paeth(int a, int b, int c) {
+    int p = a + b - c;
+    int pa = p > a ? p - a : a - p;
+    int pb = p > b ? p - b : b - p;
+    int pc = p > c ? p - c : c - p;
+    if (pa <= pb && pa <= pc) { return a; }
+    return pb <= pc ? b : c;
+}
+
+// The PNG at `path` as RGBA; null when it is fine, else why it cannot be read (8-bit,
+// non-interlaced images in gray, RGB, palette, gray and alpha, or RGBA).
+string png_read(string path, PngImage* out) {
+    int64 size = 0;
+    *uint8 data = fs_read_all(path, &size);
+    if (data == null) { return "cannot be read"; }
+    defer free(data);
+    if (size < 8 || data[0] != 137 || data[1] != 80 || data[2] != 78 || data[3] != 71) { return "is not a PNG"; }
+    int width = 0;
+    int height = 0;
+    int kind = -1;
+    uint8[1024] palette;
+    for (i in 0..1024) { palette[i] = 255; }
+    Bytes idat;
+    Bytes_init(&idat, 1 << 16);
+    defer Bytes_free(&idat);
+    int64 at = 8;
+    while (at + 12 <= size) {
+        int64 len = png_be32(&data[at]);
+        *uint8 type = &data[at + 4];
+        *uint8 body = &data[at + 8];
+        if (at + 12 + len > size) { return "is truncated"; }
+        if (type[0] == 'I' && type[1] == 'H' && type[2] == 'D' && type[3] == 'R') {
+            width = (int)png_be32(body);
+            height = (int)png_be32(&body[4]);
+            if (body[8] != 8) { return "has a bit depth other than 8"; }
+            kind = body[9];
+            if (body[12] != 0) { return "is interlaced"; }
+        } else if (type[0] == 'P' && type[1] == 'L' && type[2] == 'T' && type[3] == 'E') {
+            for (int64 i = 0; i < len / 3 && i < 256; i++) {
+                palette[i * 4] = body[i * 3]; palette[i * 4 + 1] = body[i * 3 + 1]; palette[i * 4 + 2] = body[i * 3 + 2];
+            }
+        } else if (type[0] == 't' && type[1] == 'R' && type[2] == 'N' && type[3] == 'S' && kind == 3) {
+            for (int64 i = 0; i < len && i < 256; i++) { palette[i * 4 + 3] = body[i]; }
+        } else if (type[0] == 'I' && type[1] == 'D' && type[2] == 'A' && type[3] == 'T') {
+            Bytes_append_raw(&idat, body, len);
+        } else if (type[0] == 'I' && type[1] == 'E' && type[2] == 'N' && type[3] == 'D') {
+            break;
+        }
+        at += 12 + len;
+    }
+    int channels = kind == 0 ? 1 : kind == 2 ? 3 : kind == 3 ? 1 : kind == 4 ? 2 : kind == 6 ? 4 : 0;
+    if (channels == 0 || width <= 0 || height <= 0) { return "has no image this reader knows"; }
+    Bytes raw;
+    if (!zlib_inflate(idat.data, idat.len, &raw)) { Bytes_free(&raw); return "has damaged image data"; }
+    defer Bytes_free(&raw);
+    int64 stride = (int64)width * channels;
+    if (raw.len < (stride + 1) * height) { return "has too little image data"; }
+    // Undo each row's filter in place, against the row above.
+    for (int64 y = 0; y < height; y++) {
+        *uint8 row = &raw.data[y * (stride + 1) + 1];
+        *uint8 above = y > 0 ? &raw.data[(y - 1) * (stride + 1) + 1] : null;
+        int filter = raw.data[y * (stride + 1)];
+        for (int64 x = 0; x < stride; x++) {
+            int a = x >= channels ? row[x - channels] : 0;
+            int b = above != null ? above[x] : 0;
+            int c = above != null && x >= channels ? above[x - channels] : 0;
+            int add = filter == 1 ? a : filter == 2 ? b : filter == 3 ? (a + b) / 2 : filter == 4 ? png_paeth(a, b, c) : 0;
+            row[x] = (uint8)(row[x] + add);
+        }
+    }
+    out.width = width;
+    out.height = height;
+    out.rgba = alloc<uint8>((int64)width * height * 4);
+    for (int64 y = 0; y < height; y++) {
+        *uint8 row = &raw.data[y * (stride + 1) + 1];
+        for (int64 x = 0; x < width; x++) {
+            *uint8 px = &out.rgba[(y * width + x) * 4];
+            if (kind == 0) { px[0] = row[x]; px[1] = row[x]; px[2] = row[x]; px[3] = 255; }
+            else if (kind == 2) { px[0] = row[x * 3]; px[1] = row[x * 3 + 1]; px[2] = row[x * 3 + 2]; px[3] = 255; }
+            else if (kind == 3) { for (k in 0..4) { px[k] = palette[(int)row[x] * 4 + k]; } }
+            else if (kind == 4) { px[0] = row[x * 2]; px[1] = row[x * 2]; px[2] = row[x * 2]; px[3] = row[x * 2 + 1]; }
+            else { for (k in 0..4) { px[k] = row[x * 4 + k]; } }
+        }
+    }
+    return null;
+}
+
+// `src` scaled to `size` × `size` by averaging the area each pixel covers, in premultiplied
+// alpha so transparent pixels do not darken the edges.
+void png_scale(PngImage* src, int size, PngImage* out) {
+    out.width = size;
+    out.height = size;
+    out.rgba = alloc<uint8>((int64)size * size * 4);
+    double sx = (double)src.width / size;
+    double sy = (double)src.height / size;
+    for (int y = 0; y < size; y++) {
+        double y0 = y * sy;
+        double y1 = (y + 1) * sy;
+        for (int x = 0; x < size; x++) {
+            double x0 = x * sx;
+            double x1 = (x + 1) * sx;
+            double r = 0.0;
+            double g = 0.0;
+            double b = 0.0;
+            double a = 0.0;
+            double area = 0.0;
+            for (int iy = (int)y0; iy < src.height && (double)iy < y1; iy++) {
+                double wy = (y1 < iy + 1.0 ? y1 : iy + 1.0) - (y0 > (double)iy ? y0 : (double)iy);
+                for (int ix = (int)x0; ix < src.width && (double)ix < x1; ix++) {
+                    double wx = (x1 < ix + 1.0 ? x1 : ix + 1.0) - (x0 > (double)ix ? x0 : (double)ix);
+                    double w = wx * wy;
+                    *uint8 px = &src.rgba[((int64)iy * src.width + ix) * 4];
+                    double pa = px[3] * w;
+                    r += px[0] * pa; g += px[1] * pa; b += px[2] * pa; a += pa;
+                    area += w;
+                }
+            }
+            *uint8 px = &out.rgba[((int64)y * size + x) * 4];
+            px[0] = a > 0.0 ? (uint8)(r / a + 0.5) : 0;
+            px[1] = a > 0.0 ? (uint8)(g / a + 0.5) : 0;
+            px[2] = a > 0.0 ? (uint8)(b / a + 0.5) : 0;
+            px[3] = area > 0.0 ? (uint8)(a / area + 0.5) : 0;
+        }
+    }
+}
+
+// `img` scaled to `inner` and centered on a transparent `size` × `size` canvas.
+void png_place(PngImage* img, int inner, int size, PngImage* out) {
+    PngImage scaled;
+    png_scale(img, inner, &scaled);
+    out.width = size;
+    out.height = size;
+    out.rgba = alloc<uint8>((int64)size * size * 4);
+    int at = (size - inner) / 2;
+    for (int y = 0; y < inner; y++) {
+        memcpy((*void)&out.rgba[((int64)(y + at) * size + at) * 4], (*void)&scaled.rgba[(int64)y * inner * 4], (int64)inner * 4);
+    }
+    PngImage_free(&scaled);
+}
+
+// The average color of the image's border, as "#RRGGBB".
+string png_edge_color(PngImage* img) {
+    int64 r = 0;
+    int64 g = 0;
+    int64 b = 0;
+    int64 n = 0;
+    for (int i = 0; i < img.width; i++) {
+        int[4] at = {i, (img.height - 1) * img.width + i, i * img.width, i * img.width + img.width - 1};
+        for (k in 0..4) {
+            *uint8 px = &img.rgba[(int64)at[k] * 4];
+            r += px[0]; g += px[1]; b += px[2]; n++;
+        }
+    }
+    String color;
+    String_appendf(&color, "#%02X%02X%02X", (int)(r / n), (int)(g / n), (int)(b / n));
+    return color.data;
+}
+
+// Whether any pixel is not fully opaque.
+bool png_has_alpha(PngImage* img) {
+    for (int64 i = 0; i < (int64)img.width * img.height; i++) {
+        if (img.rgba[i * 4 + 3] != 255) { return true; }
+    }
+    return false;
+}
+
+// Every pixel over white, fully opaque (the App Store takes no transparency in an icon).
+void png_flatten(PngImage* img) {
+    for (int64 i = 0; i < (int64)img.width * img.height; i++) {
+        *uint8 px = &img.rgba[i * 4];
+        int a = px[3];
+        for (k in 0..3) { px[k] = (uint8)((px[k] * a + 255 * (255 - a) + 127) / 255); }
+        px[3] = 255;
+    }
+}
+
+uint32[256] png_crc_table;
+bool png_crc_ready;
+
+uint32 png_crc(*uint8 p, int64 n, uint32 crc) {
+    if (!png_crc_ready) {
+        for (i in 0..256) {
+            uint32 c = (uint32)i;
+            for (k in 0..8) { c = (c & 1) != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1; }
+            png_crc_table[i] = c;
+        }
+        png_crc_ready = true;
+    }
+    for (int64 i = 0; i < n; i++) { crc = png_crc_table[(crc ^ p[i]) & 255] ^ (crc >> 8); }
+    return crc;
+}
+
+void png_put32(Bytes* out, int64 v) {
+    Bytes_push(out, (uint8)(v >> 24)); Bytes_push(out, (uint8)(v >> 16));
+    Bytes_push(out, (uint8)(v >> 8)); Bytes_push(out, (uint8)v);
+}
+
+void png_chunk(Bytes* out, string type, *uint8 body, int64 len) {
+    png_put32(out, len);
+    int64 start = out.len;
+    Bytes_append_raw(out, (*uint8)type, 4);
+    if (len > 0) { Bytes_append_raw(out, body, len); }
+    uint32 crc = png_crc(&out.data[start], 4 + len, 0xFFFFFFFF) ^ 0xFFFFFFFF;
+    png_put32(out, (int64)crc);
+}
+
+// `img` as an RGBA PNG at `path`, its rows unfiltered in stored (uncompressed) deflate
+// blocks: icons are small, and this needs no compressor. False when it cannot be written.
+bool png_write(string path, PngImage* img) {
+    int64 stride = (int64)img.width * 4;
+    int64 rawlen = (stride + 1) * img.height;
+    Bytes z;
+    Bytes_init(&z, rawlen + rawlen / 65535 * 5 + 16);
+    defer Bytes_free(&z);
+    Bytes_push(&z, 0x78); Bytes_push(&z, 0x01);
+    int64 adler_a = 1;
+    int64 adler_b = 0;
+    // Each row is a filter byte (0) and its pixels; stored blocks hold up to 65535 bytes.
+    Bytes raw;
+    Bytes_init(&raw, rawlen);
+    defer Bytes_free(&raw);
+    for (int64 y = 0; y < img.height; y++) {
+        Bytes_push(&raw, 0);
+        Bytes_append_raw(&raw, &img.rgba[y * stride], stride);
+    }
+    for (int64 i = 0; i < raw.len; i++) {
+        adler_a = (adler_a + raw.data[i]) % 65521;
+        adler_b = (adler_b + adler_a) % 65521;
+    }
+    for (int64 at = 0; at < raw.len; at += 65535) {
+        int64 n = raw.len - at < 65535 ? raw.len - at : 65535;
+        Bytes_push(&z, at + n >= raw.len ? 1 : 0);
+        Bytes_push(&z, (uint8)n); Bytes_push(&z, (uint8)(n >> 8));
+        Bytes_push(&z, (uint8)~n); Bytes_push(&z, (uint8)(~n >> 8));
+        Bytes_append_raw(&z, &raw.data[at], n);
+    }
+    png_put32(&z, (adler_b << 16) | adler_a);
+    Bytes file;
+    Bytes_init(&file, z.len + 64);
+    defer Bytes_free(&file);
+    uint8[8] signature = {137, 80, 78, 71, 13, 10, 26, 10};
+    Bytes_append_raw(&file, &signature[0], 8);
+    uint8[13] header;
+    header[0] = (uint8)(img.width >> 24); header[1] = (uint8)(img.width >> 16);
+    header[2] = (uint8)(img.width >> 8); header[3] = (uint8)img.width;
+    header[4] = (uint8)(img.height >> 24); header[5] = (uint8)(img.height >> 16);
+    header[6] = (uint8)(img.height >> 8); header[7] = (uint8)img.height;
+    header[8] = 8; header[9] = 6; header[10] = 0; header[11] = 0; header[12] = 0;
+    png_chunk(&file, "IHDR", &header[0], 13);
+    png_chunk(&file, "IDAT", z.data, z.len);
+    png_chunk(&file, "IEND", null, 0);
+    return fs_write_all(path, file.data, file.len) == 1;
+}
