@@ -83,6 +83,25 @@ A component is a function; the elements it calls (`Column`, `Text`, `ButtonWith`
 view, and the block passed to a container is its content. See [State](state.md) for
 signals and [Components](components.md) for what there is.
 
+## Xcode and Android Studio
+
+```bash
+ui open ios           # the app's Xcode project, opened in Xcode
+ui open android       # its Gradle project, opened in Android Studio
+```
+
+Run, debug and profile there as with any app: the native debugger, breakpoints in native code,
+Instruments, the Android profiler, a phone of your own. Each Run builds the Eskiu code first
+(a build step that runs `ui object`), so an edit to a `.esk` file is in the next Run, with no
+command in between; a Debug build compiles it at `-O0`. On iOS the project is signed for your
+team (`[ios] team` in `ui.toml`, or the only team this Mac has a certificate for), so it runs
+on a device; without one it runs on the simulator.
+
+The projects live in `build/ui/ios/xcode/` and `build/ui/android/gradle/` and are made again
+by `ui open`: run it again after changing `ui.toml` or adding native code. Changes made in the
+IDE's project settings do not last; put them in `ui.toml`. `ui serve` stays the fastest loop
+for the views; the IDEs are for the native side and for devices.
+
 ## A project's layout
 
 ```

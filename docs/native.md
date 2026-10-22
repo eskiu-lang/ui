@@ -293,7 +293,9 @@ no downloads. Third-party libraries need the platform's build system:
   links the app's object and Yoga's, and runs `xcodebuild` for the simulator. `UI_XCODE=1`
   takes this path always.
 
-Both projects open in Android Studio and Xcode, to debug the native side.
+`ui open ios` and `ui open android` make these projects and open them in Xcode and Android
+Studio, with a step that builds the Eskiu code before each Run there (see
+[Getting started](getting-started.md)).
 
 ## Packages
 
