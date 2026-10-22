@@ -235,10 +235,10 @@ void serve_page(string path, String* out) {
     String_append(out, kServeTag);
 }
 
-// The project the macOS window's watcher builds.
-Project* macos_project;
+// The project the desktop window's watcher builds.
+Project* desktop_project;
 
-uint64 macos_seen;
+uint64 desktop_seen;
 
 void serve_command(Project* p, string target) {
     Mutex_init(&serve_lock);
@@ -256,21 +256,28 @@ void serve_command(Project* p, string target) {
         fflush(null);
         open_url(url.data);
         serve_watch(p, "build", "web", seen);
-    } else if (strcmp(target, "macos") == 0) {
-        macos_seen = serve_signature(p);
-        if (!serve_build("build", "macos")) { exit(1); }
+    } else if (strcmp(target, "macos") == 0 || strcmp(target, "linux") == 0 || strcmp(target, "windows") == 0) {
+        desktop_seen = serve_signature(p);
+        if (!serve_build("build", target)) { exit(1); }
         serve_dev = true;
         serve_root = join(p.root.data, "build/ui/web");
         serve_port = port();
         serve_listen();
-        macos_project = p;
-        thread_create(void() { serve_watch(macos_project, "build", "web", macos_seen); });
+        desktop_project = p;
+        thread_create(void() { serve_watch(desktop_project, "build", "web", desktop_seen); });
         String url;
         String_appendf(&url, "http://127.0.0.1:%d/", serve_port);
         printf("Serving %s in a window, building again on each change\n", url.data);
         fflush(null);
         Cmd window;
-        window.add(join(join(p.root.data, "build/ui/macos"), p.name.data)); window.add(url.data);
+        string exe = p.name.data;
+        String win_exe;
+        defer String_free(&win_exe);
+        if (strcmp(target, "windows") == 0) {
+            String_appendf(&win_exe, "%s.exe", p.name.data);
+            exe = win_exe.data;
+        }
+        window.add(join(join(p.root.data, join("build/ui", target)), exe)); window.add(url.data);
         int code = window.run(null);
         window.free();
         exit(code);

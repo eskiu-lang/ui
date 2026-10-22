@@ -30,6 +30,8 @@ import "png.esk";
 import "icon.esk";
 import "web.esk";
 import "macos.esk";
+import "linux.esk";
+import "windows.esk";
 import "yoga.esk";
 import "ios.esk";
 import "android.esk";
@@ -40,8 +42,8 @@ import "serve.esk";
 import "release.esk";
 
 void usage() {
-    println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|ios|android\n       ui run web|macos|ios|android\n"
-                "       ui serve [web|macos|ios|android]\n       ui open ios|android\n       ui release [ios|android] [--upload]");
+    println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android\n       ui run web|macos|linux|windows|ios|android\n"
+                "       ui serve [web|macos|linux|windows|ios|android]\n       ui open ios|android\n       ui release [ios|android] [--upload]");
     exit(2);
 }
 
@@ -63,10 +65,10 @@ void open_project(string path, bool ios) {
 #endif
 }
 
-// The server runs on a thread while the macOS window is open.
-string macos_root;
+// The server runs on a thread while a desktop window is open.
+string desktop_root;
 
-int macos_port;
+int desktop_port;
 
 int main(int argc, string* argv) {
     if (argc < 2) { usage(); }
@@ -85,8 +87,8 @@ int main(int argc, string* argv) {
         release_command(&p, argc, argv);
         return 0;
     }
-    if (argc < 3) { usage(); }
     if (String_eq_cstr(&command, "open") == 1 || String_eq_cstr(&command, "object") == 1) {
+        if (argc < 3) { usage(); }
         Project p;
         p.find();
         bool ios = strcmp(argv[2], "ios") == 0;
@@ -101,18 +103,21 @@ int main(int argc, string* argv) {
         return 0;
     }
     if (String_eq_cstr(&command, "new") == 1) {
+        if (argc < 3) { usage(); }
         string ui_path = null;
         if (argc >= 5 && strcmp(argv[3], "--ui") == 0) { ui_path = argv[4]; }
         create(argv[2], ui_path);
         return 0;
     }
     bool run = String_eq_cstr(&command, "run") == 1;
-    if (!run && String_eq_cstr(&command, "build") != 1) { usage(); }
-    Project p;
-    p.find();
-    String target;
-    String_from(&target, argv[2]);
-    if (String_eq_cstr(&target, "web") == 1) {
+    bool build = String_eq_cstr(&command, "build") == 1;
+    if (run || build) {
+        Project p;
+        p.find();
+        string target_name = argc >= 3 ? argv[2] : "web";
+        String target;
+        String_from(&target, target_name);
+        if (String_eq_cstr(&target, "web") == 1) {
         string out = build_web(&p);
         printf("Built %s\n", out);
         if (run) {
@@ -126,12 +131,44 @@ int main(int argc, string* argv) {
         string binary = build_macos(&p);
         printf("Built %s\n", binary);
         if (run) {
-            macos_root = join(p.root.data, "build/ui/web");
-            macos_port = port();
-            thread_create(void() { serve(macos_root, macos_port); });
+            desktop_root = join(p.root.data, "build/ui/web");
+            desktop_port = port();
+            thread_create(void() { serve(desktop_root, desktop_port); });
             time_sleep_ms(200);
             String url;
-            String_appendf(&url, "http://127.0.0.1:%d/", macos_port);
+            String_appendf(&url, "http://127.0.0.1:%d/", desktop_port);
+            Cmd window;
+            window.add(binary); window.add(url.data);
+            int code = window.run(null);
+            window.free();
+            exit(code);
+        }
+    } else if (String_eq_cstr(&target, "linux") == 1) {
+        string binary = build_linux(&p);
+        printf("Built %s\n", binary);
+        if (run) {
+            desktop_root = join(p.root.data, "build/ui/web");
+            desktop_port = port();
+            thread_create(void() { serve(desktop_root, desktop_port); });
+            time_sleep_ms(200);
+            String url;
+            String_appendf(&url, "http://127.0.0.1:%d/", desktop_port);
+            Cmd window;
+            window.add(binary); window.add(url.data);
+            int code = window.run(null);
+            window.free();
+            exit(code);
+        }
+    } else if (String_eq_cstr(&target, "windows") == 1) {
+        string binary = build_windows(&p);
+        printf("Built %s\n", binary);
+        if (run) {
+            desktop_root = join(p.root.data, "build/ui/web");
+            desktop_port = port();
+            thread_create(void() { serve(desktop_root, desktop_port); });
+            time_sleep_ms(200);
+            String url;
+            String_appendf(&url, "http://127.0.0.1:%d/", desktop_port);
             Cmd window;
             window.add(binary); window.add(url.data);
             int code = window.run(null);
@@ -143,5 +180,8 @@ int main(int argc, string* argv) {
     } else if (String_eq_cstr(&target, "android") == 1) {
         if (run) { run_android(&p); } else { printf("Built %s\n", build_android(&p)); }
     } else { usage(); }
+        return 0;
+    }
+    usage();
     return 0;
 }

@@ -1,0 +1,48 @@
+// Linux: the web build in a WebKitGTK window.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// ---- Linux ----
+
+string build_linux(Project* p) {
+    build_web(p);
+    string out = p.out("linux");
+    string binary = join(out, p.name.data);
+
+    // Prefer webkit2gtk-4.1 (libsoup-3), fallback to webkit2gtk-4.0 (libsoup-2.4)
+    string pkg = "webkit2gtk-4.1";
+    Cmd check;
+    check.add("pkg-config"); check.add("--exists"); check.add(pkg);
+    if (check.run(null) != 0) {
+        pkg = "webkit2gtk-4.0";
+    }
+    check.free();
+
+    Cmd pc;
+    defer pc.free();
+    pc.add("pkg-config"); pc.add("--cflags"); pc.add("--libs"); pc.add(pkg);
+    String flags;
+    defer String_free(&flags);
+    if (!pc.output(&flags) || flags.len == 0) {
+        fail("ui build linux: pkg-config webkit2gtk-4.1 or webkit2gtk-4.0 not found. Install libwebkit2gtk-4.1-dev or libwebkit2gtk-4.0-dev.");
+    }
+
+    Cmd cmd;
+    defer cmd.free();
+    string cc_env = env_get("CC");
+    cmd.add(cc_env != null ? cc_env : "cc");
+    cmd.add(join(p.ui.data, "hosts/linux/host.c"));
+
+    List<String> parts;
+    defer fs_list_free(&parts);
+    String_split(&flags, ' ', &parts);
+    for (i in 0..parts.size) {
+        String_trim(&parts.data[i]);
+        if (parts.data[i].len > 0) {
+            cmd.add(parts.data[i].data);
+        }
+    }
+
+    cmd.add("-o"); cmd.add(binary);
+    cmd.must(null);
+    return binary;
+}

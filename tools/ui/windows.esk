@@ -1,0 +1,52 @@
+// Windows: the web build in a WebView2 window.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// ---- Windows ----
+
+string build_windows(Project* p) {
+    build_web(p);
+    string out = p.out("windows");
+    String exe_name;
+    defer String_free(&exe_name);
+    String_appendf(&exe_name, "%s.exe", p.name.data);
+    string binary = join(out, exe_name.data);
+
+    string cxx = env_get("CXX");
+    bool is_msvc = false;
+    if (cxx == null) {
+        Cmd check_cl;
+        check_cl.add("where"); check_cl.add("cl.exe");
+        if (check_cl.run(null) == 0) {
+            cxx = "cl";
+            is_msvc = true;
+        } else {
+            cxx = "g++";
+        }
+        check_cl.free();
+    } else if (strstr(cxx, "cl") != null) {
+        is_msvc = true;
+    }
+
+    Cmd cmd;
+    defer cmd.free();
+    cmd.add(cxx);
+
+    if (is_msvc) {
+        cmd.add("/EHsc"); cmd.add("/std:c++17"); cmd.add("/O2");
+        cmd.add(join(p.ui.data, "hosts/windows/host.cpp"));
+        cmd.add("/link");
+        cmd.add("user32.lib"); cmd.add("ole32.lib"); cmd.add("shell32.lib"); cmd.add("shlwapi.lib");
+        String out_flag;
+        defer String_free(&out_flag);
+        String_appendf(&out_flag, "/OUT:%s", binary);
+        cmd.add(out_flag.data);
+    } else {
+        cmd.add("-std=c++17"); cmd.add("-O2");
+        cmd.add(join(p.ui.data, "hosts/windows/host.cpp"));
+        cmd.add("-lole32"); cmd.add("-luser32"); cmd.add("-lshell32"); cmd.add("-lshlwapi");
+        cmd.add("-o"); cmd.add(binary);
+    }
+
+    cmd.must(null);
+    return binary;
+}
