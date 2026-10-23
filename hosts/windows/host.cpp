@@ -1,277 +1,163 @@
+// The Windows desktop host: the web build in a WebView2 window. The tool compiles it with
+// the WebView2 SDK's header (its NuGet package, which tools/ui/windows.esk fetches) and puts
+// WebView2Loader.dll next to the executable. With no argument it shows the app bundled in
+// web/ beside the executable, served as https://app.assets/; an argument is a URL to open
+// instead (ui serve's). UI_RELEASE builds turn the developer tools off.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlwapi.h>
+#include <shlobj.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#if defined(__has_include) && __has_include(<WebView2.h>)
-#include <wrl.h>
+#include <wchar.h>
 #include <WebView2.h>
-#else
-// Self-contained COM declarations for WebView2 so compilation works on MinGW / MSVC without NuGet.
-#include <unknwn.h>
 
-typedef struct EventRegistrationToken {
-    __int64 value;
-} EventRegistrationToken;
-
-typedef enum COREWEBVIEW2_MOVE_FOCUS_REASON {
-    COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC = 0
-} COREWEBVIEW2_MOVE_FOCUS_REASON;
-
-MIDL_INTERFACE("E562E4F0-D7FA-43AC-8D71-C05150499F00")
-ICoreWebView2Settings : public IUnknown {
-public:
-    virtual HRESULT STDMETHODCALLTYPE get_IsScriptEnabled(BOOL *isScriptEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_IsScriptEnabled(BOOL isScriptEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_IsWebMessageEnabled(BOOL *isWebMessageEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_IsWebMessageEnabled(BOOL isWebMessageEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_AreDefaultScriptDialogsEnabled(BOOL *areDefaultScriptDialogsEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_AreDefaultScriptDialogsEnabled(BOOL areDefaultScriptDialogsEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_IsStatusBarEnabled(BOOL *isStatusBarEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_IsStatusBarEnabled(BOOL isStatusBarEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_AreDevToolsEnabled(BOOL *areDevToolsEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_AreDevToolsEnabled(BOOL areDevToolsEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_AreDefaultContextMenusEnabled(BOOL *enabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_AreDefaultContextMenusEnabled(BOOL enabled) = 0;
-};
-
-MIDL_INTERFACE("67AFD2A2-C029-450F-AD10-38A2D3C4560D")
-ICoreWebView2 : public IUnknown {
-public:
-    virtual HRESULT STDMETHODCALLTYPE get_Settings(ICoreWebView2Settings **settings) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_Source(LPWSTR *uri) = 0;
-    virtual HRESULT STDMETHODCALLTYPE Navigate(LPCWSTR uri) = 0;
-    virtual HRESULT STDMETHODCALLTYPE NavigateToString(LPCWSTR htmlContent) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_NavigationStarting(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_NavigationStarting(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_SourceChanged(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_SourceChanged(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_HistoryChanged(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_HistoryChanged(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_NavigationCompleted(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_NavigationCompleted(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_FrameNavigationStarting(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_FrameNavigationStarting(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_FrameNavigationCompleted(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_FrameNavigationCompleted(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_ScriptDialogOpening(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_ScriptDialogOpening(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_PermissionRequested(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_PermissionRequested(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_ProcessFailed(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_ProcessFailed(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE AddScriptToExecuteOnDocumentCreated(LPCWSTR javaScript, void *handler) = 0;
-    virtual HRESULT STDMETHODCALLTYPE RemoveScriptToExecuteOnDocumentCreated(LPCWSTR id) = 0;
-    virtual HRESULT STDMETHODCALLTYPE ExecuteScript(LPCWSTR javaScript, void *handler) = 0;
-    virtual HRESULT STDMETHODCALLTYPE CapturePreview(int imageFormat, void *imageStream, void *handler) = 0;
-    virtual HRESULT STDMETHODCALLTYPE Reload(void) = 0;
-    virtual HRESULT STDMETHODCALLTYPE PostWebMessageAsJson(LPCWSTR webMessageAsJson) = 0;
-    virtual HRESULT STDMETHODCALLTYPE PostWebMessageAsString(LPCWSTR webMessageAsString) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_WebMessageReceived(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_WebMessageReceived(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE CallDevToolsProtocolMethod(LPCWSTR methodName, LPCWSTR parametersAsJson, void *handler) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_BrowserProcessId(UINT32 *value) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_CanGoBack(BOOL *canGoBack) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_CanGoForward(BOOL *canGoForward) = 0;
-    virtual HRESULT STDMETHODCALLTYPE GoBack(void) = 0;
-    virtual HRESULT STDMETHODCALLTYPE GoForward(void) = 0;
-    virtual HRESULT STDMETHODCALLTYPE GetDevToolsProtocolEventReceiver(LPCWSTR eventName, void **receiver) = 0;
-    virtual HRESULT STDMETHODCALLTYPE Stop(void) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_NewWindowRequested(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_NewWindowRequested(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_DocumentTitleChanged(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_DocumentTitleChanged(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_DocumentTitle(LPWSTR *title) = 0;
-};
-
-MIDL_INTERFACE("4D00C0D4-0FB9-40CA-9F88-073D557D93D3")
-ICoreWebView2Controller : public IUnknown {
-public:
-    virtual HRESULT STDMETHODCALLTYPE get_IsVisible(BOOL *isVisible) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_IsVisible(BOOL isVisible) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_Bounds(RECT *bounds) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_Bounds(RECT bounds) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_ZoomFactor(double *zoomFactor) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_ZoomFactor(double zoomFactor) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_ZoomFactorChanged(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_ZoomFactorChanged(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE SetBoundsAndZoomFactor(RECT bounds, double zoomFactor) = 0;
-    virtual HRESULT STDMETHODCALLTYPE MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON reason) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_MoveFocusRequested(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_MoveFocusRequested(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_GotFocus(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_GotFocus(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_LostFocus(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_LostFocus(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE add_AcceleratorKeyPressed(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE remove_AcceleratorKeyPressed(EventRegistrationToken token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_ParentWindow(HWND *topLevelWindow) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_ParentWindow(HWND topLevelWindow) = 0;
-    virtual HRESULT STDMETHODCALLTYPE NotifyParentWindowPositionChanged(void) = 0;
-    virtual HRESULT STDMETHODCALLTYPE Close(void) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_CoreWebView2(ICoreWebView2 **coreWebView2) = 0;
-};
-
-MIDL_INTERFACE("B96D755E-0319-4E92-A296-23436F46A1FC")
-ICoreWebView2Environment : public IUnknown {
-public:
-    virtual HRESULT STDMETHODCALLTYPE CreateCoreWebView2Controller(HWND parentWindow, void *handler) = 0;
-    virtual HRESULT STDMETHODCALLTYPE CreateWebResourceResponse(void *content, int statusCode, LPCWSTR reasonPhrase, LPCWSTR headers, void **response) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_BrowserVersionString(LPWSTR *versionInfo) = 0;
-    virtual HRESULT STDMETHODCALLTYPE AddNewBrowserVersionAvailable(void *eventHandler, EventRegistrationToken *token) = 0;
-    virtual HRESULT STDMETHODCALLTYPE RemoveNewBrowserVersionAvailable(EventRegistrationToken token) = 0;
-};
-
-MIDL_INTERFACE("4E8A3389-A788-4CD0-BB42-E604A60B3F16")
-ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler : public IUnknown {
-public:
-    virtual HRESULT STDMETHODCALLTYPE Invoke(HRESULT errorCode, ICoreWebView2Environment *created_environment) = 0;
-};
-
-MIDL_INTERFACE("6C4819F3-C9B7-4260-8127-CEDE4F1595F3")
-ICoreWebView2CreateCoreWebView2ControllerCompletedHandler : public IUnknown {
-public:
-    virtual HRESULT STDMETHODCALLTYPE Invoke(HRESULT errorCode, ICoreWebView2Controller *created_controller) = 0;
-};
-
-MIDL_INTERFACE("F5F2B487-CF04-453B-9B21-8E40788390FA")
-ICoreWebView2DocumentTitleChangedEventHandler : public IUnknown {
-public:
-    virtual HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2 *sender, IUnknown *args) = 0;
-};
-
-#ifndef __ICoreWebView2_3_INTERFACE_DEFINED__
-#define __ICoreWebView2_3_INTERFACE_DEFINED__
-typedef enum COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND {
-    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY = 0,
-    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW = 1,
-    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS = 2
-} COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND;
-
-static const IID IID_ICoreWebView2_3 = {0xA0D69F73, 0x04B0, 0x4E48, {0xAB, 0x08, 0x5F, 0x8A, 0x16, 0x8B, 0xF1, 0x2B}};
-
-MIDL_INTERFACE("A0D69F73-04B0-4E48-AB08-5F8A168BF12B")
-ICoreWebView2_3 : public IUnknown {
-public:
-    virtual HRESULT STDMETHODCALLTYPE TrySuspend(void *handler) = 0;
-    virtual HRESULT STDMETHODCALLTYPE Resume(void *handler) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_IsSuspended(BOOL *isSuspended) = 0;
-    virtual HRESULT STDMETHODCALLTYPE SetVirtualHostNameToFolderMapping(
-        LPCWSTR hostName,
-        LPCWSTR folderPath,
-        COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND accessKind) = 0;
-    virtual HRESULT STDMETHODCALLTYPE ClearVirtualHostNameToFolderMapping(LPCWSTR hostName) = 0;
-};
-#endif
-#endif
-
-typedef HRESULT (STDAPICALLTYPE *CreateCoreWebView2EnvironmentWithOptionsFn)(
-    PCWSTR browserExecutableFolder,
-    PCWSTR userDataFolder,
-    IUnknown *environmentOptions,
-    ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler *environmentCreatedHandler);
+typedef HRESULT(STDAPICALLTYPE* CreateEnvironmentFn)(
+    PCWSTR browserExecutableFolder, PCWSTR userDataFolder, ICoreWebView2EnvironmentOptions* options,
+    ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler* handler);
 
 static HWND g_hwnd = NULL;
-static ICoreWebView2Controller *g_controller = NULL;
-static ICoreWebView2 *g_webview = NULL;
+static ICoreWebView2Controller* g_controller = NULL;
+static ICoreWebView2* g_webview = NULL;
 static WCHAR g_target_url[2048] = {0};
 static WCHAR g_local_web_dir[MAX_PATH] = {0};
+static WCHAR g_name[MAX_PATH] = L"app";
 
-class TitleChangeHandler : public ICoreWebView2DocumentTitleChangedEventHandler {
-    LONG m_refCount = 1;
+// A failure the user can act on, instead of a blank window.
+static void report(const wchar_t* what, HRESULT hr) {
+    WCHAR text[512];
+    swprintf(text, 512, L"%ls (error 0x%08lX).\n\nInstall or repair the Microsoft Edge WebView2 Runtime "
+             L"(https://go.microsoft.com/fwlink/p/?LinkId=2124703) if this persists.", what, (unsigned long)hr);
+    MessageBoxW(g_hwnd, text, g_name, MB_ICONERROR | MB_OK);
+}
+
+// One COM handler: answers QueryInterface for IUnknown and its own interface only, frees
+// itself on its last Release.
+template <class I>
+class Handler : public I {
+    LONG refs = 1;
+    const IID& iid;
+
+protected:
+    explicit Handler(const IID& id) : iid(id) {}
+    virtual ~Handler() {}
+
 public:
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
         if (!ppv) return E_POINTER;
-        *ppv = static_cast<ICoreWebView2DocumentTitleChangedEventHandler *>(this);
-        AddRef();
-        return S_OK;
+        if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, iid)) {
+            *ppv = static_cast<I*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = NULL;
+        return E_NOINTERFACE;
     }
-    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&refs); }
     ULONG STDMETHODCALLTYPE Release() override {
-        LONG count = InterlockedDecrement(&m_refCount);
+        LONG count = InterlockedDecrement(&refs);
         if (count == 0) delete this;
         return count;
     }
-    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2 *sender, IUnknown *args) override {
+};
+
+// The page's title on the window.
+class TitleChanged : public Handler<ICoreWebView2DocumentTitleChangedEventHandler> {
+public:
+    TitleChanged() : Handler(IID_ICoreWebView2DocumentTitleChangedEventHandler) {}
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, IUnknown*) override {
         LPWSTR title = NULL;
         if (SUCCEEDED(sender->get_DocumentTitle(&title)) && title) {
-            SetWindowTextW(g_hwnd, title);
+            if (title[0]) SetWindowTextW(g_hwnd, title);
             CoTaskMemFree(title);
         }
         return S_OK;
     }
 };
 
-class ControllerCreatedHandler : public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
-    LONG m_refCount = 1;
+// F5 and Ctrl+R reload, Ctrl+W closes: the keys reach WebView2's own window, not ours.
+class AcceleratorKey : public Handler<ICoreWebView2AcceleratorKeyPressedEventHandler> {
 public:
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
-        if (!ppv) return E_POINTER;
-        *ppv = static_cast<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler *>(this);
-        AddRef();
-        return S_OK;
-    }
-    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
-    ULONG STDMETHODCALLTYPE Release() override {
-        LONG count = InterlockedDecrement(&m_refCount);
-        if (count == 0) delete this;
-        return count;
-    }
-    HRESULT STDMETHODCALLTYPE Invoke(HRESULT errorCode, ICoreWebView2Controller *controller) override {
-        if (FAILED(errorCode) || !controller) return errorCode;
-        g_controller = controller;
-        g_controller->AddRef();
-
-        RECT bounds;
-        GetClientRect(g_hwnd, &bounds);
-        g_controller->put_Bounds(bounds);
-        g_controller->put_IsVisible(TRUE);
-
-        if (SUCCEEDED(g_controller->get_CoreWebView2(&g_webview)) && g_webview) {
-            ICoreWebView2Settings *settings = NULL;
-            if (SUCCEEDED(g_webview->get_Settings(&settings)) && settings) {
-                settings->put_AreDevToolsEnabled(TRUE);
-                settings->put_AreDefaultContextMenusEnabled(TRUE);
-                settings->Release();
-            }
-
-            EventRegistrationToken token;
-            g_webview->add_DocumentTitleChanged(new TitleChangeHandler(), &token);
-
-            if (g_local_web_dir[0] != 0) {
-                ICoreWebView2_3 *wv3 = NULL;
-                if (SUCCEEDED(g_webview->QueryInterface(IID_ICoreWebView2_3, (void **)&wv3)) && wv3) {
-                    wv3->SetVirtualHostNameToFolderMapping(L"app.assets", g_local_web_dir, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
-                    wv3->Release();
-                }
-            }
-
-            g_webview->Navigate(g_target_url);
+    AcceleratorKey() : Handler(IID_ICoreWebView2AcceleratorKeyPressedEventHandler) {}
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) override {
+        COREWEBVIEW2_KEY_EVENT_KIND kind;
+        UINT key = 0;
+        if (FAILED(args->get_KeyEventKind(&kind)) || kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN) return S_OK;
+        args->get_VirtualKey(&key);
+        bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        if (key == VK_F5 || (control && key == 'R')) {
+            if (g_webview) g_webview->Reload();
+            args->put_Handled(TRUE);
+        } else if (control && key == 'W') {
+            PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
+            args->put_Handled(TRUE);
         }
         return S_OK;
     }
 };
 
-class EnvironmentCreatedHandler : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler {
-    LONG m_refCount = 1;
+class ControllerCreated : public Handler<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler> {
 public:
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
-        if (!ppv) return E_POINTER;
-        *ppv = static_cast<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler *>(this);
-        AddRef();
+    ControllerCreated() : Handler(IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler) {}
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT errorCode, ICoreWebView2Controller* controller) override {
+        if (FAILED(errorCode) || !controller) {
+            report(L"WebView2 could not create its view", errorCode);
+            return S_OK;
+        }
+        g_controller = controller;
+        g_controller->AddRef();
+        RECT bounds;
+        GetClientRect(g_hwnd, &bounds);
+        g_controller->put_Bounds(bounds);
+        g_controller->put_IsVisible(TRUE);
+        EventRegistrationToken token;
+        AcceleratorKey* keys = new AcceleratorKey();
+        g_controller->add_AcceleratorKeyPressed(keys, &token);
+        keys->Release();
+        if (FAILED(g_controller->get_CoreWebView2(&g_webview)) || !g_webview) {
+            report(L"WebView2 gave no web view", E_FAIL);
+            return S_OK;
+        }
+        ICoreWebView2Settings* settings = NULL;
+        if (SUCCEEDED(g_webview->get_Settings(&settings)) && settings) {
+#ifdef UI_RELEASE
+            settings->put_AreDevToolsEnabled(FALSE);
+            settings->put_AreDefaultContextMenusEnabled(FALSE);
+#else
+            settings->put_AreDevToolsEnabled(TRUE);
+#endif
+            settings->Release();
+        }
+        TitleChanged* title = new TitleChanged();
+        g_webview->add_DocumentTitleChanged(title, &token);
+        title->Release();
+        if (g_local_web_dir[0] != 0) {
+            ICoreWebView2_3* wv3 = NULL;
+            HRESULT hr = g_webview->QueryInterface(IID_ICoreWebView2_3, (void**)&wv3);
+            if (FAILED(hr) || !wv3) {
+                report(L"This WebView2 Runtime is too old to show the bundled app", hr);
+                return S_OK;
+            }
+            wv3->SetVirtualHostNameToFolderMapping(L"app.assets", g_local_web_dir,
+                                                  COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+            wv3->Release();
+        }
+        g_webview->Navigate(g_target_url);
         return S_OK;
     }
-    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
-    ULONG STDMETHODCALLTYPE Release() override {
-        LONG count = InterlockedDecrement(&m_refCount);
-        if (count == 0) delete this;
-        return count;
-    }
-    HRESULT STDMETHODCALLTYPE Invoke(HRESULT errorCode, ICoreWebView2Environment *environment) override {
-        if (FAILED(errorCode) || !environment) return errorCode;
-        environment->CreateCoreWebView2Controller(g_hwnd, new ControllerCreatedHandler());
+};
+
+class EnvironmentCreated : public Handler<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler> {
+public:
+    EnvironmentCreated() : Handler(IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler) {}
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT errorCode, ICoreWebView2Environment* environment) override {
+        if (FAILED(errorCode) || !environment) {
+            report(L"WebView2 could not start", errorCode);
+            return S_OK;
+        }
+        ControllerCreated* created = new ControllerCreated();
+        HRESULT hr = environment->CreateCoreWebView2Controller(g_hwnd, created);
+        created->Release();
+        if (FAILED(hr)) report(L"WebView2 could not create its view", hr);
         return S_OK;
     }
 };
@@ -285,25 +171,15 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 g_controller->put_Bounds(bounds);
             }
             return 0;
-        case WM_KEYDOWN:
-            if (wParam == VK_F5 || (wParam == 'R' && (GetKeyState(VK_CONTROL) & 0x8000))) {
-                if (g_webview) g_webview->Reload();
-                return 0;
-            }
-            if (wParam == 'W' && (GetKeyState(VK_CONTROL) & 0x8000)) {
-                DestroyWindow(hwnd);
-                return 0;
-            }
-            break;
         case WM_DESTROY:
+            if (g_webview) {
+                g_webview->Release();
+                g_webview = NULL;
+            }
             if (g_controller) {
                 g_controller->Close();
                 g_controller->Release();
                 g_controller = NULL;
-            }
-            if (g_webview) {
-                g_webview->Release();
-                g_webview = NULL;
             }
             PostQuitMessage(0);
             return 0;
@@ -311,90 +187,87 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-
     int argc = 0;
-    LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 
-    WCHAR exeDir[MAX_PATH] = {0};
-    GetModuleFileNameW(NULL, exeDir, MAX_PATH);
+    WCHAR exePath[MAX_PATH] = {0};
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+    WCHAR exeDir[MAX_PATH];
+    wcsncpy(exeDir, exePath, MAX_PATH);
     PathRemoveFileSpecW(exeDir);
+    // The app's name, from the executable's: the window's first title and its data folder.
+    wcsncpy(g_name, PathFindFileNameW(exePath), MAX_PATH - 1);
+    PathRemoveExtensionW(g_name);
 
     WCHAR webDir[MAX_PATH] = {0};
     PathCombineW(webDir, exeDir, L"web");
-
     WCHAR indexPath[MAX_PATH] = {0};
     PathCombineW(indexPath, webDir, L"index.html");
-
     if (argc > 1 && argv[1][0]) {
         wcsncpy(g_target_url, argv[1], 2047);
     } else if (PathFileExistsW(indexPath)) {
+        // The app's root route; the page is index.html.
         wcsncpy(g_local_web_dir, webDir, MAX_PATH - 1);
-        wcsncpy(g_target_url, L"https://app.assets/index.html", 2047);
+        wcsncpy(g_target_url, L"https://app.assets/", 2047);
     } else {
-        wcsncpy(g_target_url, L"http://127.0.0.1:8765/?example=counter", 2047);
+        MessageBoxW(NULL, L"There is no web/index.html next to this program. Build it with `ui build windows`.",
+                    g_name, MB_ICONERROR | MB_OK);
+        return 1;
     }
-
     int width = 1100, height = 860;
-    if (argc > 2) {
-        swscanf(argv[2], L"%dx%d", &width, &height);
-    }
+    if (argc > 2) swscanf(argv[2], L"%dx%d", &width, &height);
     if (argv) LocalFree(argv);
 
-    WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
+    WNDCLASSEXW wc = {sizeof(WNDCLASSEXW)};
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.lpszClassName = L"EskiuDesktopWindow";
+    wc.lpszClassName = L"EskiuUiWindow";
     RegisterClassExW(&wc);
-
-    int screenW = GetSystemMetrics(SM_CXSCREEN);
-    int screenH = GetSystemMetrics(SM_CYSCREEN);
-    int posX = (screenW - width) / 2;
-    int posY = (screenH - height) / 2;
-
-    g_hwnd = CreateWindowExW(0, wc.lpszClassName, L"Eskiu UI · Windows / WebView2",
-                             WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                             posX, posY, width, height, NULL, NULL, hInstance, NULL);
+    int posX = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
+    int posY = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;
+    g_hwnd = CreateWindowExW(0, wc.lpszClassName, g_name, WS_OVERLAPPEDWINDOW | WS_VISIBLE, posX, posY, width,
+                             height, NULL, NULL, hInstance, NULL);
 
     WCHAR iconPath[MAX_PATH] = {0};
     PathCombineW(iconPath, exeDir, L"icon.ico");
-    HICON hIcon = (HICON)LoadImageW(NULL, iconPath, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
-    if (!hIcon) {
-        hIcon = (HICON)LoadImageW(NULL, L"icon.ico", IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
-    }
-    if (hIcon) {
-        SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
-        SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+    HICON icon = (HICON)LoadImageW(NULL, iconPath, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+    if (icon) {
+        SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)icon);
+        SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)icon);
     }
 
-    HMODULE hLoader = LoadLibraryW(L"WebView2Loader.dll");
-    CreateCoreWebView2EnvironmentWithOptionsFn createEnv = NULL;
-    if (hLoader) {
-        createEnv = (CreateCoreWebView2EnvironmentWithOptionsFn)GetProcAddress(hLoader, "CreateCoreWebView2EnvironmentWithOptions");
+    // WebView2 keeps its data in %LOCALAPPDATA%\NAME, which is writable when the program is
+    // installed under Program Files (its default, beside the executable, is not).
+    WCHAR dataDir[MAX_PATH] = {0};
+    PWSTR local = NULL;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, NULL, &local)) && local) {
+        PathCombineW(dataDir, local, g_name);
+        CoTaskMemFree(local);
     }
 
-    if (createEnv) {
-        createEnv(NULL, NULL, NULL, new EnvironmentCreatedHandler());
-    } else {
-        MessageBoxW(g_hwnd,
-                    L"Failed to load WebView2Loader.dll. Please ensure the Microsoft Edge WebView2 runtime is installed.",
-                    L"Eskiu UI Error", MB_ICONERROR | MB_OK);
+    HMODULE loader = LoadLibraryW(L"WebView2Loader.dll");
+    CreateEnvironmentFn createEnv =
+        loader ? (CreateEnvironmentFn)GetProcAddress(loader, "CreateCoreWebView2EnvironmentWithOptions") : NULL;
+    if (!createEnv) {
+        MessageBoxW(g_hwnd, L"WebView2Loader.dll is missing next to this program. Build or package it with `ui`, "
+                    L"which puts it there.", g_name, MB_ICONERROR | MB_OK);
+        return 1;
     }
+    EnvironmentCreated* created = new EnvironmentCreated();
+    HRESULT hr = createEnv(NULL, dataDir[0] ? dataDir : NULL, NULL, created);
+    created->Release();
+    if (FAILED(hr)) report(L"WebView2 could not start", hr);
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
-
-    if (hLoader) FreeLibrary(hLoader);
+    FreeLibrary(loader);
     CoUninitialize();
     return 0;
-}
-
-int main(int argc, char **argv) {
-    return WinMain(GetModuleHandle(NULL), NULL, GetCommandLineA(), SW_SHOW);
 }
