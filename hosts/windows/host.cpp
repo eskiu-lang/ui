@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <shlwapi.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include <stdio.h>
 #include <wchar.h>
 #include <WebView2.h>
