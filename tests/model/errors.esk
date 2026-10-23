@@ -1,0 +1,332 @@
+// Error recovery: ErrorBoundary, the root's fallback, handlers and effects that throw. Every
+// commit goes through a host mirror that counts any op on an id the host does not hold.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+bool[4096] host_live;
+
+int host_errors;
+
+int host_creates;
+
+int host_removes;
+
+String host_texts;
+
+int error_count;
+
+int error_where;
+
+int error_boundary;
+
+char[128] error_text;
+
+int fallback_runs;
+
+void strict(*uint8 data, int len) {
+    List<Mutation> decoded;
+    ui_decode(data, len, &decoded);
+    host_creates = 0;
+    host_removes = 0;
+    String_clear(&host_texts);
+    for (i in 0..decoded.size) {
+        Mutation m = decoded.data[i];
+        if (m.op == 10) { continue; }
+        if (m.id <= 0 || m.id >= 4096) { host_errors++; continue; }
+        if (m.op == 1) {
+            if (host_live[m.id]) { host_errors++; }
+            host_live[m.id] = true;
+            host_creates++;
+        } else if (m.op == 6) {
+            if (!host_live[m.id]) { host_errors++; }
+            host_live[m.id] = false;
+            host_removes++;
+        } else {
+            if (!host_live[m.id]) { host_errors++; }
+            if ((m.op == 4 || m.op == 5) && m.parent != ui.root.id && !host_live[m.parent]) { host_errors++; }
+            if (m.op == 3) { String_append(&host_texts, m.text); String_append(&host_texts, "|"); }
+        }
+    }
+    decoded.free();
+    ui_complete(ui.sequence);
+}
+
+bool sent(string text) { return strstr(host_texts.data == null ? "" : host_texts.data, text) != null; }
+
+void note_error(UiError error) {
+    error_count++;
+    error_where = error.where;
+    error_boundary = error.boundary;
+    snprintf(&error_text[0], 128, "%s", error.text);
+}
+
+void strict_start(*Ui runtime) {
+    for (i in 0..4096) { host_live[i] = false; }
+    host_errors = 0;
+    error_count = 0;
+    fallback_runs = 0;
+    ui_init(runtime, strict);
+    ui_on_error(void(UiError error) { note_error(error); });
+}
+
+void strict_end(string label) {
+    check(host_errors == 0, "host saw an op on an id it does not hold");
+    ui_shutdown();
+    String_free(&host_texts);
+    balanced(label);
+}
+
+*Node find_text(*Node node, string text) {
+    if (node.text != null && strcmp(node.text, text) == 0) { return node; }
+    for (i in 0..node.children.size) {
+        *Node found = find_text(node.children.data[i], text);
+        if (found != null) { return found; }
+    }
+    return null;
+}
+
+void press_text(string text) {
+    *Node node = find_text(ui.root, text);
+    check(node != null, "a button to press");
+    ui_event(node.id, node.generation);
+    ui_frame();
+}
+
+// A render that throws under a boundary: nothing of it reaches the host, the content the
+// host had is removed, the fallback shows until a reset, and the content comes back.
+void boundary_render() {
+    Ui runtime;
+    strict_start(&runtime);
+    ui_mount() {
+        a = use_signal<int>(0);
+        int version = a.get();
+        Text("before");
+        ErrorBoundary(void(UiError e) {
+            fallback_runs++;
+            Text("fallback");
+            Button("Retry") { ui_boundary_reset(e.boundary); }
+        }) {
+            Column(Style{}) {
+                Text("content");
+                Row(Style{}) {
+                    if (version == 1) { Text("half"); throw 7; }
+                    Text("ok");
+                }
+            }
+        }
+        Text("after");
+    }
+    ui_frame();
+    check(sent("content") && sent("ok") && error_count == 0, "content renders");
+    a.set(1); ui_frame();
+    check(error_count == 1 && error_where == 1 && strcmp(&error_text[0], "int 7") == 0, "render error reported");
+    check(!sent("half") && sent("fallback"), "the failed pass sends nothing, the fallback arrives");
+    check(host_creates == 2 && host_removes == 4, "fallback created, old content removed");
+    check(!sent("before") && !sent("after"), "siblings untouched");
+    a.set(2); ui_frame();
+    check(fallback_runs == 2 && host_creates == 0 && error_count == 1, "the fallback stays without retrying");
+    press_text("Retry");
+    check(sent("content") && sent("ok") && host_creates == 4 && host_removes == 2, "reset renders the content again");
+    strict_end("boundary render leak");
+}
+
+// A node deep inside a boundary that runs on its own (its signal changed) and throws: the
+// boundary above it takes it.
+void boundary_nested() {
+    Ui runtime;
+    strict_start(&runtime);
+    ui_mount() {
+        a = use_signal<int>(0);
+        ErrorBoundary(void(UiError e) { Text("fallback"); }) {
+            Column(Style{}) {
+                Text("sibling");
+                Column(Style{}) {
+                    Scope("Leaf", key(1)) {
+                        if (a.get() == 1) { throw 9; }
+                        Text("leaf");
+                    }
+                }
+            }
+        }
+    }
+    ui_frame();
+    a.set(1); ui_frame();
+    check(error_count == 1 && strcmp(&error_text[0], "int 9") == 0, "grandchild error reported");
+    check(sent("fallback") && host_creates == 1 && host_removes == 5, "the boundary above shows its fallback");
+    strict_end("nested boundary leak");
+}
+
+// A throw halfway through a keyed list, after new rows were made: the new rows never reach
+// the host and their ids are free at once (the fallback takes one).
+void boundary_list() {
+    Ui runtime;
+    strict_start(&runtime);
+    ui_mount() {
+        a = use_signal<int>(0);
+        int version = a.get();
+        ErrorBoundary(void(UiError e) { Text("fallback"); }) {
+            Column(Style{}) {
+                for (i in 0..20) {
+                    int id = version == 1 ? 20 - i : i;
+                    Row(Style{key: key(id)}) {
+                        if (version == 1 && i == 10) { throw 3; }
+                        Text("row");
+                    }
+                }
+            }
+        }
+    }
+    ui_frame();
+    int ids = ui.by_id.size;
+    a.set(1); ui_frame();
+    check(error_count == 1 && sent("fallback"), "list error reported");
+    check(host_creates == 1 && host_removes == 41, "old rows removed, new ones never sent");
+    check(find_text(ui.root, "fallback").id >= ids, "the fallback reuses an id the failed pass freed");
+    strict_end("list boundary leak");
+}
+
+// No boundary: the root shows its fallback (the default one, then the app's).
+void root_fallback() {
+    Ui runtime;
+    strict_start(&runtime);
+    // The app's own hooks start over after a failure: the signal lives outside it.
+    a = signal_new<int>(0);
+    ui_mount() {
+        if (a.get() == 1) { throw 5; }
+        Text("app");
+    }
+    ui_frame();
+    a.set(1); ui_frame();
+    check(error_count == 1 && error_boundary == ui.root.id, "root error reported");
+    check(sent("Something went wrong.") && sent("int 5"), "default fallback");
+    ui_set_fallback(void(UiError e) { Text("root fallback"); });
+    a.set(0);
+    ui_boundary_reset(ui.root.id); ui_frame();
+    check(sent("app") && error_count == 1, "reset renders the app again");
+    a.set(1); ui_frame();
+    check(sent("root fallback") && error_count == 2, "the app's fallback");
+    a.free();
+    strict_end("root fallback leak");
+}
+
+// A boundary whose fallback throws hands the error to the boundary above it.
+void boundary_cascade() {
+    Ui runtime;
+    strict_start(&runtime);
+    ui_mount() {
+        a = use_signal<int>(0);
+        int version = a.get();
+        ErrorBoundary(void(UiError e) { Text("outer"); }) {
+            Column(Style{}) {
+                Text("kept?");
+                ErrorBoundary(void(UiError e) { Text("inner fallback"); throw 8; }) {
+                    if (version == 1) { throw 7; }
+                    Text("inner");
+                }
+            }
+        }
+    }
+    ui_frame();
+    a.set(1); ui_frame();
+    check(error_count == 2 && strcmp(&error_text[0], "int 8") == 0, "both errors reported");
+    check(sent("outer") && !sent("inner fallback") && host_creates == 1 && host_removes == 4, "the outer fallback replaces all");
+    strict_end("cascade leak");
+}
+
+// A memo that throws, read in a boundary's content.
+void boundary_memo() {
+    Ui runtime;
+    strict_start(&runtime);
+    ui_mount() {
+        a = use_signal<int>(0);
+        ErrorBoundary(void(UiError e) { Text("fallback"); }) {
+            *Signal<int> doubled = use_memo<int>(int() {
+                if (a.get() == 1) { throw 2; }
+                return a.get() * 2;
+            });
+            text_number(doubled.get());
+        }
+    }
+    ui_frame();
+    a.set(1); ui_frame();
+    check(error_count == 1 && strcmp(&error_text[0], "int 2") == 0 && sent("fallback"), "memo error shown by the boundary");
+    strict_end("memo boundary leak");
+}
+
+// A handler that throws is reported; what it wrote stays, and the app goes on.
+void handler_error() {
+    Ui runtime;
+    strict_start(&runtime);
+    ui_mount() {
+        a = use_signal<int>(0);
+        text_number(a.get());
+        Button("Go") {
+            a.set(a.get() + 1);
+            throw 11;
+        }
+    }
+    ui_frame();
+    press_text("Go");
+    check(error_count == 1 && error_where == 2 && sent("1"), "handler error reported, its write kept");
+    press_text("Go");
+    check(error_count == 2 && sent("2"), "handlers keep working");
+    strict_end("handler error leak");
+}
+
+// An effect that throws is reported and keeps no cleanup; the effects after it run.
+void effect_error() {
+    Ui runtime;
+    strict_start(&runtime);
+    effects = 0;
+    cleanups = 0;
+    ui_mount() {
+        a = use_signal<int>(0);
+        int version = a.get();
+        use_effect() {
+            effects++;
+            on_cleanup() { cleanups++; }
+            if (version == 1) { throw 4; }
+        }
+        use_effect() { effects++; }
+    }
+    ui_frame();
+    check(effects == 2, "effects run");
+    a.set(1); ui_frame();
+    check(error_count == 1 && error_where == 3 && effects == 4 && cleanups == 1, "effect error reported, the next one runs");
+    a.set(2); ui_frame();
+    check(effects == 6 && cleanups == 1, "the failed effect kept no cleanup");
+    strict_end("effect error leak");
+}
+
+// Cleanups that throw when their scope unmounts are reported; the rest of the unmount runs.
+void cleanup_error() {
+    Ui runtime;
+    strict_start(&runtime);
+    cleanups = 0;
+    ui_mount() {
+        a = use_signal<int>(0);
+        if (a.get() == 0) {
+            Scope("Sensor", key(1)) {
+                use_mount(void() {}, void() { throw 12; });
+                use_effect() { on_cleanup() { throw 13; } }
+                use_effect() { on_cleanup() { cleanups++; } }
+            }
+        }
+        Text("app");
+    }
+    ui_frame();
+    a.set(1); ui_frame();
+    check(error_count == 2 && error_where == 3 && cleanups == 1, "unmount cleanups reported, the others run");
+    strict_end("cleanup error leak");
+}
+
+void errors() {
+    boundary_render();
+    boundary_nested();
+    boundary_list();
+    root_fallback();
+    boundary_cascade();
+    boundary_memo();
+    handler_error();
+    effect_error();
+    cleanup_error();
+}

@@ -92,6 +92,19 @@ assert.equal(frames.frame(), 0);
 app._ui_tick(); // A stale callback after shutdown is a no-op.
 assert.equal(host.nodes.size, 0);
 
+// Error recovery: a render that throws shows its boundary's fallback, a handler that throws
+// leaves the app running, and a reset brings the content back.
+app._ui_start(7);
+click(find('Break')[0]); frames.frame();
+assert.equal(find('Recovered').length, 1, 'the fallback replaces the content');
+assert.equal(find('Break').length, 0, 'the failed content is gone');
+click(find('Throw in handler')[0]); frames.frame();
+click(find('Retry')[0]); frames.frame();
+assert.equal(find('Break').length, 1, 'a reset renders the content again');
+assert.equal(find('Recovered').length, 0);
+app._ui_stop();
+assert.equal(host.nodes.size, 0);
+
 // New wasm instance resets the synthetic root ID.
 const todoRoot = new Element('root');
 let todo;

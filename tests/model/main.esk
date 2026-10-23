@@ -14,6 +14,7 @@ import "elements.esk";
 import "lists.esk";
 import "system.esk";
 import "navigation.esk";
+import "errors.esk";
 import "apps.esk";
 
 int main() {
@@ -66,6 +67,7 @@ int main() {
     model_signal(); printf("PASS model signal\n");
     owned_strings(); printf("PASS owned snapshots\n");
     navigation(); printf("PASS navigation\n");
+    errors(); printf("PASS error recovery\n");
     leak_gate(); printf("PASS leak gates\n");
     return 0;
 }

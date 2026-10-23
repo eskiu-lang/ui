@@ -10,9 +10,23 @@ import "../../hosts/bridge.esk";
 
 // The examples behind one host app: `which` picks one (0 counter, 1 TODO, 2 a scheduler
 // probe, 3 the conformance scene, 4 the Tasks showcase, 5 the kit gallery, 6 native code: the
-// native example's clock module and slider view, built from examples/native/native).
+// native example's clock module and slider view, built from examples/native/native, 7 error
+// recovery: a boundary whose content breaks on demand and a handler that throws).
 void ui_app_start(int example) {
     if (example == 0) { ui_mount(void() { Counter(); }); }
+    else if (example == 7) {
+        ui_mount() {
+            ErrorBoundary(void(UiError e) {
+                Text("Recovered");
+                Button("Retry") { ui_boundary_reset(e.boundary); }
+            }) {
+                *Signal<bool> broken = use_signal<bool>(false);
+                if (broken.get()) { throw 7; }
+                Button("Break") { broken.set(true); }
+            }
+            Button("Throw in handler") { throw 3; }
+        }
+    }
     else if (example == 6) { ui_mount(void() { Clock(); }); }
     else if (example == 5) { ui_mount(void() { KitGallery(); }); }
     else if (example == 4) {
