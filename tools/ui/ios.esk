@@ -304,7 +304,11 @@ bool ios_running(Project* p) {
     defer String_free(&text);
     if (fs_read_text(join(p.out("ios"), "reload/pid"), &text) != 0) { return false; }
     int pid = atoi(text.data);
+#ifdef _WIN32
+    return false;   // the simulator runs on a Mac
+#else
     return pid > 0 && kill(pid, 0) == 0;
+#endif
 }
 
 // A booted simulator, booting the first available iPhone when none is.
