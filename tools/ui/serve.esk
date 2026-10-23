@@ -174,11 +174,13 @@ void serve_wait(int client, int after) {
 }
 
 // The script `ui serve` adds to the page: it waits for each build, reloads after one that
-// built, and shows one that failed over the app until the next.
+// built, and shows one that failed over the app until the next. An error the running app
+// reports (the runtime's "ui: error in ..." lines on the console) shows the same way, until
+// a click: the app goes on behind it.
 const string kServeScript = "// Made by ui serve: reload after each build, a failed build's output over the app.\n"
     "let version = -1;\n"
     "let panel = null;\n"
-    "const show = text => {\n"
+    "const show = (text, title = 'ui serve: the build failed') => {\n"
     "  if (!text) { panel?.remove(); panel = null; return; }\n"
     "  if (!panel) {\n"
     "    panel = document.createElement('pre');\n"
@@ -187,14 +189,26 @@ const string kServeScript = "// Made by ui serve: reload after each build, a fai
     "      whiteSpace: 'pre-wrap', zIndex: '2147483647'});\n"
     "    document.body.append(panel);\n"
     "  }\n"
-    "  panel.textContent = 'ui serve: the build failed\\n\\n' + text;\n"
+    "  panel.textContent = title + '\\n\\n' + text;\n"
+    "  panel.dataset.build = title.includes('build') ? '1' : '';\n"
+    "  panel.onclick = panel.dataset.build ? null : () => show('');\n"
+    "};\n"
+    "let report = null;\n"
+    "const printError = console.error;\n"
+    "console.error = (...parts) => {\n"
+    "  printError(...parts);\n"
+    "  const line = parts.join(' ');\n"
+    "  if (line.startsWith('ui: error in ')) report = line.slice(4);\n"
+    "  else if (report && line.startsWith('  in ')) report += '\\n' + line;\n"
+    "  else return;\n"
+    "  show(report, 'ui serve: an error in the app (click to dismiss)');\n"
     "};\n"
     "for (;;) {\n"
     "  try {\n"
     "    const state = await (await fetch('/__ui/wait?v=' + version, {cache: 'no-store'})).json();\n"
     "    if (version >= 0 && state.version !== version && !state.error) { location.reload(); break; }\n"
     "    version = state.version;\n"
-    "    show(state.error);\n"
+    "    if (state.error || panel?.dataset.build) show(state.error);\n"
     "  } catch {\n"
     "    await new Promise(resolve => setTimeout(resolve, 1000));\n"
     "  }\n"
