@@ -22,7 +22,7 @@ void KitGallery() {
                 Heading("A section's heading");
                 Body("Running text, in the theme's ink.");
                 Secondary("Text that explains or qualifies.");
-                Caption("A small note: version 0.1.1");
+                Caption("A small note: version 0.2.0");
             }
 
             Card() {
