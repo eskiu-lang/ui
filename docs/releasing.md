@@ -9,6 +9,7 @@ ui release android      # an App Bundle for Google Play, and an APK
 ui release macos        # an ad-hoc signed .app and distributable .zip
 ui release linux        # a release binary and distributable .tar.gz
 ui release windows      # a release .exe and distributable .zip
+ui release web          # the web build and a .zip of it, to deploy
 ui release ios --upload # straight to App Store Connect, for TestFlight
 ```
 
@@ -85,12 +86,22 @@ UI_ANDROID_KEY_PASSWORD=...        # when it differs from the keystore's
 
 Upload the `.aab` in Play Console (Test and release); the first one makes the app's record.
 
-## Desktop
+## Desktop and the web
 
-- **macOS**: `ui release macos` packages the standalone binary inside the `NAME.app` bundle with
-  its `Info.plist` and `AppIcon.icns`, ad-hoc codesigns the bundle, and creates `NAME-VERSION-macos.zip`.
-- **Linux**: `ui release linux` compiles the release binary and packages `NAME-VERSION-linux.tar.gz`.
-- **Windows**: `ui release windows` compiles the release executable and packages `NAME-VERSION-windows.zip`.
+The packages go to `build/ui/release/`, outside the directories a build serves or bundles.
+
+- **macOS**: `ui release macos` signs the `NAME.app` bundle (for arm64 and x86_64, macOS 11 and
+  later, with its `Info.plist` and `AppIcon.icns`) ad hoc and zips it as
+  `NAME-VERSION-macos.zip`. Another Mac opens it once it is signed with a Developer ID and
+  notarized (`xcrun notarytool`).
+- **Linux**: `ui release linux` packages the binary, `web/` and the icon as
+  `NAME-VERSION-linux.tar.gz`. It needs WebKitGTK 4.1 on the machine.
+- **Windows**: `ui release windows` packages the executable, `web/`, `WebView2Loader.dll` and
+  the icon as `NAME-VERSION-windows.zip`.
+- **The web**: `ui release web` zips the web build as `NAME-VERSION-web.zip`, for any static
+  host.
+
+Release builds of the desktop hosts have no developer tools.
 
 ## What is not there yet
 

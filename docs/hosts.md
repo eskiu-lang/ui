@@ -121,15 +121,22 @@ native menu items (Quit, Edit with standard shortcuts Cmd+C, Cmd+V, Cmd+Z).
 
 `ui build linux` builds the web host and a native GTK 3 application using WebKitGTK
 (`hosts/linux/host.c`). It connects to `webkit2gtk-4.1` (or `webkit2gtk-4.0`) via
-`pkg-config`. The window synchronizes its title with the document title and supports
-snapshot testing.
+`pkg-config`. The app in `web/` beside the executable is served as `app://localhost/` (a path
+with no extension is a route and gets the page), so the page's base, its module imports and
+its routes work as on a server. The window takes the document's title and supports snapshot
+testing; a release build has no inspector.
 
 ## Windows
 
 `ui build windows` builds the web host and a native Win32 application using Microsoft
-Edge WebView2 (`hosts/windows/host.cpp`). It can be compiled using MSVC (`cl.exe`) or
-MinGW (`g++` / `clang++`). It dynamically loads `WebView2Loader.dll` and handles window
-resizing, document title changes, and message pumping.
+Edge WebView2 (`hosts/windows/host.cpp`), with MSVC (`cl.exe`, from a Developer prompt) or
+MinGW-w64 (`g++` on Windows, `x86_64-w64-mingw32-g++` from macOS or Linux); `CXX` picks
+another. The tool fetches the WebView2 SDK's NuGet package once (checked by its SHA-256) for
+its header, and puts its `WebView2Loader.dll` next to the executable. The app in `web/` is
+served as `https://app.assets/`; WebView2 keeps its data in `%LOCALAPPDATA%\NAME`. The window
+has no console, takes the document's title, reloads on F5 and Ctrl+R and closes on Ctrl+W,
+and a failure to start WebView2 says so in a message box. A release build turns the
+developer tools off. Running it needs the WebView2 Runtime, which Windows 10 and 11 carry.
 
 ## Writing a host
 

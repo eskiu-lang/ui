@@ -16,7 +16,7 @@ What each platform needs:
 | `web` | emscripten (`emcc`) |
 | `macos` | Xcode's command-line tools |
 | `linux` | `gcc` or `clang`, `pkg-config`, `libwebkit2gtk-4.1-dev` (or `4.0`) |
-| `windows` | MSVC (`cl`) or MinGW (`g++` / `clang++`), Microsoft Edge WebView2 runtime |
+| `windows` | MSVC (`cl`) or MinGW-w64 (`g++`, or `x86_64-w64-mingw32-g++` from macOS or Linux); the WebView2 SDK is fetched for you |
 | `ios` | Xcode, with an iPhone simulator |
 | `android` | the Android SDK with an NDK, build tools and a platform (`ANDROID_HOME`, `ANDROID_NDK_HOME`), and an emulator or a device |
 
