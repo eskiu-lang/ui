@@ -83,13 +83,16 @@ int Cmd_run(Cmd* self, string cwd) {
 
 // Run it and stop the tool if it fails.
 void Cmd_must(Cmd* self, string cwd) {
-    if (self.run(cwd) != 0) {
+    int code = self.run(cwd);
+    if (code != 0) {
         String line;
         for (i in 0..self.parts.size) {
             if (i > 0) { String_append(&line, " "); }
             String_append(&line, self.parts.data[i].data);
         }
-        print_err("ui: failed: ");
+        // -1: it did not start (not on PATH, or not a program).
+        if (code < 0) { print_err("ui: could not run: "); }
+        else { print_err("ui: failed: "); }
         fail(line.data);
     }
 }

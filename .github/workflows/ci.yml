@@ -41,7 +41,7 @@ jobs:
           mkdir -p "$HOME/.eskiu"
           curl -fsSL -o eskiuc.zip https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-windows-x86_64.zip
           unzip -q eskiuc.zip -d "$HOME/.eskiu"
-          echo "$HOME/.eskiu/bin" >> $GITHUB_PATH
+          cygpath -w "$HOME/.eskiu/bin" >> $GITHUB_PATH
       - name: The Windows host builds and is packaged
         run: |
           # The web part goes through a stand-in compiler (no emscripten); the host is
