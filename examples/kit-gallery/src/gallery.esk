@@ -107,6 +107,20 @@ void KitGallery() {
                 if (deleted.get() == 7) { KitButton("Bring them back", VariantSecondary, void() { deleted.set(0); }); }
             }
 
+            Card() {
+                Heading("Errors");
+                // A render that throws shows the boundary's fallback; the rest of the page goes on.
+                ErrorBoundary(void(UiError e) {
+                    Secondary("This card failed. The rest of the page kept running.");
+                    KitButton("Try again", VariantSecondary) { ui_boundary_reset(e.boundary); }
+                }) {
+                    *Signal<bool> broken = use_signal<bool>(false);
+                    if (broken.get()) { throw 1; }
+                    Secondary("A part of the screen that fails shows a fallback in its place.");
+                    KitButton("Break this card", VariantDanger) { broken.set(true); }
+                }
+            }
+
             Accordion() {
                 Collapsible("What is Eskiu?") {
                     Secondary("A systems language that compiles through LLVM.");

@@ -57,6 +57,14 @@ void kit_gallery() {
     ui_event(layer.id, layer.generation);
     ui_frame();
     check(ui.modals.size == 0, "the backdrop dismisses");
+    // The Errors card: its content breaks, the fallback shows, and it comes back.
+    error_count = 0;
+    ui_on_error(void(UiError error) { note_error(error); });
+    press_label("Break this card");
+    check(error_count == 1 && find_label(ui.root, "Try again") != null && find_label(ui.root, "Break this card") == null,
+        "the card's fallback");
+    press_label("Try again");
+    check(find_label(ui.root, "Break this card") != null, "the card again");
     int64 live = ui_live_allocations();
     for (i in 0..500) {
         press_label(i % 2 == 0 ? "Secondary" : "Ghost");
