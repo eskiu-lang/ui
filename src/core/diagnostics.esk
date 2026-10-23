@@ -24,9 +24,10 @@ string ui_kind_name(int kind) {
 
 // Where the running block is, from the root down: `Column[0] > Row[key 3]`, each step
 // the component name or element kind with its key or its index among its siblings.
-void ui_scope_path(*String out) {
+void ui_scope_path(*String out) { ui_node_path(ui == null ? null : ui.builder, out); }
+
+void ui_node_path(*Node node, *String out) {
     List<*Node> steps;
-    *Node node = ui == null ? null : ui.builder;
     while (node != null && node.parent != null) { steps.push(node); node = node.parent; }
     if (steps.size == 0) { String_append(out, "the root block"); }
     for (int i = steps.size - 1; i >= 0; i--) {
@@ -59,9 +60,9 @@ void ui_require(bool ok, string message) {
     if (!ok) { ui_fail(message); }
 }
 
-// A throw out of a block, handler or effect is not caught by the runtime: the program
-// stops through the uncaught-exception reporter. A caller that catches it anyway leaves
-// the runtime mid-phase, and the next entry point stops here instead of running on it.
+// A throw out of a block, handler or effect is caught by the runtime (src/core/boundary.esk).
+// One that still escapes is an internal error: a caller that catches it leaves the runtime
+// mid-phase, and the next entry point stops here instead of running on it.
 void ui_require_consistent() {
     ui_require(ui.phase == 0 && ui.builder == null && ui.tracking == null,
         "runtime left mid-phase (an exception escaped a block, handler or effect)");

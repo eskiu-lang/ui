@@ -1,6 +1,26 @@
 // The element tree: nodes, matching children (keys, then kind and position), minimal moves, unmounting, props, and the element call every component ends in.
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
+// What an error reports: where it happened (1 render, 2 handler, 3 effect), the scope path
+// (`Column[0] > TodoRow[key 3]`), the exception's text and the boundary that shows it (a
+// node id for ui_boundary_reset; 0 for a handler or an effect). The strings are borrowed for
+// the call or the fallback's render.
+struct UiError { int where; string path; string text; int boundary; }
+
+// An ErrorBoundary's state (the root has one too): its content and fallback, and the error
+// it shows while `failed`.
+struct Boundary {
+    fn()->void content;
+    fn(UiError)->void fallback;
+    bool failed;
+    // A reset (or a failure) changes what the block renders: the old children and hooks go
+    // first.
+    bool switching;
+    int where;
+    string text;
+    string path;
+}
+
 struct Node {
     int id;
     int generation;
@@ -83,6 +103,14 @@ struct Node {
     fn(int)->void on_value;
     int focused;
     string text;
+    // An ErrorBoundary's (and the root's) state, else null.
+    *Boundary boundary;
+    // True while the node's block runs: a throw leaves it set on every node it unwound.
+    bool running;
+    // Where its creation is in the commit: the sequence it goes out with and the offset, so a
+    // rollback knows whether the host will hear of the node.
+    int born;
+    int born_seq;
 }
 
 
@@ -183,6 +211,7 @@ List<bool> ui_kept(List<int>* seq) {
 }
 
 void ui_run(*Node node) {
+    node.running = true;
     node.current = false;
     node.runs++;
     node.cursor = 0;
@@ -270,12 +299,17 @@ void ui_run(*Node node) {
     node.children = node.emitted;
     node.emitted = List<*Node>{};
     node.mounted = true;
+    node.running = false;
 }
 
 // A node's removal is sent before its descendants', so a host knows a subtree leaves (a
 // screen that slides out keeps its content) before it hears of the parts.
 void ui_unmount(*Node node) {
-    ui_emit(6, node, 0);
+    // In a rollback, a node made after the cut never reaches the host: no removal, and its id
+    // is free at once.
+    bool known = ui_known(node);
+    if (known) { ui_emit(6, node, 0); }
+    if (ui.phase == 1) { ui.pass_unmounted.push(node); }
     for (int i = node.children.size - 1; i >= 0; i--) { ui_unmount(node.children.data[i]); }
     if (node.next) { ui_drop_from(&ui.next_nodes, node); node.next = false; }
     if (node.render_write) { ui_drop_from(&ui.render_writes, node); node.render_write = false; }
@@ -298,7 +332,7 @@ void ui_unmount(*Node node) {
     }
     if (node.kind == 12) { ui_drop_from(&ui.modals, node); }
     ui.by_id.data[node.id] = null;
-    ui.retired_ids.push(node.id);
+    if (known) { ui.retired_ids.push(node.id); } else { ui.free_ids.push(node.id); }
     // Every unmount cleanup runs while ALL retired state is still alive. A cleanup
     // may read a signal registered after its own hook, or state in a sibling scope.
     ui.finalizers.push(void() {
@@ -307,7 +341,7 @@ void ui_unmount(*Node node) {
             if (slot.kind == 2) {
                 *Observer effect = (*Observer)slot.data;
                 if (effect.has_cleanup) {
-                    effect.cleanup(); ui_release_closure(effect.cleanup);
+                    ui_guard_cleanup(effect.cleanup); ui_release_closure(effect.cleanup);
                     effect.has_cleanup = false;
                 }
             }
@@ -335,6 +369,7 @@ void ui_unmount(*Node node) {
         if (node.has_on_hover) { ui_release_bool(node.on_hover); }
         if (node.has_on_pan) { ui_release_pan(node.on_pan); }
         if (node.kind == 15) { ui_release_int(node.on_value); }
+        if (node.boundary != null) { ui_free_boundary(node.boundary); }
         node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
         free(node);
     });
@@ -436,6 +471,8 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         node.depth = parent.depth + 1;
         node.fresh = true;
         node.observer = ui_observer(0, node);
+        node.born = ui.commit.len;
+        node.born_seq = ui.sequence;
         ui_emit(1, node, 0);
     } else {
         fn()->void old_block = node.block;
@@ -540,6 +577,7 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     // What the caller gave this element to free with its block.
     for (i in 0..ui.next_owned.size) { node.owned.push(ui.next_owned.data[i]); }
     ui.next_owned.size = 0;
+    if (ui.has_next_boundary) { ui_take_boundary(node); }
     node.block = block;
     node.handler = handler;
     node.handler_cleanup = handler_cleanup;

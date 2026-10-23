@@ -1,0 +1,323 @@
+// Errors that do not close the app: ErrorBoundary, the rollback of a failed render, and the
+// reports of errors in renders, handlers and effects.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A boundary renders `content`. When it throws, the render's mutations are cut from the
+// commit, the nodes it made are freed without reaching the host, the boundary's previous
+// subtree is removed, and `fallback` renders in its place until ui_boundary_reset. A change
+// of an enclosing Scope's key makes a new boundary, which tries again. The root is a
+// boundary too, with a fallback the app may replace (ui_set_fallback).
+//
+//   ErrorBoundary(void(UiError e) { Text("This part failed"); }) {
+//       Chart(data);
+//   }
+void ErrorBoundary(escaping fn(UiError)->void fallback, escaping fn()->void content) {
+    ui_require(!ui.has_next_boundary, "ErrorBoundary staged twice");
+    ui.next_content = content;
+    ui.next_fallback = fallback;
+    ui.has_next_boundary = true;
+    ui.next_name = "ErrorBoundary";
+    ui_element(0, Style{}, null, void() { ui_boundary_block(); }, void() {}, void() {});
+}
+
+// The next element is an ErrorBoundary: it takes the staged content and fallback.
+void ui_take_boundary(*Node node) {
+    ui.has_next_boundary = false;
+    if (node.boundary == null) {
+        node.boundary = alloc<Boundary>(1);
+    } else {
+        fn()->void old_content = node.boundary.content;
+        fn(UiError)->void old_fallback = node.boundary.fallback;
+        ui_retire(void() { ui_release_closure(old_content); ui_release_fallback(old_fallback); });
+    }
+    node.boundary.content = ui.next_content;
+    node.boundary.fallback = ui.next_fallback;
+}
+
+// Try the boundary's content again (from a fallback's button, say). `id` is UiError.boundary;
+// a boundary that is gone or not showing its fallback is left alone.
+void ui_boundary_reset(int id) {
+    if (id <= 0 || id >= ui.by_id.size) { return; }
+    *Node node = ui.by_id.data[id];
+    if (node == null || node.boundary == null || !node.boundary.failed) { return; }
+    node.boundary.failed = false;
+    node.boundary.switching = true;
+    ui_schedule(node);
+}
+
+// What the root shows when a render throws outside any ErrorBoundary.
+void ui_set_fallback(escaping fn(UiError)->void fallback) {
+    ui_release_fallback(ui.root.boundary.fallback);
+    ui.root.boundary.fallback = fallback;
+}
+
+// Told every error the runtime catches (renders, handlers, effects). Without one they are
+// printed to stderr (the console on the web).
+void ui_on_error(escaping fn(UiError)->void handler) {
+    if (ui.has_on_error) { ui_release_fallback(ui.on_error); }
+    ui.on_error = handler;
+    ui.has_on_error = true;
+}
+
+void ui_default_fallback(UiError error) {
+    Column(Style{padding: 24, gap: 8}) {
+        Text("Something went wrong.");
+        Text(error.text);
+    }
+}
+
+string ui_where_name(int where) {
+    if (where == 2) { return "a handler"; }
+    if (where == 3) { return "an effect"; }
+    return "a render";
+}
+
+void ui_report_error(UiError error) {
+    if (ui.has_on_error) {
+        try { ui.on_error(error); } catch (_) {}
+        return;
+    }
+    String message;
+    String_appendf(&message, "ui: error in %s: %s\n  in %s", ui_where_name(error.where), error.text, error.path);
+    println_err(message.data);
+    String_free(&message);
+}
+
+// The block of a boundary node (ui.builder while it runs).
+void ui_boundary_block() {
+    *Node node = ui.builder;
+    *Boundary state = node.boundary;
+    if (state.switching) {
+        state.switching = false;
+        ui_boundary_clear(node);
+    }
+    if (!state.failed) {
+        int from = ui.commit.len;
+        int writes = ui.writes.size;
+        int journal = ui.pass_unmounted.size;
+        *Observer evaluating = ui.evaluating;
+        bool ok = true;
+        string text = null;
+        String path;
+        try { state.content(); } catch (_) {
+            ok = false;
+            text = ui_copy(exception_text());
+            ui_scope_path(&path);
+        }
+        if (ok) { return; }
+        ui_rollback(node, from, writes, journal, evaluating);
+        ui_boundary_fail(node, text, path.data);
+        free(text);
+        String_free(&path);
+    }
+    state.fallback(UiError{state.where, state.path, state.text, node.id});
+}
+
+// A render run by the frame (not inside a boundary's own block) threw: the nearest boundary
+// above `node` takes it, and is returned to run with its fallback. The root's fallback
+// failing is an error nothing can show, so it stops.
+*Node ui_render_failed(*Node node, string text, int from, int writes, int journal, *Observer evaluating) {
+    *Node boundary = node.parent;
+    while (boundary != null && boundary.boundary == null) { boundary = boundary.parent; }
+    if (boundary == null) {
+        String message;
+        String_appendf(&message, "the root fallback failed: %s", text);
+        ui_fail(message.data);
+    }
+    String path;
+    ui_scope_path(&path);
+    ui_rollback(boundary, from, writes, journal, evaluating);
+    ui_boundary_fail(boundary, text, path.data);
+    String_free(&path);
+    boundary.current = true;
+    return boundary;
+}
+
+void ui_boundary_fail(*Node node, string text, string path) {
+    *Boundary state = node.boundary;
+    string old_text = state.text;
+    string old_path = state.path;
+    if (old_text != null) { ui_retire(void() { free(old_text); free(old_path); }); }
+    state.failed = true;
+    state.where = 1;
+    state.text = ui_copy(text);
+    state.path = ui_copy(path);
+    ui_report_error(UiError{1, state.path, state.text, node.id});
+}
+
+// Undo what a failed render did since its save point, then empty the boundary: the commit is
+// cut back to `from`, the removals cut with it are sent again for the nodes the host knows,
+// and the boundary's children and hooks go (nodes made after the cut without a removal).
+void ui_rollback(*Node node, int from, int writes, int journal, *Observer evaluating) {
+    ui_unwind_evaluating(evaluating);
+    ui.builder = node.running ? node : null;
+    ui.tracking = node.running ? node.observer : null;
+    for (i in writes..ui.writes.size) { ui_release_closure(ui.writes.data[i]); }
+    ui.writes.size = writes;
+    ui_drop_staged();
+    ui.commit.len = from;
+    ui.discard_from = from;
+    int end = ui.pass_unmounted.size;
+    for (i in journal..end) {
+        *Node gone = ui.pass_unmounted.data[i];
+        if (ui_known(gone)) { ui_emit(6, gone, 0); }
+    }
+    ui_boundary_clear(node);
+    ui.discard_from = -1;
+}
+
+// Whether the host has heard (or will, with this commit) of the node. Outside a rollback
+// every node counts as known.
+bool ui_known(*Node node) {
+    return ui.discard_from < 0 || node.born_seq != ui.sequence || node.born < ui.discard_from;
+}
+
+// Observers a throw left evaluating (down to `depth`, the one computing when the work began)
+// are dirty again, to be computed when next read.
+void ui_unwind_evaluating(*Observer depth) {
+    while (ui.evaluating != null && ui.evaluating != depth) {
+        *Observer observer = ui.evaluating;
+        observer.evaluating = false;
+        observer.dirty = true;
+        ui.evaluating = observer.below;
+    }
+}
+
+// What an element call staged for the next element, left behind by a throw.
+void ui_drop_staged() {
+    ui.next_name = null;
+    ui.next_input = null;
+    ui.next_source = null;
+    ui.next_switch = null;
+    ui.next_slider = null;
+    ui.next_list = null;
+    ui.next_refresh = null;
+    ui.next_view_type = null;
+    ui_free_pairs(&ui.next_native_props);
+    ui_run_owned(&ui.next_owned);
+    if (ui.has_next_layout) { ui_release_frame(ui.next_layout); ui.has_next_layout = false; }
+    if (ui.has_next_hover) { ui_release_bool(ui.next_hover); ui.has_next_hover = false; }
+    if (ui.has_next_pan) { ui_release_pan(ui.next_pan); ui.has_next_pan = false; }
+    if (ui.has_next_boundary) {
+        ui_release_closure(ui.next_content);
+        ui_release_fallback(ui.next_fallback);
+        ui.has_next_boundary = false;
+    }
+}
+
+// Remove every child of the boundary and drop its hooks. A boundary whose block is running
+// keeps running: its matching state starts over, with no old children.
+void ui_boundary_clear(*Node node) {
+    List<*Node> doomed;
+    if (node.running) {
+        for (i in 0..node.children.size) {
+            if (!node.children.data[i].seen) { doomed.push(node.children.data[i]); }
+        }
+        for (i in 0..node.emitted.size) { doomed.push(node.emitted.data[i]); }
+        node.old_unkeyed.free();
+        if (node.old_keys.mask != 0) { node.old_keys.free(); }
+        if (node.new_keys.mask != 0) { node.new_keys.free(); }
+        node.indexed = false;
+        for (k in 0..kKinds) { node.kind_emitted[k] = 0; }
+    } else {
+        for (i in 0..node.children.size) { doomed.push(node.children.data[i]); }
+    }
+    node.children.free();
+    node.emitted.free();
+    for (i in 0..doomed.size) { ui_settle(doomed.data[i]); }
+    for (i in 0..doomed.size) { ui_unmount(doomed.data[i]); }
+    doomed.free();
+    ui_untrack(node.observer);
+    ui_discard_slots(node);
+}
+
+// A node a throw left mid-run has its children in two lists (the old ones not matched yet,
+// and the ones this run emitted): gather them so ui_unmount reaches every one.
+void ui_settle(*Node node) {
+    if (node.running) {
+        List<*Node> all;
+        for (i in 0..node.children.size) {
+            if (!node.children.data[i].seen) { all.push(node.children.data[i]); }
+        }
+        for (i in 0..node.emitted.size) { all.push(node.emitted.data[i]); }
+        node.children.free();
+        node.emitted.free();
+        node.children = all;
+        node.old_unkeyed.free();
+        if (node.old_keys.mask != 0) { node.old_keys.free(); }
+        if (node.new_keys.mask != 0) { node.new_keys.free(); }
+        node.running = false;
+    }
+    for (i in 0..node.children.size) { ui_settle(node.children.data[i]); }
+}
+
+// Drop a node's hooks as an unmount does (cleanups after the commit, then the state), and let
+// the next run make new ones.
+void ui_discard_slots(*Node node) {
+    *List<Slot> slots = alloc<List<Slot>>(1);
+    *slots = node.slots;
+    node.slots = List<Slot>{};
+    node.cursor = 0;
+    node.mounted = false;
+    for (i in 0..slots.size) {
+        Slot slot = slots.data[i];
+        if (slot.observer != null) {
+            ui_untrack(slot.observer);
+            ui_unqueue(slot.observer.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, slot.observer);
+        }
+        if (slot.kind == 4) { ui_drop_back((*BackEntry)slot.data); }
+        if (slot.kind == 5) { ui_drop_native((*NativeHandler)slot.data); }
+    }
+    ui.finalizers.push(void() {
+        for (i in 0..slots.size) {
+            Slot slot = slots.data[i];
+            if (slot.kind == 2) {
+                *Observer effect = (*Observer)slot.data;
+                if (effect.has_cleanup) {
+                    ui_guard_cleanup(effect.cleanup); ui_release_closure(effect.cleanup);
+                    effect.has_cleanup = false;
+                }
+            }
+        }
+    });
+    ui_retire(void() {
+        for (int i = slots.size - 1; i >= 0; i--) {
+            Slot slot = slots.data[i];
+            slot.dispose(); ui_release_closure(slot.dispose);
+        }
+        slots.free();
+        free(slots);
+    });
+}
+
+void ui_free_boundary(*Boundary boundary) {
+    ui_release_closure(boundary.content);
+    ui_release_fallback(boundary.fallback);
+    free(boundary.text);
+    free(boundary.path);
+    free(boundary);
+}
+
+// Run an app's cleanup (an effect's, a use_mount's on_unmount), reporting a throw as an
+// effect's instead of stopping. The commit's own cleanups run unguarded: on the web a loop
+// inside a try is slow, and they are the runtime's.
+void ui_guard_cleanup(fn()->void callback) {
+    try { callback(); } catch (_) {
+        string text = ui_copy(exception_text());
+        ui_unwind_evaluating(null);
+        ui.tracking = null;
+        ui_report_error(UiError{3, "a cleanup", text, 0});
+        free(text);
+    }
+}
+
+#ifdef __EMSCRIPTEN__
+// The C++ runtime's default terminate handler demangles the type of an uncaught exception
+// for its message, and the demangler is 65 KB of a web module. An exception ui catches never
+// reaches it: this one declines (status -2, "not a valid name"), and the linker leaves the
+// real one out.
+*char __cxa_demangle(string mangled, *char buffer, *int64 length, *int status) {
+    if (status != null) { *status = -2; }
+    return null;
+}
+#endif

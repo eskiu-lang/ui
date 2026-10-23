@@ -29,6 +29,8 @@ struct Observer {
     fn()->void cleanup;
     bool has_cleanup;
     *Source output;
+    // The observer being computed when this one started (ui.evaluating's chain).
+    *Observer below;
 }
 
 struct Slot { int kind; *void tag; *void data; fn()->void dispose; *Observer observer; }
@@ -141,6 +143,9 @@ void ui_validate(*Observer observer) {
     ui_require(!observer.evaluating, "memo cycle");
     if (!observer.dirty) { return; }
     observer.evaluating = true;
+    // A throw out of compute leaves it on the chain: the rollback marks it dirty again.
+    observer.below = ui.evaluating;
+    ui.evaluating = observer;
     *Observer previous = ui.tracking;
     ui_untrack(observer);
     ui.tracking = observer;
@@ -148,6 +153,7 @@ void ui_validate(*Observer observer) {
     observer.compute();
     ui.tracking = previous;
     observer.evaluating = false;
+    ui.evaluating = observer.below;
 }
 
 *Observer ui_observer(int kind, *Node owner) {
@@ -311,7 +317,7 @@ void use_mount(escaping fn()->void on_mount, escaping fn()->void on_unmount) {
     }
     slot.data = &tag;
     slot.dispose = void() {
-        on_unmount();
+        ui_guard_cleanup(on_unmount);
         ui_release_closure(on_unmount);
     };
     on_mount();

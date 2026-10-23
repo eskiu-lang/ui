@@ -31,6 +31,8 @@ for asset in (HERE / "tests/harness/assets").iterdir():
     shutil.copyfile(asset, BUILD / asset.name)
 # Every example is in this module; an app built by tools/ui carries only its own code.
 # The test module holds every example and the whole kit; an app carries only what it uses.
-if (BUILD / "app.wasm").stat().st_size > 200 * 1024:
-    raise SystemExit("test wasm budget exceeded (200 KiB)")
+# 216 KiB since the runtime catches exceptions (error boundaries): the C++ exception runtime
+# and the rollback code are about 27 KB of it.
+if (BUILD / "app.wasm").stat().st_size > 216 * 1024:
+    raise SystemExit("test wasm budget exceeded (216 KiB)")
 print("Built:", BUILD, "wasm bytes:", (BUILD / "app.wasm").stat().st_size)

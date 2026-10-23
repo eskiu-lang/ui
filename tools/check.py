@@ -13,6 +13,9 @@ BUILD = HERE / "build"
 CC = os.environ.get("CLANG", "clang")
 ESKIUC = Path(find_compiler())
 ENV = {**compiler_env(), "ASAN_OPTIONS": "detect_leaks=0:exitcode=86"}
+# The runtime catches exceptions (error boundaries): a link by hand adds the C++ EH runtime,
+# as eskiuc's own link does.
+EH = ["-lc++"] if os.uname().sysname == "Darwin" else ["-lstdc++"]
 
 
 def run(args, **kwargs):
@@ -33,13 +36,14 @@ def build_model(compiler, name, opt, asan=False):
     if asan:
         # --test-codegen returns IR before the driver's sanitizer pipeline. Tell
         # clang to instrument every generated Eskiu function, not just heap.c.
-        raw = re.sub(r"(?m)^(define [^\n]*)\{$", r"\1 sanitize_address {", raw)
+        # The attribute goes before a personality (functions with a try have one).
+        raw = re.sub(r"(?m)^(define [^\n]*?)( personality [^\n]*)? \{$", r"\1 sanitize_address\2 {", raw)
         assert "sanitize_address" in raw
     ir = BUILD / f"{name}.ll"
     ir.write_text(raw)
     binary = BUILD / name
     run([CC, opt, "-Wno-override-module", *(["-fsanitize=address"] if asan else []),
-         ir, HERE / "tests/heap.c", "-o", binary])
+         ir, HERE / "tests/heap.c", *EH, "-o", binary])
     result = run([binary], capture_output=True, text=True)
     print(name + ":\n" + result.stdout, end="")
     return result.stdout
@@ -60,7 +64,7 @@ def main():
     run([ESKIUC, HERE / "tests/rejections.esk", "-o", BUILD / "rejections"])
     for mode, message in [("1", "render loop"), ("2", "hook kind/type changed"),
                           ("3", "duplicate key"), ("4", "memo cycle"),
-                          ("5", "uncaught exception"), ("6", "runtime left mid-phase"),
+                          ("5", "the root fallback failed: int 8"),
                           ("7", "duplicate key"),
                           ("9", "RefreshControl must come right before"),
                           ("8", "slot 0: expected use_signal, found use_memo\n  in Column[0] > TodoRow[key 3]")]:
@@ -74,7 +78,7 @@ def main():
         raise AssertionError("ASan negative control did not detect the expired payload: " + result.stderr)
     print("PASS ASan negative control")
     run([ESKIUC, HERE / "tests/benchmark.esk", "-O2", "-o", BUILD / "benchmark.o"])
-    run([CC, BUILD / "benchmark.o", HERE / "tests/heap.c", "-o", BUILD / "benchmark"])
+    run([CC, BUILD / "benchmark.o", HERE / "tests/heap.c", *EH, "-o", BUILD / "benchmark"])
     measurements["recording-renderer-benchmark"] = run([BUILD / "benchmark"], capture_output=True, text=True).stdout
     print(measurements["recording-renderer-benchmark"], end="")
     (BUILD / "host-results.json").write_text(json.dumps(measurements, indent=2) + "\n")

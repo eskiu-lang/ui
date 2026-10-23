@@ -9,6 +9,8 @@ int main(int argc, string* argv) {
     mode = argv[1][0] - '0';
     Ui runtime;
     ui_init(&runtime, host);
+    // A render that throws shows the root's fallback; one that throws too is unrecoverable.
+    if (mode == 5) { ui_set_fallback(void(UiError e) { throw 8; }); }
     ui_mount() {
         revision = use_signal<int>(0);
         int version = revision.get();
@@ -21,7 +23,7 @@ int main(int argc, string* argv) {
             Row(Style{key: key(0)}) {}
             Row(Style{key: key(0)}) {}
         }
-        if (mode == 5 || mode == 6) { throw 7; }
+        if (mode == 5) { throw 7; }
         if (mode == 8) {
             Column(Style{}) {
                 Scope("TodoRow", key(3)) {
@@ -37,9 +39,6 @@ int main(int argc, string* argv) {
             cyclic = use_memo<int>(int() { return cyclic.get(); });
             cyclic.get();
         }
-    }
-    if (mode == 6) {
-        try { ui_frame(); } catch (int e) {}
     }
     ui_frame();
     if (mode == 2 || mode == 8) { revision.set(1); ui_frame(); }

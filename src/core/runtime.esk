@@ -120,6 +120,19 @@ struct Ui {
     string locale;
     bool rtl;
     bool in_flight;
+    // Error recovery (src/core/boundary.esk): the nodes unmounted in this frame's renders, so
+    // a rollback sends their cut removals again; the commit offset a rollback cuts at (-1
+    // outside one); the observer being computed (linked through `below`); the next
+    // ErrorBoundary's parts; the error
+    // handler (ui_on_error).
+    List<*Node> pass_unmounted;
+    int discard_from;
+    *Observer evaluating;
+    fn()->void next_content;
+    fn(UiError)->void next_fallback;
+    bool has_next_boundary;
+    fn(UiError)->void on_error;
+    bool has_on_error;
 }
 
 
@@ -144,14 +157,20 @@ void ui_init(*Ui runtime, escaping fn(*uint8, int)->void apply) {
     ui.generations.push(0);
     *Node root = alloc<Node>(1);
     ui_assign_id(root);
-    root.block = void() {}; root.handler = void() {}; root.handler_cleanup = void() {};
+    root.block = void() { ui_boundary_block(); };
+    root.handler = void() {}; root.handler_cleanup = void() {};
     root.observer = ui_observer(0, root);
+    root.boundary = alloc<Boundary>(1);
+    root.boundary.content = void() {};
+    root.boundary.fallback = void(UiError error) { ui_default_fallback(error); };
     ui.root = root;
+    ui.discard_from = -1;
 }
 
 void ui_mount(escaping fn()->void block) {
     ui_require(!ui.root.next && !ui.root.mounted, "already mounted");
-    ui.root.block = block;
+    ui_release_closure(ui.root.boundary.content);
+    ui.root.boundary.content = block;
     ui_schedule(ui.root);
 }
 
@@ -180,8 +199,34 @@ void ui_run_effects() {
     List<int> depths;
     for (i in 0..due.size) { depths.push(due.data[i].owner.depth); }
     List<int> order = ui_by_depth(&depths);
-    for (i in 0..order.size) {
-        *Observer effect = due.data[order.data[i]];
+    // A throw reports the effect, which keeps no cleanup, and the loop goes on with the next
+    // one. The loop is a function of its own, so the try holds one call: on the web each call
+    // made directly inside a try goes through a JavaScript wrapper.
+    int at = 0;
+    *Observer effect = null;
+    while (at < order.size) {
+        try { ui_effects_from(&due, &order, &at, &effect); } catch (_) {
+            string text = ui_copy(exception_text());
+            ui_unwind_evaluating(null);
+            ui.tracking = null;
+            if (effect.has_cleanup) { ui_release_closure(effect.cleanup); effect.has_cleanup = false; }
+            String path;
+            ui_node_path(effect.owner, &path);
+            ui_report_error(UiError{3, path.data, text, 0});
+            String_free(&path);
+            free(text);
+        }
+    }
+    order.free();
+    depths.free();
+    due.free();
+}
+
+void ui_effects_from(List<*Observer>* due, List<int>* order, *int at, **Observer current) {
+    while (*at < order.size) {
+        *Observer effect = due.data[order.data[*at]];
+        *current = effect;
+        *at = *at + 1;
         effect.queued = false;
         if (!effect.dirty) { continue; }
         if (effect.has_cleanup) {
@@ -189,9 +234,6 @@ void ui_run_effects() {
         }
         ui_validate(effect);
     }
-    order.free();
-    depths.free();
-    due.free();
 }
 
 void ui_complete(int sequence) {
@@ -233,15 +275,44 @@ bool ui_memo_work() {
     return false;
 }
 
+void ui_memos_from(*int at, **Observer current) {
+    while (*at < ui.dirty_memos.size) {
+        *Observer memo = ui.dirty_memos.data[*at];
+        *current = memo;
+        *at = *at + 1;
+        memo.queued = false;
+        if (memo.dirty && memo.output.readers.size > 0) { ui_validate(memo); }
+    }
+}
+
+// Where a render started, for the rollback if it throws.
+struct RenderSave { *Node node; int from; int writes; int journal; *Observer evaluating; }
+
+void ui_renders_from(List<*Node>* run, *int at, *RenderSave save) {
+    while (*at < run.size) {
+        *Node node = run.data[*at];
+        *at = *at + 1;
+        if (!node.current) { continue; }
+        *save = RenderSave{node, ui.commit.len, ui.writes.size, ui.pass_unmounted.size, ui.evaluating};
+        ui_run(node);
+    }
+}
+
 bool ui_frame() {
     ui_require_consistent();
     ui_require(!ui.in_flight, "frame while commit in flight");
     // Validate observed memos even when their consumers have not been scheduled yet.
     // Validation can queue more memos; the loop reaches them too.
-    for (int i = 0; i < ui.dirty_memos.size; i++) {
-        *Observer memo = ui.dirty_memos.data[i];
-        memo.queued = false;
-        if (memo.dirty && memo.output.readers.size > 0) { ui_validate(memo); }
+    // A memo that throws stays dirty and its readers run again, so it throws again where a
+    // render reads it, inside a boundary (which reports it).
+    int next_memo = 0;
+    *Observer memo = null;
+    while (next_memo < ui.dirty_memos.size) {
+        try { ui_memos_from(&next_memo, &memo); } catch (_) {
+            ui_unwind_evaluating(null);
+            ui.tracking = null;
+            ui_changed(memo.output);
+        }
     }
     ui.dirty_memos.size = 0;
     if (ui.next_nodes.size == 0 && ui.dirty_effects.size == 0 && ui.commands.len == 0) { return false; }
@@ -255,13 +326,23 @@ bool ui_frame() {
     // Parents before children: a parent's run re-runs a dirty child and clears it.
     List<int> order = ui_by_depth(&depths);
     ui.phase = 1;
-    for (i in 0..order.size) {
-        *Node node = due.data[order.data[i]];
-        if (node.current) { ui_run(node); }
-    }
+    List<*Node> run;
+    for (i in 0..order.size) { run.push(due.data[order.data[i]]); }
     order.free();
     depths.free();
     due.free();
+    // A throw no boundary inside the node caught goes to the nearest boundary above it,
+    // which runs again with its fallback (a boundary's own content is caught in its block).
+    int at = 0;
+    RenderSave save;
+    while (at < run.size) {
+        try { ui_renders_from(&run, &at, &save); } catch (_) {
+            string text = ui_copy(exception_text());
+            run.push(ui_render_failed(save.node, text, save.from, save.writes, save.journal, save.evaluating));
+            free(text);
+        }
+    }
+    run.free();
     for (i in 0..ui.writes.size) {
         fn()->void write = ui.writes.data[i];
         write(); ui_release_closure(write);
@@ -279,6 +360,7 @@ bool ui_frame() {
         ui.looping.push(node);
     }
     ui.render_writes.size = 0;
+    ui.pass_unmounted.size = 0;
     ui.phase = 0;
     // Commands asked for since the last frame go after the tree's mutations.
     if (ui.commands.len > 0) {
@@ -347,7 +429,32 @@ bool ui_event_scroll(int id, int generation, int offset, int viewport) {
     return ui_post(Event{id, generation, 5, offset, null, viewport});
 }
 
+// A handler that throws is reported and the app goes on; what it wrote before the throw
+// stays written.
 bool ui_dispatch_event(*Event event) {
+    *Node builder = ui.builder;
+    *Observer tracking = ui.tracking;
+    int phase = ui.phase;
+    *Observer evaluating = ui.evaluating;
+    bool handled = true;
+    try { handled = ui_dispatch_now(event); } catch (_) {
+        string text = ui_copy(exception_text());
+        ui_unwind_evaluating(evaluating);
+        ui.builder = builder;
+        ui.tracking = tracking;
+        ui.phase = phase;
+        String path;
+        *Node node = event.id > 0 && event.id < ui.by_id.size ? ui.by_id.data[event.id] : null;
+        if (node != null && node.generation == event.generation) { ui_node_path(node, &path); }
+        else { String_append(&path, "a handler"); }
+        ui_report_error(UiError{2, path.data, text, 0});
+        String_free(&path);
+        free(text);
+    }
+    return handled;
+}
+
+bool ui_dispatch_now(*Event event) {
     if (event.kind == 8) {
         // A native module's event: every handler of the channel, newest first.
         bool handled = false;
@@ -469,5 +576,7 @@ void ui_shutdown() {
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }
     ui.native_handlers.free(); ui_free_pairs(&ui.next_native_props);
     ui.finalizers.free(); ui.events.free();
+    ui.pass_unmounted.free();
+    if (ui.has_on_error) { ui_release_fallback(ui.on_error); }
     ui = null;
 }

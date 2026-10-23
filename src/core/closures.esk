@@ -35,3 +35,5 @@ void ui_release_pan(escaping fn(Pan)->void callback) { free_closure(callback); }
 void ui_release_frame(escaping fn(Frame)->void callback) { free_closure(callback); }
 
 void ui_release_choice(escaping fn(int)->void callback) { free_closure(callback); }
+
+void ui_release_fallback(escaping fn(UiError)->void callback) { free_closure(callback); }
