@@ -200,6 +200,12 @@ string xml_escape(string text) {
 }
 
 // Recursively copy a directory into `dst`.
+// `dst` made a copy of `src` afresh, so a file removed from `src` leaves `dst` too.
+void replace_dir(string src, string dst) {
+    fs_remove_all(dst);
+    copy_dir_all(src, dst);
+}
+
 void copy_dir_all(string src, string dst) {
     if (fs_is_dir(src) != 1) { return; }
     fs_mkdir_p(dst);
@@ -216,3 +222,94 @@ void copy_dir_all(string src, string dst) {
         }
     }
 }
+
+// Whether `text` ends with `suffix`.
+bool ends_with(string text, string suffix) {
+    int64 n = (int64)strlen(text);
+    int64 m = (int64)strlen(suffix);
+    return n >= m && strcmp(&text[n - m], suffix) == 0;
+}
+
+// The SHA-256 of the file at `path` as 64 lowercase hex digits ("" when it cannot be read).
+void file_sha256(string path, String* out) {
+    int64 size = 0;
+    *uint8 data = fs_read_all(path, &size);
+    if (data == null) { return; }
+    hash_sha256_hex(data, size, out);
+    free(data);
+}
+
+// Windows' own tar.exe (bsdtar, which reads and writes zip), not a GNU tar found first on PATH
+// in a Git or MSYS shell.
+string windows_tar() {
+    string root = env_get("SystemRoot");
+    if (root != null && root[0] != 0) {
+        string tar = join(root, "System32\\tar.exe");
+        if (fs_exists(tar) == 1) { return tar; }
+    }
+    return "tar";
+}
+
+// `archive` unpacked into `dir`: unzip for a .zip or .nupkg (GNU tar reads no zip; on Windows
+// its own tar does), tar for the rest.
+void extract_archive(string archive, string dir) {
+    Cmd cmd;
+    defer cmd.free();
+#ifdef _WIN32
+    if (true) {
+        cmd.add(windows_tar()); cmd.add("-xf"); cmd.add(archive); cmd.add("-C"); cmd.add(dir);
+    } else
+#endif
+    if (ends_with(archive, ".zip") || ends_with(archive, ".nupkg")) {
+        cmd.add("unzip"); cmd.add("-q"); cmd.add("-o"); cmd.add(archive); cmd.add("-d"); cmd.add(dir);
+    } else {
+        cmd.add("tar"); cmd.add("-xf"); cmd.add(archive); cmd.add("-C"); cmd.add(dir);
+    }
+    if (cmd.run(null) != 0) {
+        String message;
+        String_appendf(&message, "ui: could not unpack %s (it needs %s)", archive, cmd.parts.data[0].data);
+        fail(message.data);
+    }
+}
+
+// The archive at `url` unpacked into `dir`, once: downloaded beside it, checked against
+// `sha256` (64 hex digits) before anything is unpacked, then moved into place whole, so a
+// failed or altered download never leaves a `dir` behind. `name` is for the messages.
+void fetch_archive(string name, string url, string sha256, string dir) {
+    if (fs_is_dir(dir) == 1) { return; }
+    String download;
+    String_appendf(&download, "%s.download%s", dir, ends_with(url, ".zip") || ends_with(url, ".nupkg") ? ".zip" : "");
+    String tmp;
+    String_appendf(&tmp, "%s.tmp", dir);
+    fs_remove_all(download.data);
+    fs_remove_all(tmp.data);
+    String parent;
+    path_dirname(&parent, dir);
+    fs_mkdir_p(parent.data);
+    printf("ui: fetching %s from %s\n", name, url);
+    Cmd curl;
+    curl.add("curl"); curl.add("-fsSL"); curl.add("--retry"); curl.add("2"); curl.add("-o"); curl.add(download.data); curl.add(url);
+    if (curl.run(null) != 0) {
+        String message;
+        String_appendf(&message, "ui: could not download %s from %s", name, url);
+        fail(message.data);
+    }
+    curl.free();
+    String got;
+    file_sha256(download.data, &got);
+    if (String_eq_cstr(&got, sha256) != 1) {
+        fs_remove_all(download.data);
+        String message;
+        String_appendf(&message, "ui: %s from %s has sha256 %s, not %s", name, url, got.data == null ? "?" : got.data, sha256);
+        fail(message.data);
+    }
+    fs_mkdir_p(tmp.data);
+    extract_archive(download.data, tmp.data);
+    fs_remove_all(download.data);
+    if (fs_rename(tmp.data, dir) != 0) {
+        String message;
+        String_appendf(&message, "ui: could not move %s into %s", tmp.data, dir);
+        fail(message.data);
+    }
+}
+

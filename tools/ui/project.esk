@@ -228,32 +228,8 @@ void Project_native_archives(Project* self, string platform, List<String>* out) 
                 string base = join(eskiu_home(), "native");
                 string dir = join(base, sha256.data);
                 string lib_dir = join(dir, sub.data);
-                if (fs_is_dir(lib_dir) != 1) {
-                    fs_mkdir_p(base);
-                    String dl;
-                    String_appendf(&dl, "%s.download", dir);
-                    String tmp;
-                    String_appendf(&tmp, "%s.tmp", dir);
-                    fs_remove_all(dl.data);
-                    fs_remove_all(tmp.data);
-                    fs_mkdir_p(tmp.data);
-                    Cmd curl;
-                    curl.add("curl"); curl.add("-fsSL"); curl.add("--retry"); curl.add("2");
-                    curl.add("-o"); curl.add(dl.data); curl.add(url.data);
-                    curl.must(null);
-                    curl.free();
-                    Cmd tar;
-                    tar.add("tar"); tar.add("-xf"); tar.add(dl.data); tar.add("-C"); tar.add(tmp.data);
-                    tar.must(null);
-                    tar.free();
-                    fs_remove_all(dl.data);
-                    Cmd mv;
-                    mv.add("mv"); mv.add(tmp.data); mv.add(dir);
-                    mv.must(null);
-                    mv.free();
-                    String_free(&dl);
-                    String_free(&tmp);
-                }
+                // Downloaded once into the cache eskiuc shares, checked against its sha256.
+                if (fs_is_dir(lib_dir) != 1) { fetch_archive(lib_name.data, url.data, sha256.data, dir); }
                 String archive;
                 String_appendf(&archive, "%s/lib%s.a", lib_dir, lib_name.data);
                 if (fs_exists(archive.data) == 1) { out.push(archive); }
