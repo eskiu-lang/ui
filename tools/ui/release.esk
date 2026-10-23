@@ -29,7 +29,7 @@ void release_preflight(Project* p, bool ios) {
             fail("ui release ios: the App Store needs an icon. Add a square PNG of 1024 × 1024 or larger and name it in ui.toml:\n\n"
                  "  [app]\n  icon = \"icon.png\"");
         }
-        println_err("ui release: warning: no [app] icon in ui.toml; Android shows its default icon");
+        println_err("ui release: warning: no [app] icon in ui.toml; the app shows the platform's default icon");
     }
 }
 
@@ -219,35 +219,56 @@ void release_android(Project* p) {
     if (ui_upload) { printf("  (--upload is for iOS: Play takes uploads in its console or through its API.)\n"); }
 }
 
-void release_macos(Project* p) {
-    string binary = build_macos(p);
-    String app_dir_str;
-    defer String_free(&app_dir_str);
-    String_appendf(&app_dir_str, "%s.app", p.name.data);
-    string app_dir = join(p.out("macos"), app_dir_str.data);
+// Where a release's packages go: build/ui/release, outside every directory a build serves or
+// bundles, so a package never ends up inside the next one.
+string release_dir(Project* p) { return p.out("release"); }
 
+// `names` (in `from`) as the zip `zip_path`: tar -a on Windows, zip elsewhere (GNU tar writes
+// no zip).
+void release_zip(string from, List<string>* names, string zip_path) {
+    fs_remove(zip_path);
+    Cmd zip;
+    defer zip.free();
+#ifdef _WIN32
+    zip.add(windows_tar()); zip.add("-a"); zip.add("-cf"); zip.add(zip_path);
+#else
+    zip.add("zip"); zip.add("-qry"); zip.add(zip_path);
+#endif
+    for (i in 0..names.size) { zip.add(names.data[i]); }
+    if (zip.run(from) != 0) {
+        String message;
+        String_appendf(&message, "ui release: could not write %s (it needs %s)", zip_path, zip.parts.data[0].data);
+        fail(message.data);
+    }
+}
+
+void release_macos(Project* p) {
+    build_macos(p);
+    String bundle;
+    defer String_free(&bundle);
+    String_appendf(&bundle, "%s.app", p.name.data);
+    string app_dir = join(p.out("macos"), bundle.data);
 #ifdef __APPLE__
-    // Ad-hoc codesign the bundle
+    // Signed ad hoc: it runs on this Mac; another Mac needs a Developer ID and notarization.
     Cmd sign;
     sign.add("codesign"); sign.add("--force"); sign.add("--deep"); sign.add("--sign"); sign.add("-"); sign.add(app_dir);
-    sign.run(null);
+    sign.must(null);
     sign.free();
-
-    // Create distributable zip archive
     String zip_name;
     defer String_free(&zip_name);
     String_appendf(&zip_name, "%s-%s-macos.zip", p.name.data, app_version(p));
-    string zip_path = join(p.out("macos"), zip_name.data);
+    string zip_path = join(release_dir(p), zip_name.data);
+    fs_remove(zip_path);
     Cmd zip;
     zip.add("ditto"); zip.add("-c"); zip.add("-k"); zip.add("--keepParent"); zip.add(app_dir); zip.add(zip_path);
-    zip.run(null);
+    zip.must(null);
     zip.free();
     printf("\nmacos: %s (%s)\n  %s (%s), to distribute\n  version %s, build %s\n",
         app_dir, release_size(app_dir), zip_path, release_size(zip_path), app_version(p), app_build(p));
+    printf("  next: sign it with a Developer ID and notarize it (xcrun notarytool) so other Macs open it.\n");
 #else
-    printf("\nmacos: %s (%s)\n  version %s, build %s\n", app_dir, release_size(app_dir), app_version(p), app_build(p));
+    fail("ui release macos: it builds on a Mac, with Xcode's tools.");
 #endif
-    printf("  next: distribute the .app or .zip directly, or notarize with Apple for Gatekeeper.\n");
 }
 
 void release_linux(Project* p) {
@@ -255,21 +276,17 @@ void release_linux(Project* p) {
     String tar_name;
     defer String_free(&tar_name);
     String_appendf(&tar_name, "%s-%s-linux.tar.gz", p.name.data, app_version(p));
-    string tar_path = join(p.out("linux"), tar_name.data);
+    string tar_path = join(release_dir(p), tar_name.data);
     Cmd tar;
     tar.add("tar"); tar.add("-czf"); tar.add(tar_path); tar.add("-C"); tar.add(p.out("linux"));
     tar.add(p.name.data);
-    if (fs_is_dir(join(p.out("linux"), "web")) == 1) {
-        tar.add("web");
-    }
-    if (fs_exists(join(p.out("linux"), "icon.png")) == 1) {
-        tar.add("icon.png");
-    }
-    tar.run(null);
+    if (fs_is_dir(join(p.out("linux"), "web")) == 1) { tar.add("web"); }
+    if (fs_exists(join(p.out("linux"), "icon.png")) == 1) { tar.add("icon.png"); }
+    tar.must(null);
     tar.free();
     printf("\nlinux: %s (%s)\n  %s (%s), to distribute\n  version %s, build %s\n",
         binary, release_size(binary), tar_path, release_size(tar_path), app_version(p), app_build(p));
-    printf("  next: distribute the binary or tarball, or package as an AppImage / Flatpak / deb.\n");
+    printf("  next: it needs WebKitGTK 4.1 on the machine (libwebkit2gtk-4.1-0); an AppImage, Flatpak or deb can carry it.\n");
 }
 
 void release_windows(Project* p) {
@@ -277,27 +294,18 @@ void release_windows(Project* p) {
     String zip_name;
     defer String_free(&zip_name);
     String_appendf(&zip_name, "%s-%s-windows.zip", p.name.data, app_version(p));
-    string zip_path = join(p.out("windows"), zip_name.data);
+    string zip_path = join(release_dir(p), zip_name.data);
     String exe_name;
     defer String_free(&exe_name);
     String_appendf(&exe_name, "%s.exe", p.name.data);
-    Cmd zip;
-    zip.add("tar"); zip.add("-a"); zip.add("-cf"); zip.add(zip_path); zip.add("-C"); zip.add(p.out("windows"));
-    zip.add(exe_name.data);
-    if (fs_is_dir(join(p.out("windows"), "web")) == 1) {
-        zip.add("web");
-    }
-    if (fs_exists(join(p.out("windows"), "icon.ico")) == 1) {
-        zip.add("icon.ico");
-    }
-    if (fs_exists(join(p.out("windows"), "WebView2Loader.dll")) == 1) {
-        zip.add("WebView2Loader.dll");
-    }
-    zip.run(null);
-    zip.free();
+    List<string> names;
+    defer names.free();
+    names.push(exe_name.data); names.push("web"); names.push("WebView2Loader.dll");
+    if (fs_exists(join(p.out("windows"), "icon.ico")) == 1) { names.push("icon.ico"); }
+    release_zip(p.out("windows"), &names, zip_path);
     printf("\nwindows: %s (%s)\n  %s (%s), to distribute\n  version %s, build %s\n",
         binary, release_size(binary), zip_path, release_size(zip_path), app_version(p), app_build(p));
-    printf("  next: distribute the executable or installer (Inno Setup / MSIX).\n");
+    printf("  next: it needs the WebView2 Runtime, which Windows 10 and 11 carry; an installer (Inno Setup, MSIX) can add it.\n");
 }
 
 void release_web(Project* p) {
@@ -305,17 +313,14 @@ void release_web(Project* p) {
     String zip_name;
     defer String_free(&zip_name);
     String_appendf(&zip_name, "%s-%s-web.zip", p.name.data, app_version(p));
-    string zip_path = join(p.out("web"), zip_name.data);
-    string tmp_path = join(join(p.root.data, "build/ui"), zip_name.data);
-    Cmd zip;
-    zip.add("tar"); zip.add("-a"); zip.add("-cf"); zip.add(tmp_path); zip.add("-C"); zip.add(dir); zip.add(".");
-    zip.run(null);
-    zip.free();
-    fs_copy(tmp_path, zip_path);
-    fs_remove(tmp_path);
-    printf("\nweb: %s\n  %s (%s), to distribute or deploy\n  version %s, build %s\n",
+    string zip_path = join(release_dir(p), zip_name.data);
+    List<string> names;
+    defer names.free();
+    names.push(".");
+    release_zip(dir, &names, zip_path);
+    printf("\nweb: %s\n  %s (%s), to deploy\n  version %s, build %s\n",
         dir, zip_path, release_size(zip_path), app_version(p), app_build(p));
-    printf("  next: deploy the directory or zip archive to Netlify, Vercel, Cloudflare Pages, S3 or GitHub Pages.\n");
+    printf("  next: deploy the directory to any static host (Netlify, Vercel, Cloudflare Pages, S3, GitHub Pages).\n");
 }
 
 void release_command(Project* p, int argc, string* argv) {

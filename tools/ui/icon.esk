@@ -123,10 +123,12 @@ string macos_icon(Project* p, string out) {
 #ifdef __APPLE__
         Cmd cmd;
         cmd.add("iconutil"); cmd.add("-c"); cmd.add("icns"); cmd.add(iconset); cmd.add("-o"); cmd.add(join(made, "AppIcon.icns"));
-        cmd.run(null);
+        // Marked done only when it worked, so a failed iconutil runs again next build.
+        bool made_icns = cmd.run(null) == 0;
         cmd.free();
+        if (made_icns) { icon_built(marker, path); }
+        else { println_err("ui: warning: iconutil could not make AppIcon.icns; the app keeps the default icon"); }
 #endif
-        icon_built(marker, path);
     }
     string built_icns = join(made, "AppIcon.icns");
     if (fs_exists(built_icns) == 1) {

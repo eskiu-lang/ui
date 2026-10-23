@@ -22,6 +22,7 @@ import <threading>;
 import <atomic>;
 import <bytes>;
 import <mem>;
+import <hash>;
 
 import "common.esk";
 import "config.esk";

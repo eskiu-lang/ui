@@ -81,6 +81,9 @@ void ios_core(Project* p, string out, string app, string executable, List<string
     defer fs_list_free(&archives);
     p.native_archives(strcmp(ios_arch(), "arm64") == 0 ? "ios-arm64-simulator" : "ios-x86_64-simulator", &archives);
     for (i in 0..archives.size) { link.add(archives.data[i].data); }
+    // The archives' own references to the system frameworks resolve here, not through the host.
+    link.add("-framework"); link.add("UIKit"); link.add("-framework"); link.add("Foundation");
+    link.add("-framework"); link.add("CoreGraphics"); link.add("-framework"); link.add("QuartzCore");
     List<string> frameworks;
     defer frameworks.free();
     p.config.all("ios.frameworks", &frameworks);
