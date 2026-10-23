@@ -1,0 +1,21 @@
+// The stand-in compiler of tests/fake_eskiuc.sh for Windows, where a shell script cannot be
+// run as a program: it writes the -o file, and fails when the app's main says BROKEN.
+import <io>;
+import <fs>;
+import <string>;
+import <mem>;
+
+int main(int argc, string* argv) {
+    string out = null;
+    for (int i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "-o") == 0) { out = argv[i + 1]; }
+    }
+    String text;
+    fs_read_text("src/main.esk", &text);
+    if (String_contains(&text, "BROKEN") == 1) {
+        println("error: src/main.esk:1:1: broken");
+        return 1;
+    }
+    if (out != null) { fs_write_text(out, "export default async () => ({});\n"); }
+    return 0;
+}

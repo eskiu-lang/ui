@@ -28,3 +28,31 @@ jobs:
         run: brew install eskiu-lang/eskiu/eskiu
       - name: Tests
         run: tools/ci.sh
+
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Eskiu
+        run: |
+          mkdir -p "$HOME/.eskiu"
+          curl -fsSL -o eskiuc.zip https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-windows-x86_64.zip
+          unzip -q eskiuc.zip -d "$HOME/.eskiu"
+          echo "$HOME/.eskiu/bin" >> $GITHUB_PATH
+      - name: The Windows host builds and is packaged
+        run: |
+          # The web part goes through a stand-in compiler (no emscripten); the host is
+          # compiled for real with MinGW and the WebView2 SDK the tool fetches.
+          mkdir -p build
+          eskiuc tools/ui/main.esk -o build/ui.exe
+          eskiuc tests/fake_eskiuc.esk -o build/fake_eskiuc.exe
+          (cd build && ./ui.exe new newapp --ui "$PWD/..")
+          (cd build/newapp && ESKIUC="$PWD/../fake_eskiuc.exe" ../ui.exe release windows)
+          for f in newapp.exe WebView2Loader.dll web/index.html; do
+            test -f "build/newapp/build/ui/windows/$f" || { echo "FAIL: no $f"; exit 1; }
+          done
+          test -f build/newapp/build/ui/release/newapp-0.1.0-windows.zip || { echo "FAIL: no zip"; exit 1; }
+          echo "PASS ui release windows"
