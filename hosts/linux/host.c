@@ -111,6 +111,58 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer use
     return FALSE;
 }
 
+// The app bundled in web/ beside the executable, served as app://localhost/: a path that is
+// a file of web/ gets it, any other path without an extension (a route) gets index.html.
+static char g_web_dir[1024];
+
+static const char *mime_for(const char *path) {
+    const char *dot = strrchr(path, '.');
+    if (!dot) return "application/octet-stream";
+    static const char *types[][2] = {
+        {".html", "text/html"}, {".js", "text/javascript"}, {".mjs", "text/javascript"},
+        {".wasm", "application/wasm"}, {".css", "text/css"}, {".json", "application/json"},
+        {".png", "image/png"}, {".jpg", "image/jpeg"}, {".jpeg", "image/jpeg"}, {".gif", "image/gif"},
+        {".webp", "image/webp"}, {".svg", "image/svg+xml"}, {".ico", "image/x-icon"},
+        {".woff", "font/woff"}, {".woff2", "font/woff2"}, {".ttf", "font/ttf"}, {".otf", "font/otf"},
+        {".mp3", "audio/mpeg"}, {".wav", "audio/wav"}, {".mp4", "video/mp4"}, {".webm", "video/webm"},
+        {".txt", "text/plain"}, {".webmanifest", "application/manifest+json"}};
+    for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); i++)
+        if (g_ascii_strcasecmp(dot, types[i][0]) == 0) return types[i][1];
+    return "application/octet-stream";
+}
+
+static void on_app_request(WebKitURISchemeRequest *request, gpointer data) {
+    (void)data;
+    const char *raw = webkit_uri_scheme_request_get_path(request);
+    gchar *rel = g_uri_unescape_string(raw && raw[0] ? raw : "/", NULL);
+    if (!rel || strstr(rel, "..")) {
+        GError *error = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED, "not in the app");
+        webkit_uri_scheme_request_finish_error(request, error);
+        g_error_free(error);
+        g_free(rel);
+        return;
+    }
+    gchar *file = g_build_filename(g_web_dir, rel, NULL);
+    const char *base = strrchr(rel, '/');
+    if (!g_file_test(file, G_FILE_TEST_IS_REGULAR) && !strchr(base ? base : rel, '.')) {
+        g_free(file);
+        file = g_build_filename(g_web_dir, "index.html", NULL);
+    }
+    gchar *contents = NULL;
+    gsize length = 0;
+    GError *error = NULL;
+    if (g_file_get_contents(file, &contents, &length, &error)) {
+        GInputStream *stream = g_memory_input_stream_new_from_data(contents, (gssize)length, g_free);
+        webkit_uri_scheme_request_finish(request, stream, (gint64)length, mime_for(file));
+        g_object_unref(stream);
+    } else {
+        webkit_uri_scheme_request_finish_error(request, error);
+        g_error_free(error);
+    }
+    g_free(file);
+    g_free(rel);
+}
+
 int main(int argc, char *argv[]) {
     gtk_init(&argc, &argv);
 
@@ -126,6 +178,7 @@ int main(int argc, char *argv[]) {
     if (exe_len > 0) {
         exe_path[exe_len] = '\0';
         char *dir = dirname(exe_path);
+        snprintf(g_web_dir, sizeof(g_web_dir), "%s/web", dir);
         snprintf(local_url, sizeof(local_url), "%s/web/index.html", dir);
         snprintf(icon_path, sizeof(icon_path), "%s/icon.png", dir);
     }
@@ -133,17 +186,10 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         url = argv[1];
     } else if (local_url[0] && g_file_test(local_url, G_FILE_TEST_EXISTS)) {
-        static char file_uri[2048];
-        snprintf(file_uri, sizeof(file_uri), "file://%s", local_url);
-        url = file_uri;
-    } else if (g_file_test("web/index.html", G_FILE_TEST_EXISTS)) {
-        char *cwd = g_get_current_dir();
-        static char cwd_uri[2048];
-        snprintf(cwd_uri, sizeof(cwd_uri), "file://%s/web/index.html", cwd);
-        g_free(cwd);
-        url = cwd_uri;
+        url = "app://localhost/";
     } else {
-        url = "http://127.0.0.1:8765/?example=counter";
+        fprintf(stderr, "There is no web/index.html next to this program; build it with `ui build linux`.\n");
+        return 1;
     }
 
     host.testing = argc > 2;
@@ -157,7 +203,7 @@ int main(int argc, char *argv[]) {
     host.window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_default_size(GTK_WINDOW(host.window), width, height);
     gtk_window_set_position(GTK_WINDOW(host.window), GTK_WIN_POS_CENTER);
-    gtk_window_set_title(GTK_WINDOW(host.window), "Eskiu UI · Linux / WebKitGTK");
+    gtk_window_set_title(GTK_WINDOW(host.window), exe_len > 0 ? g_path_get_basename(argv[0]) : "app");
 
     g_signal_connect(host.window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(host.window, "key-press-event", G_CALLBACK(on_key_press), &host);
@@ -168,17 +214,23 @@ int main(int argc, char *argv[]) {
         gtk_window_set_icon_from_file(GTK_WINDOW(host.window), "icon.png", NULL);
     }
 
+    WebKitWebContext *context = webkit_web_context_get_default();
+    webkit_web_context_register_uri_scheme(context, "app", on_app_request, NULL, NULL);
+    WebKitSecurityManager *security = webkit_web_context_get_security_manager(context);
+    webkit_security_manager_register_uri_scheme_as_secure(security, "app");
+    webkit_security_manager_register_uri_scheme_as_cors_enabled(security, "app");
+
     WebKitUserContentManager *ucm = webkit_user_content_manager_new();
     webkit_user_content_manager_register_script_message_handler(ucm, "results");
     g_signal_connect(ucm, "script-message-received::results", G_CALLBACK(on_script_message_received), &host);
 
     host.webview = webkit_web_view_new_with_user_content_manager(ucm);
 
-    // Enable developer extras and local file access
+#ifndef UI_RELEASE
+    // The inspector, for development builds.
     WebKitSettings *settings = webkit_web_view_get_settings(WEBKIT_WEB_VIEW(host.webview));
     webkit_settings_set_enable_developer_extras(settings, TRUE);
-    webkit_settings_set_allow_file_access_from_file_urls(settings, TRUE);
-    webkit_settings_set_allow_universal_access_from_file_urls(settings, TRUE);
+#endif
 
     gtk_container_add(GTK_CONTAINER(host.window), host.webview);
 

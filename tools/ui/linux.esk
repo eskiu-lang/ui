@@ -30,6 +30,8 @@ string build_linux(Project* p) {
     defer cmd.free();
     string cc_env = env_get("CC");
     cmd.add(cc_env != null ? cc_env : "cc");
+    if (ui_release) { cmd.add("-DUI_RELEASE"); }
+    cmd.add("-O2");
     cmd.add(join(p.ui.data, "hosts/linux/host.c"));
 
     List<String> parts;
@@ -46,7 +48,7 @@ string build_linux(Project* p) {
     cmd.must(null);
 
     string web_out = join(p.root.data, "build/ui/web");
-    copy_dir_all(web_out, join(out, "web"));
+    replace_dir(web_out, join(out, "web"));
 
     string icon = app_icon(p);
     if (icon != null) {
