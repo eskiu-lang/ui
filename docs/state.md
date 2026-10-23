@@ -179,8 +179,48 @@ The destructor goes with the next element's block and runs when that block is re
 unmounted. `src/core/closures.esk` has a `ui_release_*` for each closure type the elements
 take.
 
-## Errors in handlers
+## Errors
 
-A throw out of a block, handler or effect is not caught: the program stops through Eskiu's
-uncaught-exception reporter. A caller that catches it anyway finds the next `ui_frame` or
-event stopping with "runtime left mid-phase".
+A throw out of the app's code does not close the app.
+
+**In a render**, the nearest `ErrorBoundary` above the code that threw shows its fallback.
+Nothing of the failed render reaches the host: its mutations are cut from the commit, the
+nodes it made are freed (their ids are free again at once), and the boundary's previous
+content is removed. The content's state (signals, memos, effects) starts over when it renders
+again, and its cleanups and `use_mount` unmount callbacks run as at an unmount.
+
+```eskiu
+ErrorBoundary(void(UiError e) {
+    Text("The chart could not be drawn.");
+    Button("Try again") { ui_boundary_reset(e.boundary); }
+}) {
+    Chart(points);
+}
+```
+
+A boundary shows its fallback until `ui_boundary_reset(e.boundary)`, or until it is made
+again (a change of an enclosing `Scope`'s key). The root is a boundary too: an error outside
+any other shows the root's fallback, a short message unless the app sets its own with
+`ui_set_fallback`. A fallback that throws hands the error to the boundary above it, and the
+root's fallback throwing stops the program.
+
+**In a handler** (a press, a text change, a timer, a fetch's answer, a native event), the
+error is reported and the event is done. What the handler wrote before the throw stays
+written, as in JavaScript.
+
+**In an effect or a cleanup**, the error is reported. An effect that throws keeps no cleanup,
+and the other effects run.
+
+`UiError` has `where` (1 a render, 2 a handler, 3 an effect or a cleanup), `path` (the scope
+path, `Column[0] > TodoRow[key 3]`), `text` (the exception as `exception_text()` gives it:
+`int 7`, `string boom`) and `boundary`. Its strings are borrowed for the call, and in a
+fallback for its render. Every error goes to the handler given to `ui_on_error`, or to stderr
+(the console on the web) without one. Under `ui serve` on the web it also shows over the app
+until a click.
+
+Some things cannot be undone: a `use_mount` callback or an effect cleanup that ran during the
+failed render has run. The runtime's own checks (a changed hook, a render loop, a duplicate
+key) still stop the program with their message.
+
+On the web, catching makes the module about 27 KB larger (the C++ exception runtime and the
+rollback). Rendering speed does not change, natively or in wasm.

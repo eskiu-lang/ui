@@ -8,7 +8,7 @@ windows on macOS, Linux and Windows.
 |---|---|
 | [Getting started](getting-started.md) | Installing the `ui` tool, a first app, running it on each platform, a project's layout |
 | [Architecture](architecture.md) | The layers (core, elements, kit, hosts, tool), what happens in a frame, the repository's layout |
-| [State](state.md) | Signals, memos, effects, model signals, owned strings, saved data, timers, the hooks rule |
+| [State](state.md) | Signals, memos, effects, model signals, owned strings, saved data, timers, the hooks rule, errors and `ErrorBoundary` |
 | [Components](components.md) | Every element and every kit component, with their arguments |
 | [Style and layout](style-and-layout.md) | `Style`, flexbox through Yoga, colors, absolute positions, motion (transforms, transitions, drags, animated values) |
 | [The platform](platform.md) | Insets, light and dark, accessibility, the language, the window, the status bar, back, links, system actions (share, clipboard, haptics), the network, alerts, modals |

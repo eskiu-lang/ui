@@ -48,6 +48,9 @@ void Counter() {
 - **Linear updates.** 10,000 rows mount, reverse or unmount in under 10 ms.
 - **Checked rules.** Hooks, keys and memos are checked, and a misuse stops with where it
   happened: `in Column[0] > TodoRow[key 3]`.
+- **Errors that do not close the app.** A render that throws shows the nearest
+  `ErrorBoundary`'s fallback, and nothing of it reaches the screen; a handler or an effect
+  that throws is reported and the app goes on.
 - **Motion.** Transforms and transitions animated by each platform, drags, swipe to
   delete, and the interactive back swipe on iOS.
 - **The system.** Dark mode, accessibility settings, the language, sharing, the clipboard,
@@ -84,7 +87,7 @@ layout; [Releasing](docs/releasing.md), what a release needs and makes.
 |---|---|
 | [Getting started](docs/getting-started.md) | The tool, a first app, the examples |
 | [Architecture](docs/architecture.md) | The layers, a frame, the repository |
-| [State](docs/state.md) | Signals, memos, effects, hooks, strings |
+| [State](docs/state.md) | Signals, memos, effects, hooks, strings, errors |
 | [Components](docs/components.md) | `<ui>` and `<ui/kit>` |
 | [Style and layout](docs/style-and-layout.md) | `Style`, colors, flexbox, motion |
 | [The platform](docs/platform.md) | Dark mode, accessibility, system actions, the network, back, links, alerts, modals |

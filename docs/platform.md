@@ -189,6 +189,14 @@ A host calls `ui_start(which)` when the app starts: it creates the runtime, call
 runtime down and calls `ui_app_stop()`, where the app frees its model. Events that arrive
 after the stop are ignored.
 
+## Errors
+
+`ui_on_error(fn(UiError)->void)` is told every error the runtime catches: in a render, a
+handler, an effect or a cleanup. Without it they go to stderr, the console on the web, and
+the log on iOS and Android. `ui_set_fallback(fn(UiError)->void)` replaces what the root shows
+when a render throws outside any `ErrorBoundary`. Both are set in `ui_app_start`, before
+`ui_mount`. See [Errors](state.md#errors).
+
 ## Native code
 
 `use_native_event(channel, handler)` receives what native code posts on a channel;

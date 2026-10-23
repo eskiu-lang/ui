@@ -6,9 +6,11 @@ The tools find the compiler through `ESKIUC` (`ESKIUC_SELF` for the self-hosted 
 ## The model tests
 
 `tests/model/` runs the runtime against a recording renderer: one file per area
-(`scheduler`, `memory`, `identity`, `elements`, `lists`, `system`, `apps`), with shared
-helpers in `support.esk` and the cases called from `main.esk`. Each case checks the
-commits and events, and ends with no allocation left.
+(`scheduler`, `memory`, `identity`, `elements`, `lists`, `system`, `apps`, `errors`), with
+shared helpers in `support.esk` and the cases called from `main.esk`. Each case checks the
+commits and events, and ends with no allocation left. The `errors` cases run through a host
+mirror that counts any op on an id the host does not hold, so a recovered error must leave
+only valid commits.
 
 ```bash
 tools/ci.sh            # on a released eskiuc, as CI runs it
@@ -17,8 +19,8 @@ python3 tools/check.py # everything below, with an eskiu checkout
 
 `tools/ci.sh` runs the model tests, `tests/tags.esk` (hooks are matched by type),
 `tests/rejections.esk` (each misuse stops with its message: a render loop, a changed hook,
-a duplicate key, a memo cycle, an uncaught exception, the runtime left mid-phase, a
-misplaced RefreshControl, the scope path in a message), the headless counter, and builds the
+a duplicate key, a memo cycle, the root's fallback throwing, a misplaced RefreshControl, the
+scope path in a message), the headless counter, and builds the
 `ui` tool and checks `ui new` and `ui serve` (with a stand-in compiler,
 `tests/fake_eskiuc.sh`: the page's wait answers each build, a failed one with its output).
 
@@ -37,7 +39,7 @@ A new element or behavior gets a model test in the file for its area.
 
 | Command | Checks |
 |---|---|
-| `python3 tools/build_web.py` then `node tests/web.mjs` | the wasm module against a recording DOM; the build fails when the test module (every example and the whole kit) passes 200 KiB |
+| `python3 tools/build_web.py` then `node tests/web.mjs` | the wasm module against a recording DOM; the build fails when the test module (every example and the whole kit) passes 216 KiB |
 | `python3 tools/check_ios.py` | a booted simulator (`DEVICE` picks one) |
 | `python3 tools/check_android.py` | a booted arm64 device or emulator (`ANDROID_SERIAL`), SDK 35, NDK 28.2 |
 | `python3 tools/check_native.py` | the native example on the simulator and the Android device: module events, a view's props and events |

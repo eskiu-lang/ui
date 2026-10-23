@@ -15,6 +15,7 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 | `Scroll(Style, block)` | A column whose content scrolls when it is taller than the space it gets. |
 | `Pressable(Style, on_press, block)` | A column that reacts to a press anywhere in it. |
 | `Scope(name, Key, block)` | A component's own scope: state, identity, and `name` in diagnostics. No view. |
+| `ErrorBoundary(fn(UiError)->void fallback, block)` | Renders `block`; when a render inside it throws, shows `fallback` instead, until `ui_boundary_reset(e.boundary)`. No view. See [Errors](state.md#errors). |
 | `ui_on_pan(fn(Pan)->void)` | For the element right after it: a drag on it, from `PanBegan` (past the platform's slop) through `PanMoved` to `PanEnded` or `PanCancelled`, with `dx`, `dy` (points since it began) and `vx`, `vy` (points per second). A press that does not move is still a press, and a drag takes over from a pressable inside. |
 | `ui_on_hover(fn(bool)->void)` | For the element right after it: true when a pointer (a mouse, a trackpad, an iPad's pointer, a stylus) moves over it, false when it leaves. Touch screens have no hover. |
 | `ui_on_layout(fn(Frame)->void)` | For the element right after it: the handler gets its `Frame{x, y, width, height, window_x, window_y}` (points; x and y relative to the parent, the window position from the window's top left, also after a scroll) after each change, as React Native's `onLayout`. |

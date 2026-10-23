@@ -2,7 +2,8 @@
 
 ## Install the tool
 
-The `ui` tool is part of this package, written in Eskiu:
+The `ui` tool is part of this package, written in Eskiu. ui 0.2 needs Eskiu 0.14 or newer
+(its error boundaries use `catch (_)`):
 
 ```bash
 git clone https://github.com/eskiu-lang/ui
