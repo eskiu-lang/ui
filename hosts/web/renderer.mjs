@@ -431,7 +431,9 @@ export function createHost(root, dispatch, views = {}) {
   function route() {
     if (!hasHistory) return '/';
     const prefix = base();
-    const path = location.pathname.startsWith(prefix) ? '/' + location.pathname.slice(prefix.length) : location.pathname;
+    let path = location.pathname.startsWith(prefix) ? '/' + location.pathname.slice(prefix.length) : location.pathname;
+    // The page file itself (a host or a server that opens .../index.html) is its directory's route.
+    if (path.endsWith('/index.html')) path = path.slice(0, -'index.html'.length);
     return path + location.search;
   }
   function navigate([mode, ...routes]) {
