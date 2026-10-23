@@ -16,9 +16,15 @@
     while ([path hasPrefix:@"/"]) {
         path = [path substringFromIndex:1];
     }
+    // Only files inside the app's web directory.
+    if ([path.pathComponents containsObject:@".."]) {
+        [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNoPermissionsToReadFile userInfo:nil]];
+        return;
+    }
     NSString *fullPath = [self.baseDir stringByAppendingPathComponent:path];
     NSData *data = [NSData dataWithContentsOfFile:fullPath];
-    if (!data) {
+    // A path with no extension is a route: the page. A missing file is an error.
+    if (!data && path.pathExtension.length == 0) {
         fullPath = [self.baseDir stringByAppendingPathComponent:@"index.html"];
         data = [NSData dataWithContentsOfFile:fullPath];
     }
@@ -35,6 +41,15 @@
     else if ([ext isEqualToString:@"css"]) mime = @"text/css; charset=utf-8";
     else if ([ext isEqualToString:@"json"] || [ext isEqualToString:@"webmanifest"]) mime = @"application/json";
     else if ([ext isEqualToString:@"png"]) mime = @"image/png";
+    else if ([ext isEqualToString:@"jpg"] || [ext isEqualToString:@"jpeg"]) mime = @"image/jpeg";
+    else if ([ext isEqualToString:@"gif"]) mime = @"image/gif";
+    else if ([ext isEqualToString:@"webp"]) mime = @"image/webp";
+    else if ([ext isEqualToString:@"woff"]) mime = @"font/woff";
+    else if ([ext isEqualToString:@"woff2"]) mime = @"font/woff2";
+    else if ([ext isEqualToString:@"ttf"]) mime = @"font/ttf";
+    else if ([ext isEqualToString:@"mp3"]) mime = @"audio/mpeg";
+    else if ([ext isEqualToString:@"mp4"]) mime = @"video/mp4";
+    else if ([ext isEqualToString:@"webm"]) mime = @"video/webm";
     else if ([ext isEqualToString:@"svg"]) mime = @"image/svg+xml";
     else if ([ext isEqualToString:@"ico"]) mime = @"image/x-icon";
 
@@ -73,7 +88,9 @@
     NSMenuItem *appMenuItem = [NSMenuItem new];
     [menubar addItem:appMenuItem];
     NSMenu *appMenu = [NSMenu new];
-    NSString *appName = self.window.title.length ? self.window.title : @"Eskiu UI";
+    // The app's name from its bundle (the window's title is the page's, set later).
+    NSString *appName = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleName"];
+    if (!appName.length) appName = NSProcessInfo.processInfo.processName;
     NSString *quitTitle = [NSString stringWithFormat:@"Quit %@", appName];
     [appMenu addItem:[[NSMenuItem alloc] initWithTitle:quitTitle action:@selector(terminate:) keyEquivalent:@"q"]];
     [appMenuItem setSubmenu:appMenu];
@@ -127,7 +144,9 @@
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
     [configuration.userContentController addScriptMessageHandler:self name:@"results"];
+#ifndef UI_RELEASE
     [configuration.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
+#endif
 
     if (self.localWebDir) {
         LocalSchemeHandler *schemeHandler = [LocalSchemeHandler new];
@@ -138,13 +157,10 @@
     self.web = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, self.size.width, self.size.height) configuration:configuration];
     self.web.navigationDelegate = self;
 
-    // Enable web inspector for developer ergonomics
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    if ([self.web respondsToSelector:NSSelectorFromString(@"setInspectable:")]) {
-        [self.web performSelector:NSSelectorFromString(@"setInspectable:") withObject:@YES];
-    }
-    #pragma clang diagnostic pop
+#ifndef UI_RELEASE
+    // Safari's Web Inspector, for development builds.
+    if (@available(macOS 13.3, *)) { self.web.inspectable = YES; }
+#endif
 
     self.window = [[NSWindow alloc] initWithContentRect:self.web.frame
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable
@@ -230,7 +246,7 @@ int main(int argc, const char **argv) {
             host.url = [NSString stringWithUTF8String:argv[1]];
         } else if (webDir) {
             host.localWebDir = webDir;
-            host.url = @"app://localhost/index.html";
+            host.url = @"app://localhost/";
         } else {
             host.url = @"http://127.0.0.1:8765/?example=counter";
         }

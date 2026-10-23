@@ -9,7 +9,11 @@ string build_macos(Project* p) {
     string binary = join(out, p.name.data);
     Cmd cmd;
     defer cmd.free();
-    cmd.add("xcrun"); cmd.add("clang"); cmd.add("-fobjc-arc"); cmd.add(join(p.ui.data, "hosts/macos/host.m"));
+    // Both architectures, from macOS 11 on, so the app opens on other Macs than this one.
+    cmd.add("xcrun"); cmd.add("clang"); cmd.add("-fobjc-arc"); cmd.add("-O2"); cmd.add("-mmacosx-version-min=11.0");
+    cmd.add("-arch"); cmd.add("arm64"); cmd.add("-arch"); cmd.add("x86_64");
+    if (ui_release) { cmd.add("-DUI_RELEASE"); }
+    cmd.add(join(p.ui.data, "hosts/macos/host.m"));
     cmd.add("-framework"); cmd.add("Cocoa"); cmd.add("-framework"); cmd.add("WebKit"); cmd.add("-o"); cmd.add(binary);
     cmd.must(null);
 
@@ -29,8 +33,6 @@ string build_macos(Project* p) {
     fs_copy(binary, bundle_binary);
 
     // Info.plist
-    string version = p.config.string("app.version");
-    if (version == null) { version = "1.0.0"; }
     String plist;
     defer String_free(&plist);
     String_append(&plist, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
@@ -39,8 +41,9 @@ string build_macos(Project* p) {
     String_appendf(&plist, "    <key>CFBundleName</key>\n    <string>%s</string>\n", xml_escape(p.display.data));
     String_appendf(&plist, "    <key>CFBundleDisplayName</key>\n    <string>%s</string>\n", xml_escape(p.display.data));
     String_appendf(&plist, "    <key>CFBundleIdentifier</key>\n    <string>%s</string>\n", xml_escape(p.id.data));
-    String_appendf(&plist, "    <key>CFBundleVersion</key>\n    <string>%s</string>\n", xml_escape(version));
-    String_appendf(&plist, "    <key>CFBundleShortVersionString</key>\n    <string>%s</string>\n", xml_escape(version));
+    String_appendf(&plist, "    <key>CFBundleVersion</key>\n    <string>%s</string>\n", xml_escape(app_build(p)));
+    String_appendf(&plist, "    <key>CFBundleShortVersionString</key>\n    <string>%s</string>\n", xml_escape(app_version(p)));
+    String_append(&plist, "    <key>LSMinimumSystemVersion</key>\n    <string>11.0</string>\n");
     String_appendf(&plist, "    <key>CFBundleExecutable</key>\n    <string>%s</string>\n", xml_escape(p.name.data));
     // Assets & icon if present
     string icns = macos_icon(p, resources);
@@ -53,7 +56,7 @@ string build_macos(Project* p) {
     fs_write_text(join(contents, "Info.plist"), plist.data);
 
     string web_out = join(p.root.data, "build/ui/web");
-    copy_dir_all(web_out, join(resources, "web"));
+    replace_dir(web_out, join(resources, "web"));
     string icon_path = join(web_out, "apple-touch-icon.png");
     if (fs_exists(icon_path) == 1) {
         fs_copy(icon_path, join(resources, "icon.png"));
