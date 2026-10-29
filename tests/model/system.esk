@@ -441,8 +441,8 @@ void network() {
         fetched = ui_copy(r.status == 0 ? r.error : r.body);
     });
     ui_frame();
-    check(mutation_count == 1 && mutation_kinds[0] == 10 && mutation_befores[0] == 6 &&
-          strcmp(mutation_texts[0], "https://example.com/a") == 0, "a fetch command: URL, method, headers, body, timeout");
+    check(mutation_count == 1 && mutation_kinds[0] == 10 && mutation_befores[0] == 7 &&
+          strcmp(mutation_texts[0], "https://example.com/a") == 0, "a fetch command: URL, method, headers, body, timeout, file");
     int request = mutation_ids[0];
     check(ui_event_fetch(request, 200, "hello", "Content-Type: text/plain"), "the answer");
     check(fetched_status == 200 && strcmp(fetched, "hello") == 0, "status and body");
@@ -457,6 +457,60 @@ void network() {
     free(fetched);
     ui_fetch(FetchRequest{url: "https://example.com"}, void(FetchResult r) {});
     ui_shutdown(); balanced("network leak");
+}
+
+string cached_seen;
+int cached_calls;
+int cached_waiting;
+int cached_failed;
+int cached_stopped;
+int cached_at_once;
+*Signal<int> cached_which;
+
+void cached_files() {
+    ui_set_data_dir("build/cache-test");
+    fs_remove_all("build/cache-test");
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        cached_which = use_signal<int>(0);
+        string path = use_cached_file(cached_which.get() == 0 ? "https://example.com/art/atlas.webp?v=2" : null);
+        cached_seen = path;
+        cached_calls++;
+        Row(Style{}, void() {});
+    }
+    ui_frame();
+    check(cached_seen == null && mutation_count >= 1 && mutation_ops[mutation_count - 1] == 10 &&
+          strcmp(mutation_texts[mutation_count - 1], "https://example.com/art/atlas.webp?v=2") == 0, "not there yet: a download");
+    int request = mutation_ids[mutation_count - 1];
+    // The same URL from another caller waits for the same download.
+    ui_cached_file("https://example.com/art/atlas.webp?v=2", void(string path) { if (path != null) { cached_waiting++; } });
+    check(!ui_needs_frame(), "no second download");
+    String file;
+    ui_cache_path("https://example.com/art/atlas.webp?v=2", &file);
+    check(String_ends_with(&file, "-atlas.webp") == 1, "the cached file keeps the URL's name");
+    fs_write_text(file.data, "RIFF");
+    check(ui_event_fetch(request, 200, "", ""), "downloaded");
+    ui_frame();
+    check(cached_seen != null && strcmp(cached_seen, file.data) == 0 && cached_waiting == 1, "the path, to both");
+    // From the cache: right away, no download.
+    ui_cached_file("https://example.com/art/atlas.webp?v=2", void(string path) { if (path != null) { cached_at_once++; } });
+    check(cached_at_once == 1 && !ui_needs_frame(), "a cached file answers right away, with no download");
+    // A failed download gives null and leaves no file.
+    ui_cached_file("https://example.com/missing.png", void(string path) { if (path == null) { cached_failed++; } });
+    ui_frame();
+    ui_event_fetch(mutation_ids[mutation_count - 1], 404, "", "");
+    check(cached_failed == 1, "a 404 is null");
+    // Pending at the stop: null.
+    cached_which.set(1);
+    ui_frame();
+    ui_cached_file("https://example.com/slow.png", void(string path) { if (path == null) { cached_stopped++; } });
+    ui_frame();
+    ui_shutdown();
+    check(cached_stopped == 1, "the stop answers pending downloads");
+    String_free(&file);
+    ui_set_data_dir(null);
+    balanced("cached files leak");
 }
 
 int animated_seen;

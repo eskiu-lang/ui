@@ -3,8 +3,10 @@
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
 // A request: `headers` one "Name: value" per line; `method` "GET" when null; `body` sent
-// unless null; `timeout_ms` 0 for the platform's.
-struct FetchRequest { string url; string method; string headers; string body; int timeout_ms; }
+// unless null; `timeout_ms` 0 for the platform's. With `save_to` (a file path; iOS and
+// Android) the body, bytes and all, goes to that file instead of the result: written whole
+// or not at all, and only for a 2xx status.
+struct FetchRequest { string url; string method; string headers; string body; int timeout_ms; string save_to; }
 
 // The answer, borrowed for the handler's call: the status (0 when the request failed, with
 // `error` saying why), the body as text and the response headers, one per line.
@@ -26,6 +28,7 @@ void ui_fetch(FetchRequest request, escaping fn(FetchResult)->void on_done) {
     strings.push(request.body == null ? "" : request.body);
     strings.push(timeout.data);
     strings.push(request.body == null ? "0" : "1");
+    strings.push(request.save_to == null ? "" : request.save_to);
     ui_command(id, 10, &strings);
     strings.free();
 }
@@ -49,4 +52,136 @@ bool ui_dispatch_fetch_event(*Event event) {
         return true;
     }
     return false;
+}
+
+// ---- Cached files ----
+
+// Where ui_cached_file keeps `url`: the app's data directory, ui-cache/, a hash of the URL
+// and the URL's file name (its extension tells decoders the format).
+void ui_cache_path(string url, String* out) {
+    uint64 hash = 14695981039346656037;
+    for (int i = 0; url[i] != 0; i++) { hash = (hash ^ (uint64)(uint8)url[i]) * 1099511628211; }
+    int name = 0;
+    for (int i = 0; url[i] != 0 && url[i] != '?' && url[i] != '#'; i++) { if (url[i] == '/') { name = i + 1; } }
+    String_clear(out);
+    String_appendf(out, "%s/ui-cache/%016llx-", ui_data_dir(), hash);
+    for (int i = name; url[i] != 0 && url[i] != '?' && url[i] != '#' && i - name < 64; i++) {
+        char c = url[i];
+        bool plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_';
+        String_push(out, plain ? c : '_');
+    }
+}
+
+struct PendingCache { int fetch; String url; String path; List<fn(string)->void> waiting; }
+
+// `url`'s file in the app's cache: on_done gets its path, downloaded the first time and read
+// from the cache after that (when it is there already, on_done runs before this returns), or
+// null when the download failed or the app stopped first. The path is borrowed for the call.
+// iOS and Android: the web has no files (null).
+void ui_cached_file(string url, escaping fn(string)->void on_done) {
+#ifdef __wasm__
+    on_done(null);
+    ui_release_string(on_done);
+}
+#else
+    if (url == null || ui_data_dir()[0] == 0) { on_done(null); ui_release_string(on_done); return; }
+    String path;
+    defer String_free(&path);
+    ui_cache_path(url, &path);
+    if (fs_exists(path.data) == 1) { on_done(path.data); ui_release_string(on_done); return; }
+    // The same URL asked for again while it downloads waits for that download.
+    for (i in 0..ui.caching.size) {
+        if (String_eq_cstr(&ui.caching.data[i].url, url) == 1) { ui.caching.data[i].waiting.push(on_done); return; }
+    }
+    String folder;
+    defer String_free(&folder);
+    String_appendf(&folder, "%s/ui-cache", ui_data_dir());
+    fs_mkdir_p(folder.data);
+    // ui_fetch takes the next request id.
+    int fetch = ui.next_request + 1;
+    PendingCache pending;
+    pending.fetch = fetch;
+    String_append(&pending.url, url);
+    String_append(&pending.path, path.data);
+    pending.waiting.push(on_done);
+    ui.caching.push(pending);
+    ui_fetch(FetchRequest{url: url, save_to: path.data}, void(FetchResult result) {
+        for (i in 0..ui.caching.size) {
+            if (ui.caching.data[i].fetch != fetch) { continue; }
+            PendingCache done = ui.caching.data[i];
+            ui.caching.remove(i);
+            bool ok = result.status >= 200 && result.status < 300 && fs_exists(done.path.data) == 1;
+            ui_answer_cache(&done, ok ? done.path.data : null);
+            return;
+        }
+    });
+}
+#endif
+
+// Each handler waiting for `pending` gets `path`, then it is freed.
+void ui_answer_cache(*PendingCache pending, string path) {
+    for (k in 0..pending.waiting.size) {
+        pending.waiting.data[k](path);
+        ui_release_string(pending.waiting.data[k]);
+    }
+    ui_free_pending_cache(pending);
+}
+
+void ui_free_pending_cache(*PendingCache pending) {
+    String_free(&pending.url);
+    String_free(&pending.path);
+    pending.waiting.free();
+}
+
+// A use_cached_file's state: the URL, its path once there, and the downloads it waits for
+// (it is freed by the last of those, or by its block's unmount when none is left).
+struct CachedFile { String url; String path; int pending; bool unmounted; bool asking; *Signal<int> version; }
+
+void ui_free_cached_file(*CachedFile cached) {
+    String_free(&cached.url);
+    String_free(&cached.path);
+    cached.version.free();
+    free(cached);
+}
+
+// The path of `url` in the app's cache for this block: null until it is downloaded (the block
+// renders again then) or when it cannot be. The path is the block's until `url` changes.
+string use_cached_file(string url) {
+    static int tag;
+    *Slot slot = ui_slot(14, &tag);
+    *CachedFile cached = (*CachedFile)slot.data;
+    if (cached == null) {
+        cached = alloc<CachedFile>(1);
+        cached.version = signal_new<int>(0);
+        slot.data = cached;
+        slot.dispose = void() {
+            cached.unmounted = true;
+            if (cached.pending == 0) { ui_free_cached_file(cached); }
+        };
+    }
+    cached.version.get();
+    if (url == null) { return null; }
+    if (cached.url.data != null && String_eq_cstr(&cached.url, url) == 1) {
+        return cached.path.len == 0 ? null : cached.path.data;
+    }
+    String_clear(&cached.url);
+    String_append(&cached.url, url);
+    String_clear(&cached.path);
+    cached.pending++;
+    string wanted = ui_copy(url);
+    cached.asking = true;
+    ui_cached_file(url, void(string path) {
+        cached.pending--;
+        if (cached.unmounted) {
+            if (cached.pending == 0) { ui_free_cached_file(cached); }
+        } else if (path != null && String_eq_cstr(&cached.url, wanted) == 1) {
+            String_clear(&cached.path);
+            String_append(&cached.path, path);
+            // Ready at once (from the cache) is this render's answer; later, a new render.
+            if (!cached.asking) { cached.version.set(cached.version.get() + 1); }
+        }
+        free(wanted);
+    });
+    cached.asking = false;
+    return cached.path.len == 0 ? null : cached.path.data;
 }

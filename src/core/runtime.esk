@@ -120,6 +120,8 @@ struct Ui {
     List<PendingText> text_requests;
     // The requests on the network (ui_fetch).
     List<PendingFetch> fetches;
+    // The downloads of ui_cached_file, each with the handlers waiting for it.
+    List<PendingCache> caching;
     int next_request;
     // Back handlers by registration order, and the modals open, by opening order.
     List<*BackEntry> back_handlers;
@@ -596,6 +598,9 @@ void ui_shutdown() {
     ui.text_requests.free();
     for (i in 0..ui.fetches.size) { ui_release_fetch(ui.fetches.data[i].on_done); }
     ui.fetches.free(); ui.modals.free(); ui.next_owned.free();
+    // Downloads the app stopped before: their handlers get null.
+    for (i in 0..ui.caching.size) { ui_answer_cache(&ui.caching.data[i], null); }
+    ui.caching.free();
     free(ui.link);
     free(ui.locale);
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }
