@@ -11,7 +11,9 @@ Insets insets = ui_insets();   // top, right, bottom, left, keyboard, in points
 
 `Insets` holds the system bars and display cutouts on each side and the height of the
 software keyboard over the bottom. By default the host puts the root inside the safe area
-and above the keyboard, and the insets are only information. An app that draws under the
+and above the keyboard, and the insets are only information. A focused field inside a
+`Scroll` is scrolled into view when the keyboard comes up, or when another field takes the
+focus under it (the web leaves this to the browser). An app that draws under the
 bars sets the edge-to-edge policy in `ui_app_start` and pads itself:
 
 ```eskiu
