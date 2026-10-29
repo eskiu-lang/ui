@@ -115,13 +115,47 @@ string Project_out(Project* self, string target) {
     return out;
 }
 
-// The file every host build compiles: the app and the bridge to the hosts.
+// `text` as an Eskiu string literal.
+string esk_literal(string text) {
+    String out;
+    String_append(&out, "\"");
+    for (int i = 0; text[i] != 0; i++) {
+        char c = text[i];
+        if (c == '"' || c == '\\') { String_appendf(&out, "\\%c", c); }
+        else if (c == '\n') { String_append(&out, "\\n"); }
+        else { String_appendf(&out, "%c", c); }
+    }
+    String_append(&out, "\"");
+    return out.data;
+}
+
+// The file every host build compiles: the app's constants (the macros <ui> reads), the app
+// and the bridge to the hosts.
 string Project_entry(Project* self) {
     string build = join(self.root.data, "build/ui");
     fs_mkdir_p(build);
     String text;
     defer String_free(&text);
-    String_appendf(&text, "// Made by ui: the app and the bridge to the hosts.\nimport \"%s\";\nimport \"%s\";\n",
+    String_append(&text, "// Made by ui: the app's constants, the app and the bridge to the hosts.\n");
+    String_appendf(&text, "#define UI_APP_NAME %s\n", esk_literal(self.display.data));
+    String_appendf(&text, "#define UI_APP_ID %s\n", esk_literal(self.id.data));
+    String_appendf(&text, "#define UI_APP_VERSION %s\n", esk_literal(app_version(self)));
+    String_appendf(&text, "#define UI_APP_BUILD %s\n", esk_literal(app_build(self)));
+    // ui_config's lookups: [env], then [env.release] in a release build, the later one first.
+    String_append(&text, "#define UI_APP_CONFIG(key)");
+    for (int pass = 1; pass >= 0; pass--) {
+        if (pass == 1 && !ui_release) { continue; }
+        string prefix = pass == 1 ? "env.release." : "env.";
+        int n = (int)strlen(prefix);
+        for (i in 0..self.config.entries.size) {
+            ConfigEntry* entry = &self.config.entries.data[i];
+            if (strncmp(entry.key.data, prefix, (size_t)n) != 0 || entry.values.size == 0) { continue; }
+            string name = &entry.key.data[n];
+            if (pass == 0 && strncmp(name, "release.", 8) == 0) { continue; }
+            String_appendf(&text, " if (strcmp(key, %s) == 0) { return %s; }", esk_literal(name), esk_literal(entry.values.data[0].data));
+        }
+    }
+    String_appendf(&text, "\nimport \"%s\";\nimport \"%s\";\n",
         join(self.root.data, "src/main.esk"), join(self.ui.data, "hosts/bridge.esk"));
     string entry = join(build, "entry.esk");
     fs_write_text(entry, text.data);

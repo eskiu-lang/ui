@@ -9,6 +9,8 @@ eskiuc tests/model/main.esk -O2 --link-arg build/heap.o -o build/model
 build/model
 eskiuc tests/tags.esk -o build/tags
 build/tags
+eskiuc tests/constants.esk -o build/constants
+build/constants
 eskiuc tests/rejections.esk -o build/rejections
 for case in "1:render loop" "2:hook kind/type changed" "3:duplicate key" "4:memo cycle" \
             "5:the root fallback failed: int 8" "7:duplicate key" "9:RefreshControl must come right before" "8:in Column\[0\] > TodoRow\[key 3\]"; do

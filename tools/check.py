@@ -61,6 +61,8 @@ def main():
     for name, compiler in [("tags-cpp", ESKIUC), ("tags-self", selfhost)]:
         run([compiler, HERE / "tests/tags.esk", "-o", BUILD / name])
         run([BUILD / name])
+    run([ESKIUC, HERE / "tests/constants.esk", "-o", BUILD / "constants"])
+    run([BUILD / "constants"])
     run([ESKIUC, HERE / "tests/rejections.esk", "-o", BUILD / "rejections"])
     for mode, message in [("1", "render loop"), ("2", "hook kind/type changed"),
                           ("3", "duplicate key"), ("4", "memo cycle"),

@@ -10,6 +10,9 @@
 //   version = "1.2.0"                    the version people see (default: the package's version)
 //   build = "12"                         the build number stores order releases by (default "1")
 //
+//   [env]
+//   API_URL = "http://localhost:8080"    ui_config("API_URL"); [env.release] over it in releases
+//
 //   [splash]
 //   background = "#101820"               the launch screen's color
 //   image = "splash.png"                 centered on it, a third of its pixels in points
