@@ -980,10 +980,18 @@ static void ui_host_command(int request, int command, int count, const char **st
         if (strings[5][0] == '1') call.HTTPBody = [@(strings[3]) dataUsingEncoding:NSUTF8StringEncoding];
         int timeout = atoi(strings[4]);
         if (timeout > 0) call.timeoutInterval = timeout / 1000.0;
+        // FetchRequest.save_to: a 2xx body goes to the file whole.
+        NSString *saveTo = count >= 7 && strings[6][0] ? @(strings[6]) : nil;
         [[NSURLSession.sharedSession dataTaskWithRequest:call completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            NSString *body = error ? error.localizedDescription
-                                   : ([[NSString alloc] initWithData:data ?: [NSData data] encoding:NSUTF8StringEncoding] ?: @"");
             int status = error ? 0 : (int)((NSHTTPURLResponse *)response).statusCode;
+            NSError *writing = nil;
+            if (saveTo && status >= 200 && status < 300) {
+                [data ?: [NSData data] writeToFile:saveTo options:NSDataWritingAtomic error:&writing];
+                if (writing) status = 0;
+            }
+            NSString *body = error ? error.localizedDescription : writing ? writing.localizedDescription
+                           : saveTo && status >= 200 && status < 300 ? @""
+                           : ([[NSString alloc] initWithData:data ?: [NSData data] encoding:NSUTF8StringEncoding] ?: @"");
             NSMutableString *headers = [NSMutableString new];
             if (!error) {
                 [((NSHTTPURLResponse *)response).allHeaderFields enumerateKeysAndObjectsUsingBlock:^(id name, id value, BOOL *stop) {

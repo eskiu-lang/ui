@@ -472,7 +472,9 @@ export function createHost(root, dispatch, views = {}) {
     else if (c.command === 11) { if (c.strings[0] === '1') splashHeld = splashElement() !== null; else hideSplash(); }
     else if (c.command === 10) {
       // A fetch through the browser; the answer comes back as an event.
-      const [url, method, headerText, body, timeout, hasBody] = c.strings;
+      const [url, method, headerText, body, timeout, hasBody, saveTo] = c.strings;
+      // The page has no files to save a body to (ui_cached_file is null on the web).
+      if (saveTo) { dispatch(c.request, 0, 16, 'no files on the web', 0, ''); return; }
       const headers = {};
       for (const line of headerText.split('\n')) {
         const colon = line.indexOf(':');

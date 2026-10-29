@@ -182,13 +182,19 @@ public final class UiActivity extends Activity {
                 }
                 status = connection.getResponseCode();
                 java.io.InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
-                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                // FetchRequest.save_to: a 2xx body goes to the file whole (a partial file first).
+                String saveTo = strings.length >= 7 ? strings[6] : "";
+                boolean saving = !saveTo.isEmpty() && status >= 200 && status < 300;
+                java.io.File partial = new java.io.File(saveTo + ".part");
+                java.io.OutputStream out = saving ? new java.io.FileOutputStream(partial) : new java.io.ByteArrayOutputStream();
                 if (stream != null) {
                     byte[] buffer = new byte[16384];
-                    for (int n; (n = stream.read(buffer)) > 0; ) bytes.write(buffer, 0, n);
+                    for (int n; (n = stream.read(buffer)) > 0; ) out.write(buffer, 0, n);
                     stream.close();
                 }
-                body = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+                out.close();
+                if (saving && !partial.renameTo(new java.io.File(saveTo))) throw new java.io.IOException("cannot write " + saveTo);
+                body = saving ? "" : new String(((java.io.ByteArrayOutputStream)out).toByteArray(), StandardCharsets.UTF_8);
                 for (java.util.Map.Entry<String, java.util.List<String>> header : connection.getHeaderFields().entrySet()) {
                     if (header.getKey() != null) headers.append(header.getKey()).append(": ").append(String.join(", ", header.getValue())).append('\n');
                 }
