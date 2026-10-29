@@ -68,6 +68,7 @@ void commands() {
         "open the app's settings");
     check(strcmp(ui_app_version(), "0.1.0") == 0 && strcmp(ui_app_build(), "1") == 0 && ui_config("API_URL") == null,
         "the constants outside a ui build");
+    check(ui_asset_path("logo.png") == null, "no asset paths outside a host");
     ui_splash_hold();
     ui_frame();
     check(mutation_ops[0] == 10 && mutation_kinds[0] == 11 && strcmp(mutation_texts[0], "1") == 0, "hold the splash");

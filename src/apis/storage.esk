@@ -10,6 +10,25 @@ void ui_set_data_dir(string path) {
     ui_data_path = path == null ? null : ui_copy(path);
 }
 
+fn(string)->string ui_asset_host;
+bool ui_has_asset_host;
+
+// A file of the app's assets/ ("sprites/atlas.webp") as a path <fs> and the packages that
+// read files (<canvas>, <audio>) can open: in the bundle on iOS, copied out of the APK into
+// the app's cache on Android (once per install of the app). Null on the web and the desktop,
+// which serve the assets by URL, for a file that is not there, and outside a host. The caller
+// frees the path.
+string ui_asset_path(string name) {
+    if (!ui_has_asset_host || name == null) { return null; }
+    return ui_asset_host(name);
+}
+
+// The host's lookup for ui_asset_path, from hosts/bridge.esk.
+void ui_set_asset_host(escaping fn(string)->string lookup) {
+    ui_asset_host = lookup;
+    ui_has_asset_host = true;
+}
+
 // Every key and value, loaded on first use and written whole on each change: in a file in
 // the data directory, or in the page's localStorage on the web. Meant for settings and small
 // state; a large or structured store belongs in a file of its own.
