@@ -58,7 +58,7 @@ void ui_drop_frame_handler(*UiFrameHandler entry) {
 // render with the next one. Frames stop when no running handler is left.
 void use_frame(bool running, escaping fn(Tick)->void handler) {
     static int tag;
-    *Slot slot = ui_slot(10, &tag);
+    *Slot slot = ui_slot(11, &tag);
     *UiFrameHandler entry = (*UiFrameHandler)slot.data;
     if (entry == null) {
         entry = alloc<UiFrameHandler>(1);
@@ -125,7 +125,7 @@ void ui_drop_app_state(*AppStateHandler entry) {
 // reads the current state.
 void use_app_state(escaping fn(bool)->void handler) {
     static int tag;
-    *Slot slot = ui_slot(11, &tag);
+    *Slot slot = ui_slot(12, &tag);
     *AppStateHandler entry = (*AppStateHandler)slot.data;
     if (entry == null) {
         entry = alloc<AppStateHandler>(1);

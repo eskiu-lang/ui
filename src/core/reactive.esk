@@ -184,6 +184,8 @@ string ui_hook_name(int kind) {
     if (kind == 8) { return "ToastHost"; }
     if (kind == 9) { return "use_mount"; }
     if (kind == 10) { return "a package's hook"; }
+    if (kind == 11) { return "use_frame"; }
+    if (kind == 12) { return "use_app_state"; }
     return "use_string";
 }
 
