@@ -29,6 +29,7 @@ import "config.esk";
 import "project.esk";
 import "png.esk";
 import "icon.esk";
+import "splash.esk";
 import "web.esk";
 import "macos.esk";
 import "linux.esk";

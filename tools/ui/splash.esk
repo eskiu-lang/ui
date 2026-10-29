@@ -1,0 +1,175 @@
+// The launch screen (ui.toml [splash]) on each platform: its background color and an image
+// centered on it, a third of its pixels in points (a 480 × 480 PNG is 160 points wide).
+// Part of the ui tool (tools/ui/main.esk imports every part).
+//
+//   [splash]
+//   background = "#101820"
+//   image = "assets/splash.png"
+
+// [splash] background as "#rrggbb", or null when not set.
+string splash_background(Project* p) {
+    string color = p.config.string("splash.background");
+    if (color == null || color[0] == 0) { return null; }
+    bool ok = strlen(color) == 7 && color[0] == '#';
+    for (int i = 1; ok && i < 7; i++) { ok = is_hex_digit(color[i]); }
+    if (!ok) {
+        String message;
+        String_appendf(&message, "ui.toml: [splash] background: %s is not a #rrggbb color", color);
+        fail(message.data);
+    }
+    return color;
+}
+
+bool is_hex_digit(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); }
+
+// [splash] image's path (a PNG, from the project's root), or null.
+string splash_image(Project* p) {
+    string image = p.config.string("splash.image");
+    if (image == null || image[0] == 0) { return null; }
+    string path = join(p.root.data, image);
+    if (fs_exists(path) != 1) {
+        String message;
+        String_appendf(&message, "ui.toml: [splash] image: %s does not exist", image);
+        fail(message.data);
+    }
+    return path;
+}
+
+bool splash_set(Project* p) { return splash_background(p) != null || splash_image(p) != null; }
+
+// The image into `dir` as ui-splash.png, where the hosts look for it.
+void splash_copy(Project* p, string dir) {
+    string image = splash_image(p);
+    if (image != null) { fs_copy(image, join(dir, "ui-splash.png")); }
+}
+
+// One channel of "#rrggbb" (0 red, 1 green, 2 blue), 0 to 255.
+int splash_channel(string color, int which) {
+    return hex_value(color[1 + which * 2]) * 16 + hex_value(color[2 + which * 2]);
+}
+
+int hex_value(char c) {
+    if (c >= '0' && c <= '9') { return c - '0'; }
+    if (c >= 'a' && c <= 'f') { return c - 'a' + 10; }
+    return c - 'A' + 10;
+}
+
+// ---- iOS ----
+
+// The launch screen's color set and image set in the asset catalog `catalog`.
+void ios_splash_sets(Project* p, string catalog) {
+    string color = splash_background(p);
+    if (color != null) {
+        string set = join(catalog, "SplashBackground.colorset");
+        fs_mkdir_p(set);
+        String text;
+        defer String_free(&text);
+        String_appendf(&text, "{\"colors\": [{\"color\": {\"color-space\": \"srgb\", \"components\": {\"red\": \"%d\", "
+            "\"green\": \"%d\", \"blue\": \"%d\", \"alpha\": \"1.000\"}}, \"idiom\": \"universal\"}], "
+            "\"info\": {\"author\": \"ui\", \"version\": 1}}\n",
+            splash_channel(color, 0), splash_channel(color, 1), splash_channel(color, 2));
+        fs_write_text(join(set, "Contents.json"), text.data);
+    }
+    string image = splash_image(p);
+    if (image != null) {
+        string set = join(catalog, "SplashImage.imageset");
+        fs_mkdir_p(set);
+        fs_write_text(join(set, "Contents.json"),
+            "{\"images\": [{\"filename\": \"splash.png\", \"idiom\": \"universal\", \"scale\": \"3x\"}], "
+            "\"info\": {\"author\": \"ui\", \"version\": 1}}\n");
+        fs_copy(image, join(set, "splash.png"));
+    }
+}
+
+// The UILaunchScreen entries, and the color again for the host's own splash.
+string ios_splash_plist(Project* p) {
+    String text;
+    string color = splash_background(p);
+    if (color != null) { String_append(&text, "<key>UIColorName</key><string>SplashBackground</string>"); }
+    if (splash_image(p) != null) { String_append(&text, "<key>UIImageName</key><string>SplashImage</string>"); }
+    String_append(&text, "</dict>\n");
+    if (color != null) { String_appendf(&text, "<key>UiSplashBackground</key><string>%s</string>\n", color); }
+    return text.data;
+}
+
+// ---- Android ----
+
+// The launch theme in `out`/res (UiSplash: the window's background is the color with the image
+// centered, and Android 12's splash takes the color), or nothing when [splash] is not set;
+// true when it wrote them.
+bool android_splash_res(Project* p, string out) {
+    string res = join(out, "res");
+    string[4] files = {"values/ui_splash.xml", "values-v31/ui_splash.xml", "drawable/ui_splash.xml",
+                       "drawable-xxhdpi/ui_splash_image.png"};
+    for (i in 0..4) { fs_remove(join(res, files[i])); }
+    if (!splash_set(p)) { return false; }
+    string color = splash_background(p);
+    string image = splash_image(p);
+    string fill = color != null ? color : "?android:attr/colorBackground";
+    fs_mkdir_p(join(res, "values"));
+    fs_mkdir_p(join(res, "values-v31"));
+    fs_mkdir_p(join(res, "drawable"));
+    String text;
+    defer String_free(&text);
+    String_appendf(&text, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
+        "  <style name=\"UiSplash\" parent=\"@android:style/Theme.Material.Light.NoActionBar\">\n"
+        "    <item name=\"android:windowBackground\">@drawable/ui_splash</item>\n  </style>\n</resources>\n");
+    fs_write_text(join(res, files[0]), text.data);
+    String_free(&text);
+    String_appendf(&text, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
+        "  <style name=\"UiSplash\" parent=\"@android:style/Theme.Material.Light.NoActionBar\">\n"
+        "    <item name=\"android:windowBackground\">@drawable/ui_splash</item>\n%s  </style>\n</resources>\n",
+        color != null ? "    <item name=\"android:windowSplashScreenBackground\">@color/ui_splash_background</item>\n" : "");
+    fs_write_text(join(res, files[1]), text.data);
+    String_free(&text);
+    String_appendf(&text, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+        "<layer-list xmlns:android=\"http://schemas.android.com/apk/res/android\">\n"
+        "  <item><color android:color=\"%s\"/></item>\n%s</layer-list>\n", fill,
+        image != null ? "  <item><bitmap android:src=\"@drawable/ui_splash_image\" android:gravity=\"center\"/></item>\n" : "");
+    fs_write_text(join(res, files[2]), text.data);
+    String_free(&text);
+    // The color by name, which windowSplashScreenBackground needs.
+    fs_remove(join(res, "values/ui_splash_colors.xml"));
+    if (color != null) {
+        String_appendf(&text, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
+            "  <color name=\"ui_splash_background\">%s</color>\n</resources>\n", color);
+        fs_write_text(join(res, "values/ui_splash_colors.xml"), text.data);
+    }
+    if (image != null) {
+        fs_mkdir_p(join(res, "drawable-xxhdpi"));
+        fs_copy(image, join(res, files[3]));
+    }
+    return true;
+}
+
+// The manifest's theme for the application, and the activity's meta-data with the color.
+string android_splash_theme(Project* p) {
+    return splash_set(p) ? "@style/UiSplash" : "@android:style/Theme.Material.Light.NoActionBar";
+}
+
+string android_splash_meta(Project* p) {
+    string color = splash_background(p);
+    if (color == null) { return ""; }
+    String text;
+    String_appendf(&text, "      <meta-data android:name=\"org.eskiu.ui.splash\" android:value=\"%s\"/>\n", color);
+    return text.data;
+}
+
+// ---- Web ----
+
+// The page's splash: a layer over the app with the color and the image (copied into `out`),
+// which the renderer takes away; "" without [splash].
+string web_splash(Project* p, string out) {
+    if (!splash_set(p)) { return ""; }
+    string color = splash_background(p);
+    String text;
+    String_appendf(&text, "<div id=\"ui-splash\" style=\"position: fixed; inset: 0; z-index: 1000; display: flex; "
+        "align-items: center; justify-content: center; background: %s\">", color != null ? color : "Canvas");
+    if (splash_image(p) != null) {
+        splash_copy(p, out);
+        // A third of its pixels in CSS pixels, as on the phones.
+        String_append(&text, "<img src=\"ui-splash.png\" alt=\"\" onload=\"this.style.width = this.naturalWidth / 3 + 'px'\">");
+    }
+    String_append(&text, "</div>\n");
+    return text.data;
+}

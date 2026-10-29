@@ -187,8 +187,10 @@ string build_android(Project* p) {
     string assets = join(out, "assets");
     fs_mkdir_p(assets);
     p.copy_assets(assets);
-    // The icon at each density, as the res/ the manifest names.
+    splash_copy(p, assets);
+    // The icon at each density and the launch theme, as the res/ the manifest names.
     string res = android_icon_res(p, out);
+    if (android_splash_res(p, out)) { res = join(out, "res"); }
     // `ui object android`, the step of the Gradle project `ui open android` makes: the library,
     // the assets and the icon are what Gradle takes from here; it compiles the Java itself.
     if (ui_object) { return host_library; }
@@ -244,7 +246,9 @@ string build_android(Project* p) {
     defer fs_list_free(&asset_files);
     fs_glob(join(p.root.data, "assets/**/*"), &asset_files);
     for (i in 0..asset_files.size) { apk_inputs.push(asset_files.data[i].data); }
-    if (res != null) { apk_inputs.push(join(res, "mipmap-xxxhdpi/ic_launcher.png")); }
+    if (app_icon(p) != null) { apk_inputs.push(join(res, "mipmap-xxxhdpi/ic_launcher.png")); }
+    string splash = splash_image(p);
+    if (splash != null) { apk_inputs.push(splash); }
     if (dev && !stale(apk, &apk_inputs)) {
         android_reinstall = false;
         return apk;
@@ -289,18 +293,18 @@ string android_manifest(Project* p, string setup_classes, bool package) {
     String manifest;
     String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"%s>\n"
         "%s%s"
-        "  <application android:label=\"%s\"%s android:theme=\"@android:style/Theme.Material.Light.NoActionBar\"%s"
+        "  <application android:label=\"%s\"%s android:theme=\"%s\"%s"
         " android:usesCleartextTraffic=\"true\">\n"
         "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\" android:launchMode=\"singleTask\"\n"
         "      android:configChanges=\"uiMode|locale|layoutDirection|fontScale|orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|density\" >\n"
-        "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n"
+        "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n%s"
         "      <intent-filter><action android:name=\"android.intent.action.MAIN\"/>"
         "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n%s"
         "    </activity>\n%s  </application>\n</manifest>\n",
         attribute.data == null ? "" : attribute.data,
         package ? "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"36\"/>\n" : "",
         android_permissions(p), xml_escape(p.display.data), app_icon(p) != null ? " android:icon=\"@mipmap/ic_launcher\"" : "",
-        package ? " android:debuggable=\"true\"" : "", setup_classes,
+        android_splash_theme(p), package ? " android:debuggable=\"true\"" : "", setup_classes, android_splash_meta(p),
         android_scheme(p), android_receivers(p));
     return manifest.data;
 }

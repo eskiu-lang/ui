@@ -43,6 +43,7 @@ string build_web(Project* p) {
     string base = p.config.string("web.base");
     String_replace_all(&page, "{{base}}", xml_escape(base != null ? base : "/"));
     String_replace_all(&page, "{{icons}}", web_icon_links(p, out));
+    String_replace_all(&page, "{{splash}}", web_splash(p, out));
     fs_write_text(join(out, "index.html"), page.data);
     p.copy_assets(out);
     return out;

@@ -226,36 +226,56 @@ string windows_icon(Project* p, string out) {
 // ---- iOS ----
 
 // An asset catalog in `dir` with the icon as AppIcon (one 1024 image; Xcode 14 and later make
-// the other sizes from it), or null without an icon. Made again when the icon changed.
+// the other sizes from it) and the launch screen's sets, or null with neither. Made again when
+// the icon or ui.toml changed.
 string ios_icon_catalog(Project* p, string dir) {
     string path = app_icon(p);
-    if (path == null) { return null; }
+    if (path == null && !splash_set(p)) { return null; }
     string catalog = join(dir, "Icon.xcassets");
-    string set = join(catalog, "AppIcon.appiconset");
-    string image = join(set, "icon.png");
     string marker = join(dir, "icon-catalog.made");
-    if (icon_stale(marker, path)) {
-        fs_mkdir_p(set);
+    List<string> inputs;
+    defer inputs.free();
+    ios_catalog_inputs(p, &inputs);
+    if (stale(marker, &inputs)) {
+        fs_remove_all(catalog);
+        fs_mkdir_p(catalog);
         fs_write_text(join(catalog, "Contents.json"), "{\"info\": {\"author\": \"ui\", \"version\": 1}}\n");
-        fs_write_text(join(set, "Contents.json"),
-            "{\"images\": [{\"filename\": \"icon.png\", \"idiom\": \"universal\", \"platform\": \"ios\", "
-            "\"size\": \"1024x1024\"}], \"info\": {\"author\": \"ui\", \"version\": 1}}\n");
-        PngImage icon;
-        icon_load(p, path, &icon);
-        // The App Store takes no transparency in an app's icon.
-        icon_write(&icon, 1024, true, image);
-        PngImage_free(&icon);
-        icon_built(marker, path);
+        if (path != null) {
+            string set = join(catalog, "AppIcon.appiconset");
+            fs_mkdir_p(set);
+            fs_write_text(join(set, "Contents.json"),
+                "{\"images\": [{\"filename\": \"icon.png\", \"idiom\": \"universal\", \"platform\": \"ios\", "
+                "\"size\": \"1024x1024\"}], \"info\": {\"author\": \"ui\", \"version\": 1}}\n");
+            PngImage icon;
+            icon_load(p, path, &icon);
+            // The App Store takes no transparency in an app's icon.
+            icon_write(&icon, 1024, true, join(set, "icon.png"));
+            PngImage_free(&icon);
+        }
+        ios_splash_sets(p, catalog);
+        fs_write_text(marker, "");
+        built(marker, &inputs);
     }
     return catalog;
 }
 
+// What the catalog is made from: the icon, the splash image and ui.toml (the splash color).
+void ios_catalog_inputs(Project* p, List<string>* out) {
+    string icon = app_icon(p);
+    if (icon != null) { out.push(icon); }
+    string image = splash_image(p);
+    if (image != null) { out.push(image); }
+    string toml = join(p.root.data, "ui.toml");
+    if (fs_exists(toml) == 1) { out.push(toml); }
+}
+
 // actool's command for `catalog` into `into` (the bundle) for `platform` (iphonesimulator,
 // iphoneos, or "$PLATFORM_NAME" in an Xcode build phase).
-void ios_icon_command(Cmd* cmd, string catalog, string into, string platform, string partial) {
+void ios_icon_command(Cmd* cmd, string catalog, string into, string platform, string partial, bool icon) {
     cmd.add("xcrun"); cmd.add("actool"); cmd.add(catalog); cmd.add("--compile"); cmd.add(into);
     cmd.add("--platform"); cmd.add(platform); cmd.add("--minimum-deployment-target"); cmd.add("15.0");
-    cmd.add("--app-icon"); cmd.add("AppIcon"); cmd.add("--output-partial-info-plist"); cmd.add(partial);
+    if (icon) { cmd.add("--app-icon"); cmd.add("AppIcon"); }
+    cmd.add("--output-partial-info-plist"); cmd.add(partial);
     cmd.add("--target-device"); cmd.add("iphone"); cmd.add("--target-device"); cmd.add("ipad");
     cmd.add("--output-format"); cmd.add("human-readable-text");
 }

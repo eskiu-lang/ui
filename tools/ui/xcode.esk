@@ -244,7 +244,7 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
         main_group, pbx.groups.data == null ? "" : pbx.groups.data,
         sources_phase, pbx.sources.data == null ? "" : pbx.sources.data,
         frameworks_phase, pbx.frameworks.data == null ? "" : pbx.frameworks.data,
-        assets_phase, pbx_quote(ios_assets_script(assets, ios_icon_catalog(p, dir))), object_definition.data,
+        assets_phase, pbx_quote(ios_assets_script(p, assets, ios_icon_catalog(p, dir))), object_definition.data,
         target, target_list, phases.data == null ? "" : phases.data, sources_phase, frameworks_phase, assets_phase,
         pbx_quote(p.name.data), pbx.products.data == null ? "" : pbx.products.data, pbx_quote(p.name.data), product,
         project_id, project_list, main_group, pbx_refs(&pbx), target,
@@ -378,15 +378,20 @@ string pbx_refs(Pbx* self) {
 }
 
 // A build phase that copies the project's assets into the bundle's top level, where Image
-// finds them by name, and compiles the icon's catalog (null: no icon) into it.
-string ios_assets_script(string assets, string catalog) {
+// finds them by name, and the splash image, and compiles the catalog of the icon and the launch
+// screen (null: neither) into it.
+string ios_assets_script(Project* p, string assets, string catalog) {
     String script;
     String_appendf(&script, "if [ -d '%s' ]; then cp -R '%s'/ \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/\"; fi\n",
         assets, assets);
+    string splash = splash_image(p);
+    if (splash != null) {
+        String_appendf(&script, "cp '%s' \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ui-splash.png\"\n", splash);
+    }
     if (catalog != null) {
         String_append(&script, "mkdir -p \"$DERIVED_FILE_DIR\"\n");
         Cmd actool;
-        ios_icon_command(&actool, "CATALOG", "INTO", "PLATFORM", "PARTIAL");
+        ios_icon_command(&actool, "CATALOG", "INTO", "PLATFORM", "PARTIAL", app_icon(p) != null);
         for (i in 0..actool.parts.size) {
             string part = actool.parts.data[i].data;
             if (strcmp(part, "CATALOG") == 0) { String_appendf(&script, "'%s' ", catalog); }
