@@ -64,6 +64,20 @@ const string kUiSettingsUrl = "app-settings:";
 // permission the user denied for good. Nothing on the web and the desktop.
 void ui_open_settings() { ui_open_url(kUiSettingsUrl); }
 
+// The splash: the launch screen (ui.toml [splash]) stays over the app until its first frame
+// is drawn. ui_splash_hold(), from ui_app_start, keeps it up past that until ui_splash_hide()
+// (fonts loading, saved state read); ui_splash_hide() fades it out.
+void ui_splash_hold() { ui_splash(true); }
+
+void ui_splash_hide() { ui_splash(false); }
+
+void ui_splash(bool hold) {
+    List<string> strings;
+    strings.push(hold ? "1" : "0");
+    ui_command(0, 11, &strings);
+    strings.free();
+}
+
 bool ui_event_alert(int request, int choice) {
     return ui_post(Event{request, 0, 6, choice, null});
 }

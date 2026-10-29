@@ -66,6 +66,12 @@ void commands() {
     ui_frame();
     check(mutation_ops[0] == 10 && mutation_kinds[0] == 2 && strcmp(mutation_texts[0], "app-settings:") == 0,
         "open the app's settings");
+    ui_splash_hold();
+    ui_frame();
+    check(mutation_ops[0] == 10 && mutation_kinds[0] == 11 && strcmp(mutation_texts[0], "1") == 0, "hold the splash");
+    ui_splash_hide();
+    ui_frame();
+    check(mutation_ops[0] == 10 && mutation_kinds[0] == 11 && strcmp(mutation_texts[0], "0") == 0, "hide the splash");
     // An unanswered alert is freed at shutdown.
     ui_event(button.id, button.generation);
     ui_frame();

@@ -20,7 +20,7 @@ node id (`u32`):
 | 7 | listen | nothing: the node now has a handler |
 | 8 | unlisten | nothing |
 | 9 | string prop | prop `u8` (1 label, 2 placeholder, 3 image source, 4 native view type, 5 font file), length `u32`, the bytes, a NUL |
-| 10 | command | the id is a request id, not a node: command `u8` (1 alert: title, message, then the buttons; 2 open a URL; 3 the web's history: `push` route, `replace` route, `back`, `reset` routes...; 4 hide the keyboard; 5 share: text, URL; 6 copy: text; 7 paste, answered by `ui_dispatch_answer`; 8 haptic: its kind; 9 announce: text; 10 fetch: URL, method, headers, body, timeout, whether there is a body, answered by `ui_dispatch_fetch`), count `u8`, then that many strings, each a length `u32`, the bytes and a NUL |
+| 10 | command | the id is a request id, not a node: command `u8` (1 alert: title, message, then the buttons; 2 open a URL; 3 the web's history: `push` route, `replace` route, `back`, `reset` routes...; 4 hide the keyboard; 5 share: text, URL; 6 copy: text; 7 paste, answered by `ui_dispatch_answer`; 8 haptic: its kind; 9 announce: text; 10 fetch: URL, method, headers, body, timeout, whether there is a body, answered by `ui_dispatch_fetch`; 11 splash: `1` hold it, `0` hide it), count `u8`, then that many strings, each a length `u32`, the bytes and a NUL |
 | 11 | named prop | a native view's prop: the name (length `u32`, bytes, NUL), then the value (the same) |
 
 A native view gets its type as string prop 4 when it is created (again if it changes), then
