@@ -103,7 +103,7 @@ host without one gets frames from a 16 ms timer.
 ## The hooks rule
 
 Hooks (`use_signal`, `use_memo`, `use_effect`, `use_string`, `use_back`,
-`use_native_event`, `use_interval`, `use_timeout`, `use_frame`, `use_app_state`, `use_animated`, `use_mount`) are matched by the order a block calls
+`use_native_event`, `use_interval`, `use_timeout`, `use_frame`, `use_app_state`, `use_animated`, `use_animated_then`, `use_repeat`, `use_sequence`, `use_mount`) are matched by the order a block calls
 them in. A block must call the
 same hooks, of the same types, in the same order every time it renders. The core checks it:
 a block that calls a different hook, or the same hook with another type, at a slot stops

@@ -17,26 +17,115 @@ int ui_ease(int easing, int t) {
 }
 
 // The value on its way to `target`: it starts there, and when `target` changes it moves from
-// where it is to the new one over `ms` milliseconds along `easing`, rendering its readers
-// about sixty times a second until it arrives.
-int use_animated(int target, int ms, int easing) {
+// where it is to the new one over `ms` milliseconds along `easing`, rendering its readers once
+// per display frame (use_frame) until it arrives.
+int use_animated(int target, int ms, int easing) { return ui_animate(target, ms, easing, false, void() {}); }
+
+// use_animated that also runs `on_done` each time the value arrives at a new target.
+int use_animated_then(int target, int ms, int easing, escaping fn()->void on_done) {
+    return ui_animate(target, ms, easing, true, on_done);
+}
+
+void ui_release_done(escaping fn()->void on_done) { free_closure(on_done); }
+
+// The latest on_done, kept in the hook's slot and freed with it.
+struct AnimatedDone { fn()->void on_done; }
+
+int ui_animate(int target, int ms, int easing, bool has_done, escaping fn()->void on_done) {
+    *AnimatedDone done = null;
+    if (has_done) {
+        static int tag;
+        *Slot slot = ui_slot(13, &tag);
+        done = (*AnimatedDone)slot.data;
+        if (done == null) {
+            done = alloc<AnimatedDone>(1);
+            slot.data = done;
+            *AnimatedDone held = done;
+            slot.dispose = void() { ui_release_done(held.on_done); free(held); };
+        } else { ui_release_done(done.on_done); }
+        done.on_done = on_done;
+    } else { ui_release_done(on_done); }
     *Signal<int> shown = use_signal<int>(target);
     *Signal<int> goal = use_signal<int>(target);
     *Signal<int> from = use_signal<int>(target);
-    *Signal<int> elapsed = use_signal<int>(0);
+    *Signal<double> elapsed = use_signal<double>(0);
     if (goal.value != target) {
         from.set(shown.value);
         goal.set(target);
         elapsed.set(0);
     }
     bool running = goal.value != target || shown.get() != target;
-    use_interval(running ? 16 : 0) {
-        int e = elapsed.value + 16;
-        int t = ms <= 0 || e >= ms ? 1000 : e * 1000 / ms;
+    use_frame(running, void(Tick tick) {
+        double e = elapsed.value + tick.delta * 1000;
+        int t = ms <= 0 || e >= ms ? 1000 : (int)(e * 1000 / ms);
         int start = from.value;
         int end = goal.value;
         elapsed.set(e);
         shown.set(t >= 1000 ? end : start + (int)((int64)(end - start) * ui_ease(easing, t) / 1000));
-    }
+        if (t >= 1000 && done != null) { done.on_done(); }
+    });
     return shown.get();
+}
+
+// A value that goes from `from` to `to` over `ms` milliseconds along `easing`, again and
+// again: `count` times (0: forever), each other time back from `to` when `reverse` (a pulse,
+// a bob). It starts again when any argument changes, and stops at the end of the last time.
+int use_repeat(int from, int to, int ms, int easing, int count, bool reverse) {
+    *Signal<double> elapsed = use_signal<double>(0);
+    *Signal<int64> key = use_signal<int64>(0);
+    int64 now_key = ((int64)from * 31 + to) * 31 + ((int64)ms * 31 + easing) * 7 + count * 3 + (reverse ? 1 : 0);
+    if (key.value != now_key) {
+        key.value = now_key;
+        elapsed.value = 0;
+    }
+    double e = elapsed.get();
+    int span = ms > 0 ? ms : 1;
+    int64 cycle = (int64)(e / span);
+    bool done = count > 0 && cycle >= count;
+    use_frame(!done, void(Tick tick) { elapsed.set(elapsed.value + tick.delta * 1000); });
+    int t = 1000;
+    if (done) { cycle = count - 1; }
+    else { t = (int)((e - (double)cycle * span) * 1000 / span); }
+    if (reverse && cycle % 2 == 1) { t = 1000 - t; }
+    return from + (int)((int64)(to - from) * ui_ease(easing, t) / 1000);
+}
+
+// A step of use_sequence: move to `value` over `ms` milliseconds along `easing`.
+struct Keyframe { int value; int ms; int easing; }
+
+// A value that runs through `steps`: it starts at the first one's value (held for its `ms`, a
+// delay), then moves to each next one's over its `ms`. The whole runs `count` times (0:
+// forever), starting again when the steps change; it stops on the last value.
+int use_sequence(*Keyframe steps, int n, int count) {
+    *Signal<double> elapsed = use_signal<double>(0);
+    *Signal<int64> key = use_signal<int64>(0);
+    int64 now_key = count;
+    int total = 0;
+    for (i in 0..n) {
+        now_key = ((now_key * 31 + steps[i].value) * 31 + steps[i].ms) * 31 + steps[i].easing;
+        total += steps[i].ms > 0 ? steps[i].ms : 0;
+    }
+    if (key.value != now_key) {
+        key.value = now_key;
+        elapsed.value = 0;
+    }
+    if (n == 0) { return 0; }
+    double e = elapsed.get();
+    int span = total > 0 ? total : 1;
+    bool done = count > 0 && e >= (double)span * count;
+    use_frame(!done, void(Tick tick) { elapsed.set(elapsed.value + tick.delta * 1000); });
+    if (done) { return steps[n - 1].value; }
+    double at = e - (double)span * (double)(int64)(e / span);
+    int value = steps[0].value;
+    for (i in 0..n) {
+        int step = steps[i].ms > 0 ? steps[i].ms : 0;
+        if (at < step) {
+            if (i == 0) { return steps[0].value; }
+            int t = (int)(at * 1000 / step);
+            return value + (int)((int64)(steps[i].value - value) * ui_ease(steps[i].easing, t) / 1000);
+        }
+        at -= step;
+        value = steps[i].value;
+    }
+    return steps[n - 1].value;
 }

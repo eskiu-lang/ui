@@ -186,6 +186,7 @@ string ui_hook_name(int kind) {
     if (kind == 10) { return "a package's hook"; }
     if (kind == 11) { return "use_frame"; }
     if (kind == 12) { return "use_app_state"; }
+    if (kind == 13) { return "use_animated_then"; }
     return "use_string";
 }
 

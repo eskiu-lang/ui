@@ -295,6 +295,49 @@ void app_state() {
     balanced("app state leaks");
 }
 
+int repeat_seen;
+int sequence_seen;
+int then_seen;
+int then_done;
+*Signal<int> then_target;
+bool motion_frames;
+
+void motions() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_set_frame_host(void(bool on) { motion_frames = on; });
+    ui_mount() {
+        repeat_seen = use_repeat(0, 100, 100, EaseLinear, 2, true);
+        Keyframe[3] steps = {Keyframe{10, 50, EaseLinear}, Keyframe{30, 100, EaseLinear}, Keyframe{0, 100, EaseLinear}};
+        sequence_seen = use_sequence(&steps[0], 3, 1);
+        then_target = use_signal<int>(0);
+        then_seen = use_animated_then(then_target.get(), 100, EaseLinear, void() { then_done++; });
+    }
+    ui_frame();
+    check(motion_frames, "repeats and sequences run on display frames");
+    ui_event_frame(0); ui_frame();
+    ui_event_frame(0.050); ui_frame();
+    check(repeat_seen == 50, "halfway through the first time");
+    check(sequence_seen == 10, "the first keyframe holds for its time");
+    ui_event_frame(0.100); ui_frame();
+    check(sequence_seen == 20, "then moves to the next");
+    ui_event_frame(0.150); ui_frame();
+    check(repeat_seen == 50 && sequence_seen == 30, "the repeat comes back (reverse); the sequence reached its second value");
+    ui_event_frame(0.250); ui_frame();
+    check(sequence_seen == 0, "and its last");
+    ui_event_frame(0.300); ui_frame();
+    check(repeat_seen == 0 && sequence_seen == 0, "both end: the repeat back at its start after two times");
+    check(!motion_frames, "and the frames stop");
+    then_target.set(100); ui_frame();
+    check(motion_frames, "a new target runs frames");
+    ui_event_frame(1.0); ui_frame();
+    ui_event_frame(1.1); ui_frame();
+    check(then_seen == 100 && then_done == 1, "on_done when it arrives");
+    ui_frame();
+    check(then_done == 1 && !motion_frames, "once");
+    ui_shutdown(); balanced("motions leak");
+}
+
 int seen_scheme;
 string seen_locale;
 
@@ -425,7 +468,8 @@ void animated_values() {
     check(animated_seen == 0 && !animated_armed, "at rest: no clock");
     animated_target.set(100); ui_frame();
     check(animated_seen == 0 && animated_armed, "a new target starts the clock from where it was");
-    for (i in 0..5) { ui_event_timer(animated_token); ui_frame(); }
+    // The first frame starts the clock (no time has passed); each one after is 16 ms.
+    for (i in 0..6) { ui_event_timer(animated_token); ui_frame(); }
     check(animated_seen == 50, "halfway after half the time (linear)");
     for (i in 0..5) { ui_event_timer(animated_token); ui_frame(); }
     check(animated_seen == 100 && !animated_armed, "there, and the clock stops");

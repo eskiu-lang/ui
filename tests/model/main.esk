@@ -51,6 +51,7 @@ int main() {
     storage(); printf("PASS storage\n");
     network(); printf("PASS network\n");
     animated_values(); printf("PASS animated values\n");
+    motions(); printf("PASS repeats and sequences\n");
     timers(); printf("PASS timers\n");
     display_frames(); printf("PASS display frames\n");
     app_state(); printf("PASS app state\n");

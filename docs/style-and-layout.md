@@ -100,8 +100,9 @@ Row(Style{translate_x: dx.get(), transition_ms: held.get() ? 0 : 250, easing: Ea
 
 For a value the host cannot animate (a number drawn as text, a share of a row),
 `use_animated(target, ms, easing)` is the value on its way to `target`: when the target
-changes, it moves there over `ms` milliseconds along the curve, rendering its readers about
-sixty times a second until it arrives.
+changes, it moves there over `ms` milliseconds along the curve, rendering its readers once per
+display frame (`use_frame`) until it arrives. `use_animated_then(target, ms, easing, on_done)`
+also runs `on_done` each time it arrives.
 
 ```eskiu
 int shown = use_animated(score.get(), 600, EaseOut);
@@ -109,6 +110,19 @@ String text;
 defer String_free(&text);
 String_format(&text, "%d points", shown);
 Text(text.data);
+```
+
+Two more run on their own once mounted. `use_repeat(from, to, ms, easing, count, reverse)`
+goes from `from` to `to` again and again, `count` times (0: forever), back each other time
+when `reverse`. `use_sequence(steps, n, count)` runs through `Keyframe{value, ms, easing}`
+steps: it holds the first value for its `ms` (a delay), then moves to each next one over its
+own. Both start over when their arguments change and stop on their last value.
+
+```eskiu
+int bob = use_repeat(0, -6, 400, EaseInOut, 0, true);     // a sprite bobbing, forever
+Keyframe[3] shake = {Keyframe{0, 0, 0}, Keyframe{8, 60, EaseOut}, Keyframe{0, 120, EaseSpring}};
+int dx = use_sequence(&shake[0], 3, 1);
+Image(Style{width: 48, height: 48, translate_y: bob, translate_x: dx}, "egg.png");
 ```
 
 The transforms are drawn, not laid out: the element keeps its place and its siblings do not
