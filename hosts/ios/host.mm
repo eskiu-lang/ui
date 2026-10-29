@@ -378,6 +378,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)focus:(UITextField *)sender;
 - (void)blur:(UITextField *)sender;
 - (void)frame:(CADisplayLink *)sender;
+- (void)clock:(CADisplayLink *)sender;
 @end
 @implementation UiEvents
 - (void)backdrop:(UITapGestureRecognizer *)gesture {
@@ -453,6 +454,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
     ui_tick();
     frameTimes.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 }
+- (void)clock:(CADisplayLink *)sender { ui_dispatch_frame(sender.timestamp); }
 @end
 static UiEvents *events;
 
@@ -462,6 +464,15 @@ extern "C" void ui_host_schedule(void) {
     [frameLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
 }
 extern "C" void ui_host_cancel(void) { [frameLink invalidate]; frameLink = nil; }
+
+// The display clock for use_frame: a display link of its own while it is on.
+static CADisplayLink *clockLink;
+extern "C" void ui_host_frames(int on) {
+    if (!on) { [clockLink invalidate]; clockLink = nil; return; }
+    if (clockLink) return;
+    clockLink = [CADisplayLink displayLinkWithTarget:events selector:@selector(clock:)];
+    [clockLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+}
 
 // Timers for use_interval and use_timeout, on the main run loop, by token.
 static NSMutableDictionary<NSNumber *, NSTimer *> *timers;
@@ -1207,6 +1218,8 @@ static void restartCore(NSString *path) {
     ui_stop();
     [frameLink invalidate];
     frameLink = nil;
+    [clockLink invalidate];
+    clockLink = nil;
     for (NSTimer *timer in timers.allValues) [timer invalidate];
     [timers removeAllObjects];
     if (shownAlert) [shownAlert dismissViewControllerAnimated:NO completion:nil];

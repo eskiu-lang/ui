@@ -26,6 +26,7 @@
     X(int, ui_report_back, (void)) \
     X(void, ui_dispatch_layout, (int id, int generation, int x, int y, int width, int height, int window_x, int window_y)) \
     X(void, ui_dispatch_timer, (int token)) \
+    X(void, ui_dispatch_frame, (double time)) \
     X(void, ui_dispatch_hover, (int id, int generation, int inside)) \
     X(void, ui_dispatch_value, (int id, int generation, int value)) \
     X(void, ui_dispatch_answer, (int request, const char *text)) \

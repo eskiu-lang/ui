@@ -88,6 +88,7 @@ public final class UiActivity extends Activity {
     private native void nativeWindow(int width, int height, int scale);
     private native void nativeModuleEvent(String channel, String payload);
     private native void nativeTimer(int token);
+    private native void nativeFrame(double time);
     private native void nativeHover(int id, int generation, int inside);
     private native void nativePan(int id, int generation, int phase, int dx, int dy, int vx, int vy);
     // Drags past the touch slop, in screen coordinates (the view itself may move), with their
@@ -253,6 +254,21 @@ public final class UiActivity extends Activity {
     public void timerStop(int token) {
         Runnable tick = timers.remove(token);
         if (tick != null) mainThread.removeCallbacks(tick);
+    }
+    // The display clock for use_frame: a frame callback that posts itself again while it is on.
+    private boolean clockOn;
+    private final Choreographer.FrameCallback clock = new Choreographer.FrameCallback() {
+        @Override public void doFrame(long time) {
+            if (!clockOn) return;
+            Choreographer.getInstance().postFrameCallback(this);
+            if (active) nativeFrame(time / 1e9);
+        }
+    };
+    public void frames(boolean on) {
+        if (on == clockOn) return;
+        clockOn = on;
+        if (on) Choreographer.getInstance().postFrameCallback(clock);
+        else Choreographer.getInstance().removeFrameCallback(clock);
     }
     private native void nativeViewEvent(int id, int generation, String name, String payload);
 
@@ -508,6 +524,7 @@ public final class UiActivity extends Activity {
         cancel();
         for (Runnable tick : timers.values()) mainThread.removeCallbacks(tick);
         timers.clear();
+        frames(false);
         if (shownAlert != null) { shownAlert.dismiss(); shownAlert = null; }
         for (View view : nodes.values()) {
             if (view.getParent() instanceof ViewGroup) ((ViewGroup)view.getParent()).removeView(view);

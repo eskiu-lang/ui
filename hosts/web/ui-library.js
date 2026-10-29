@@ -56,5 +56,19 @@ mergeInto(LibraryManager.library, {
     if (!timers || !timers.has(token)) return;
     clearTimeout(timers.get(token)); clearInterval(timers.get(token));
     timers.delete(token);
+  },
+  // The display clock for use_frame: requestAnimationFrame while it is on.
+  ui_host_frames: function(on) {
+    if (!on) {
+      if (Module['uiFrame']) cancelAnimationFrame(Module['uiFrame']);
+      Module['uiFrame'] = 0;
+      return;
+    }
+    if (Module['uiFrame']) return;
+    const step = now => {
+      Module['uiFrame'] = requestAnimationFrame(step);
+      Module['_ui_dispatch_frame'](now / 1000);
+    };
+    Module['uiFrame'] = requestAnimationFrame(step);
   }
 });

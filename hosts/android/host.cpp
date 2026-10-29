@@ -37,7 +37,7 @@ static const int kUnset = -1000000;
 static JavaVM *vm;
 static jclass activityClass;
 static jobject classLoader;
-static jmethodID namedMethod, emitMethod, loadClassMethod, timerStartMethod, timerStopMethod, windowMethod;
+static jmethodID namedMethod, emitMethod, loadClassMethod, timerStartMethod, timerStopMethod, windowMethod, framesMethod;
 static void checked() { if (env->ExceptionCheck()) { env->ExceptionDescribe(); std::abort(); } }
 static YGSize measure(YGNodeConstRef node, float width, YGMeasureMode wm, float height, YGMeasureMode hm) {
     int id = static_cast<int>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
@@ -89,6 +89,7 @@ extern "C" void ui_host_timer_start(int token, int ms, int repeat) {
     env->CallVoidMethod(activity, timerStartMethod, token, ms, repeat != 0); checked();
 }
 extern "C" void ui_host_timer_stop(int token) { env->CallVoidMethod(activity, timerStopMethod, token); checked(); }
+extern "C" void ui_host_frames(int on) { env->CallVoidMethod(activity, framesMethod, on != 0); checked(); }
 extern "C" void ui_host_apply(int op, int id, int generation, int parent, int before, int kind, const char *text) {
     if (op == 1) {
         YGNodeRef node = YGNodeNew();
@@ -215,6 +216,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStart(JNIEn
     namedMethod = env->GetMethodID(cls, "named", "(ILjava/lang/String;Ljava/lang/String;)V");
     timerStartMethod = env->GetMethodID(cls, "timerStart", "(IIZ)V");
     timerStopMethod = env->GetMethodID(cls, "timerStop", "(I)V");
+    framesMethod = env->GetMethodID(cls, "frames", "(Z)V");
     windowMethod = env->GetMethodID(cls, "windowOf", "(I)J");
     emitMethod = env->GetStaticMethodID(cls, "emit", "(Ljava/lang/String;Ljava/lang/String;)V");
     activityClass = (jclass)env->NewGlobalRef(cls);
@@ -341,6 +343,9 @@ extern "C" void ui_native_emit(const char *channel, const char *payload) {
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeTimer(JNIEnv *current, jobject, jint token) {
     env = current; ui_dispatch_timer(token);
+}
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeFrame(JNIEnv *current, jobject, jdouble time) {
+    env = current; ui_dispatch_frame(time);
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeHover(JNIEnv *current, jobject, jint id, jint generation, jint inside) {
     env = current; ui_dispatch_hover(id, generation, inside);
