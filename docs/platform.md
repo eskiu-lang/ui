@@ -77,6 +77,16 @@ bool wide = ui_window().width >= 700;
 `ui_is_active()` is false while the app is in the background on iOS and Android. A web page
 is always active.
 
+`use_app_state(handler)` calls `handler(active)` each time that changes while the scope is
+mounted, to pause audio or a game loop when the app leaves the foreground and resume it when it
+comes back:
+
+```eskiu
+use_app_state(void(bool active) {
+    if (active) { music.resume(); } else { music.pause(); }
+});
+```
+
 ## The status bar
 
 ```eskiu

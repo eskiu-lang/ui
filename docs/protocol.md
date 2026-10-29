@@ -121,6 +121,7 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_value(id, gen, value)` | the user moved a slider |
 | `ui_dispatch_hover(id, gen, inside)` | a pointer entered (1) or left (0) a node with a hover handler |
 | `ui_dispatch_timer(token)` | a timer the core armed fired |
+| `ui_dispatch_frame(time)` | the display showed a frame at `time` seconds, while the display clock is on |
 | `ui_dispatch_route(route, index)` | the browser went back or forward to `route`, at `index` in the app's history entries |
 | `ui_report_back()` | Android's back: returns 1 when the app handled it |
 | `ui_report_insets(top, right, bottom, left, keyboard)`, `ui_report_window(w, h, scale)`, `ui_report_active(active)`, `ui_report_link(url)` | the environment |
@@ -134,7 +135,9 @@ calls `ui_tick()` on its next frame (`requestAnimationFrame`, a `CADisplayLink`,
 
 The core also asks the host for timers (`use_interval`, `use_timeout`):
 `ui_host_timer_start(token, ms, repeat)` arms one and `ui_host_timer_stop(token)` disarms it;
-each tick comes back as `ui_dispatch_timer(token)`.
+each tick comes back as `ui_dispatch_timer(token)`. For `use_frame` it asks for the display
+clock: `ui_host_frames(1)` starts it and `ui_host_frames(0)` stops it, and each frame comes
+back as `ui_dispatch_frame(time)`.
 
 A refused edit or toggle is answered: the core renders the input's scope again and, if the
 app kept the old value, sends it back, so what the view shows stays what the app rendered.

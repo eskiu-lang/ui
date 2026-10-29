@@ -82,10 +82,28 @@ handler)` calls it once, `ms` after the scope mounts or after `ms` last changed.
 the clock (a `setInterval` on the web, a run loop timer on iOS, a `Handler` on Android), and a
 tick reaches the handler on the UI thread like any event, so it may set signals.
 
+## Display frames
+
+```eskiu
+*Signal<bool> playing = use_signal<bool>(true);
+use_frame(playing.get(), void(Tick tick) {
+    world_step(&world, tick.delta);
+    world_draw(&world);
+});
+```
+
+`use_frame(running, handler)` calls `handler` once per frame the display shows (a
+`CADisplayLink` on iOS, the `Choreographer` on Android, `requestAnimationFrame` on the web)
+while the scope is mounted and `running` is true. `Tick` has the frame's `time` and the
+`delta` since the last frame run, in seconds (0 for the first frame after frames start). What
+the handler draws itself (a `GpuView`, a canvas) shows in that frame; a signal it sets renders
+with the next one. The display clock runs only while some running handler is mounted, and a
+host without one gets frames from a 16 ms timer.
+
 ## The hooks rule
 
 Hooks (`use_signal`, `use_memo`, `use_effect`, `use_string`, `use_back`,
-`use_native_event`, `use_interval`, `use_timeout`, `use_animated`, `use_mount`) are matched by the order a block calls
+`use_native_event`, `use_interval`, `use_timeout`, `use_frame`, `use_app_state`, `use_animated`, `use_mount`) are matched by the order a block calls
 them in. A block must call the
 same hooks, of the same types, in the same order every time it renders. The core checks it:
 a block that calls a different hook, or the same hook with another type, at a slot stops

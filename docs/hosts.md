@@ -144,7 +144,8 @@ A host needs to:
 
 1. Define `ui_host_commit(data, len)` to apply a commit (`hosts/commit.h` decodes one in C),
    `ui_host_schedule()` to ask for a frame and `ui_host_cancel()` to drop one, and
-   `ui_host_timer_start(token, ms, repeat)` and `ui_host_timer_stop(token)` for timers.
+   `ui_host_timer_start(token, ms, repeat)` and `ui_host_timer_stop(token)` for timers,
+   and `ui_host_frames(on)` for the display clock (`use_frame`).
 2. Call `ui_start(0)` at launch, `ui_tick()` for each scheduled frame and `ui_stop()` at
    the end.
 3. Report events and the environment with the `ui_dispatch_*` and `ui_report_*` calls
