@@ -51,6 +51,8 @@ int main() {
     network(); printf("PASS network\n");
     animated_values(); printf("PASS animated values\n");
     timers(); printf("PASS timers\n");
+    display_frames(); printf("PASS display frames\n");
+    app_state(); printf("PASS app state\n");
     controls(); printf("PASS controls\n");
     window_size(); printf("PASS window\n");
     flat_list(); printf("PASS flat list\n");

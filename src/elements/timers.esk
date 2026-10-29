@@ -72,6 +72,7 @@ void use_timeout(int ms, escaping fn()->void handler) { ui_use_timer(ms, false, 
 bool ui_event_timer(int token) { return ui_post(Event{token, 0, 12, 0, null}); }
 
 bool ui_dispatch_timer_event(*Event event) {
+    if (ui.frame_timer != 0 && event.id == ui.frame_timer) { return ui_run_frames(ui.last_frame_time < 0 ? 0 : ui.last_frame_time + 0.016); }
     for (i in 0..ui.timers.size) {
         *UiTimer timer = ui.timers.data[i];
         if (timer.token != event.id || timer.removed || !timer.armed) { continue; }

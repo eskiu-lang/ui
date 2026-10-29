@@ -15,6 +15,7 @@ void ui_set_active(bool active) {
     if (ui.inactive == !active) { return; }
     ui.inactive = !active;
     ui.environment.set(ui.environment.value + 1);
+    ui_post(Event{0, 0, 19, active ? 1 : 0, null});
 }
 
 Insets ui_insets() { ui.environment.get(); return ui.insets; }

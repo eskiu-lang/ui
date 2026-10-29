@@ -1,0 +1,154 @@
+// Display frames and the foreground: use_frame runs once per frame the display shows,
+// use_app_state when the app comes to the foreground or leaves it.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A display frame: its time and the time since the last frame run, in seconds (0 for the
+// first frame after frames start).
+struct Tick { double time; double delta; }
+
+struct UiFrameHandler { fn(Tick)->void handler; bool running; bool removed; }
+
+// The host's side: request(true) starts its display clock (CADisplayLink, Choreographer,
+// requestAnimationFrame), request(false) stops it; each frame comes back as
+// ui_event_frame(time). With none set, frames come from a 16 ms timer.
+void ui_set_frame_host(escaping fn(bool)->void request) {
+    bool on = ui.frames_on;
+    if (on) { ui_frames_switch(false); }
+    if (ui.has_frame_host) { ui_release_bool(ui.frame_request); }
+    ui.frame_request = request;
+    ui.has_frame_host = true;
+    if (on) { ui_frames_switch(true); }
+}
+
+void ui_frames_switch(bool on) {
+    ui.frames_on = on;
+    ui.last_frame_time = -1;
+    if (ui.has_frame_host) { ui.frame_request(on); return; }
+    if (on) {
+        if (!ui.has_timer_host) { return; }
+        ui.frame_timer = ++ui.next_timer;
+        ui.timer_start(ui.frame_timer, 16, true);
+    } else if (ui.frame_timer != 0) {
+        if (ui.has_timer_host) { ui.timer_stop(ui.frame_timer); }
+        ui.frame_timer = 0;
+    }
+}
+
+// Frames run while some mounted scope's use_frame is running.
+void ui_frames_update() {
+    bool wanted = false;
+    for (i in 0..ui.frame_handlers.size) {
+        *UiFrameHandler entry = ui.frame_handlers.data[i];
+        if (entry.running && !entry.removed) { wanted = true; break; }
+    }
+    if (wanted != ui.frames_on) { ui_frames_switch(wanted); }
+}
+
+void ui_drop_frame_handler(*UiFrameHandler entry) {
+    if (entry.removed) { return; }
+    entry.removed = true;
+    for (int i = ui.frame_handlers.size - 1; i >= 0; i--) {
+        if (ui.frame_handlers.data[i] == entry) { ui.frame_handlers.remove(i); break; }
+    }
+    ui_frames_update();
+}
+
+// `handler` once per display frame while the scope is mounted and `running` is true, on the
+// UI thread. What it draws itself (a GpuView, a canvas) shows in that frame; signals it sets
+// render with the next one. Frames stop when no running handler is left.
+void use_frame(bool running, escaping fn(Tick)->void handler) {
+    static int tag;
+    *Slot slot = ui_slot(10, &tag);
+    *UiFrameHandler entry = (*UiFrameHandler)slot.data;
+    if (entry == null) {
+        entry = alloc<UiFrameHandler>(1);
+        entry.handler = handler;
+        entry.running = running;
+        slot.data = entry;
+        ui.frame_handlers.push(entry);
+        slot.dispose = void() { ui_drop_frame_handler(entry); ui_release_tick(entry.handler); free(entry); };
+        ui_frames_update();
+        return;
+    }
+    ui_release_tick(entry.handler);
+    entry.handler = handler;
+    if (entry.running != running) {
+        entry.running = running;
+        ui_frames_update();
+    }
+}
+
+// The host's side: the display shows a frame at `time` seconds (any fixed origin).
+bool ui_event_frame(double time) {
+    int64 us = (int64)(time * 1000000 + 0.5);
+    return ui_post(Event{0, 0, 18, (int)(us / 1000000), null, (int)(us % 1000000)});
+}
+
+bool ui_dispatch_frame_event(*Event event) { return ui_run_frames(event.value + event.extra / 1000000.0); }
+
+bool ui_run_frames(double time) {
+    if (!ui.frames_on) { return false; }
+    double delta = ui.last_frame_time < 0 || time < ui.last_frame_time ? 0 : time - ui.last_frame_time;
+    ui.last_frame_time = time;
+    bool ran = false;
+    // A handler may unmount scopes: their entries leave the list, so it is walked by a copy.
+    List<*UiFrameHandler> entries;
+    for (i in 0..ui.frame_handlers.size) { entries.push(ui.frame_handlers.data[i]); }
+    for (i in 0..entries.size) {
+        *UiFrameHandler entry = entries.data[i];
+        if (entry.removed || !entry.running) { continue; }
+        entry.handler(Tick{time, delta});
+        ran = true;
+    }
+    entries.free();
+    return ran;
+}
+
+void ui_frames_shutdown() {
+    if (ui.frames_on) { ui_frames_switch(false); }
+    if (ui.has_frame_host) { ui_release_bool(ui.frame_request); }
+    ui.frame_handlers.free();
+}
+
+struct AppStateHandler { fn(bool)->void handler; bool removed; }
+
+void ui_drop_app_state(*AppStateHandler entry) {
+    if (entry.removed) { return; }
+    entry.removed = true;
+    for (int i = ui.app_state_handlers.size - 1; i >= 0; i--) {
+        if (ui.app_state_handlers.data[i] == entry) { ui.app_state_handlers.remove(i); break; }
+    }
+}
+
+// `handler(active)` each time the app comes to the foreground (true) or leaves it (false)
+// while the scope is mounted: pause audio, stop a game loop, refresh data. ui_is_active()
+// reads the current state.
+void use_app_state(escaping fn(bool)->void handler) {
+    static int tag;
+    *Slot slot = ui_slot(11, &tag);
+    *AppStateHandler entry = (*AppStateHandler)slot.data;
+    if (entry == null) {
+        entry = alloc<AppStateHandler>(1);
+        entry.handler = handler;
+        slot.data = entry;
+        ui.app_state_handlers.push(entry);
+        slot.dispose = void() { ui_drop_app_state(entry); ui_release_bool(entry.handler); free(entry); };
+        return;
+    }
+    ui_release_bool(entry.handler);
+    entry.handler = handler;
+}
+
+bool ui_dispatch_app_state_event(*Event event) {
+    List<*AppStateHandler> entries;
+    for (i in 0..ui.app_state_handlers.size) { entries.push(ui.app_state_handlers.data[i]); }
+    bool ran = false;
+    for (i in 0..entries.size) {
+        *AppStateHandler entry = entries.data[i];
+        if (entry.removed) { continue; }
+        entry.handler(event.value != 0);
+        ran = true;
+    }
+    entries.free();
+    return ran;
+}

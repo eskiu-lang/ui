@@ -12,7 +12,9 @@
 // 14 value (a Slider moved to `value`), 15 answer (the text a request asked for: the id is
 // the request), 16 fetch (a request finished: value the status, text the body or the error,
 // name the headers), 17 pan (value the phase, extra dx, width dy, height the x velocity,
-// extra2 the y velocity). A layout's window position is in extra2 and extra3.
+// extra2 the y velocity), 18 display frame (no node; the time in seconds in `value`, the microseconds in `extra`), 19 the app
+// went to the foreground (value 1) or the background (value 0; no node). A layout's window
+// position is in extra2 and extra3.
 struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height;
                int extra2; int extra3; }
 
@@ -84,6 +86,18 @@ struct Ui {
     fn(int, int, bool)->void timer_start;
     fn(int)->void timer_stop;
     bool has_timer_host;
+    // Display frames (use_frame): the handlers of mounted scopes, the host's switch for its
+    // display clock (ui_set_frame_host), whether frames were asked for, the time of the last
+    // one run (-1 before the first), and the timer standing in for a host without a display
+    // clock (its token, 0 when none is armed).
+    List<*UiFrameHandler> frame_handlers;
+    fn(bool)->void frame_request;
+    bool has_frame_host;
+    bool frames_on;
+    double last_frame_time;
+    int frame_timer;
+    // The handlers of foreground changes (use_app_state), by registration order.
+    List<*AppStateHandler> app_state_handlers;
     // The layout and hover handlers of the next element (ui_on_layout, ui_on_hover).
     fn(Frame)->void next_layout;
     bool has_next_layout;
@@ -466,6 +480,8 @@ bool ui_dispatch_now(*Event event) {
     }
     if (event.kind == 10) { ui_dispatch_route_event(event); return ui.router != null; }
     if (event.kind == 12) { return ui_dispatch_timer_event(event); }
+    if (event.kind == 18) { return ui_dispatch_frame_event(event); }
+    if (event.kind == 19) { return ui_dispatch_app_state_event(event); }
     if (event.kind == 15) { return ui_dispatch_answer_event(event); }
     if (event.kind == 16) { return ui_dispatch_fetch_event(event); }
     if (event.kind == 6) {
@@ -565,6 +581,8 @@ void ui_shutdown() {
     if (ui.has_next_hover) { ui_release_bool(ui.next_hover); }
     if (ui.has_next_pan) { ui_release_pan(ui.next_pan); }
     ui.timers.free();
+    ui_frames_shutdown();
+    ui.app_state_handlers.free();
     if (ui.has_timer_host) { ui_release_timer_start(ui.timer_start); ui_release_int(ui.timer_stop); }
     ui.alerts.free(); ui.back_handlers.free();
     for (i in 0..ui.text_requests.size) { ui_release_string(ui.text_requests.data[i].on_text); }

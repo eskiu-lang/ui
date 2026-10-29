@@ -215,6 +215,82 @@ void timers() {
     balanced("timers leak");
 }
 
+// The display clock, faked: whether frames were asked for, and what the handler saw.
+int frame_requests;
+bool frames_wanted;
+*Signal<bool> frame_running;
+int frame_count;
+double frame_delta;
+int fallback_token;
+
+void display_frames() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_set_frame_host(void(bool on) { frame_requests++; frames_wanted = on; });
+    ui_mount() {
+        frame_running = use_signal<bool>(true);
+        *Signal<int> shown = use_signal<int>(0);
+        Text(shown.get() > 0 ? "moving" : "still");
+        use_frame(frame_running.get(), void(Tick tick) { frame_count++; frame_delta = tick.delta; shown.set(frame_count); });
+    }
+    ui_frame();
+    check(frames_wanted && frame_requests == 1, "a running use_frame starts the display clock");
+    check(ui_event_frame(10.0) && frame_count == 1 && frame_delta == 0, "the first frame has no delta");
+    check(ui_event_frame(10.016) && frame_count == 2 && frame_delta > 0.0159 && frame_delta < 0.0161, "the next one has the time since");
+    ui_frame();
+    frame_running.set(false); ui_frame();
+    check(!frames_wanted && frame_requests == 2, "pausing it stops the clock");
+    check(!ui_event_frame(10.032) && frame_count == 2, "no frame runs while paused");
+    frame_running.set(true); ui_frame();
+    check(frames_wanted && frame_requests == 3, "running again restarts it");
+    check(ui_event_frame(11.0) && frame_delta == 0, "and the delta starts over");
+    ui_shutdown();
+    check(!frames_wanted, "unmounting stops it");
+    balanced("frames leak");
+
+    // Without a display clock, a 16 ms timer stands in.
+    frame_count = 0;
+    Ui plain;
+    ui_init(&plain, record);
+    ui_set_timer_host(void(int token, int ms, bool repeat) { if (ms == 16 && repeat) { fallback_token = token; } },
+        void(int token) { if (token == fallback_token) { fallback_token = 0; } });
+    ui_mount() { use_frame(true, void(Tick tick) { frame_count++; frame_delta = tick.delta; }); }
+    ui_frame();
+    check(fallback_token != 0, "the fallback timer is armed");
+    check(ui_event_timer(fallback_token) && ui_event_timer(fallback_token) && frame_count == 2, "its ticks are frames");
+    check(frame_delta > 0.0159 && frame_delta < 0.0161, "16 ms apart");
+    ui_shutdown();
+    check(fallback_token == 0, "unmounting stops the fallback timer");
+    balanced("fallback frames leak");
+}
+
+int app_state_changes;
+bool app_state_last;
+*Signal<bool> app_state_listening;
+
+void app_state() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        app_state_listening = use_signal<bool>(true);
+        if (app_state_listening.get()) {
+            Column(Style{}) { use_app_state(void(bool active) { app_state_changes++; app_state_last = active; }); }
+        }
+    }
+    ui_frame();
+    ui_set_active(false);
+    check(app_state_changes == 1 && !app_state_last, "leaving the foreground is reported");
+    ui_set_active(false);
+    check(app_state_changes == 1, "only changes are");
+    ui_set_active(true);
+    check(app_state_changes == 2 && app_state_last, "coming back is reported");
+    app_state_listening.set(false); ui_frame();
+    ui_set_active(false);
+    check(app_state_changes == 2, "an unmounted scope hears nothing");
+    ui_shutdown();
+    balanced("app state leaks");
+}
+
 int seen_scheme;
 string seen_locale;
 
