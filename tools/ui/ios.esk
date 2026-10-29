@@ -84,6 +84,7 @@ void ios_core(Project* p, string out, string app, string executable, List<string
     // The archives' own references to the system frameworks resolve here, not through the host.
     link.add("-framework"); link.add("UIKit"); link.add("-framework"); link.add("Foundation");
     link.add("-framework"); link.add("CoreGraphics"); link.add("-framework"); link.add("QuartzCore");
+    link.add("-framework"); link.add("CoreText");
     List<string> frameworks;
     defer frameworks.free();
     p.config.all("ios.frameworks", &frameworks);
@@ -188,6 +189,13 @@ string build_ios(Project* p) {
     defer String_free(&before);
     bool plist_changed = fs_read_text(join(bundle, "Info.plist"), &before) != 0 || String_eq_cstr(&before, plist.data) != 1;
     if (plist_changed) { fs_write_text(join(bundle, "Info.plist"), plist.data); }
+    // The bundle's top level holds the executable, so an asset there cannot share its name.
+    string clash = join(join(p.root.data, "assets"), p.name.data);
+    if (fs_exists(clash) == 1) {
+        String message;
+        String_appendf(&message, "ui: assets/%s has the app's name; rename it (the executable sits there in the bundle)", p.name.data);
+        fail(message.data);
+    }
     p.copy_assets(bundle);
     // The icon: actool compiles its catalog into the bundle, which is signed with the rest.
     string catalog = ios_icon_catalog(p, out);
@@ -229,6 +237,7 @@ string build_ios(Project* p) {
     for (i in 0..objects.size) { link.add(objects.data[i].data); }
     link.add("-framework"); link.add("UIKit"); link.add("-framework"); link.add("Foundation");
     link.add("-framework"); link.add("CoreGraphics"); link.add("-framework"); link.add("QuartzCore");
+    link.add("-framework"); link.add("CoreText");
     List<string> frameworks;
     defer frameworks.free();
     p.config.all("ios.frameworks", &frameworks);

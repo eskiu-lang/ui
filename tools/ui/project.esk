@@ -128,14 +128,27 @@ string Project_entry(Project* self) {
     return entry;
 }
 
-// The project's assets (images and other files the app loads by name) into `dir`.
+// The project's assets (images and other files the app loads by name, subdirectories
+// included: "fonts/VT323.ttf") into `dir`.
 void Project_copy_assets(Project* self, string dir) {
     string assets = join(self.root.data, "assets");
     if (fs_is_dir(assets) != 1) { return; }
+    copy_tree(assets, dir);
+}
+
+void copy_tree(string from, string to) {
     List<String> names;
     defer fs_list_free(&names);
-    fs_list_dir(assets, &names);
-    for (i in 0..names.size) { fs_copy(join(assets, names.data[i].data), join(dir, names.data[i].data)); }
+    fs_list_dir(from, &names);
+    for (i in 0..names.size) {
+        string source = join(from, names.data[i].data);
+        string target = join(to, names.data[i].data);
+        if (fs_is_dir(source) == 1) {
+            fs_mkdir_p(target);
+            copy_tree(source, target);
+        } else { fs_copy(source, target); }
+        free(source); free(target);
+    }
 }
 
 // The native code for `platform` with extension `ext` (".m", ".java"...) in every package:
