@@ -209,6 +209,24 @@ Android apps get the `INTERNET` permission, and builds allow plain HTTP for deve
 (`usesCleartextTraffic`); iOS allows plain HTTP to the local network. On the web, a request
 to another origin needs that server's CORS headers.
 
+`save_to` (a file path; iOS and Android) puts a `2xx` body in that file instead, bytes and all,
+written whole or not at all, and the result's `body` is empty: a download.
+
+### Cached files
+
+```eskiu
+string atlas = use_cached_file("https://cdn.example.com/battle/atlas.webp");
+if (atlas != null) { Image(Style{width: 128, height: 128, pixelated: true}, atlas); }
+```
+
+`use_cached_file(url)` is the path of `url` in the app's cache: null while it downloads the
+first time (the block renders again when it is there) and right away after that, also in
+later launches. `ui_cached_file(url, on_done)` does the same with a handler (run before it
+returns when the file is there; null when the download failed or the app stopped first), and
+two asks for one URL share its download. The files live in the data directory's `ui-cache/`,
+named by a hash of the URL and its file name. The web has no files: both give null there,
+where the browser's own cache serves the URL.
+
 ## Modals
 
 ```eskiu
