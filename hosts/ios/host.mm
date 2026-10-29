@@ -465,6 +465,21 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)frame:(CADisplayLink *)sender;
 - (void)clock:(CADisplayLink *)sender;
 @end
+// The focused field inside its nearest scroll view, above the keyboard: the root already
+// ends at the keyboard, so the scroll view only has to bring the field into its bounds.
+static void revealFocused(void) {
+    for (UiHostNode *node in nodes.allValues) {
+        if (![node.view isKindOfClass:UITextField.class] || !node.view.isFirstResponder) continue;
+        for (UIView *up = node.view.superview; up; up = up.superview) {
+            if (![up isKindOfClass:UIScrollView.class]) continue;
+            CGRect rect = CGRectInset([node.view convertRect:node.view.bounds toView:up], 0, -16);
+            [(UIScrollView *)up scrollRectToVisible:rect animated:YES];
+            break;
+        }
+        return;
+    }
+}
+
 @implementation UiEvents
 - (void)backdrop:(UITapGestureRecognizer *)gesture {
     UIView *view = gesture.view;
@@ -534,6 +549,8 @@ static void place(YGNodeRef yoga, UIView *parent) {
 - (void)focus:(UITextField *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
     if (node) ui_dispatch_focus((int)sender.tag, node.generation, 1);
+    // With the keyboard already up, a newly focused field may be under it.
+    dispatch_async(dispatch_get_main_queue(), ^{ revealFocused(); });
 }
 - (void)blur:(UITextField *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
@@ -1189,6 +1206,8 @@ static UiHostNode *swipeTop, *swipeBelow;
     CGRect end = [self.view convertRect:[note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue] fromView:nil];
     self.keyboard = std::max<CGFloat>(0, CGRectGetMaxY(self.view.bounds) - CGRectGetMinY(end));
     [self.view setNeedsLayout];
+    [self.view layoutIfNeeded];
+    if (self.keyboard > 0 && !ui_edge_to_edge()) revealFocused();
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
