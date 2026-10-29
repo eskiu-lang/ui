@@ -36,6 +36,7 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}) 
 | `gradient` | -1 | Paints the background as a linear gradient from `background` (transparent when unset) to this color. |
 | `gradient_angle` | 180 | The gradient's direction in degrees, as CSS: 180 top to bottom, 90 left to right, 135 corner to corner (Android turns it to the nearest 45). |
 | `pixelated` | false | An `Image` scales without smoothing, each pixel a sharp square, for pixel art (CSS `image-rendering: pixelated`). |
+| `blur` | 0 | Shows what is behind the element blurred, as frosted glass, with `background` as a tint over it: iOS's system materials (the nearest to the radius, in points), CSS `backdrop-filter` on the web. Android cannot blur behind a view and paints a translucent material instead. |
 | `font` | null | Draws the text in a font file from `assets/` (`"fonts/VT323.ttf"`, TrueType or OpenType), loaded once; one file per weight, so `font_weight` does not apply. A file that does not load leaves the system font. |
 | `easing` | `EaseInOut` | The transition's curve: `EaseInOut`, `EaseOut`, `EaseIn`, `EaseLinear`, `EaseSpring`. |
 
