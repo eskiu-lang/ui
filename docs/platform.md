@@ -26,6 +26,30 @@ void ui_app_start(int which) {
 }
 ```
 
+## The app
+
+```eskiu
+string version = ui_app_version();        // [app] version: "1.2.0"
+string build = ui_app_build();            // [app] build: "12"
+string api = ui_config("API_URL");        // [env] API_URL, or null
+```
+
+`ui_app_name()`, `ui_app_id()`, `ui_app_version()` and `ui_app_build()` are what ui.toml
+and eskiu.toml say (native.md), compiled in by the ui tool. `ui_config(key)` reads the
+`[env]` table, with `[env.release]` over it in `ui release` builds, so a backend's URL can
+differ between development and the stores:
+
+```toml
+[env]
+API_URL = "http://localhost:8080"
+
+[env.release]
+API_URL = "https://api.example.com"
+```
+
+These are not secrets: they are in the app's binary. Outside a ui build (the model tests)
+the version is "0.1.0", the build "1", the name and id empty and every key null.
+
 ## Light and dark
 
 ```eskiu

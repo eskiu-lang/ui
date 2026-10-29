@@ -236,6 +236,12 @@ icon = "icon.png"                # the app's icon (below)
 version = "1.2.0"                # the version people see (default: the package's version)
 build = "12"                     # the build number the stores order releases by (default "1")
 
+[env]
+API_URL = "http://localhost:8080"   # ui_config("API_URL") (platform.md)
+
+[env.release]
+API_URL = "https://api.example.com" # over [env] in `ui release` builds
+
 [splash]
 background = "#101820"           # the launch screen's color (below)
 image = "splash.png"             # centered on it
