@@ -693,6 +693,10 @@ public final class UiActivity extends Activity {
         else if (code == 46) view.setElevation(value * d);
         else if (code == 47 && view instanceof ImageView)
             ((ImageView)view).setScaleType(value != 0 ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_CENTER);
+        else if (code == 48 && view instanceof ImageView) {
+            if (value != 0) pixelated.add(view); else pixelated.remove(view);
+            filterImage((ImageView)view);
+        }
         else if (code == 15) {
             int[] motion = motionOf(id, view);
             if (motion == null) view.setAlpha(value / 100f);
@@ -825,6 +829,16 @@ public final class UiActivity extends Activity {
 
     // A file in the APK's assets, a file by its absolute path (or a file:// URL), or an http(s)
     // URL fetched off the UI thread.
+    // Images scaled without smoothing (Style.pixelated): their drawables do not filter.
+    private final java.util.Set<View> pixelated = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    private void filterImage(ImageView view) {
+        android.graphics.drawable.Drawable drawable = view.getDrawable();
+        if (drawable != null) { drawable.setFilterBitmap(!pixelated.contains(view)); view.invalidate(); }
+    }
+    private void showImage(ImageView view, Bitmap bitmap) {
+        view.setImageBitmap(bitmap);
+        filterImage(view);
+    }
     private void loadImage(ImageView view, String source) {
         view.setImageDrawable(null);
         if (source.isEmpty()) return;
@@ -832,7 +846,7 @@ public final class UiActivity extends Activity {
             String path = source.startsWith("file://") ? source.substring(7) : source;
             new Thread(() -> {
                 Bitmap bitmap = BitmapFactory.decodeFile(path);
-                runOnUiThread(() -> view.setImageBitmap(bitmap));
+                runOnUiThread(() -> showImage(view, bitmap));
             }).start();
             return;
         }
@@ -840,13 +854,13 @@ public final class UiActivity extends Activity {
             new Thread(() -> {
                 try (java.io.InputStream in = new java.net.URL(source).openStream()) {
                     Bitmap bitmap = BitmapFactory.decodeStream(in);
-                    runOnUiThread(() -> view.setImageBitmap(bitmap));
+                    runOnUiThread(() -> showImage(view, bitmap));
                 } catch (Exception error) { /* a failed load leaves the view empty */ }
             }).start();
             return;
         }
         try (java.io.InputStream in = getAssets().open(source)) {
-            view.setImageBitmap(BitmapFactory.decodeStream(in));
+            showImage(view, BitmapFactory.decodeStream(in));
         } catch (Exception error) { /* a missing asset leaves the view empty */ }
     }
 

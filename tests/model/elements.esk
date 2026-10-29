@@ -124,14 +124,18 @@ void visual_styles() {
             TextWith(Style{color: rgb(0, 0, 255), font_size: 24, font_weight: 700}, "Title");
         }
         Row(Style{}) {}
+        Image(Style{width: 32, height: 32, pixelated: v < 3}, "sprite.png");
     }
     ui_frame();
     for (code in 8..18) { check(count_prop(2, code) == 1, "each visual prop sent once"); }
+    check(count_prop(2, 48) == 1 && prop_value(2, 48) == 1, "a pixelated image");
     check(prop_value(2, 8) == (int)0xFF0000FF && prop_value(2, 16) == 2 && prop_value(2, 17) == 4, "values");
     style_version.set(1); ui_frame();
     for (code in 8..18) { check(count_prop(2, code) == 0, "unchanged styles send nothing"); }
     style_version.set(2); ui_frame();
     check(count_prop(2, 8) == 1 && prop_value(2, 8) == 0, "a cleared background is 0");
+    style_version.set(3); ui_frame();
+    check(count_prop(2, 48) == 1 && prop_value(2, 48) == 0, "smoothing again");
     ui_shutdown(); balanced("visual styles leak");
 }
 

@@ -628,6 +628,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view.contentMode = before ? UIViewContentModeScaleAspectFill : UIViewContentModeScaleAspectFit;
             node.view.clipsToBounds = before || node.radius > 0;
         }
+        else if (kind == 48 && [node.view isKindOfClass:UIImageView.class]) {
+            NSString *filter = before ? kCAFilterNearest : kCAFilterLinear;
+            node.view.layer.magnificationFilter = filter;
+            node.view.layer.minificationFilter = filter;
+        }
         else if (kind == 46) {
             // A shadow draws outside the bounds, so a raised view does not clip to its radius.
             CALayer *layer = node.view.layer;
