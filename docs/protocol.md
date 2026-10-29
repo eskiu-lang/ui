@@ -82,6 +82,7 @@ it into `Mutation` records for tests and tools.
 | | | 49 | long press listener (1: report a long press) |
 | | | 50 | gradient end color (RGBA, 0: none), from the background color |
 | | | 51 | gradient angle (degrees, as CSS; 180 top to bottom) |
+| | | 52 | backdrop blur radius (points, 0: none) |
 
 A text input's value is its text (op 3). Sizes are points.
 

@@ -32,7 +32,7 @@ struct Node {
     int gap;
     int padding;
     // The value last sent for each int prop (by code), so only a change is sent again.
-    int64[52] props;
+    int64[53] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -573,6 +573,7 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 48, style.pixelated ? 1 : 0, 0);
     ui_prop(node, fresh, 50, style.gradient, -1);
     ui_prop(node, fresh, 51, style.gradient_angle, 180);
+    ui_prop(node, fresh, 52, style.blur, 0);
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
     if (ui_update_string(&node.font, style.font)) { ui_emit_string_prop(node, 5, node.font); }
     // A layout handler from ui_on_layout, and whether the host reports this node's frame.
