@@ -55,6 +55,12 @@ on each change, in a file in the app's data directory (on the web, the page's
 web), reported before the app starts, so `ui_app_start` can read from it; `<fs>` works in it
 for anything larger.
 
+`ui_asset_path("sprites/atlas.webp")` is a file of the app's `assets/` as a path to open with
+`<fs>` or hand to a package that reads files (`<canvas>` images, `<audio>` sounds): the
+bundle's file on iOS, and on Android a copy taken out of the APK into the app's cache (once,
+again after an update). The caller frees it. It is null on the web and the desktop, which
+serve the assets by URL, and for a file that is not there.
+
 ## Mounting
 
 ```eskiu
