@@ -202,6 +202,18 @@ A host calls `ui_start(which)` when the app starts: it creates the runtime, call
 runtime down and calls `ui_app_stop()`, where the app frees its model. Events that arrive
 after the stop are ignored.
 
+The splash (ui.toml `[splash]`, see native.md) stays over the app until its first frame.
+`ui_splash_hold()`, called from `ui_app_start`, keeps it up after that, while fonts load or
+saved state is read, until `ui_splash_hide()`:
+
+```c
+void ui_app_start(int which) {
+    ui_splash_hold();
+    load_state(void() { ui_splash_hide(); });
+    ui_mount() { App(); }
+}
+```
+
 ## Errors
 
 `ui_on_error(fn(UiError)->void)` is told every error the runtime catches: in a render, a

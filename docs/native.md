@@ -236,6 +236,10 @@ icon = "icon.png"                # the app's icon (below)
 version = "1.2.0"                # the version people see (default: the package's version)
 build = "12"                     # the build number the stores order releases by (default "1")
 
+[splash]
+background = "#101820"           # the launch screen's color (below)
+image = "splash.png"             # centered on it
+
 [web]
 base = "/tasks/"                 # where the page is served from (default "/")
 
@@ -280,6 +284,16 @@ platform cuts its own shape. From it the build makes:
 The PNG can be gray, RGB, a palette or have alpha, 8 bits a channel and not interlaced; the
 tool reads and scales it itself, so building for Android needs no image tools. It is
 redone when the file changes.
+
+## The splash
+
+`[splash]` sets the launch screen: `background` a `#rrggbb` color, `image` a PNG (from the
+project's root) centered on it at a third of its pixels in points, so a 480 × 480 file is 160
+points wide. The system shows it while the app loads (iOS: `UILaunchScreen` from the asset
+catalog; Android: the window background of the `UiSplash` theme, and on Android 12 and later
+the system splash in that color with the app's icon; the web: a layer in the page), and the
+host keeps the same picture over the app until its first frame is drawn, then fades it out.
+See `ui_splash_hold` in platform.md to keep it up longer.
 
 ## Dependencies: Gradle and Xcode
 
