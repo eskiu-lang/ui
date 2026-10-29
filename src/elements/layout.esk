@@ -22,6 +22,15 @@ void ui_on_hover(escaping fn(bool)->void handler) {
     ui.has_next_hover = true;
 }
 
+// For the element right after it: `handler` runs when it is held for about half a second
+// (a long press; a right click or a held mouse button on the web). A long press is not also
+// a press.
+void ui_on_long_press(escaping fn()->void handler) {
+    if (ui.has_next_long_press) { ui_release_closure(ui.next_long_press); }
+    ui.next_long_press = handler;
+    ui.has_next_long_press = true;
+}
+
 void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
 
 void Row(Style style, escaping fn()->void block) { ui_element(2, style, null, block, void() {}, void() {}); }

@@ -315,6 +315,35 @@ void hovers() {
     ui_shutdown(); balanced("hover leak");
 }
 
+int long_presses;
+int short_presses;
+*Signal<int> long_version;
+
+void long_presses_test() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        long_version = use_signal<int>(0);
+        int v = long_version.get();
+        if (v < 2) { ui_on_long_press(void() { long_presses += v + 1; }); }
+        Pressable(Style{key: key(1)}, void() { short_presses++; }) {}
+    }
+    ui_frame();
+    check(count_prop(2, 49) == 1 && prop_value(2, 49) == 1, "the host is asked to report long presses");
+    *Node pressable = keyed(1);
+    check(ui_event_long_press(pressable.id, pressable.generation) && long_presses == 1, "a long press runs the handler");
+    check(short_presses == 0, "and is not a press");
+    long_version.set(1); ui_frame();
+    check(count_prop(2, 49) == 0, "a new handler sends nothing");
+    ui_event_long_press(pressable.id, pressable.generation);
+    check(long_presses == 3, "the new handler runs");
+    long_version.set(2); ui_frame();
+    check(count_prop(2, 49) == 1 && prop_value(2, 49) == 0, "no handler: the host stops reporting");
+    check(!ui_event_long_press(pressable.id, pressable.generation), "and a long press does nothing");
+    ui_on_long_press(void() {});
+    ui_shutdown(); balanced("long press leak");
+}
+
 *Signal<bool> switch_on;
 
 bool accept_toggle;

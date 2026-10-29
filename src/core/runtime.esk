@@ -13,7 +13,7 @@
 // the request), 16 fetch (a request finished: value the status, text the body or the error,
 // name the headers), 17 pan (value the phase, extra dx, width dy, height the x velocity,
 // extra2 the y velocity), 18 display frame (no node; the time in seconds in `value`, the microseconds in `extra`), 19 the app
-// went to the foreground (value 1) or the background (value 0; no node). A layout's window
+// went to the foreground (value 1) or the background (value 0; no node), 20 long press. A layout's window
 // position is in extra2 and extra3.
 struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height;
                int extra2; int extra3; }
@@ -105,6 +105,8 @@ struct Ui {
     bool has_next_hover;
     fn(Pan)->void next_pan;
     bool has_next_pan;
+    fn()->void next_long_press;
+    bool has_next_long_press;
     // Destructors for the next element (ui_own).
     List<fn()->void> next_owned;
     // The RefreshControl for the next Scroll or FlatList.
@@ -428,6 +430,9 @@ bool ui_event_pan(int id, int generation, int phase, int dx, int dy, int vx, int
 // The user moved a Slider to `value`.
 bool ui_event_value(int id, int generation, int value) { return ui_post(Event{id, generation, 14, value, null}); }
 
+// A node with a long press handler was held.
+bool ui_event_long_press(int id, int generation) { return ui_post(Event{id, generation, 20, 0, null}); }
+
 // A pointer entered (true) or left (false) a node with a hover handler.
 bool ui_event_hover(int id, int generation, bool inside) {
     return ui_post(Event{id, generation, 13, inside ? 1 : 0, null});
@@ -533,6 +538,7 @@ bool ui_dispatch_now(*Event event) {
         return true;
     }
     if (event.kind == 13 && node.has_on_hover) { node.on_hover(event.value != 0); return true; }
+    if (event.kind == 20 && node.has_on_long_press) { node.on_long_press(); return true; }
     if (event.kind == 11 && node.has_on_layout) {
         node.on_layout(Frame{event.value, event.extra, event.width, event.height, event.extra2, event.extra3});
         return true;
@@ -579,6 +585,7 @@ void ui_shutdown() {
     for (i in 0..ui.alerts.size) { ui_release_choice(ui.alerts.data[i].on_choice); }
     if (ui.has_next_layout) { ui_release_frame(ui.next_layout); }
     if (ui.has_next_hover) { ui_release_bool(ui.next_hover); }
+    if (ui.has_next_long_press) { ui_release_closure(ui.next_long_press); }
     if (ui.has_next_pan) { ui_release_pan(ui.next_pan); }
     ui.timers.free();
     ui_frames_shutdown();
