@@ -848,6 +848,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
 }
 
 extern "C" void ui_host_ready(void);
+static UIView *splashView;
+static bool splashHeld;
+static void hideSplash(void);
 // Commands: 1 an alert (title, message, buttons), 2 open a URL.
 static void ui_host_command(int request, int command, int count, const char **strings) {
     if (command == 1 && count >= 2) {
@@ -903,6 +906,9 @@ static void ui_host_command(int request, int command, int count, const char **st
                                                         UINotificationFeedbackTypeError};
             [[UINotificationFeedbackGenerator new] notificationOccurred:types[std::min(kind - 4, 2)]];
         }
+    } else if (command == 11 && count >= 1) {
+        if (strings[0][0] == '1') splashHeld = splashView != nil;
+        else hideSplash();
     } else if (command == 9 && count >= 1) {
         UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @(strings[0]));
     } else if (command == 10 && count >= 6) {
@@ -936,10 +942,43 @@ static void ui_host_command(int request, int command, int count, const char **st
     }
 }
 
+// The splash (ui.toml [splash]: Info.plist UiSplashBackground and the bundle's ui-splash.png)
+// over the app until its first commit, or until ui_splash_hide() when the app held it.
+static void showSplash(UIView *over) {
+    NSString *hexText = [NSBundle.mainBundle objectForInfoDictionaryKey:@"UiSplashBackground"];
+    unsigned rgb = 0;
+    bool hasColor = hexText.length == 7 && [[NSScanner scannerWithString:[hexText substringFromIndex:1]] scanHexInt:&rgb];
+    splashView = [[UIView alloc] initWithFrame:over.bounds];
+    splashView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    splashView.backgroundColor = hasColor ? [UIColor colorWithRed:(rgb >> 16) / 255.0 green:((rgb >> 8) & 255) / 255.0
+                                                             blue:(rgb & 255) / 255.0 alpha:1] : UIColor.systemBackgroundColor;
+    NSString *path = [NSBundle.mainBundle pathForResource:@"ui-splash" ofType:@"png"];
+    NSData *data = path ? [NSData dataWithContentsOfFile:path] : nil;
+    // A third of its pixels in points, as the launch screen shows it.
+    UIImage *image = data ? [UIImage imageWithData:data scale:3] : nil;
+    if (image) {
+        UIImageView *imageView = [[UIImageView alloc] initWithImage:image];
+        imageView.center = CGPointMake(over.bounds.size.width / 2, over.bounds.size.height / 2);
+        imageView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
+            UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+        [splashView addSubview:imageView];
+    }
+    [over addSubview:splashView];
+}
+
+static void hideSplash(void) {
+    UIView *view = splashView;
+    splashView = nil;
+    splashHeld = false;
+    if (!view) return;
+    [UIView animateWithDuration:0.2 animations:^{ view.alpha = 0; } completion:^(BOOL done) { [view removeFromSuperview]; }];
+}
+
 extern "C" void ui_host_commit(const uint8_t *data, int len) {
     ui_commit_each(data, len, ui_host_apply, ui_host_command, ui_host_named);
     ui_host_ready();
     slideScreens();
+    if (splashView && !splashHeld) hideSplash();
 }
 
 static void relayout(void) {
@@ -1382,6 +1421,7 @@ static void restartCore(NSString *path) {
     [controller.view addSubview:rootView];
     rootYoga = YGNodeNew();
     YGNodeStyleSetFlexDirection(rootYoga, YGFlexDirectionColumn);
+    showSplash(controller.view);
     ui_start(conformance ? 3 : nativeTest ? 6 : launchExample);
     if (conformance) runConformance();
     if (nativeTest) runNativeTest();

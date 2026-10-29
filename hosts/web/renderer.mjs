@@ -458,6 +458,7 @@ export function createHost(root, dispatch, views = {}) {
       else answer(copied);
     } else if (c.command === 8) navigator.vibrate?.([10, 15, 25, 40, 20, 30, 40][Number(c.strings[0])] ?? 10);
     else if (c.command === 9) announce(c.strings[0]);
+    else if (c.command === 11) { if (c.strings[0] === '1') splashHeld = splashElement() !== null; else hideSplash(); }
     else if (c.command === 10) {
       // A fetch through the browser; the answer comes back as an event.
       const [url, method, headerText, body, timeout, hasBody] = c.strings;
@@ -569,6 +570,21 @@ export function createHost(root, dispatch, views = {}) {
       }
       pending.length = 0;
       if (layouts.size) reportLayouts();
+      if (!splashHeld) hideSplash();
     }
   };
+}
+
+// The page's splash (ui.toml [splash], #ui-splash) until the app's first commit, or until
+// ui_splash_hide() when the app held it.
+let splashHeld = false;
+function splashElement() { return globalThis.document?.getElementById?.('ui-splash') ?? null; }
+function hideSplash() {
+  splashHeld = false;
+  const splash = splashElement();
+  if (!splash || splash.dataset.leaving) return;
+  splash.dataset.leaving = '1';
+  splash.style.transition = 'opacity 0.2s';
+  splash.style.opacity = '0';
+  setTimeout(() => splash.remove(), 200);
 }

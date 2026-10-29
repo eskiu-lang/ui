@@ -456,6 +456,7 @@ public final class UiActivity extends Activity {
         if (core != null) nativeReload(core);
         root = new YogaGroup();
         setContentView(root);
+        showSplash();
         // System bars, display cutouts and the keyboard: padding on the root unless the app
         // draws edge to edge; the raw insets go to the app either way.
         root.setOnApplyWindowInsetsListener((v, insets) -> {
@@ -817,6 +818,11 @@ public final class UiActivity extends Activity {
     // Commands: 1 an alert (title, message, buttons; up to three, as Android shows them),
     // 2 open a URL.
     public void command(int request, int command, String[] strings) {
+        if (command == 11 && strings.length >= 1) {
+            if (strings[0].equals("1")) splashHeld = splash != null;
+            else hideSplash();
+            return;
+        }
         if (command == 1 && strings.length >= 2) {
             final boolean[] answered = {false};
             java.util.function.IntConsumer answer = index -> {
@@ -1124,7 +1130,54 @@ public final class UiActivity extends Activity {
     public float width() { return (root.getWidth() - root.getPaddingLeft() - root.getPaddingRight()) / density(); }
     public float height() { return (root.getHeight() - root.getPaddingTop() - root.getPaddingBottom()) / density(); }
     public float scale() { return density(); }
-    public void committed() { commits++; root.invalidate(); }
+    public void committed() {
+        commits++; root.invalidate();
+        if (splash != null && !splashHeld) hideSplash();
+    }
+    // The splash (ui.toml [splash]: the activity's org.eskiu.ui.splash color and the assets'
+    // ui-splash.png) over the app until its first commit, or until ui_splash_hide() when the app
+    // held it. The theme's window background shows the same before the first frame.
+    private FrameLayout splash;
+    private boolean splashHeld;
+    private void showSplash() {
+        String color = null;
+        try {
+            ActivityInfo info = getPackageManager().getActivityInfo(getComponentName(), PackageManager.GET_META_DATA);
+            color = info.metaData == null ? null : info.metaData.getString("org.eskiu.ui.splash");
+        } catch (PackageManager.NameNotFoundException e) {}
+        splash = new FrameLayout(this);
+        if (color != null) splash.setBackgroundColor(android.graphics.Color.parseColor(color));
+        else {
+            android.content.res.TypedArray a = getTheme().obtainStyledAttributes(new int[] {android.R.attr.colorBackground});
+            splash.setBackgroundColor(a.getColor(0, 0xffffffff));
+            a.recycle();
+        }
+        try (java.io.InputStream in = getAssets().open("ui-splash.png")) {
+            // A third of its pixels in dp, as the launch screen's xxhdpi bitmap.
+            android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+            options.inDensity = android.util.DisplayMetrics.DENSITY_XXHIGH;
+            options.inTargetDensity = getResources().getDisplayMetrics().densityDpi;
+            ImageView image = new ImageView(this);
+            image.setImageBitmap(android.graphics.BitmapFactory.decodeStream(in, null, options));
+            splash.addView(image, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT, android.view.Gravity.CENTER));
+        } catch (java.io.IOException e) {}
+        ((FrameLayout)findViewById(android.R.id.content)).addView(splash,
+            new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+    }
+    private void hideSplash() {
+        FrameLayout view = splash;
+        splash = null;
+        splashHeld = false;
+        if (view == null) return;
+        // The theme's splash window background goes back to the platform's.
+        android.content.res.TypedArray a = getTheme().obtainStyledAttributes(new int[] {android.R.attr.colorBackground});
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(a.getColor(0, 0xffffffff)));
+        a.recycle();
+        view.animate().alpha(0).setDuration(200).withEndAction(() -> {
+            if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
+        });
+    }
 
     private void finishSelfTest() {
         boolean found = false;
