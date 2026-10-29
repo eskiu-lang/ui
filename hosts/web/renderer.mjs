@@ -420,7 +420,7 @@ export function createHost(root, dispatch, views = {}) {
       dialog.append(heading, text, row);
       document.body.appendChild(dialog);
       dialog.showModal();
-    } else if (c.command === 2) window.open(c.strings[0], '_blank', 'noopener');
+    } else if (c.command === 2) { if (c.strings[0] !== 'app-settings:') window.open(c.strings[0], '_blank', 'noopener'); }
     else if (c.command === 4) document.activeElement?.blur?.();
     else if (c.command === 5) {
       const [text, url] = c.strings;

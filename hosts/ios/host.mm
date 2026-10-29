@@ -801,7 +801,9 @@ static void ui_host_command(int request, int command, int count, const char **st
             [rootView.window.rootViewController presentViewController:alert animated:NO completion:nil];
         });
     } else if (command == 2 && count >= 1) {
-        NSURL *url = [NSURL URLWithString:@(strings[0])];
+        // ui_open_settings's "app-settings:" is UIKit's own settings URL.
+        NSString *text = strcmp(strings[0], "app-settings:") == 0 ? UIApplicationOpenSettingsURLString : @(strings[0]);
+        NSURL *url = [NSURL URLWithString:text];
         if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
     } else if (command == 4) {
         [rootView.window endEditing:YES];

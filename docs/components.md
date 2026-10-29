@@ -72,6 +72,7 @@ view returns to it.
 | `StatusBar(int BarStyle, bool hidden)` | The system status bar: `BarDefault`, `BarLight` or `BarDark` content, and whether it shows. The last one rendered wins. |
 | `use_back(fn()->bool)` | A back handler while the scope is mounted; it returns true when it handled the press. |
 | `ui_open_url(string)` | Open a URL with the platform. |
+| `ui_open_settings()` | Open the app's page in the system settings (iOS, Android), as after a permission was denied for good. |
 | `ui_link()` | The link the app was opened with or was last sent, or null. |
 | `ui_insets()`, `ui_window()`, `ui_is_active()` | The system bars and keyboard, the window, whether the app is in the foreground. |
 

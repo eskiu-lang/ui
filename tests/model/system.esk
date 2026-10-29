@@ -62,6 +62,10 @@ void commands() {
     ui_frame();
     check(mutation_ops[0] == 10 && mutation_kinds[0] == 2 && strcmp(mutation_texts[0], "https://eskiu-lang.org") == 0,
         "open a URL");
+    ui_open_settings();
+    ui_frame();
+    check(mutation_ops[0] == 10 && mutation_kinds[0] == 2 && strcmp(mutation_texts[0], "app-settings:") == 0,
+        "open the app's settings");
     // An unanswered alert is freed at shutdown.
     ui_event(button.id, button.generation);
     ui_frame();

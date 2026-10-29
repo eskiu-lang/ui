@@ -117,6 +117,9 @@ closes the newest modal.
 A `Navigator` turns links into routes ([navigation](navigation.md)).
 
 `ui_open_url(url)` opens a URL with the platform: the browser, or the app that handles it.
+`ui_open_settings()` opens the app's page in the system settings on iOS and Android, where
+the user can grant a permission they denied for good; on the web and the desktop it does
+nothing.
 `ui_link()` is the link the app was opened with or was last sent, or null: a deep link on
 iOS and Android, the page's URL on the web (reported again when its hash changes).
 

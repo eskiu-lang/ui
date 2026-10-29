@@ -797,7 +797,11 @@ public final class UiActivity extends Activity {
             shownAlert = builder.show();
             answerAlert = answer;
         } else if (command == 2 && strings.length >= 1) {
-            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(strings[0]))); }
+            // ui_open_settings: the app's page in the system settings.
+            Intent intent = strings[0].equals("app-settings:")
+                ? new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))
+                : new Intent(Intent.ACTION_VIEW, Uri.parse(strings[0]));
+            try { startActivity(intent); }
             catch (Exception error) { /* no app handles it */ }
         } else if (command == 4) {
             View focused = getCurrentFocus();

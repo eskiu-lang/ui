@@ -57,6 +57,13 @@ void ui_open_url(string url) {
     strings.free();
 }
 
+// Open this app's page in the system settings (its permissions, notifications), as for a
+// permission the user denied for good. Nothing on the web and the desktop.
+void ui_open_settings() { ui_open_url(kUiSettingsUrl); }
+
+// The URL ui_open_settings opens; hosts map it to their settings page.
+const string kUiSettingsUrl = "app-settings:";
+
 bool ui_event_alert(int request, int choice) {
     return ui_post(Event{request, 0, 6, choice, null});
 }
