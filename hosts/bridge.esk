@@ -20,6 +20,8 @@ extern void ui_host_timer_stop(int token);
 // The host's display clock (use_frame): 1 starts it, 0 stops it; each frame calls
 // ui_dispatch_frame(time) with the frame's time in seconds.
 extern void ui_host_frames(int on);
+// An asset's path (ui_asset_path): a string from malloc the caller frees, or null.
+extern string ui_host_asset_path(string name);
 Ui ui_host_runtime;
 
 // What the hosts' conformance runs read back: the conformance scene writes its handler log
@@ -242,6 +244,7 @@ void ui_start(int which) {
     ui_set_timer_host(void(int token, int ms, bool repeat) { ui_host_timer_start(token, ms, repeat ? 1 : 0); },
         void(int token) { ui_host_timer_stop(token); });
     ui_set_frame_host(void(bool on) { ui_host_frames(on ? 1 : 0); });
+    ui_set_asset_host(string(string name) { return ui_host_asset_path(name); });
     if (pending_link != null) {
         ui_set_link(pending_link);
         free(pending_link);

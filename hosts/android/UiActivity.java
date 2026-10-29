@@ -1143,6 +1143,28 @@ public final class UiActivity extends Activity {
     public float width() { return (root.getWidth() - root.getPaddingLeft() - root.getPaddingRight()) / density(); }
     public float height() { return (root.getHeight() - root.getPaddingTop() - root.getPaddingBottom()) / density(); }
     public float scale() { return density(); }
+    // ui_asset_path: an asset copied out of the APK into the cache, once per install of the app
+    // (the copy is made again when the app was updated since); null when there is no such asset.
+    public String assetPath(String name) {
+        java.io.File file = new java.io.File(new java.io.File(getCacheDir(), "ui-assets"), name);
+        long installed = 0;
+        try { installed = getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime; }
+        catch (PackageManager.NameNotFoundException e) {}
+        if (file.isFile() && file.lastModified() >= installed) return file.getPath();
+        java.io.File partial = new java.io.File(file.getPath() + ".part");
+        try (java.io.InputStream in = getAssets().open(name)) {
+            file.getParentFile().mkdirs();
+            try (java.io.OutputStream out = new java.io.FileOutputStream(partial)) {
+                byte[] buffer = new byte[65536];
+                for (int n; (n = in.read(buffer)) > 0; ) out.write(buffer, 0, n);
+            }
+            if (!partial.renameTo(file)) return null;
+            return file.getPath();
+        } catch (java.io.IOException e) {
+            partial.delete();
+            return null;
+        }
+    }
     public void committed() {
         commits++; root.invalidate();
         if (splash != null && !splashHeld) hideSplash();

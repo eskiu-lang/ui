@@ -58,6 +58,8 @@ mergeInto(LibraryManager.library, {
     timers.delete(token);
   },
   // The display clock for use_frame: requestAnimationFrame while it is on.
+  // The web serves the assets by URL: no paths (ui_asset_path is null).
+  ui_host_asset_path: function(name) { return 0; },
   ui_host_frames: function(on) {
     if (!on) {
       if (Module['uiFrame']) cancelAnimationFrame(Module['uiFrame']);

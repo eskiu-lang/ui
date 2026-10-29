@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <cstring>
 #include <yoga/Yoga.h>
 #include "../commit.h"
 #include "ui_native.h"
@@ -37,7 +38,7 @@ static const int kUnset = -1000000;
 static JavaVM *vm;
 static jclass activityClass;
 static jobject classLoader;
-static jmethodID namedMethod, emitMethod, loadClassMethod, timerStartMethod, timerStopMethod, windowMethod, framesMethod;
+static jmethodID namedMethod, emitMethod, loadClassMethod, timerStartMethod, timerStopMethod, windowMethod, framesMethod, assetPathMethod;
 static void checked() { if (env->ExceptionCheck()) { env->ExceptionDescribe(); std::abort(); } }
 static YGSize measure(YGNodeConstRef node, float width, YGMeasureMode wm, float height, YGMeasureMode hm) {
     int id = static_cast<int>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
@@ -90,6 +91,18 @@ extern "C" void ui_host_timer_start(int token, int ms, int repeat) {
 }
 extern "C" void ui_host_timer_stop(int token) { env->CallVoidMethod(activity, timerStopMethod, token); checked(); }
 extern "C" void ui_host_frames(int on) { env->CallVoidMethod(activity, framesMethod, on != 0); checked(); }
+extern "C" char *ui_host_asset_path(const char *name) {
+    jstring n = env->NewStringUTF(name);
+    jstring path = (jstring)env->CallObjectMethod(activity, assetPathMethod, n);
+    env->DeleteLocalRef(n);
+    checked();
+    if (!path) return nullptr;
+    const char *chars = env->GetStringUTFChars(path, nullptr);
+    char *copy = strdup(chars);
+    env->ReleaseStringUTFChars(path, chars);
+    env->DeleteLocalRef(path);
+    return copy;
+}
 extern "C" void ui_host_apply(int op, int id, int generation, int parent, int before, int kind, const char *text) {
     if (op == 1) {
         YGNodeRef node = YGNodeNew();
@@ -217,6 +230,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStart(JNIEn
     timerStartMethod = env->GetMethodID(cls, "timerStart", "(IIZ)V");
     timerStopMethod = env->GetMethodID(cls, "timerStop", "(I)V");
     framesMethod = env->GetMethodID(cls, "frames", "(Z)V");
+    assetPathMethod = env->GetMethodID(cls, "assetPath", "(Ljava/lang/String;)Ljava/lang/String;");
     windowMethod = env->GetMethodID(cls, "windowOf", "(I)J");
     emitMethod = env->GetStaticMethodID(cls, "emit", "(Ljava/lang/String;Ljava/lang/String;)V");
     activityClass = (jclass)env->NewGlobalRef(cls);

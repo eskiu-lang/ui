@@ -575,6 +575,13 @@ extern "C" void ui_host_cancel(void) { [frameLink invalidate]; frameLink = nil; 
 
 // The display clock for use_frame: a display link of its own while it is on.
 static CADisplayLink *clockLink;
+extern "C" char *ui_host_asset_path(const char *name) {
+    NSString *path = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@(name)];
+    BOOL directory = NO;
+    if (![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&directory] || directory) return NULL;
+    return strdup(path.fileSystemRepresentation);
+}
+
 extern "C" void ui_host_frames(int on) {
     if (!on) { [clockLink invalidate]; clockLink = nil; return; }
     if (clockLink) return;
