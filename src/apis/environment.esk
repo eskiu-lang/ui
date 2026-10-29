@@ -24,6 +24,31 @@ string ui_platform_name() {
     return "desktop";
 }
 
+// The app as ui.toml and eskiu.toml describe it, compiled in by the ui tool (its build's
+// entry defines these macros; elsewhere, as in tests, they read as below).
+#ifndef UI_APP_NAME
+#define UI_APP_NAME ""
+#define UI_APP_ID ""
+#define UI_APP_VERSION "0.1.0"
+#define UI_APP_BUILD "1"
+#define UI_APP_CONFIG(key)
+#endif
+
+string ui_app_name() { return UI_APP_NAME; }
+
+string ui_app_id() { return UI_APP_ID; }
+
+string ui_app_version() { return UI_APP_VERSION; }
+
+string ui_app_build() { return UI_APP_BUILD; }
+
+// A value from ui.toml [env] (with [env.release] over it in `ui release` builds), as a
+// backend's URL; null when the key is not there.
+string ui_config(string key) {
+    UI_APP_CONFIG(key)
+    return null;
+}
+
 // The system's appearance. Reading these subscribes, so a change renders the readers again.
 enum ColorScheme { SchemeLight, SchemeDark }
 

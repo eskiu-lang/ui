@@ -1,0 +1,16 @@
+// The app's constants as the ui tool's entry defines them, read through <ui>.
+#define UI_APP_NAME "Walker"
+#define UI_APP_ID "com.example.walker"
+#define UI_APP_VERSION "2.1.0"
+#define UI_APP_BUILD "37"
+#define UI_APP_CONFIG(key) if (strcmp(key, "API_URL") == 0) { return "https://api.example.com"; } if (strcmp(key, "MODE") == 0) { return "release \"x\""; }
+import "../src/ui.esk";
+
+int main() {
+    if (strcmp(ui_app_name(), "Walker") != 0 || strcmp(ui_app_id(), "com.example.walker") != 0) { abort(); }
+    if (strcmp(ui_app_version(), "2.1.0") != 0 || strcmp(ui_app_build(), "37") != 0) { abort(); }
+    if (strcmp(ui_config("API_URL"), "https://api.example.com") != 0) { abort(); }
+    if (strcmp(ui_config("MODE"), "release \"x\"") != 0 || ui_config("MISSING") != null) { abort(); }
+    printf("PASS app constants\n");
+    return 0;
+}
