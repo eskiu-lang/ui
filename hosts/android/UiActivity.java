@@ -1181,13 +1181,15 @@ public final class UiActivity extends Activity {
     private FrameLayout splash;
     private boolean splashHeld;
     private void showSplash() {
-        String color = null;
+        // aapt keeps a "#rrggbb" value as a color (an Integer), not a string.
+        Object color = null;
         try {
             ActivityInfo info = getPackageManager().getActivityInfo(getComponentName(), PackageManager.GET_META_DATA);
-            color = info.metaData == null ? null : info.metaData.getString("org.eskiu.ui.splash");
+            color = info.metaData == null ? null : info.metaData.get("org.eskiu.ui.splash");
         } catch (PackageManager.NameNotFoundException e) {}
         splash = new FrameLayout(this);
-        if (color != null) splash.setBackgroundColor(android.graphics.Color.parseColor(color));
+        if (color instanceof Integer) splash.setBackgroundColor((Integer)color);
+        else if (color instanceof String) splash.setBackgroundColor(android.graphics.Color.parseColor((String)color));
         else {
             android.content.res.TypedArray a = getTheme().obtainStyledAttributes(new int[] {android.R.attr.colorBackground});
             splash.setBackgroundColor(a.getColor(0, 0xffffffff));
