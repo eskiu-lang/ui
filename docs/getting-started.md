@@ -118,7 +118,8 @@ myapp/
   ui.toml             optional: the app's name, id, icon and version, frameworks, permissions, native dependencies
   native/             optional: code per platform (native/web, native/ios, native/android)
   src/main.esk        the app: ui_app_start and ui_app_stop
-  assets/             files the app loads by name (Image("logo.png") ...), shipped on every platform
+  assets/             files the app loads by name (Image("logo.png"), Style.font "fonts/x.ttf" ...),
+                      subfolders included, shipped on every platform
   build/ui/           what `ui build` makes: web/, macos/, linux/, windows/, ios/, android/ (ignored by git)
 ```
 
