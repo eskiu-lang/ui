@@ -18,6 +18,7 @@ python3 tools/check.py # everything below, with an eskiu checkout
 ```
 
 `tools/ci.sh` runs the model tests, `tests/tags.esk` (hooks are matched by type),
+`tests/constants.esk` (the app's constants as the ui tool compiles them in),
 `tests/rejections.esk` (each misuse stops with its message: a render loop, a changed hook,
 a duplicate key, a memo cycle, the root's fallback throwing, a misplaced RefreshControl, the
 scope path in a message), the headless counter, and builds the
