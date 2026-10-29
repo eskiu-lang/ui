@@ -330,8 +330,19 @@ export function createHost(root, dispatch, views = {}) {
         if (kindOf(node) !== 6) s.flexShrink = value ? '1' : '';
         break;
       case 7: s.flexWrap = value ? 'wrap' : ''; break;
-      case 8: s.backgroundColor = cssColor(value); node.uiFrom = value; paintGradient(node, s); break;
+      case 8:
+        s.backgroundColor = !value && node.uiBlur ? 'color-mix(in srgb, Canvas 65%, transparent)' : cssColor(value);
+        node.uiFrom = value; paintGradient(node, s); break;
       case 50: node.uiTo = value; paintGradient(node, s); break;
+      case 52: {
+        // Frosted glass: the backdrop blurred, under the page's own color where the element has
+        // no background.
+        const filter = value ? `blur(${value}px) saturate(180%)` : '';
+        s.backdropFilter = filter; s.webkitBackdropFilter = filter;
+        node.uiBlur = value;
+        if (!node.uiFrom) s.backgroundColor = value ? 'color-mix(in srgb, Canvas 65%, transparent)' : '';
+        break;
+      }
       case 51: node.uiAngle = value; paintGradient(node, s); break;
       case 9: s.color = cssColor(value); break;
       case 10: s.fontSize = px(value); break;

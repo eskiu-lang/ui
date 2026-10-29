@@ -532,7 +532,7 @@ public final class UiActivity extends Activity {
             if (view.getParent() instanceof ViewGroup) ((ViewGroup)view.getParent()).removeView(view);
         }
         root.removeAllViews();
-        nodes.clear(); generations.clear(); paints.clear(); borders.clear(); fonts.clear(); fontFiles.clear(); gradients.clear(); backgrounds.clear();
+        nodes.clear(); generations.clear(); paints.clear(); borders.clear(); fonts.clear(); fontFiles.clear(); blurs.clear(); gradients.clear(); backgrounds.clear();
         nativeViews.clear(); nativeTypes.clear(); pans.clear(); sliderRanges.clear(); transforms.clear();
         motions.clear(); refreshers.clear(); scrollViewports.clear(); activeScreens.clear(); leaving.clear();
         modalIds.clear();
@@ -574,6 +574,13 @@ public final class UiActivity extends Activity {
     // An RGBA color from the core as Android's ARGB.
     private static int argb(int rgba) {
         return ((rgba & 0xff) << 24) | ((rgba >>> 24) << 16) | (((rgba >>> 16) & 0xff) << 8) | ((rgba >>> 8) & 0xff);
+    }
+    // The nodes with a Style.blur, and the translucent fill that stands in for it.
+    private final java.util.HashSet<Integer> blurs = new java.util.HashSet<>();
+    private int material() {
+        boolean dark = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+            == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        return dark ? 0xd91c1c1e : 0xd9f2f2f7;
     }
     // Background gradients (Style.gradient) by node: from, to (RGBA) and the angle.
     private final HashMap<Integer, int[]> gradients = new HashMap<>();
@@ -709,10 +716,16 @@ public final class UiActivity extends Activity {
                 paint.setColors(new int[] {g[0] == 0 ? 0 : argb(g[0]), argb(g[1])});
             }
         }
+        else if (code == 52) {
+            // Style.blur: Android cannot blur what is behind a view; a translucent material
+            // stands in for it where the element has no background of its own.
+            if (value > 0) blurs.add(id); else blurs.remove(id);
+            if (!gradients.containsKey(id) && backgrounds.getOrDefault(id, 0) == 0) paintOf(id, view).setColor(value > 0 ? material() : 0);
+        }
         else if (code == 8) {
             backgrounds.put(id, value);
             GradientDrawable paint = paintOf(id, view);
-            int to = value == 0 ? 0 : argb(value);
+            int to = value == 0 ? (blurs.contains(id) ? material() : 0) : argb(value);
             int[] motion = motionOf(id, view);
             android.content.res.ColorStateList from = paint.getColor();
             if (motion == null || from == null) paint.setColor(to);
@@ -1078,7 +1091,7 @@ public final class UiActivity extends Activity {
                     .withEndAction(() -> { owner.removeView(view); leaving.remove(view); }).start();
             } else if (owner != null && !insideLeaving(view)) owner.removeView(view);
             activeScreens.remove(id);
-            nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id); fontFiles.remove(id); gradients.remove(id); backgrounds.remove(id);
+            nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id); fontFiles.remove(id); blurs.remove(id); gradients.remove(id); backgrounds.remove(id);
             modalIds.remove(id); refreshers.remove(id); nativeViews.remove(id); nativeTypes.remove(id);
             shownScreens.remove(id); sliderRanges.remove(id); transforms.remove(id); motions.remove(id); pans.remove(id);
             scrollViewports.remove(id);

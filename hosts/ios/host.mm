@@ -47,6 +47,8 @@ static void ui_core_error(const char *message) { fprintf(stderr, "ui: %s\n", mes
 // 0: none) and angle (degrees, as CSS).
 @property(nonatomic, strong) CAGradientLayer *gradient;
 @property(nonatomic) int gradientFrom, gradientTo, gradientAngle;
+// Style.blur: a material view under the subviews, or nil.
+@property(nonatomic, strong) UIVisualEffectView *blur;
 @property(nonatomic) CGRect reportedFrame;
 @property(nonatomic) CGPoint reportedWindow;
 @end
@@ -350,6 +352,30 @@ static void applyGradient(UiHostNode *node) {
     node.gradient.endPoint = CGPointMake(0.5 + sin(a) / 2, 0.5 - cos(a) / 2);
 }
 
+// A backdrop blur: the system material nearest the radius (they adapt to dark mode).
+static void applyBlur(UiHostNode *node, int radius) {
+    if (radius <= 0) {
+        if (node.blur && !node.gradient) node.view.backgroundColor = colorOf(node.gradientFrom);
+        [node.blur removeFromSuperview]; node.blur = nil; return;
+    }
+    UIBlurEffectStyle style = radius <= 10 ? UIBlurEffectStyleSystemUltraThinMaterial
+        : radius <= 20 ? UIBlurEffectStyleSystemThinMaterial
+        : radius <= 35 ? UIBlurEffectStyleSystemMaterial : UIBlurEffectStyleSystemThickMaterial;
+    if (!node.blur) {
+        node.blur = [[UIVisualEffectView alloc] initWithEffect:nil];
+        node.blur.frame = node.view.bounds;
+        node.blur.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        node.blur.userInteractionEnabled = NO;
+        node.blur.clipsToBounds = YES;
+        node.blur.layer.cornerRadius = node.view.layer.cornerRadius;
+        [node.view insertSubview:node.blur atIndex:0];
+    }
+    node.blur.effect = [UIBlurEffect effectWithStyle:style];
+    // The background tints the material, over the blur.
+    node.blur.contentView.backgroundColor = colorOf(node.gradientFrom);
+    if (!node.gradient) node.view.backgroundColor = UIColor.clearColor;
+}
+
 static void place(YGNodeRef yoga, UIView *parent) {
     for (size_t i = 0; i < YGNodeGetChildCount(yoga); ++i) {
         YGNodeRef child = YGNodeGetChild(yoga, i);
@@ -364,6 +390,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
         node.view.bounds = bounds;
         // A radius past half the shorter side draws nothing on iOS: a pill asks for 999.
         if (node.radius > 0) node.view.layer.cornerRadius = std::min<CGFloat>(node.radius, std::min(w, h) / 2);
+        if (node.blur) node.blur.layer.cornerRadius = node.view.layer.cornerRadius;
         node.view.center = CGPointMake(YGNodeLayoutGetLeft(child) + w / 2, YGNodeLayoutGetTop(child) + h / 2);
         if (node.gradient) {
             [CATransaction begin];
@@ -682,6 +709,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             UIColor *color = colorOf(before);
             node.gradientFrom = before;
             if (node.gradient) applyGradient(node);
+            else if (node.blur) node.blur.contentView.backgroundColor = color;
             else animated(node, ^{ view.backgroundColor = color; });
         }
         else if (kind == 50 || kind == 51) {
@@ -690,6 +718,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             // The gradient paints the background: the view's own color goes under it clear.
             node.view.backgroundColor = node.gradient ? UIColor.clearColor : colorOf(node.gradientFrom);
         }
+        else if (kind == 52) applyBlur(node, before);
         else if (kind == 9) applyColor(node, colorOf(before));
         else if (kind == 10) { node.fontSize = before; applyFont(node); }
         else if (kind == 11) { node.fontWeight = before; applyFont(node); }
