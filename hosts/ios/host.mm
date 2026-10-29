@@ -1,6 +1,7 @@
 // Phase-0 host glue. Components and state stay in Eskiu; UIKit owns native views.
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CADisplayLink.h>
+#import <CoreText/CoreText.h>
 #include <yoga/Yoga.h>
 #include "../commit.h"
 #include "ui_native.h"
@@ -22,6 +23,7 @@ static void ui_core_error(const char *message) { fprintf(stderr, "ui: %s\n", mes
 @property(nonatomic) int generation;
 @property(nonatomic) CGFloat fontSize;
 @property(nonatomic) int fontWeight;
+@property(nonatomic, copy) NSString *fontFile;
 @property(nonatomic) bool listening;
 @property(nonatomic) int kind;
 @property(nonatomic) CGFloat reportedViewport;
@@ -267,8 +269,38 @@ static UIFontWeight weightOf(int weight) {
     return weights[std::min(8, std::max(0, weight / 100 - 1))];
 }
 
+// A font file from the bundle, registered once; its PostScript name, or nil when it does not load.
+static NSString *fontName(NSString *file) {
+    static NSMutableDictionary<NSString *, NSString *> *names;
+    if (!names) names = [NSMutableDictionary dictionary];
+    NSString *name = names[file];
+    if (name) return name.length ? name : nil;
+    name = @"";
+    NSString *path = [file hasPrefix:@"/"] ? file : [NSBundle.mainBundle pathForResource:file ofType:nil];
+    NSData *data = path ? [NSData dataWithContentsOfFile:path] : nil;
+    CGDataProviderRef provider = data ? CGDataProviderCreateWithCFData((__bridge CFDataRef)data) : NULL;
+    CGFontRef cgFont = provider ? CGFontCreateWithDataProvider(provider) : NULL;
+    if (cgFont) {
+        CFErrorRef error = NULL;
+        CFStringRef postScript = CGFontCopyPostScriptName(cgFont);
+        // Already registered (another file with the same font) is fine too.
+        if (postScript && (CTFontManagerRegisterGraphicsFont(cgFont, &error) || [UIFont fontWithName:(__bridge NSString *)postScript size:12]))
+            name = (__bridge NSString *)postScript;
+        if (postScript) CFRelease(postScript);
+        if (error) CFRelease(error);
+        CGFontRelease(cgFont);
+    }
+    if (provider) CGDataProviderRelease(provider);
+    if (!name.length) NSLog(@"ui: font %@ did not load", file);
+    names[file] = name;
+    return name.length ? name : nil;
+}
+
 static void applyFont(UiHostNode *node) {
-    UIFont *font = [UIFont systemFontOfSize:node.fontSize > 0 ? node.fontSize : 18 weight:weightOf(node.fontWeight)];
+    CGFloat size = node.fontSize > 0 ? node.fontSize : 18;
+    NSString *custom = node.fontFile ? fontName(node.fontFile) : nil;
+    UIFont *font = custom ? [UIFont fontWithName:custom size:size] : nil;
+    if (!font) font = [UIFont systemFontOfSize:size weight:weightOf(node.fontWeight)];
     if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).font = font;
     else if ([node.view isKindOfClass:UIButton.class]) ((UIButton *)node.view).titleLabel.font = font;
     else if ([node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).font = font;
@@ -767,6 +799,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         NSString *value = text && text[0] ? [NSString stringWithUTF8String:text] : nil;
         if (kind == 4 && node.kind == 13) mountNative(node, id, value);
         else if (kind == 1) node.view.accessibilityLabel = value;
+        else if (kind == 5) { node.fontFile = value; applyFont(node); }
         else if (kind == 2 && [node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).placeholder = value;
         else if (kind == 3 && [node.view isKindOfClass:UIImageView.class]) loadImage((UIImageView *)node.view, node.yoga, value);
     } else if (op == 3) {

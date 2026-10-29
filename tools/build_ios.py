@@ -57,7 +57,7 @@ def main():
     for asset in (HERE / "tests/harness/assets").iterdir():
         shutil.copyfile(asset, bundle / asset.name)
     run([*common, host, esk, *natives, *objects, "-framework", "UIKit", "-framework", "Foundation",
-         "-framework", "CoreGraphics", "-framework", "QuartzCore", "-o", bundle / "EskiuUI"])
+         "-framework", "CoreGraphics", "-framework", "QuartzCore", "-framework", "CoreText", "-o", bundle / "EskiuUI"])
     run(["codesign", "--force", "--sign", "-", bundle])
     print("Built:", bundle)
 

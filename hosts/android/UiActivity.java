@@ -531,7 +531,7 @@ public final class UiActivity extends Activity {
             if (view.getParent() instanceof ViewGroup) ((ViewGroup)view.getParent()).removeView(view);
         }
         root.removeAllViews();
-        nodes.clear(); generations.clear(); paints.clear(); borders.clear(); fonts.clear(); gradients.clear(); backgrounds.clear();
+        nodes.clear(); generations.clear(); paints.clear(); borders.clear(); fonts.clear(); fontFiles.clear(); gradients.clear(); backgrounds.clear();
         nativeViews.clear(); nativeTypes.clear(); pans.clear(); sliderRanges.clear(); transforms.clear();
         motions.clear(); refreshers.clear(); scrollViewports.clear(); activeScreens.clear(); leaving.clear();
         modalIds.clear();
@@ -592,12 +592,30 @@ public final class UiActivity extends Activity {
         }
         return paint;
     }
+    // Style.font per node, and each font file loaded once (null: it did not load).
+    private final HashMap<Integer, String> fontFiles = new HashMap<>();
+    private final HashMap<String, Typeface> typefaces = new HashMap<>();
+    private Typeface typeface(String file) {
+        if (typefaces.containsKey(file)) return typefaces.get(file);
+        Typeface face = null;
+        try {
+            face = file.startsWith("/") ? Typeface.createFromFile(file) : Typeface.createFromAsset(getAssets(), file);
+        } catch (RuntimeException e) {
+            android.util.Log.w("ui", "font " + file + " did not load");
+        }
+        typefaces.put(file, face);
+        return face;
+    }
     private void applyFont(int id, View view) {
         if (!(view instanceof TextView)) return;
         int[] font = fonts.getOrDefault(id, new int[] {0, 0});
         TextView text = (TextView)view;
         text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, font[0] > 0 ? font[0] : 18);
-        if (Build.VERSION.SDK_INT >= 28) text.setTypeface(Typeface.create(Typeface.DEFAULT, font[1] > 0 ? font[1] : 400, false));
+        String file = fontFiles.get(id);
+        Typeface custom = file != null ? typeface(file) : null;
+        if (custom != null) text.setTypeface(custom);
+        else if (Build.VERSION.SDK_INT >= 28) text.setTypeface(Typeface.create(Typeface.DEFAULT, font[1] > 0 ? font[1] : 400, false));
+        else text.setTypeface(Typeface.DEFAULT);
     }
     // Int props (layout ones are applied to Yoga in host.cpp): the code in kind, the value in before.
     // Screens (kind 14) that have been on top: a first activation over another slides in, and
@@ -1015,9 +1033,13 @@ public final class UiActivity extends Activity {
             }
         } else if (op == 3) ((TextView)view).setText(text);
         else if (op == 9) {
-            // String props: 1 label, 2 placeholder.
+            // String props: 1 label, 2 placeholder, 3 image source, 4 native view type, 5 font file.
             if (kind == 4 && view instanceof FrameLayout) mountNative(id, (FrameLayout)view, text);
             else if (kind == 1) view.setContentDescription(text.isEmpty() ? null : text);
+            else if (kind == 5) {
+                if (text.isEmpty()) fontFiles.remove(id); else fontFiles.put(id, text);
+                applyFont(id, view);
+            }
             else if (kind == 2 && view instanceof EditText) ((EditText)view).setHint(text);
             else if (kind == 3 && view instanceof ImageView) loadImage((ImageView)view, text);
         } else if (op == 2) prop(id, view, kind, before);
@@ -1050,7 +1072,7 @@ public final class UiActivity extends Activity {
                     .withEndAction(() -> { owner.removeView(view); leaving.remove(view); }).start();
             } else if (owner != null && !insideLeaving(view)) owner.removeView(view);
             activeScreens.remove(id);
-            nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id); gradients.remove(id); backgrounds.remove(id);
+            nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id); fontFiles.remove(id); gradients.remove(id); backgrounds.remove(id);
             modalIds.remove(id); refreshers.remove(id); nativeViews.remove(id); nativeTypes.remove(id);
             shownScreens.remove(id); sliderRanges.remove(id); transforms.remove(id); motions.remove(id); pans.remove(id);
             scrollViewports.remove(id);

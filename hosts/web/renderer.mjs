@@ -6,6 +6,23 @@
 // 15 an answer (the request in id, its text), 16 a fetch's answer (status in value, the body
 // in text, the headers in extra), 17 a pan (the phase in value, then dx, dy, vx, vy), 20 a
 // long press.
+// Style.font: a font file loaded once as its own family, with the system font behind it while
+// it loads (or when it does not).
+const fontFamilies = new Map();
+function fontFamily(file) {
+  let family = fontFamilies.get(file);
+  if (!family) {
+    family = `ui-font-${fontFamilies.size + 1}`;
+    fontFamilies.set(file, family);
+    if (typeof FontFace === 'function' && globalThis.document?.fonts) {
+      const face = new FontFace(family, `url(${JSON.stringify(file)})`);
+      document.fonts.add(face);
+      face.load().catch(() => console.warn(`ui: font ${file} did not load`));
+    }
+  }
+  return `${family}, system-ui, sans-serif`;
+}
+
 // Strings into the wasm heap for a call, freed after it. ccall's 'string' copies them onto the
 // wasm stack, 64 KiB, which a fetch's body or a long paste overflows.
 export function withStrings(app, strings, call) {
@@ -530,6 +547,7 @@ export function createHost(root, dispatch, views = {}) {
         else if (m.op === 3) node.textContent = m.text;
         else if (m.op === 9 && m.kind === 4) mountNative(node, m.text);
         else if (m.op === 11) natives.get(m.id)?.set?.(m.name, m.text);
+        else if (m.op === 9 && m.kind === 5) node.style.fontFamily = m.text ? fontFamily(m.text) : '';
         else if (m.op === 9) {
           // String props: 1 label (an image's alt text), 2 placeholder, 3 image source.
           const name = m.kind === 1 ? (kindOf(node) === 7 ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';

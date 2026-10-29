@@ -153,7 +153,7 @@ string build_ios_xcode(Project* p, string out, string app_object, List<String>* 
         fs_write_text(join(listed, "objects.txt"), list.data);
         String_free(&list);
     }
-    String_append(&flags, ", \"-framework\", UIKit, \"-framework\", Foundation, \"-framework\", CoreGraphics, \"-framework\", QuartzCore");
+    String_append(&flags, ", \"-framework\", UIKit, \"-framework\", Foundation, \"-framework\", CoreGraphics, \"-framework\", QuartzCore, \"-framework\", CoreText");
     List<string> frameworks;
     defer frameworks.free();
     p.config.all("ios.frameworks", &frameworks);
