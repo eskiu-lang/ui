@@ -90,6 +90,13 @@ void ui_dispatch_hover(int id, int generation, int inside) {
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
 
+// A node with a long press handler was held.
+void ui_dispatch_long_press(int id, int generation) {
+    if (!app_active) { return; }
+    ui_event_long_press(id, generation);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
+
 // A timer the app armed fired.
 void ui_dispatch_timer(int token) {
     if (!app_active) { return; }

@@ -79,6 +79,7 @@ it into `Mutation` records for tests and tools.
 | | | 46 | shadow: the elevation of a raised view (points; 0: none) |
 | | | 47 | cover: an image fills its box, cropped (1), or fits in it (0) |
 | | | 48 | pixelated: an image scales without smoothing (1) |
+| | | 49 | long press listener (1: report a long press) |
 
 A text input's value is its text (op 3). Sizes are points.
 
@@ -121,6 +122,7 @@ The host calls the bridge, on the UI thread:
 | `ui_dispatch_pan(id, gen, phase, dx, dy, vx, vy)` | a drag on a node with a pan handler |
 | `ui_dispatch_value(id, gen, value)` | the user moved a slider |
 | `ui_dispatch_hover(id, gen, inside)` | a pointer entered (1) or left (0) a node with a hover handler |
+| `ui_dispatch_long_press(id, gen)` | a node with a long press handler was held |
 | `ui_dispatch_timer(token)` | a timer the core armed fired |
 | `ui_dispatch_frame(time)` | the display showed a frame at `time` seconds, while the display clock is on |
 | `ui_dispatch_route(route, index)` | the browser went back or forward to `route`, at `index` in the app's history entries |

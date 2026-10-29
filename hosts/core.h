@@ -28,6 +28,7 @@
     X(void, ui_dispatch_timer, (int token)) \
     X(void, ui_dispatch_frame, (double time)) \
     X(void, ui_dispatch_hover, (int id, int generation, int inside)) \
+    X(void, ui_dispatch_long_press, (int id, int generation)) \
     X(void, ui_dispatch_value, (int id, int generation, int value)) \
     X(void, ui_dispatch_answer, (int request, const char *text)) \
     X(void, ui_dispatch_pan, (int id, int generation, int phase, int dx, int dy, int vx, int vy)) \

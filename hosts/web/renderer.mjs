@@ -4,7 +4,8 @@
 // route (the route in text, its history index in value), 11 a node's frame (x in value, y in
 // extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value,
 // 15 an answer (the request in id, its text), 16 a fetch's answer (status in value, the body
-// in text, the headers in extra), 17 a pan (the phase in value, then dx, dy, vx, vy).
+// in text, the headers in extra), 17 a pan (the phase in value, then dx, dy, vx, vy), 20 a
+// long press.
 // Strings into the wasm heap for a call, freed after it. ccall's 'string' copies them onto the
 // wasm stack, 64 KiB, which a fetch's body or a long paste overflows.
 export function withStrings(app, strings, call) {
@@ -26,6 +27,7 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
   else if (kind === 6) app._ui_dispatch_alert(id, value);
   else if (kind === 13) app._ui_dispatch_hover(id, generation, value);
+  else if (kind === 20) app._ui_dispatch_long_press(id, generation);
   else if (kind === 14) app._ui_dispatch_value(id, generation, value);
   else if (kind === 17) app._ui_dispatch_pan(id, generation, value, extra, width, height, more);
   else if (kind === 16) withStrings(app, [text, extra], (body, headers) => app._ui_dispatch_fetch(id, value, body, headers));
@@ -120,6 +122,32 @@ export function createHost(root, dispatch, views = {}) {
     node.addEventListener('click', e => {
       if (node.uiPanned) { node.uiPanned = false; e.stopPropagation(); e.preventDefault(); }
     }, true);
+  }
+  // Long press listeners (ui_on_long_press): a pointer held 500 ms, or a right click; the
+  // click that ends a long press is not a press.
+  function longPress(node, on) {
+    if (on && !node.uiLong) {
+      let timer = 0;
+      const cancel = () => { clearTimeout(timer); timer = 0; };
+      const fire = () => { timer = 0; node.uiLongPressed = true; dispatch(...ids(node), 20); };
+      node.uiLong = {
+        down: e => { if (e.button === 0 || e.button === undefined) { cancel(); timer = setTimeout(fire, 500); } },
+        cancel,
+        menu: e => { e.preventDefault(); cancel(); dispatch(...ids(node), 20); },
+        click: e => { if (node.uiLongPressed) { node.uiLongPressed = false; e.stopPropagation(); e.preventDefault(); } },
+      };
+      node.addEventListener('pointerdown', node.uiLong.down);
+      for (const name of ['pointerup', 'pointerleave', 'pointercancel']) node.addEventListener(name, node.uiLong.cancel);
+      node.addEventListener('contextmenu', node.uiLong.menu);
+      node.addEventListener('click', node.uiLong.click, true);
+    } else if (!on && node.uiLong) {
+      node.uiLong.cancel();
+      node.removeEventListener?.('pointerdown', node.uiLong.down);
+      for (const name of ['pointerup', 'pointerleave', 'pointercancel']) node.removeEventListener?.(name, node.uiLong.cancel);
+      node.removeEventListener?.('contextmenu', node.uiLong.menu);
+      node.removeEventListener?.('click', node.uiLong.click, true);
+      node.uiLong = null;
+    }
   }
   // Hover listeners (ui_on_hover): a pointer entering and leaving the node.
   function hover(node, on) {
@@ -295,6 +323,7 @@ export function createHost(root, dispatch, views = {}) {
       case 22: refresh(node, value !== 0); break;
       case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
       case 31: hover(node, value !== 0); break;
+      case 49: longPress(node, value !== 0); break;
       case 41: pan(node, value !== 0); break;
       case 42: s.minWidth = value ? `${value}px` : '0'; break;
       case 43: s.maxWidth = value ? `${value}px` : ''; break;

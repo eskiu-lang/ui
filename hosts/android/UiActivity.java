@@ -90,6 +90,7 @@ public final class UiActivity extends Activity {
     private native void nativeTimer(int token);
     private native void nativeFrame(double time);
     private native void nativeHover(int id, int generation, int inside);
+    private native void nativeLongPress(int id, int generation);
     private native void nativePan(int id, int generation, int phase, int dx, int dy, int vx, int vy);
     // Drags past the touch slop, in screen coordinates (the view itself may move), with their
     // velocity; a touch that does not move is still a click. A group takes the drag from a
@@ -621,6 +622,15 @@ public final class UiActivity extends Activity {
             return;
         }
         if (code == 41) { listenPan(id, view, value != 0); return; }
+        if (code == 49) {
+            // A long press; consumed, so it is not also a click.
+            view.setOnLongClickListener(value == 0 ? null : v -> {
+                if (active && generations.containsKey(id)) nativeLongPress(id, generations.get(id));
+                return true;
+            });
+            if (value == 0) view.setLongClickable(false);
+            return;
+        }
         if (code == 31) {
             // A pointer (a mouse, a stylus) entering and leaving the view.
             view.setOnHoverListener(value == 0 ? null : (v, e) -> {

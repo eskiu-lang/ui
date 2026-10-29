@@ -369,6 +369,7 @@ static void place(YGNodeRef yoga, UIView *parent) {
 @interface UiEvents : NSObject <UIScrollViewDelegate>
 - (void)press:(UIControl *)sender;
 - (void)hover:(UIHoverGestureRecognizer *)gesture;
+- (void)longPress:(UILongPressGestureRecognizer *)gesture;
 - (void)slide:(UISlider *)sender;
 - (void)pan:(UIPanGestureRecognizer *)gesture;
 - (void)backdrop:(UITapGestureRecognizer *)gesture;
@@ -414,6 +415,12 @@ static void place(YGNodeRef yoga, UIView *parent) {
     if (gesture.state == UIGestureRecognizerStateBegan) ui_dispatch_hover((int)gesture.view.tag, node.generation, 1);
     else if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled)
         ui_dispatch_hover((int)gesture.view.tag, node.generation, 0);
+}
+// A node with a long press handler held: the recognizer cancels the touch, so it is not also
+// a press.
+- (void)longPress:(UILongPressGestureRecognizer *)gesture {
+    UiHostNode *node = nodes[@(gesture.view.tag)];
+    if (node && gesture.state == UIGestureRecognizerStateBegan) ui_dispatch_long_press((int)gesture.view.tag, node.generation);
 }
 - (void)press:(UIControl *)sender {
     UiHostNode *node = nodes[@(sender.tag)];
@@ -694,6 +701,15 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (before) {
                 node.view.tag = id;
                 [node.view addGestureRecognizer:[[UIHoverGestureRecognizer alloc] initWithTarget:events action:@selector(hover:)]];
+            }
+        } else if (kind == 49) {
+            for (UIGestureRecognizer *g in node.view.gestureRecognizers.copy) {
+                if ([g isKindOfClass:UILongPressGestureRecognizer.class]) [node.view removeGestureRecognizer:g];
+            }
+            if (before) {
+                node.view.tag = id;
+                node.view.userInteractionEnabled = YES;
+                [node.view addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:events action:@selector(longPress:)]];
             }
         } else if (kind == 30) { node.layoutListening = before != 0; node.reportedFrame = CGRectNull; }
         else if (kind == 42) YGNodeStyleSetMinWidth(node.yoga, before);

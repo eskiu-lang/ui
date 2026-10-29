@@ -17,6 +17,7 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 | `Scope(name, Key, block)` | A component's own scope: state, identity, and `name` in diagnostics. No view. |
 | `ErrorBoundary(fn(UiError)->void fallback, block)` | Renders `block`; when a render inside it throws, shows `fallback` instead, until `ui_boundary_reset(e.boundary)`. No view. See [Errors](state.md#errors). |
 | `ui_on_pan(fn(Pan)->void)` | For the element right after it: a drag on it, from `PanBegan` (past the platform's slop) through `PanMoved` to `PanEnded` or `PanCancelled`, with `dx`, `dy` (points since it began) and `vx`, `vy` (points per second). A press that does not move is still a press, and a drag takes over from a pressable inside. |
+| `ui_on_long_press(fn()->void)` | For the element right after it: runs when it is held about half a second (a right click or a held mouse button on the web). A long press is not also a press. |
 | `ui_on_hover(fn(bool)->void)` | For the element right after it: true when a pointer (a mouse, a trackpad, an iPad's pointer, a stylus) moves over it, false when it leaves. Touch screens have no hover. |
 | `ui_on_layout(fn(Frame)->void)` | For the element right after it: the handler gets its `Frame{x, y, width, height, window_x, window_y}` (points; x and y relative to the parent, the window position from the window's top left, also after a scroll) after each change, as React Native's `onLayout`. |
 

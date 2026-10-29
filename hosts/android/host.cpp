@@ -347,6 +347,9 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeTimer(JNIEn
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeFrame(JNIEnv *current, jobject, jdouble time) {
     env = current; ui_dispatch_frame(time);
 }
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeLongPress(JNIEnv *current, jobject, jint id, jint generation) {
+    env = current; ui_dispatch_long_press(id, generation);
+}
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeHover(JNIEnv *current, jobject, jint id, jint generation, jint inside) {
     env = current; ui_dispatch_hover(id, generation, inside);
 }
