@@ -123,6 +123,12 @@ export function createHost(root, dispatch, views = {}) {
       if (node.uiPanned) { node.uiPanned = false; e.stopPropagation(); e.preventDefault(); }
     }, true);
   }
+  // A linear gradient (Style.gradient) from the background color to the end color.
+  function paintGradient(node, s) {
+    if (!node.uiTo) { s.backgroundImage = ''; return; }
+    const from = node.uiFrom ? cssColor(node.uiFrom) : 'transparent';
+    s.backgroundImage = `linear-gradient(${node.uiAngle ?? 180}deg, ${from}, ${cssColor(node.uiTo)})`;
+  }
   // Long press listeners (ui_on_long_press): a pointer held 500 ms, or a right click; the
   // click that ends a long press is not a press.
   function longPress(node, on) {
@@ -307,7 +313,9 @@ export function createHost(root, dispatch, views = {}) {
         if (kindOf(node) !== 6) s.flexShrink = value ? '1' : '';
         break;
       case 7: s.flexWrap = value ? 'wrap' : ''; break;
-      case 8: s.backgroundColor = cssColor(value); break;
+      case 8: s.backgroundColor = cssColor(value); node.uiFrom = value; paintGradient(node, s); break;
+      case 50: node.uiTo = value; paintGradient(node, s); break;
+      case 51: node.uiAngle = value; paintGradient(node, s); break;
       case 9: s.color = cssColor(value); break;
       case 10: s.fontSize = px(value); break;
       case 11: s.fontWeight = value ? String(value) : ''; break;

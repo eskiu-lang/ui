@@ -41,6 +41,10 @@ static void ui_core_error(const char *message) { fprintf(stderr, "ui: %s\n", mes
 @property(nonatomic) int translateX, translateY, scalePercent, rotateDegrees, transitionMs, easing;
 // The radius the app asked for; the layer's is at most half the shorter side (place).
 @property(nonatomic) int radius;
+// A background gradient (Style.gradient): its layer, under the subviews, and its colors (RGBA,
+// 0: none) and angle (degrees, as CSS).
+@property(nonatomic, strong) CAGradientLayer *gradient;
+@property(nonatomic) int gradientFrom, gradientTo, gradientAngle;
 @property(nonatomic) CGRect reportedFrame;
 @property(nonatomic) CGPoint reportedWindow;
 @end
@@ -299,6 +303,21 @@ static void loadImage(UIImageView *view, YGNodeRef yoga, NSString *source) {
     YGNodeMarkDirty(yoga);
 }
 
+// The gradient layer for a node's colors and angle, made, updated or dropped.
+static void applyGradient(UiHostNode *node) {
+    if (!node.gradientTo) { [node.gradient removeFromSuperlayer]; node.gradient = nil; return; }
+    if (!node.gradient) {
+        node.gradient = [CAGradientLayer layer];
+        [node.view.layer insertSublayer:node.gradient atIndex:0];
+        node.gradient.frame = node.view.bounds;
+    }
+    UIColor *from = node.gradientFrom ? colorOf(node.gradientFrom) : UIColor.clearColor;
+    node.gradient.colors = @[(id)from.CGColor, (id)colorOf(node.gradientTo).CGColor];
+    double a = node.gradientAngle * M_PI / 180.0;
+    node.gradient.startPoint = CGPointMake(0.5 - sin(a) / 2, 0.5 + cos(a) / 2);
+    node.gradient.endPoint = CGPointMake(0.5 + sin(a) / 2, 0.5 - cos(a) / 2);
+}
+
 static void place(YGNodeRef yoga, UIView *parent) {
     for (size_t i = 0; i < YGNodeGetChildCount(yoga); ++i) {
         YGNodeRef child = YGNodeGetChild(yoga, i);
@@ -314,6 +333,12 @@ static void place(YGNodeRef yoga, UIView *parent) {
         // A radius past half the shorter side draws nothing on iOS: a pill asks for 999.
         if (node.radius > 0) node.view.layer.cornerRadius = std::min<CGFloat>(node.radius, std::min(w, h) / 2);
         node.view.center = CGPointMake(YGNodeLayoutGetLeft(child) + w / 2, YGNodeLayoutGetTop(child) + h / 2);
+        if (node.gradient) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            node.gradient.frame = CGRectMake(0, 0, w, h);
+            [CATransaction commit];
+        }
         if (node.layoutListening) {
             CGRect frame = CGRectMake(std::lround(YGNodeLayoutGetLeft(child)), std::lround(YGNodeLayoutGetTop(child)),
                                       std::lround(YGNodeLayoutGetWidth(child)), std::lround(YGNodeLayoutGetHeight(child)));
@@ -501,6 +526,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
                                int before, int kind, const char *text) {
     if (op == 1) {
         UiHostNode *node = [UiHostNode new];
+        node.gradientAngle = 180;
         node.nodeId = id;
         node.scalePercent = 100;
         node.generation = generation;
@@ -619,7 +645,19 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             if (![node.view isKindOfClass:UIScrollView.class]) YGNodeStyleSetFlexShrink(node.yoga, before > 0 ? 1 : 0);
         }
         else if (kind == 7) YGNodeStyleSetFlexWrap(node.yoga, before ? YGWrapWrap : YGWrapNoWrap);
-        else if (kind == 8) { UIView *view = node.view; UIColor *color = colorOf(before); animated(node, ^{ view.backgroundColor = color; }); }
+        else if (kind == 8) {
+            UIView *view = node.view;
+            UIColor *color = colorOf(before);
+            node.gradientFrom = before;
+            if (node.gradient) applyGradient(node);
+            else animated(node, ^{ view.backgroundColor = color; });
+        }
+        else if (kind == 50 || kind == 51) {
+            if (kind == 50) node.gradientTo = before; else node.gradientAngle = before;
+            applyGradient(node);
+            // The gradient paints the background: the view's own color goes under it clear.
+            node.view.backgroundColor = node.gradient ? UIColor.clearColor : colorOf(node.gradientFrom);
+        }
         else if (kind == 9) applyColor(node, colorOf(before));
         else if (kind == 10) { node.fontSize = before; applyFont(node); }
         else if (kind == 11) { node.fontWeight = before; applyFont(node); }

@@ -125,10 +125,12 @@ void visual_styles() {
         }
         Row(Style{}) {}
         Image(Style{width: 32, height: 32, pixelated: v < 3}, "sprite.png");
+        Column(Style{gradient: v < 3 ? rgb(255, 255, 255) : -1, gradient_angle: v < 3 ? 90 : 180}) {}
     }
     ui_frame();
     for (code in 8..18) { check(count_prop(2, code) == 1, "each visual prop sent once"); }
     check(count_prop(2, 48) == 1 && prop_value(2, 48) == 1, "a pixelated image");
+    check(prop_value(2, 50) == (int)0xFFFFFFFF && prop_value(2, 51) == 90, "a gradient: its end color and angle");
     check(prop_value(2, 8) == (int)0xFF0000FF && prop_value(2, 16) == 2 && prop_value(2, 17) == 4, "values");
     style_version.set(1); ui_frame();
     for (code in 8..18) { check(count_prop(2, code) == 0, "unchanged styles send nothing"); }
@@ -136,6 +138,7 @@ void visual_styles() {
     check(count_prop(2, 8) == 1 && prop_value(2, 8) == 0, "a cleared background is 0");
     style_version.set(3); ui_frame();
     check(count_prop(2, 48) == 1 && prop_value(2, 48) == 0, "smoothing again");
+    check(prop_value(2, 50) == 0 && prop_value(2, 51) == 180, "no gradient: 0, the angle back to its default");
     ui_shutdown(); balanced("visual styles leak");
 }
 

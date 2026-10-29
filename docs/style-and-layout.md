@@ -33,6 +33,8 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}) 
 | `transition_ms` | 0 | Animates changes of the opacity, the transforms and the colors, in milliseconds. |
 | `shadow` | 0 | Raises the element with a soft shadow below it: its elevation in points, as React Native's `elevation` (a `CALayer` shadow on iOS, `View.setElevation` on Android, `box-shadow` on the web). A raised element does not clip its content to its radius on iOS. |
 | `cover` | false | An `Image` fills its box, cropped, instead of fitting in it (React Native's `resizeMode: "cover"`). |
+| `gradient` | -1 | Paints the background as a linear gradient from `background` (transparent when unset) to this color. |
+| `gradient_angle` | 180 | The gradient's direction in degrees, as CSS: 180 top to bottom, 90 left to right, 135 corner to corner (Android turns it to the nearest 45). |
 | `pixelated` | false | An `Image` scales without smoothing, each pixel a sharp square, for pixel art (CSS `image-rendering: pixelated`). |
 | `easing` | `EaseInOut` | The transition's curve: `EaseInOut`, `EaseOut`, `EaseIn`, `EaseLinear`, `EaseSpring`. |
 

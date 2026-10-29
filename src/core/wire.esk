@@ -35,7 +35,8 @@
 // animates. 41 pan listener (1: the host reports drags on the node). 42 minimum width,
 // 43 maximum width, 44 minimum height, 45 maximum height (points; 0: no bound), 46 shadow
 // (elevation in points), 47 cover (1: an image fills its box, cropped), 48 pixelated (1: an
-// image scales without smoothing), 49 long press listener (1: the host reports a long press).
+// image scales without smoothing), 49 long press listener (1: the host reports a long press), 50 gradient end
+// color (RGBA, 0: none; from the background), 51 gradient angle (degrees, as CSS; 180 down).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal

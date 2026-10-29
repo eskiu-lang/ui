@@ -24,7 +24,9 @@ Key key(int64 value) { return Key{true, value}; }
 // its elevation in points (0: none), as React Native's elevation. `cover` makes an Image fill
 // its box, cropped, instead of fitting in it (React Native's resizeMode "cover"). `pixelated`
 // scales an Image without smoothing, each pixel a sharp square (pixel art; CSS's
-// image-rendering: pixelated).
+// image-rendering: pixelated). `gradient` paints the background as a linear gradient from
+// `background` (transparent when unset) to this color (RGBA), along `gradient_angle` degrees
+// as CSS measures it: 180 (the default) top to bottom, 90 left to right, 135 corner to corner.
 struct Style {
     Key key; int gap = 8; int padding = 0; string label;
     int width; int height; int grow; bool wrap;
@@ -39,6 +41,7 @@ struct Style {
     int shadow;
     bool cover;
     bool pixelated;
+    int64 gradient = -1; int gradient_angle = 180;
 }
 
 enum Easing { EaseInOut, EaseOut, EaseIn, EaseLinear, EaseSpring }

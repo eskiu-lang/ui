@@ -531,7 +531,7 @@ public final class UiActivity extends Activity {
             if (view.getParent() instanceof ViewGroup) ((ViewGroup)view.getParent()).removeView(view);
         }
         root.removeAllViews();
-        nodes.clear(); generations.clear(); paints.clear(); borders.clear(); fonts.clear();
+        nodes.clear(); generations.clear(); paints.clear(); borders.clear(); fonts.clear(); gradients.clear(); backgrounds.clear();
         nativeViews.clear(); nativeTypes.clear(); pans.clear(); sliderRanges.clear(); transforms.clear();
         motions.clear(); refreshers.clear(); scrollViewports.clear(); activeScreens.clear(); leaving.clear();
         modalIds.clear();
@@ -574,6 +574,10 @@ public final class UiActivity extends Activity {
     private static int argb(int rgba) {
         return ((rgba & 0xff) << 24) | ((rgba >>> 24) << 16) | (((rgba >>> 16) & 0xff) << 8) | ((rgba >>> 8) & 0xff);
     }
+    // Background gradients (Style.gradient) by node: from, to (RGBA) and the angle.
+    private final HashMap<Integer, int[]> gradients = new HashMap<>();
+    // The last background color (RGBA) by node, a gradient's start when one comes later.
+    private final HashMap<Integer, Integer> backgrounds = new HashMap<>();
     private GradientDrawable paintOf(int id, View view) {
         GradientDrawable paint = paints.get(id);
         if (paint == null) {
@@ -672,7 +676,22 @@ public final class UiActivity extends Activity {
             int p = Math.round(value * d);
             if (value > 0) view.setPadding(p, p, p, p);
         }
+        else if (code == 50 || code == 51 || (code == 8 && gradients.containsKey(id))) {
+            int[] g = gradients.computeIfAbsent(id, k -> new int[] {backgrounds.getOrDefault(id, 0), 0, 180});
+            if (code == 8) g[0] = value; else if (code == 50) g[1] = value; else g[2] = value;
+            GradientDrawable paint = paintOf(id, view);
+            if (g[1] == 0) { paint.setColors(null); paint.setColor(g[0] == 0 ? 0 : argb(g[0])); }
+            else {
+                // GradientDrawable turns in steps of 45 degrees: the nearest.
+                GradientDrawable.Orientation[] ways = {GradientDrawable.Orientation.BOTTOM_TOP, GradientDrawable.Orientation.BL_TR,
+                    GradientDrawable.Orientation.LEFT_RIGHT, GradientDrawable.Orientation.TL_BR, GradientDrawable.Orientation.TOP_BOTTOM,
+                    GradientDrawable.Orientation.TR_BL, GradientDrawable.Orientation.RIGHT_LEFT, GradientDrawable.Orientation.BR_TL};
+                paint.setOrientation(ways[Math.floorMod(Math.round(g[2] / 45f), 8)]);
+                paint.setColors(new int[] {g[0] == 0 ? 0 : argb(g[0]), argb(g[1])});
+            }
+        }
         else if (code == 8) {
+            backgrounds.put(id, value);
             GradientDrawable paint = paintOf(id, view);
             int to = value == 0 ? 0 : argb(value);
             int[] motion = motionOf(id, view);
@@ -1031,7 +1050,7 @@ public final class UiActivity extends Activity {
                     .withEndAction(() -> { owner.removeView(view); leaving.remove(view); }).start();
             } else if (owner != null && !insideLeaving(view)) owner.removeView(view);
             activeScreens.remove(id);
-            nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id);
+            nodes.remove(id); generations.remove(id); paints.remove(id); borders.remove(id); fonts.remove(id); gradients.remove(id); backgrounds.remove(id);
             modalIds.remove(id); refreshers.remove(id); nativeViews.remove(id); nativeTypes.remove(id);
             shownScreens.remove(id); sliderRanges.remove(id); transforms.remove(id); motions.remove(id); pans.remove(id);
             scrollViewports.remove(id);
