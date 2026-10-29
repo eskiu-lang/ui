@@ -27,6 +27,8 @@ Key key(int64 value) { return Key{true, value}; }
 // image-rendering: pixelated). `gradient` paints the background as a linear gradient from
 // `background` (transparent when unset) to this color (RGBA), along `gradient_angle` degrees
 // as CSS measures it: 180 (the default) top to bottom, 90 left to right, 135 corner to corner.
+// `font` draws the text in a font file from the app's assets ("fonts/VT323.ttf"; TrueType or
+// OpenType), one file per weight, so font_weight does not apply to it.
 struct Style {
     Key key; int gap = 8; int padding = 0; string label;
     int width; int height; int grow; bool wrap;
@@ -42,6 +44,7 @@ struct Style {
     bool cover;
     bool pixelated;
     int64 gradient = -1; int gradient_angle = 180;
+    string font;
 }
 
 enum Easing { EaseInOut, EaseOut, EaseIn, EaseLinear, EaseSpring }

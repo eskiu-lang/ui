@@ -73,6 +73,26 @@ void labels() {
     ui_shutdown(); balanced("labels leak");
 }
 
+*Signal<int> font_version;
+
+void fonts() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        font_version = use_signal<int>(0);
+        int v = font_version.get();
+        TextWith(Style{font: v < 2 ? "fonts/VT323.ttf" : null}, "Score");
+        Text("Plain");
+    }
+    ui_frame();
+    check(count_prop(9, 5) == 1, "only the text with a font sends its file");
+    font_version.set(1); ui_frame();
+    check(count_prop(9, 5) == 0, "an unchanged font sends nothing");
+    font_version.set(2); ui_frame();
+    check(count_prop(9, 5) == 1, "a removed font is sent as empty");
+    ui_shutdown(); balanced("fonts leak");
+}
+
 *Signal<int> size_version;
 
 void sizes() {
