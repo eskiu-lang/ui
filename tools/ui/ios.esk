@@ -233,11 +233,29 @@ string build_ios(Project* p) {
     defer frameworks.free();
     p.config.all("ios.frameworks", &frameworks);
     for (i in 0..frameworks.size) { link.add("-framework"); link.add(frameworks.data[i]); }
+    // The simulator's Keychain takes items only from an app with an application identifier
+    // (else errSecMissingEntitlement). As Xcode does for a simulator build, the entitlements
+    // go into the executable (__TEXT,__entitlements), not the ad-hoc signature, which may not
+    // carry them.
+    if (!ui_release) {
+        String entitlements;
+        defer String_free(&entitlements);
+        string id = xml_escape(p.id.data);
+        String_appendf(&entitlements, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
+            "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict>\n"
+            "<key>application-identifier</key><string>%s</string>\n"
+            "<key>keychain-access-groups</key><array><string>%s</string></array>\n</dict></plist>\n", id, id);
+        string path = join(out, "simulator.entitlements");
+        fs_write_text(path, entitlements.data);
+        link.add("-Xlinker"); link.add("-sectcreate"); link.add("-Xlinker"); link.add("__TEXT");
+        link.add("-Xlinker"); link.add("__entitlements"); link.add("-Xlinker"); link.add(path);
+    }
     link.add("-o"); link.add(executable);
     link.must(null);
     link.free();
     Cmd sign;
-    sign.add("codesign"); sign.add("--force"); sign.add("--sign"); sign.add("-"); sign.add(bundle);
+    sign.add("codesign"); sign.add("--force"); sign.add("--sign"); sign.add("-");
+    sign.add(bundle);
     sign.must(null);
     sign.free();
     if (dev) {
