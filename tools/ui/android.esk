@@ -349,7 +349,8 @@ string android_scheme(Project* p) {
     return out.data;
 }
 
-// The ui.toml [android] permissions as uses-permission lines, with the network's (ui_fetch).
+// The ui.toml [android] permissions as uses-permission lines, with the network's (ui_fetch),
+// and its features as uses-feature lines.
 string android_permissions(Project* p) {
     List<string> permissions;
     defer permissions.free();
@@ -358,6 +359,13 @@ string android_permissions(Project* p) {
     String out;
     for (i in 0..permissions.size) {
         String_appendf(&out, "  <uses-permission android:name=\"%s\"/>\n", xml_escape(permissions.data[i]));
+    }
+    // [android] features: hardware the app needs, which Google Play filters devices by.
+    List<string> features;
+    defer features.free();
+    p.config.all("android.features", &features);
+    for (i in 0..features.size) {
+        String_appendf(&out, "  <uses-feature android:name=\"%s\"/>\n", xml_escape(features.data[i]));
     }
     return out.data == null ? "" : out.data;
 }

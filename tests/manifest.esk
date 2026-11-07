@@ -1,4 +1,4 @@
-// The ui tool's Android manifest from ui.toml files: [android.meta_data] from the app and a
+// The ui tool's Android manifest from ui.toml files: [android] features, and [android.meta_data] from the app and a
 // package, merged with the app's value winning and escaped, inside <application>. Built from
 // the tool's own parts (tools/ui), run by tools/ci.sh from the checkout's root.
 import <io>;
@@ -51,7 +51,7 @@ int main() {
     fs_remove_all(dir);
     fs_mkdir_p(join(dir, "app"));
     fs_mkdir_p(join(dir, "pkg"));
-    fs_write_text(join(dir, "app/ui.toml"), "[android.meta_data]\n\"com.google.ar.core\" = \"required\"\n");
+    fs_write_text(join(dir, "app/ui.toml"), "[android]\nfeatures = [\"android.hardware.camera.ar\"]\n\n[android.meta_data]\n\"com.google.ar.core\" = \"required\"\n");
     fs_write_text(join(dir, "pkg/ui.toml"),
         "[android]\npermissions = [\"android.permission.CAMERA\"]\n\n[android.meta_data]\n"
         "\"com.google.ar.core\" = \"optional\"\nquoted = \"a \\\"b\\\" & <c>\"\n");
@@ -72,6 +72,8 @@ int main() {
     string activity_end = strstr(manifest, "</activity>");
     check(application != null && meta > activity_end && meta < end, "inside <application>, outside the activity");
     check(strstr(manifest, "android.permission.CAMERA") != null, "the package's other entries");
+    check(strstr(manifest, "  <uses-feature android:name=\"android.hardware.camera.ar\"/>\n") != null, "[android] features");
+    check(strstr(manifest, "<uses-feature") < application, "features before <application>");
     printf("PASS manifest\n");
     return 0;
 }

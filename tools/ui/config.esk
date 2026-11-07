@@ -30,6 +30,7 @@
 //   [android]
 //   permissions = ["android.permission.CAMERA"]
 //   dependencies = ["com.google.android.material:material:1.12.0"]
+//   features = ["android.hardware.camera.ar"]   <uses-feature>: Google Play shows the app only where it is
 //   [android.meta_data]
 //   "com.google.ar.core" = "optional"    <meta-data> in the manifest's <application>
 //
