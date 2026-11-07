@@ -262,6 +262,7 @@ Collections = { url = "https://github.com/apple/swift-collections", from = "1.1.
 permissions = ["android.permission.ACCESS_FINE_LOCATION"]
 dependencies = ["com.google.android.material:material:1.12.0"]
 receivers = ["org.example.Alarm"]   # broadcast receivers in native/android, for the manifest
+features = ["android.hardware.camera.ar"]   # <uses-feature>: Google Play lists the app only on such devices
 
 [android.meta_data]
 "com.google.ar.core" = "optional"   # <meta-data> in the manifest's <application>
