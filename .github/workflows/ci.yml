@@ -19,6 +19,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev
       - name: Tests
         run: tools/ci.sh
+      - name: API reference is current
+        run: python3 -I tools/gen_api.py --check
 
   macos:
     runs-on: macos-15

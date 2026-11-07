@@ -95,6 +95,7 @@ layout; [Releasing](docs/releasing.md), what a release needs and makes.
 | [Native code](docs/native.md) | Modules and views per platform, `ui.toml`, Gradle and Swift packages |
 | [Protocol](docs/protocol.md), [Hosts](docs/hosts.md) | For writing a host |
 | [Testing](docs/testing.md) | Tests, host checks, conformance, measurements |
+| [API reference](docs/api.md) | Every public function and type of `<ui>` and `<ui/kit>`, with its documentation |
 
 ## Platforms
 
