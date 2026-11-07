@@ -3,18 +3,24 @@
 
 // Borrowed get() values last until set(). Retain a snapshot for escaping captures.
 struct UiString { string text; int references; }
+// A new UiString holding a copy of `text`, with one reference.
 *UiString ui_string(string text) {
     *UiString value = alloc<UiString>(1);
     value.text = ui_copy(text); value.references = 1;
     return value;
 }
+// Adds a reference and returns the string.
 *UiString UiString_retain(*UiString self) { self.references++; return self; }
+// Drops a reference; the last one frees the string.
 void UiString_release(*UiString self) {
     self.references--;
     if (self.references == 0) { free(self.text); free(self); }
 }
 
+// A use_string's state: a signal over a reference-counted string.
 struct StringState { Signal<*UiString> signal; }
+// The scope's owned string at this position, holding a copy of `initial` on the first
+// render; freed when the scope unmounts.
 *StringState use_string(string initial) {
     static int tag;
     *Slot slot = ui_slot(3, &tag);
@@ -28,13 +34,19 @@ struct StringState { Signal<*UiString> signal; }
     }
     return (*StringState)slot.data;
 }
+// The text; reading it subscribes. Borrowed until the next set().
 string StringState_get(*StringState self) { return self.signal.get().text; }
+// The current string with a reference added, for a closure that outlives the next set();
+// release it when done.
 *UiString StringState_snapshot(*StringState self) { return self.signal.get().retain(); }
+// Sets the string now, dropping the old one's reference (set() is the public way).
 void StringState_apply(*StringState self, *UiString value) {
     *UiString old = self.signal.value;
     self.signal.apply(value);
     old.release();
 }
+// Sets the text (copied): readers render again. During a render the write waits until the
+// render ends; inside a memo it stops the program.
 void StringState_set(*StringState self, string text) {
     ui_require(ui == null || ui.tracking == null || ui.tracking.kind != 1, "memo must be pure");
     *UiString value = ui_string(text);

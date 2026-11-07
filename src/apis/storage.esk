@@ -5,6 +5,7 @@
 // the app starts, so ui_app_start may read from it. <fs> works in it.
 string ui_data_dir() { return ui_data_path == null ? "" : ui_data_path; }
 
+// The host's side: the app's data directory (copied).
 void ui_set_data_dir(string path) {
     free(ui_data_path);
     ui_data_path = path == null ? null : ui_copy(path);
@@ -75,6 +76,8 @@ string ui_store_field(string text, int* at) {
     return out.data;
 }
 
+// The file ui_storage keeps its values in (ui-storage.tsv in the data directory), a string
+// the caller frees, or null when there is no data directory (internal).
 string ui_store_path() {
     if (ui_data_path == null || ui_data_path[0] == 0) { return null; }
     String path;
@@ -82,6 +85,8 @@ string ui_store_path() {
     return path.data;
 }
 
+// Reads the saved values on first use: from the file, or the browser's storage on the web
+// (internal).
 void ui_store_load() {
     if (ui_store_loaded) { return; }
     ui_store_loaded = true;
@@ -114,6 +119,8 @@ void ui_store_load() {
     free(text);
 }
 
+// Writes every value back: to a temporary file renamed over the old one, or the browser's
+// storage on the web (internal).
 void ui_store_save() {
     String text;
     defer String_free(&text);
@@ -139,6 +146,7 @@ void ui_store_save() {
 #endif
 }
 
+// The index of `key` among the loaded values, or -1 (internal).
 int ui_store_find(string key) {
     for (i in 0..ui_store.size) { if (strcmp(ui_store.data[i].name, key) == 0) { return i; } }
     return -1;
@@ -151,6 +159,8 @@ string ui_storage_get(string key) {
     return at < 0 ? null : ui_store.data[at].value;
 }
 
+// Saves `value` (null: "") under `key`, replacing what was there, and writes the store at
+// once.
 void ui_storage_set(string key, string value) {
     ui_store_load();
     int at = ui_store_find(key);
@@ -160,6 +170,7 @@ void ui_storage_set(string key, string value) {
     ui_store_save();
 }
 
+// Forgets `key` and writes the store; nothing when it is not there.
 void ui_storage_remove(string key) {
     ui_store_load();
     int at = ui_store_find(key);

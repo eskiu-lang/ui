@@ -4,6 +4,8 @@
 // A drag's phase, the translation since it began (points) and its velocity (points per second).
 enum PanPhase { PanBegan, PanMoved, PanEnded, PanCancelled }
 
+// A drag as ui_on_pan reports it: its PanPhase, the translation since it began (points)
+// and the velocity (points per second).
 struct Pan { int phase; int dx; int dy; int vx; int vy; }
 
 // For the element right after it: `handler` follows a drag on it, from PanBegan (once the

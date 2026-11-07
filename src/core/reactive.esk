@@ -5,8 +5,12 @@
 // side removes it in O(1) by swapping in its last entry.
 struct Reader { *Observer observer; int at; }
 
+// An observer's side of a subscription: the source it reads and its index in the source's
+// readers (internal).
 struct Edge { *Source source; int at; }
 
+// Something observers read (a signal, or a memo's value): its readers, the memo computing
+// it if any, and the last run that subscribed (internal).
 struct Source {
     List<Reader> readers;
     *Observer memo;
@@ -15,6 +19,8 @@ struct Source {
     int64 marked_epoch;
 }
 
+// A block's render, a memo or an effect: what it read, whether it must run again, its
+// compute and cleanup closures, and a memo's output (internal).
 struct Observer {
     int kind;
     *Node owner;
@@ -33,9 +39,12 @@ struct Observer {
     *Observer below;
 }
 
+// A hook's state in its scope: the hook kind and its type's tag, the data, how to free it,
+// and its observer if any. ui_slot gives one to a package's own hooks.
 struct Slot { int kind; *void tag; *void data; fn()->void dispose; *Observer observer; }
 
 
+// Removes reader `at` of a source in O(1), fixing the moved entry's index (internal).
 void ui_remove_reader(*Source source, int at) {
     int last = source.readers.size - 1;
     if (at != last) {
@@ -46,6 +55,7 @@ void ui_remove_reader(*Source source, int at) {
     source.readers.size = last;
 }
 
+// Removes edge `at` of an observer in O(1), fixing the moved entry's index (internal).
 void ui_remove_edge(*Observer observer, int at) {
     int last = observer.deps.size - 1;
     if (at != last) {
@@ -66,6 +76,7 @@ void ui_untrack(*Observer observer) {
     observer.epoch = ++ui_epochs;
 }
 
+// Subscribes the running observer, if any, to `source` (once per run) (internal).
 void ui_track(*Source source) {
     if (ui == null) { return; }
     *Observer observer = ui.tracking;
@@ -84,12 +95,14 @@ void ui_track(*Source source) {
     source.readers.push(Reader{observer, observer.deps.size - 1});
 }
 
+// Adds an observer to a dirty list once (internal).
 void ui_queue(List<*Observer>* list, *Observer observer) {
     if (observer.queued) { return; }
     observer.queued = true;
     list.push(observer);
 }
 
+// Takes an observer off a dirty list (internal).
 void ui_unqueue(List<*Observer>* list, *Observer observer) {
     if (!observer.queued) { return; }
     observer.queued = false;
@@ -98,6 +111,8 @@ void ui_unqueue(List<*Observer>* list, *Observer observer) {
     }
 }
 
+// Marks every reader of `source` dirty: memos and effects are queued, blocks scheduled to
+// render again (internal).
 void ui_changed(*Source source) {
     if (ui == null) { return; }
     for (i in 0..source.readers.size) {
@@ -118,6 +133,7 @@ void ui_changed(*Source source) {
     }
 }
 
+// Marks the memos that read `source`, and theirs in turn, dirty (internal).
 void ui_stale_memos(*Source source) {
     for (i in 0..source.readers.size) {
         *Observer reader = source.readers.data[i].observer;
@@ -139,6 +155,8 @@ void ui_detach_source(*Source source) {
     source.marked = null;
 }
 
+// Computes a dirty memo again, tracking what it reads; stops with "memo cycle" when it is
+// already computing (internal).
 void ui_validate(*Observer observer) {
     ui_require(!observer.evaluating, "memo cycle");
     if (!observer.dirty) { return; }
@@ -156,6 +174,7 @@ void ui_validate(*Observer observer) {
     ui.evaluating = observer.below;
 }
 
+// A new observer of `kind` (0 block, 1 memo, 2 effect) owned by `owner` (internal).
 *Observer ui_observer(int kind, *Node owner) {
     *Observer observer = alloc<Observer>(1);
     observer.kind = kind;
@@ -164,6 +183,7 @@ void ui_validate(*Observer observer) {
     return observer;
 }
 
+// Unsubscribes and frees an observer, running its cleanup first (internal).
 void ui_drop_observer(*Observer observer) {
     ui_untrack(observer);
     ui_unqueue(observer.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, observer);
@@ -173,6 +193,7 @@ void ui_drop_observer(*Observer observer) {
     free(observer);
 }
 
+// A hook kind's name, for the messages of ui_slot.
 string ui_hook_name(int kind) {
     if (kind == 0) { return "use_signal"; }
     if (kind == 1) { return "use_memo"; }
@@ -190,6 +211,10 @@ string ui_hook_name(int kind) {
     return "use_string";
 }
 
+// The running scope's next hook slot: created on the first render, then the same slot each
+// render by position. `kind` and `tag` (the address of a static in the hook) must match
+// each time, else the program stops naming both; a hook outside a render stops it too. A
+// package's hook uses kind 10.
 *Slot ui_slot(int kind, *void tag) {
     *Node node = ui.builder;
     ui_require(node != null && ui.phase == 1, "hook outside render");
@@ -213,8 +238,11 @@ string ui_hook_name(int kind) {
     return slot;
 }
 
+// A reactive value: get() reads it and subscribes the reader, set() writes it.
 struct Signal<T> { T value; Source source; }
 
+// The scope's signal at this position, holding `initial` on the first render; kept while
+// the scope is mounted, freed when it unmounts.
 *Signal<T> use_signal<T>(T initial) {
     static int tag;
     *Slot slot = ui_slot(0, &tag);
@@ -235,23 +263,30 @@ struct Signal<T> { T value; Source source; }
     return signal;
 }
 
+// Frees a signal made by signal_new.
 void Signal_free<T>(Signal<T>* self) {
     ui_detach_source(&self.source);
     free(self);
 }
 
+// The value; reading it in a block, memo or effect subscribes that reader.
 T Signal_get<T>(Signal<T>* self) {
     if (self.source.memo != null) { ui_validate(self.source.memo); }
     ui_track(&self.source);
     return self.value;
 }
 
+// Writes the value now and marks its readers dirty; nothing when it is equal (set() is the
+// public way).
 void Signal_apply<T>(Signal<T>* self, T value) {
     if (self.value == value) { return; }
     self.value = value;
     ui_changed(&self.source);
 }
 
+// Writes the value: every reader renders or runs again; setting the same value does
+// nothing. During a render the write waits until the render ends; inside a memo it stops
+// the program ("memo must be pure").
 void Signal_set<T>(Signal<T>* self, T value) {
     ui_require(ui == null || ui.tracking == null || ui.tracking.kind != 1, "memo must be pure");
     if (ui != null && ui.phase == 1) {
@@ -259,8 +294,12 @@ void Signal_set<T>(Signal<T>* self, T value) {
     } else { self.apply(value); }
 }
 
+// A use_memo's state: its output signal, the compute closure and whether it has a value
+// (internal).
 struct Memo<T> { Signal<T> signal; fn()->T callback; bool initialized; }
 
+// A value derived by `callback`, computed lazily when read, whose readers render again
+// only when the value changes. `callback` must not set signals.
 *Signal<T> use_memo<T>(escaping fn()->T callback) {
     static int tag;
     *Slot slot = ui_slot(1, &tag);
@@ -292,6 +331,9 @@ struct Memo<T> { Signal<T> signal; fn()->T callback; bool initialized; }
     return &memo.signal;
 }
 
+// Runs `callback` after the commit, each time its scope renders and each time something it
+// read changes, parents first. on_cleanup inside it registers what runs before the next
+// run and at unmount.
 void use_effect(escaping fn()->void callback) {
     static int tag;
     *Slot slot = ui_slot(2, &tag);
@@ -327,6 +369,8 @@ void use_mount(escaping fn()->void on_mount, escaping fn()->void on_unmount) {
     ui_release_closure(on_mount);
 }
 
+// Inside a use_effect callback: `callback` runs before the effect's next run and when its
+// scope unmounts. Once per run.
 void on_cleanup(escaping fn()->void callback) {
     ui_require(ui.tracking != null && ui.tracking.kind == 2, "on_cleanup outside effect");
     ui_require(!ui.tracking.has_cleanup, "only one cleanup per effect");

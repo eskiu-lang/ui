@@ -6,6 +6,7 @@
 // first frame after frames start).
 struct Tick { double time; double delta; }
 
+// A use_frame handler and whether it runs (internal).
 struct UiFrameHandler { fn(Tick)->void handler; bool running; bool removed; }
 
 // The host's side: request(true) starts its display clock (CADisplayLink, Choreographer,
@@ -20,6 +21,7 @@ void ui_set_frame_host(escaping fn(bool)->void request) {
     if (on) { ui_frames_switch(true); }
 }
 
+// Starts or stops the display clock: the host's, else a 16 ms timer (internal).
 void ui_frames_switch(bool on) {
     ui.frames_on = on;
     ui.last_frame_time = -1;
@@ -44,6 +46,7 @@ void ui_frames_update() {
     if (wanted != ui.frames_on) { ui_frames_switch(wanted); }
 }
 
+// Removes a use_frame handler and stops the frames when none runs (internal).
 void ui_drop_frame_handler(*UiFrameHandler entry) {
     if (entry.removed) { return; }
     entry.removed = true;
@@ -84,8 +87,11 @@ bool ui_event_frame(double time) {
     return ui_post(Event{0, 0, 18, (int)(us / 1000000), null, (int)(us % 1000000)});
 }
 
+// Runs the frame handlers for a display frame event (internal).
 bool ui_dispatch_frame_event(*Event event) { return ui_run_frames(event.value + event.extra / 1000000.0); }
 
+// Runs each running frame handler with the time and the time since the last frame; false
+// when frames are off or none ran (internal).
 bool ui_run_frames(double time) {
     if (!ui.frames_on) { return false; }
     double delta = ui.last_frame_time < 0 || time < ui.last_frame_time ? 0 : time - ui.last_frame_time;
@@ -104,14 +110,17 @@ bool ui_run_frames(double time) {
     return ran;
 }
 
+// Stops the frames and frees the handlers' list (internal).
 void ui_frames_shutdown() {
     if (ui.frames_on) { ui_frames_switch(false); }
     if (ui.has_frame_host) { ui_release_bool(ui.frame_request); }
     ui.frame_handlers.free();
 }
 
+// A use_app_state handler (internal).
 struct AppStateHandler { fn(bool)->void handler; bool removed; }
 
+// Removes a use_app_state handler (internal).
 void ui_drop_app_state(*AppStateHandler entry) {
     if (entry.removed) { return; }
     entry.removed = true;
@@ -139,6 +148,7 @@ void use_app_state(escaping fn(bool)->void handler) {
     entry.handler = handler;
 }
 
+// Runs every use_app_state handler for a foreground or background event (internal).
 bool ui_dispatch_app_state_event(*Event event) {
     List<*AppStateHandler> entries;
     for (i in 0..ui.app_state_handlers.size) { entries.push(ui.app_state_handlers.data[i]); }

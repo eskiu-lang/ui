@@ -82,4 +82,5 @@ void RefreshControl(bool refreshing, escaping fn()->void on_refresh) {
     ui.next_refresh = &ui.refresh_slot;
 }
 
+// The host's side: the user pulled a scroll's RefreshControl.
 bool ui_event_refresh(int id, int generation) { return ui_post(Event{id, generation, 7, 0, null}); }

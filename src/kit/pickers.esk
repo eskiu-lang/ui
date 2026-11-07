@@ -4,10 +4,13 @@
 // A day of the Gregorian calendar.
 struct Date { int year; int month; int day; }
 
+// Frees a fn(Date)->void closure (internal).
 void kit_release_date(escaping fn(Date)->void callback) { free_closure(callback); }
 
+// Whether `year` is a leap year (Gregorian).
 bool kit_leap(int year) { return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0; }
 
+// The days in `month` (1 to 12) of `year`.
 int kit_days_in_month(int year, int month) {
     if (month == 2) { return kit_leap(year) ? 29 : 28; }
     return month == 4 || month == 6 || month == 9 || month == 11 ? 30 : 31;
@@ -20,6 +23,7 @@ int kit_weekday(int year, int month, int day) {
     return (y + y / 4 - y / 100 + y / 400 + offsets[month - 1] + day) % 7;
 }
 
+// The English name of `month` (1 to 12).
 string kit_month_name(int month) {
     if (month == 1) { return "January"; }
     if (month == 2) { return "February"; }

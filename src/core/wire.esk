@@ -46,6 +46,7 @@
 // The renderer reads it during apply and copies what it keeps.
 struct Commit { *uint8 data; int len; int cap; }
 
+// Grows the buffer so `n` more bytes fit.
 void Commit_room(*Commit self, int n) {
     if (self.len + n <= self.cap) { return; }
     int cap = self.cap < 256 ? 256 : self.cap;
@@ -57,11 +58,13 @@ void Commit_room(*Commit self, int n) {
     self.cap = cap;
 }
 
+// Appends a byte.
 void Commit_u8(*Commit self, int value) {
     self.room(1);
     self.data[self.len++] = (uint8)value;
 }
 
+// Appends a little-endian u32.
 void Commit_u32(*Commit self, int value) {
     self.room(4);
     uint32 v = (uint32)value;
@@ -72,15 +75,18 @@ void Commit_u32(*Commit self, int value) {
     self.len += 4;
 }
 
+// Frees the buffer and empties the commit.
 void Commit_free(*Commit self) { free(self.data); *self = Commit{}; }
 
 // A decoded record, for tests and tools; `text` points into the buffer.
 struct Mutation { int op; int id; int generation; int parent; int before; int kind; string text; string name; }
 
+// The little-endian u32 at p.
 int ui_read_u32(*uint8 p) {
     return (int)((uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24));
 }
 
+// Decodes the records of a commit buffer into `out`; their strings point into the buffer.
 void ui_decode(*uint8 data, int len, List<Mutation>* out) {
     int at = 0;
     while (at < len) {

@@ -3,6 +3,7 @@
 
 extern void abort();
 
+// An element kind's name ("Column", "Text", ...), "Scope" for any other.
 string ui_kind_name(int kind) {
     if (kind == 15) { return "Slider"; }
     if (kind == 14) { return "Screen"; }
@@ -26,6 +27,7 @@ string ui_kind_name(int kind) {
 // the component name or element kind with its key or its index among its siblings.
 void ui_scope_path(*String out) { ui_node_path(ui == null ? null : ui.builder, out); }
 
+// Appends the scope path of `node` to `out` (as ui_scope_path).
 void ui_node_path(*Node node, *String out) {
     List<*Node> steps;
     while (node != null && node.parent != null) { steps.push(node); node = node.parent; }
@@ -47,6 +49,7 @@ void ui_node_path(*Node node, *String out) {
     steps.free();
 }
 
+// Prints `message` and the running block's scope path to stderr, then aborts.
 void ui_fail(string message) {
     // stderr is unbuffered: the message survives the abort when output goes to a file.
     String text;
@@ -56,6 +59,7 @@ void ui_fail(string message) {
     abort();
 }
 
+// ui_fail(message) unless `ok`.
 void ui_require(bool ok, string message) {
     if (!ok) { ui_fail(message); }
 }

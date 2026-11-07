@@ -26,11 +26,13 @@ int use_animated_then(int target, int ms, int easing, escaping fn()->void on_don
     return ui_animate(target, ms, easing, true, on_done);
 }
 
+// Frees an on_done closure (internal).
 void ui_release_done(escaping fn()->void on_done) { free_closure(on_done); }
 
 // The latest on_done, kept in the hook's slot and freed with it.
 struct AnimatedDone { fn()->void on_done; }
 
+// The animation behind use_animated and use_animated_then (internal).
 int ui_animate(int target, int ms, int easing, bool has_done, escaping fn()->void on_done) {
     *AnimatedDone done = null;
     if (has_done) {

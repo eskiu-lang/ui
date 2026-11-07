@@ -1,41 +1,57 @@
 // Freeing the closures the tree and components are given.
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
+// Frees an escaping closure of type fn()->void.
 void ui_release_closure(escaping fn()->void callback) { free_closure(callback); }
 
 // Through a parameter: the self-hosted compiler miscompiles free_closure of a captured
 // variable inside a lambda.
 void ui_release_text(escaping fn(string)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(bool)->void (a focus handler).
 void ui_release_focus(escaping fn(bool)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(int)->void (an item handler).
 void ui_release_item(escaping fn(int)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(int, int)->void.
 void ui_release_cell(escaping fn(int, int)->void callback) { free_closure(callback); }
 
 // Free a caller's closure of each common type (for ui_own destructors).
 void ui_release_bool(escaping fn(bool)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(int)->void.
 void ui_release_int(escaping fn(int)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(string)->void.
 void ui_release_string(escaping fn(string)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(string, string)->void (a native view's events).
 void ui_release_view(escaping fn(string, string)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(string)->void (a native event's payload).
 void ui_release_payload(escaping fn(string)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn()->bool (a back handler).
 void ui_release_back(escaping fn()->bool callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(int, int, bool)->void.
 void ui_release_timer_start(escaping fn(int, int, bool)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(FetchResult)->void.
 void ui_release_fetch(escaping fn(FetchResult)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(Pan)->void.
 void ui_release_pan(escaping fn(Pan)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(Frame)->void.
 void ui_release_frame(escaping fn(Frame)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(Tick)->void.
 void ui_release_tick(escaping fn(Tick)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(int)->void (a choice handler).
 void ui_release_choice(escaping fn(int)->void callback) { free_closure(callback); }
 
+// Frees an escaping closure of type fn(UiError)->void.
 void ui_release_fallback(escaping fn(UiError)->void callback) { free_closure(callback); }

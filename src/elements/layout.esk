@@ -31,8 +31,10 @@ void ui_on_long_press(escaping fn()->void handler) {
     ui.has_next_long_press = true;
 }
 
+// Children laid out top to bottom.
 void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
 
+// Children laid out left to right.
 void Row(Style style, escaping fn()->void block) { ui_element(2, style, null, block, void() {}, void() {}); }
 
 // A column whose content scrolls when it is taller than the space it gets.

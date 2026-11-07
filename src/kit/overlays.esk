@@ -1,6 +1,7 @@
 // Things over the content: Popover, DropdownMenu, Select, Tooltip, toasts.
 // Part of <ui/kit> (src/kit.esk imports every part).
 
+// Frees a fn(int64)->void closure (internal).
 void kit_release_int64(escaping fn(int64)->void callback) { free_closure(callback); }
 
 // `content` in a panel next to `trigger` while `open`: below it, or above when there is no room
@@ -130,6 +131,8 @@ void Tooltip(string text, escaping fn()->void content) {
 *Signal<int> kit_toast_count;
 *StringState kit_toast_message;
 
+// Shows `text` at the bottom for a few seconds, through the mounted ToastHost; dropped
+// when none is mounted.
 void kit_toast(string text) {
     if (kit_toast_count == null) { return; }
     kit_toast_message.set(text == null ? "" : text);
@@ -149,6 +152,8 @@ void kit_toast_owner(*Signal<int> count, *StringState message) {
     };
 }
 
+// Where kit_toast messages show: put it last in the app's root (it sits absolute over the
+// root's bottom and blocks no touch).
 void ToastHost() {
     // A strip of no height along the parent's bottom: the toast sits above it, and it blocks
     // no touch.

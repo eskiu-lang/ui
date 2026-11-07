@@ -59,6 +59,8 @@ void ui_on_error(escaping fn(UiError)->void handler) {
     ui.has_on_error = true;
 }
 
+// What an ErrorBoundary shows when it is given no fallback: "Something went wrong." and
+// the error's text.
 void ui_default_fallback(UiError error) {
     Column(Style{padding: 24, gap: 8}) {
         Text("Something went wrong.");
@@ -66,12 +68,15 @@ void ui_default_fallback(UiError error) {
     }
 }
 
+// Words for UiError.where: "a render", "a handler" or "an effect".
 string ui_where_name(int where) {
     if (where == 2) { return "a handler"; }
     if (where == 3) { return "an effect"; }
     return "a render";
 }
 
+// Hands an error to the ui_on_error handler (an exception it throws is ignored), or prints
+// it to stderr when there is none.
 void ui_report_error(UiError error) {
     if (ui.has_on_error) {
         try { ui.on_error(error); } catch (_) {}
@@ -133,6 +138,8 @@ void ui_boundary_block() {
     return boundary;
 }
 
+// Marks the boundary `node` as failed with the error's text and scope path (copied; the
+// old ones are freed after the commit) and reports it (internal).
 void ui_boundary_fail(*Node node, string text, string path) {
     *Boundary state = node.boundary;
     string old_text = state.text;
@@ -290,6 +297,7 @@ void ui_discard_slots(*Node node) {
     });
 }
 
+// Frees a Boundary's closures and strings (internal).
 void ui_free_boundary(*Boundary boundary) {
     ui_release_closure(boundary.content);
     ui_release_fallback(boundary.fallback);

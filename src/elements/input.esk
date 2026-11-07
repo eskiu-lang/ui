@@ -29,6 +29,8 @@ Style ui_input_style(Input input) {
     return style;
 }
 
+// A text field showing `input.value`; `on_change` gets each edit's whole text. The app
+// owns the value: a render that keeps the old one puts it back.
 void TextInput(Input input, escaping fn(string)->void on_change) {
     InputExtra extra = InputExtra{on_text: on_change, placeholder: input.placeholder,
         focused: input.focused};

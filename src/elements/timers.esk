@@ -14,18 +14,21 @@ void ui_set_timer_host(escaping fn(int, int, bool)->void start, escaping fn(int)
     ui.has_timer_host = true;
 }
 
+// Starts a timer with the host (internal).
 void ui_timer_arm(*UiTimer timer) {
     if (timer.ms <= 0 || !ui.has_timer_host) { return; }
     timer.armed = true;
     ui.timer_start(timer.token, timer.ms, timer.repeat);
 }
 
+// Stops a timer with the host (internal).
 void ui_timer_disarm(*UiTimer timer) {
     if (!timer.armed) { return; }
     timer.armed = false;
     if (ui.has_timer_host) { ui.timer_stop(timer.token); }
 }
 
+// Stops and removes a timer (internal).
 void ui_drop_timer(*UiTimer timer) {
     if (timer.removed) { return; }
     timer.removed = true;
@@ -35,6 +38,7 @@ void ui_drop_timer(*UiTimer timer) {
     }
 }
 
+// The hook behind use_interval and use_timeout (internal).
 void ui_use_timer(int ms, bool repeat, escaping fn()->void handler) {
     static int tag;
     *Slot slot = ui_slot(7, &tag);
@@ -71,6 +75,8 @@ void use_timeout(int ms, escaping fn()->void handler) { ui_use_timer(ms, false, 
 // The host's side: the timer with `token` fired.
 bool ui_event_timer(int token) { return ui_post(Event{token, 0, 12, 0, null}); }
 
+// Runs the handler of the timer that fired, or a frame when it is the frame timer
+// (internal).
 bool ui_dispatch_timer_event(*Event event) {
     if (ui.frame_timer != 0 && event.id == ui.frame_timer) { return ui_run_frames(ui.last_frame_time < 0 ? 0 : ui.last_frame_time + 0.016); }
     for (i in 0..ui.timers.size) {

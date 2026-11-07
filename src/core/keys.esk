@@ -4,6 +4,7 @@
 // int64 key -> node, open addressing. Built per run, only for children that have keys.
 struct KeyTable { List<int64> keys; List<*Node> nodes; int mask; int count; }
 
+// Empties the table with room for `expected` keys at most half full (internal).
 void KeyTable_init(*KeyTable self, int expected) {
     int cap = 8;
     while (cap < expected * 2) { cap = cap * 2; }
@@ -11,6 +12,7 @@ void KeyTable_init(*KeyTable self, int expected) {
     for (i in 0..cap) { self.keys.push(0); self.nodes.push(null); }
 }
 
+// The slot of `key`: where it is, or the empty slot where it would go (internal).
 int KeyTable_slot(*KeyTable self, int64 key) {
     int64 h = key * 0x9E3779B97F4A7C15;
     int at = (int)((h ^ (h >> 31)) & (int64)self.mask);
@@ -18,12 +20,16 @@ int KeyTable_slot(*KeyTable self, int64 key) {
     return at;
 }
 
+// The node of `key`, or null (internal).
 *Node KeyTable_get(*KeyTable self, int64 key) { return self.nodes.data[self.slot(key)]; }
 
+// Frees the table (internal).
 void KeyTable_free(*KeyTable self) {
     self.keys.free(); self.nodes.free(); self.mask = 0; self.count = 0;
 }
 
+// Sets the node of `key`, growing the table when it would be more than half full
+// (internal).
 void KeyTable_put(*KeyTable self, int64 key, *Node node) {
     if ((self.count + 1) * 2 > self.mask + 1) {
         // Keep it at most half full: rehash into twice the room.

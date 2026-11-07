@@ -4,6 +4,7 @@
 // The platform, known when the app is compiled (macOS runs the web host, so it is web).
 enum Platform { PlatformDesktop, PlatformWeb, PlatformIos, PlatformAndroid }
 
+// The platform the app was compiled for (a Platform).
 int ui_platform() {
 #if defined(__ANDROID__)
     return PlatformAndroid;
@@ -16,6 +17,7 @@ int ui_platform() {
 #endif
 }
 
+// The platform's name: "android", "ios", "web" or "desktop".
 string ui_platform_name() {
     int platform = ui_platform();
     if (platform == PlatformAndroid) { return "android"; }
@@ -34,12 +36,16 @@ string ui_platform_name() {
 #define UI_APP_CONFIG(key)
 #endif
 
+// The app's name from ui.toml ("" outside a ui build).
 string ui_app_name() { return UI_APP_NAME; }
 
+// The app's id from ui.toml, the bundle id and Android package ("" outside a ui build).
 string ui_app_id() { return UI_APP_ID; }
 
+// The app's version from eskiu.toml ("0.1.0" outside a ui build).
 string ui_app_version() { return UI_APP_VERSION; }
 
+// The app's build number ("1" outside a ui build).
 string ui_app_build() { return UI_APP_BUILD; }
 
 // A value from ui.toml [env] (with [env.release] over it in `ui release` builds), as a
@@ -52,20 +58,24 @@ string ui_config(string key) {
 // The system's appearance. Reading these subscribes, so a change renders the readers again.
 enum ColorScheme { SchemeLight, SchemeDark }
 
+// The system's appearance, SchemeLight or SchemeDark.
 int ui_color_scheme() { ui.environment.get(); return ui.color_scheme; }
 
 // Accessibility: a screen reader running (VoiceOver, TalkBack), reduced motion asked for,
 // and the text size the user chose, in percent (100: the default).
 bool ui_screen_reader() { ui.environment.get(); return ui.screen_reader; }
 
+// Whether the user asked for reduced motion.
 bool ui_reduce_motion() { ui.environment.get(); return ui.reduce_motion; }
 
+// The text size the user chose, in percent (100 by default).
 int ui_font_scale() { ui.environment.get(); return ui.font_scale > 0 ? ui.font_scale : 100; }
 
 // The user's language as a BCP 47 tag ("es-MX", "en"; "en" until the host says), and whether
 // it is written right to left.
 string ui_locale() { ui.environment.get(); return ui.locale == null ? "en" : ui.locale; }
 
+// Whether the user's language is written right to left.
 bool ui_is_rtl() { ui.environment.get(); return ui.rtl; }
 
 // The host's side.
@@ -75,6 +85,8 @@ void ui_set_appearance(int scheme) {
     ui.environment.set(ui.environment.value + 1);
 }
 
+// The host's side: the screen reader, reduced motion and text size (percent) settings;
+// readers render again when they change.
 void ui_set_accessibility(bool screen_reader, bool reduce_motion, int font_scale) {
     if (ui.screen_reader == screen_reader && ui.reduce_motion == reduce_motion && ui.font_scale == font_scale) { return; }
     ui.screen_reader = screen_reader;
@@ -83,6 +95,8 @@ void ui_set_accessibility(bool screen_reader, bool reduce_motion, int font_scale
     ui.environment.set(ui.environment.value + 1);
 }
 
+// The host's side: the user's language (a BCP 47 tag, copied) and its direction; readers
+// render again when they change.
 void ui_set_locale(string locale, bool rtl) {
     if (ui.rtl == rtl && ui.locale != null && locale != null && strcmp(ui.locale, locale) == 0) { return; }
     free(ui.locale);

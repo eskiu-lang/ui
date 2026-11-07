@@ -1,8 +1,11 @@
 // Element props: Style, colors, Align and Justify, keys.
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
+// An element's identity among its siblings: matched by key rather than position when
+// `set`. Make one with key().
 struct Key { bool set; int64 value; }
 
+// A key from a number (an item's id).
 Key key(int64 value) { return Key{true, value}; }
 
 // `label` is the accessible name (ARIA label, accessibilityLabel, contentDescription).
@@ -51,15 +54,22 @@ struct Style {
     int blur;
 }
 
+// The curve of a transition or animation: ease in and out, ease out, ease in, linear, or a
+// spring that overshoots a little.
 enum Easing { EaseInOut, EaseOut, EaseIn, EaseLinear, EaseSpring }
 
+// Where children sit across the parent's axis: the platform's default, start, center, end,
+// or stretched.
 enum Align { AlignDefault, AlignStart, AlignCenter, AlignEnd, AlignStretch }
 
+// How children are spread along the parent's axis: the default, start, center, end, space
+// between them, or space around them.
 enum Justify { JustifyDefault, JustifyStart, JustifyCenter, JustifyEnd, JustifyBetween, JustifyAround }
 
 // An opaque color, each channel 0 to 255; rgba adds the alpha.
 int64 rgb(int r, int g, int b) { return rgba(r, g, b, 255); }
 
+// A color with alpha, each channel 0 to 255, as 0xRRGGBBAA.
 int64 rgba(int r, int g, int b, int a) {
     return ((int64)(r & 255) << 24) | ((int64)(g & 255) << 16) | ((int64)(b & 255) << 8) | (int64)(a & 255);
 }

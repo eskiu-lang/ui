@@ -12,6 +12,7 @@ struct FetchRequest { string url; string method; string headers; string body; in
 // `error` saying why), the body as text and the response headers, one per line.
 struct FetchResult { int status; string body; string headers; string error; }
 
+// A request waiting for its answer: its id and the handler (internal).
 struct PendingFetch { int id; fn(FetchResult)->void on_done; }
 
 // Send `request`; on_done gets the result as an event, on the UI thread.
@@ -38,6 +39,8 @@ bool ui_event_fetch(int id, int status, string body, string headers) {
     return ui_post(Event{id, 0, 16, status, body, 0, headers});
 }
 
+// Hands a fetch event (16) to the request waiting for it as a FetchResult and frees its
+// handler; false when no request has that id (internal).
 bool ui_dispatch_fetch_event(*Event event) {
     for (i in 0..ui.fetches.size) {
         PendingFetch pending = ui.fetches.data[i];
@@ -72,6 +75,8 @@ void ui_cache_path(string url, String* out) {
     }
 }
 
+// A download for ui_cached_file: its request id, the URL, the cache path and every handler
+// waiting for it (internal).
 struct PendingCache { int fetch; String url; String path; List<fn(string)->void> waiting; }
 
 // `url`'s file in the app's cache: on_done gets its path, downloaded the first time and read
@@ -127,6 +132,7 @@ void ui_answer_cache(*PendingCache pending, string path) {
     ui_free_pending_cache(pending);
 }
 
+// Frees a PendingCache's strings and list (internal).
 void ui_free_pending_cache(*PendingCache pending) {
     String_free(&pending.url);
     String_free(&pending.path);
@@ -137,6 +143,7 @@ void ui_free_pending_cache(*PendingCache pending) {
 // (it is freed by the last of those, or by its block's unmount when none is left).
 struct CachedFile { String url; String path; int pending; bool unmounted; bool asking; *Signal<int> version; }
 
+// Frees a CachedFile (internal).
 void ui_free_cached_file(*CachedFile cached) {
     String_free(&cached.url);
     String_free(&cached.path);

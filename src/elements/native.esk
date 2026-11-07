@@ -5,10 +5,13 @@
 // native/web: tools/ui builds them in). Eskiu calls it through `extern`; it answers
 // through events on a channel, which reach use_native_event handlers on the UI thread.
 
+// A name and a value, both owned (internal).
 struct NativePair { string name; string value; }
 
+// A use_native_event handler and its channel (internal).
 struct NativeHandler { string channel; fn(string)->void handler; bool removed; }
 
+// Frees each pair's strings and the list (internal).
 void ui_free_pairs(List<NativePair>* pairs) {
     for (i in 0..pairs.size) { free(pairs.data[i].name); free(pairs.data[i].value); }
     pairs.free();
@@ -32,6 +35,7 @@ void use_native_event(string channel, escaping fn(string)->void handler) {
     entry.handler = handler;
 }
 
+// Removes a use_native_event handler (internal).
 void ui_drop_native(*NativeHandler entry) {
     if (entry.removed) { return; }
     entry.removed = true;
@@ -59,6 +63,7 @@ void NativeView(Style style, string type, escaping fn(string, string)->void on_e
     node.on_view = on_event;
 }
 
+// Appends a named prop record for a native view to the commit (internal).
 void ui_emit_named(*Node node, string name, string value) {
     *Commit c = &ui.commit;
     c.u8(11); c.u32(node.id);
@@ -107,6 +112,8 @@ void ui_native_view_props(*Node node, bool fresh) {
     ui_free_pairs(&given);
 }
 
+// The host's side: native view `id` sent the event `name` with `payload` (read during the
+// call).
 bool ui_event_view(int id, int generation, string name, string payload) {
     return ui_post(Event{id, generation, 9, 0, payload, 0, name});
 }

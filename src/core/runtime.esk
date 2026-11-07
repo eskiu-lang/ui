@@ -22,8 +22,11 @@ struct Event { int id; int generation; int kind; int value; string text; int ext
 // on each side, and the software keyboard over the bottom.
 struct Insets { int top; int right; int bottom; int left; int keyboard; }
 
+// The window's size in points, and its scale in percent (200 on a 2x screen).
 struct Window { int width; int height; int scale; }
 
+// The runtime's state: the tree, the scheduled and dirty work, the commit being built,
+// pending requests and the host's environment. One per app, set by ui_init (internal).
 struct Ui {
     *Node root;
     // The host's environment, read through ui_insets and ui_is_active: a change of either
@@ -154,6 +157,7 @@ struct Ui {
 }
 
 
+// A copy of `text` on the heap; the caller frees it.
 string ui_copy(string text) {
     int64 n = strlen(text);
     *char copy = alloc<char>(n + 1);
@@ -161,12 +165,18 @@ string ui_copy(string text) {
     return (string)copy;
 }
 
+// Runs `dispose` once the renderer has applied the commit in flight (for what the renderer
+// may still read).
 void ui_retire(escaping fn()->void dispose) { ui.retired.push(dispose); }
 
+// An alert waiting for its answer: the request id and the handler (internal).
 struct Pending { int id; fn(int)->void on_choice; }
 
+// A use_back handler on the stack of back handlers (internal).
 struct BackEntry { fn()->bool handler; bool removed; }
 
+// The host's side: starts the runtime in `runtime` with `apply`, which receives each
+// commit's bytes.
 void ui_init(*Ui runtime, escaping fn(*uint8, int)->void apply) {
     ui = runtime;
     ui.apply = apply;
@@ -185,6 +195,7 @@ void ui_init(*Ui runtime, escaping fn(*uint8, int)->void apply) {
     ui.discard_from = -1;
 }
 
+// Mounts the app's root block (once); the next ui_frame renders it.
 void ui_mount(escaping fn()->void block) {
     ui_require(!ui.root.next && !ui.root.mounted, "already mounted");
     ui_release_closure(ui.root.boundary.content);
@@ -240,6 +251,8 @@ void ui_run_effects() {
     due.free();
 }
 
+// Runs the due effects from `at` on, in order, noting the current one for error reports
+// (internal).
 void ui_effects_from(List<*Observer>* due, List<int>* order, *int at, **Observer current) {
     while (*at < order.size) {
         *Observer effect = due.data[order.data[*at]];
@@ -254,6 +267,8 @@ void ui_effects_from(List<*Observer>* due, List<int>* order, *int at, **Observer
     }
 }
 
+// The host's side: the commit `sequence` has been applied. Frees what waited for it, runs
+// the effects, then the events that arrived meanwhile.
 void ui_complete(int sequence) {
     ui_require(ui.in_flight && sequence == ui.sequence, "invalid commit completion");
     ui.in_flight = false;
@@ -285,6 +300,7 @@ void ui_complete(int sequence) {
     ui.events.size = 0;
 }
 
+// Whether a dirty memo has readers (internal).
 bool ui_memo_work() {
     for (i in 0..ui.dirty_memos.size) {
         *Observer memo = ui.dirty_memos.data[i];
@@ -293,6 +309,7 @@ bool ui_memo_work() {
     return false;
 }
 
+// Validates the dirty memos that have readers from `at` on (internal).
 void ui_memos_from(*int at, **Observer current) {
     while (*at < ui.dirty_memos.size) {
         *Observer memo = ui.dirty_memos.data[*at];
@@ -306,6 +323,8 @@ void ui_memos_from(*int at, **Observer current) {
 // Where a render started, for the rollback if it throws.
 struct RenderSave { *Node node; int from; int writes; int journal; *Observer evaluating; }
 
+// Runs the scheduled blocks from `at` on, noting where each started for a rollback
+// (internal).
 void ui_renders_from(List<*Node>* run, *int at, *RenderSave save) {
     while (*at < run.size) {
         *Node node = run.data[*at];
@@ -316,6 +335,8 @@ void ui_renders_from(List<*Node>* run, *int at, *RenderSave save) {
     }
 }
 
+// The host's side, once per display frame: renders what changed, parents first, and sends
+// the commit to `apply`. False when there was nothing to do.
 bool ui_frame() {
     ui_require_consistent();
     ui_require(!ui.in_flight, "frame while commit in flight");
@@ -407,6 +428,7 @@ bool ui_post(Event event) {
     return ui_dispatch_event(&event);
 }
 
+// The host's side: a press on node `id` (of `generation`). False when the node is gone.
 bool ui_event(int id, int generation) { return ui_post(Event{id, generation, 1, 0, null}); }
 
 // The text of an input changed; `text` is only read during the call.
@@ -414,15 +436,16 @@ bool ui_event_text(int id, int generation, string text) {
     return ui_post(Event{id, generation, 2, 0, text});
 }
 
+// The host's side: a text input gained or lost focus.
 bool ui_event_focus(int id, int generation, bool focused) {
     return ui_post(Event{id, generation, 3, focused ? 1 : 0, null});
 }
 
+// The host's side: a Switch was turned on or off.
 bool ui_event_toggle(int id, int generation, bool on) {
     return ui_post(Event{id, generation, 4, on ? 1 : 0, null});
 }
 
-// A scroll view moved: its offset and viewport height, in points.
 // A pan on a node with a pan handler: its phase, the translation since it began and the
 // velocity (points, points per second).
 bool ui_event_pan(int id, int generation, int phase, int dx, int dy, int vx, int vy) {
@@ -446,6 +469,7 @@ bool ui_event_layout(int id, int generation, int x, int y, int width, int height
     return ui_post(Event{id, generation, 11, x, null, y, null, width, height, window_x, window_y});
 }
 
+// A scroll view moved: its offset and viewport height, in points.
 bool ui_event_scroll(int id, int generation, int offset, int viewport) {
     return ui_post(Event{id, generation, 5, offset, null, viewport});
 }
@@ -475,6 +499,7 @@ bool ui_dispatch_event(*Event event) {
     return handled;
 }
 
+// Runs the handler an event is for; false when the node or request is gone (internal).
 bool ui_dispatch_now(*Event event) {
     if (event.kind == 8) {
         // A native module's event: every handler of the channel, newest first.
@@ -566,11 +591,15 @@ bool ui_dispatch_now(*Event event) {
     return false;
 }
 
+// Whether ui_frame has work: scheduled blocks, effects, commands or memos with readers,
+// and no commit in flight.
 bool ui_needs_frame() {
     if (ui == null || ui.in_flight) { return false; }
     return ui.next_nodes.size > 0 || ui.dirty_effects.size > 0 || ui.commands.len > 0 || ui_memo_work();
 }
 
+// Unmounts the tree, sends the last commit (the renderer must apply it at once) and frees
+// the runtime.
 void ui_shutdown() {
     ui_require(!ui.in_flight, "shutdown while commit in flight");
     ui_unmount(ui.root);

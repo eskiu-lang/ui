@@ -13,6 +13,8 @@ void Modal(bool visible, escaping fn()->void on_request_close, escaping fn()->vo
     ui_element(12, Style{padding: 0}, null, block, on_request_close) {}
 }
 
+// Queues command `command` with its strings (null is "") for the next commit; `request` is
+// the id an answer comes back with (0 for none). See src/core/wire.esk.
 void ui_command(int request, int command, List<string>* strings) {
     *Commit c = &ui.commands;
     c.u8(10); c.u32(request); c.u8(command); c.u8(strings.size);
@@ -69,8 +71,10 @@ void ui_open_settings() { ui_open_url(kUiSettingsUrl); }
 // (fonts loading, saved state read); ui_splash_hide() fades it out.
 void ui_splash_hold() { ui_splash(true); }
 
+// Fades the launch screen out (see ui_splash_hold).
 void ui_splash_hide() { ui_splash(false); }
 
+// Sends the splash command: hold it (true) or hide it (false) (internal).
 void ui_splash(bool hold) {
     List<string> strings;
     strings.push(hold ? "1" : "0");
@@ -78,6 +82,7 @@ void ui_splash(bool hold) {
     strings.free();
 }
 
+// The host's side: alert `request` was answered with button `choice` (-1: dismissed).
 bool ui_event_alert(int request, int choice) {
     return ui_post(Event{request, 0, 6, choice, null});
 }

@@ -30,6 +30,7 @@ void AvatarImage(string source, int size, string label) {
 // A hairline across a column (Separator) or down a row (VSeparator).
 void Separator() { Row(Style{height: 1, background: kit.line}, void() {}); }
 
+// A vertical line of the theme's line color, one point wide.
 void VSeparator() { Row(Style{width: 1, background: kit.line}, void() {}); }
 
 // `value` of `max` as a filled track, which moves to a new value.

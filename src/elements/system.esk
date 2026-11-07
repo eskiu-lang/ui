@@ -11,6 +11,8 @@ void ui_set_insets(Insets insets) {
     ui.environment.set(ui.environment.value + 1);
 }
 
+// The host's side: the app came to the foreground (true) or left it (false); use_app_state
+// handlers run.
 void ui_set_active(bool active) {
     if (ui.inactive == !active) { return; }
     ui.inactive = !active;
@@ -18,8 +20,10 @@ void ui_set_active(bool active) {
     ui_post(Event{0, 0, 19, active ? 1 : 0, null});
 }
 
+// The system bars, cutouts and keyboard on each side, in points; reading them subscribes.
 Insets ui_insets() { ui.environment.get(); return ui.insets; }
 
+// The host's side: the window's size and scale; readers render again when they change.
 void ui_set_window(Window window) {
     Window old = ui.window;
     if (old.width == window.width && old.height == window.height && old.scale == window.scale) { return; }
@@ -27,6 +31,7 @@ void ui_set_window(Window window) {
     ui.environment.set(ui.environment.value + 1);
 }
 
+// The window's size in points and its scale; reading it subscribes.
 Window ui_window() { ui.environment.get(); return ui.window; }
 
 // The width, in points, from which a window is wide: a tablet, or a browser on a computer.
@@ -36,12 +41,14 @@ const int kUiWideWidth = 768;
 // subscribes, so the reader renders again when the window is resized across the line.
 bool ui_wide() { return ui_window().width >= kUiWideWidth; }
 
+// Whether the app is in the foreground; reading it subscribes.
 bool ui_is_active() { ui.environment.get(); return !ui.inactive; }
 
 // The system status bar: its content style and whether it shows. The last one rendered
 // wins; it has no view.
 enum BarStyle { BarDefault, BarLight, BarDark }
 
+// Sets the status bar's content style (a BarStyle) and whether it is hidden.
 void StatusBar(int bar_style, bool hidden) {
     ui.next_bar_style = bar_style;
     ui.next_bar_hidden = hidden;
@@ -63,6 +70,7 @@ void use_back(escaping fn()->bool handler) {
     entry.handler = handler;
 }
 
+// Removes a use_back handler (internal).
 void ui_drop_back(*BackEntry entry) {
     if (entry.removed) { return; }
     entry.removed = true;
@@ -93,4 +101,6 @@ void ui_set_link(string url) {
     ui.environment.set(ui.environment.value + 1);
 }
 
+// The link the app was opened with or was last sent (a URL with the app's scheme, or its
+// site's), or null; reading it subscribes.
 string ui_link() { ui.environment.get(); return ui.link; }

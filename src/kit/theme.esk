@@ -33,6 +33,7 @@ Theme kit;
 // The light theme (Theme's defaults) and a dark one.
 Theme kit_light() { return Theme{}; }
 
+// The dark theme: the same roles in dark colors, with `dark` set.
 Theme kit_dark() {
     return Theme{primary: 0x818CF8FF, on_primary: 0x111827FF, primary_soft: 0x312E81FF, ink: 0xF3F4F6FF,
                  muted: 0x9CA3AFFF, page: 0x0B0F19FF, surface: 0x161B26FF, line: 0x2A3140FF, control: 0x4B5563FF,
@@ -61,10 +62,14 @@ void kit_follow_system() {
     kit_follow_window();
 }
 
+// A Badge's color role: neutral, primary, success, warning or danger.
 enum Tone { ToneNeutral, TonePrimary, ToneSuccess, ToneWarning, ToneDanger }
 
+// A KitButton's look: filled with the primary color, outlined, text only, or the danger
+// color.
 enum Variant { VariantPrimary, VariantSecondary, VariantGhost, VariantDanger }
 
+// The text color of `tone` in the current theme (light or dark).
 int64 kit_tone_text(int tone) {
     if (kit.dark) {
         if (tone == TonePrimary) { return 0xC7D2FEFF; }
@@ -80,6 +85,7 @@ int64 kit_tone_text(int tone) {
     return 0x374151FF;
 }
 
+// The background color of `tone` in the current theme (light or dark).
 int64 kit_tone_background(int tone) {
     if (kit.dark) {
         if (tone == TonePrimary) { return 0x312E81FF; }
@@ -95,7 +101,7 @@ int64 kit_tone_background(int tone) {
     return 0xF3F4F6FF;
 }
 
-// The lines of `options`, as copies the caller frees with fs_list_free-style loops.
+// The lines of `options`, as copies the caller frees with kit_free_options.
 void kit_options(string options, List<String>* out) {
     String all;
     defer String_free(&all);
@@ -103,6 +109,7 @@ void kit_options(string options, List<String>* out) {
     String_split(&all, '\n', out);
 }
 
+// Frees the strings kit_options made, and the list.
 void kit_free_options(List<String>* options) {
     for (i in 0..options.size) { String_free(&options.data[i]); }
     options.free();
