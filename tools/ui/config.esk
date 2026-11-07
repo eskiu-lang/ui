@@ -30,6 +30,8 @@
 //   [android]
 //   permissions = ["android.permission.CAMERA"]
 //   dependencies = ["com.google.android.material:material:1.12.0"]
+//   [android.meta_data]
+//   "com.google.ar.core" = "optional"    <meta-data> in the manifest's <application>
 //
 // The values are strings and arrays of strings; a table's keys may also take an inline table
 // of them. The reader knows this subset of TOML and stops at anything else with its line.
@@ -223,5 +225,22 @@ void Config_names(Config* self, string prefix, List<String>* out) {
         bool seen = false;
         for (k in 0..out.size) { if (String_eq_cstr(&out.data[k], name.data) == 1) { seen = true; } }
         if (seen) { String_free(&name); } else { out.push(name); }
+    }
+}
+
+// The keys under `prefix` with the rest of their name kept whole, dots and all
+// ("android.meta_data." gives "com.google.ar.core"), each once, in order.
+void Config_keys(Config* self, string prefix, List<String>* out) {
+    int64 n = (int64)strlen(prefix);
+    for (i in 0..self.entries.size) {
+        ConfigEntry* entry = &self.entries.data[i];
+        if (String_starts_with(&entry.key, prefix) != 1 || entry.key.len == n) { continue; }
+        bool seen = false;
+        for (k in 0..out.size) { if (strcmp(out.data[k].data, entry.key.data + n) == 0) { seen = true; } }
+        if (!seen) {
+            String name;
+            String_from(&name, entry.key.data + n);
+            out.push(name);
+        }
     }
 }

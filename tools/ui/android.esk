@@ -300,12 +300,12 @@ string android_manifest(Project* p, string setup_classes, bool package) {
         "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n%s"
         "      <intent-filter><action android:name=\"android.intent.action.MAIN\"/>"
         "<category android:name=\"android.intent.category.LAUNCHER\"/></intent-filter>\n%s"
-        "    </activity>\n%s  </application>\n</manifest>\n",
+        "    </activity>\n%s%s  </application>\n</manifest>\n",
         attribute.data == null ? "" : attribute.data,
         package ? "  <uses-sdk android:minSdkVersion=\"24\" android:targetSdkVersion=\"36\"/>\n" : "",
         android_permissions(p), xml_escape(p.display.data), app_icon(p) != null ? " android:icon=\"@mipmap/ic_launcher\"" : "",
         android_splash_theme(p), package ? " android:debuggable=\"true\"" : "", setup_classes, android_splash_meta(p),
-        android_scheme(p), android_receivers(p));
+        android_scheme(p), android_receivers(p), android_meta_data(p));
     return manifest.data;
 }
 
@@ -372,6 +372,24 @@ string android_receivers(Project* p) {
     for (i in 0..receivers.size) {
         String_appendf(&out, "    <receiver android:name=\"%s\" android:exported=\"false\"/>\n", xml_escape(receivers.data[i]));
     }
+    return out.data == null ? "" : out.data;
+}
+
+// The ui.toml [android.meta_data] entries as the application's <meta-data> elements: from the
+// app and its packages, each name once, the app's value winning (its ui.toml is read first).
+// A name with dots is quoted in ui.toml: "com.google.ar.core" = "optional".
+string android_meta_data(Project* p) {
+    List<String> names;
+    p.config.keys("android.meta_data.", &names);
+    String out;
+    for (i in 0..names.size) {
+        String key;
+        String_appendf(&key, "android.meta_data.%s", names.data[i].data);
+        String_appendf(&out, "    <meta-data android:name=\"%s\" android:value=\"%s\"/>\n", xml_escape(names.data[i].data),
+            xml_escape(p.config.string(key.data)));
+        String_free(&key);
+    }
+    fs_list_free(&names);
     return out.data == null ? "" : out.data;
 }
 

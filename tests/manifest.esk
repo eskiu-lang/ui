@@ -1,0 +1,77 @@
+// The ui tool's Android manifest from ui.toml files: [android.meta_data] from the app and a
+// package, merged with the app's value winning and escaped, inside <application>. Built from
+// the tool's own parts (tools/ui), run by tools/ci.sh from the checkout's root.
+import <io>;
+import <string>;
+import <list>;
+import <fs>;
+import <process>;
+import <env>;
+import <path>;
+import <net>;
+import <time>;
+import <map>;
+import <threading>;
+import <atomic>;
+import <bytes>;
+import <mem>;
+import <hash>;
+
+import "../tools/ui/common.esk";
+import "../tools/ui/config.esk";
+import "../tools/ui/project.esk";
+import "../tools/ui/png.esk";
+import "../tools/ui/icon.esk";
+import "../tools/ui/splash.esk";
+import "../tools/ui/web.esk";
+import "../tools/ui/macos.esk";
+import "../tools/ui/linux.esk";
+import "../tools/ui/windows.esk";
+import "../tools/ui/yoga.esk";
+import "../tools/ui/ios.esk";
+import "../tools/ui/android.esk";
+import "../tools/ui/gradle.esk";
+import "../tools/ui/xcode.esk";
+import "../tools/ui/new.esk";
+import "../tools/ui/serve.esk";
+import "../tools/ui/release.esk";
+
+// main.esk's, which serve.esk and release.esk call.
+void usage() { exit(2); }
+
+void check(bool ok, string what) {
+    if (!ok) {
+        printf("FAIL manifest: %s\n", what);
+        exit(1);
+    }
+}
+
+int main() {
+    string dir = "build/manifest";
+    fs_remove_all(dir);
+    fs_mkdir_p(join(dir, "app"));
+    fs_mkdir_p(join(dir, "pkg"));
+    fs_write_text(join(dir, "app/ui.toml"), "[android.meta_data]\n\"com.google.ar.core\" = \"required\"\n");
+    fs_write_text(join(dir, "pkg/ui.toml"),
+        "[android]\npermissions = [\"android.permission.CAMERA\"]\n\n[android.meta_data]\n"
+        "\"com.google.ar.core\" = \"optional\"\nquoted = \"a \\\"b\\\" & <c>\"\n");
+    Project p;
+    String_from(&p.name, "app");
+    String_from(&p.display, "App");
+    String_from(&p.id, "org.eskiu.app.app");
+    String_from(&p.root, join(dir, "app"));
+    p.config.load(join(dir, "app/ui.toml"), true);
+    p.config.load(join(dir, "pkg/ui.toml"), false);
+    string manifest = android_manifest(&p, "", true);
+    check(strstr(manifest, "<meta-data android:name=\"com.google.ar.core\" android:value=\"required\"/>") != null, "the app's value wins");
+    check(strstr(manifest, "android:value=\"optional\"") == null, "the package's value is not added again");
+    check(strstr(manifest, "<meta-data android:name=\"quoted\" android:value=\"a &quot;b&quot; &amp; &lt;c&gt;\"/>") != null, "values are escaped");
+    string application = strstr(manifest, "<application");
+    string meta = strstr(manifest, "android:name=\"com.google.ar.core\"");
+    string end = strstr(manifest, "</application>");
+    string activity_end = strstr(manifest, "</activity>");
+    check(application != null && meta > activity_end && meta < end, "inside <application>, outside the activity");
+    check(strstr(manifest, "android.permission.CAMERA") != null, "the package's other entries");
+    printf("PASS manifest\n");
+    return 0;
+}
