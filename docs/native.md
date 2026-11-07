@@ -262,10 +262,16 @@ Collections = { url = "https://github.com/apple/swift-collections", from = "1.1.
 permissions = ["android.permission.ACCESS_FINE_LOCATION"]
 dependencies = ["com.google.android.material:material:1.12.0"]
 receivers = ["org.example.Alarm"]   # broadcast receivers in native/android, for the manifest
+
+[android.meta_data]
+"com.google.ar.core" = "optional"   # <meta-data> in the manifest's <application>
 ```
 
 Values are strings and arrays of strings, and a table's key may take an inline table of
-them. A Swift package takes `url` and one of `from` (up to the next major version), `exact`
+them. `[android.meta_data]` adds a `<meta-data android:name="NAME" android:value="VALUE"/>`
+to the manifest's `<application>` for each key; quote a name with dots. Each name appears
+once: when the app and a package (or two packages) set it, the app's value wins, then that
+of the package first in `eskiu.lock`. A Swift package takes `url` and one of `from` (up to the next major version), `exact`
 or `branch`; its products are `products = [...]`, or the key's name.
 
 ## The icon
