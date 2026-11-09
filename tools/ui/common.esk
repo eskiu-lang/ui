@@ -183,6 +183,15 @@ string app_opt() {
     return dev != null && strcmp(dev, "1") == 0 ? "-O0" : "-O2";
 }
 
+// A build with the driver in (`ui agent`, docs/agents.md): `ui serve`'s builds (UI_DEV=1), or
+// UI_TEST=1; never a release.
+bool ui_test_build() {
+    if (ui_release) { return false; }
+    string dev = env_get("UI_DEV");
+    string test = env_get("UI_TEST");
+    return (dev != null && strcmp(dev, "1") == 0) || (test != null && strcmp(test, "1") == 0);
+}
+
 bool newer(string source, string target) {
     FileStat a;
     FileStat b;

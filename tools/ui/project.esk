@@ -155,7 +155,14 @@ string Project_entry(Project* self) {
             String_appendf(&text, " if (strcmp(key, %s) == 0) { return %s; }", esk_literal(name), esk_literal(entry.values.data[0].data));
         }
     }
-    String_appendf(&text, "\nimport \"%s\";\nimport \"%s\";\n",
+    String_append(&text, "\n");
+    // A dev or test build has the driver (src/core/driver.esk) and says what sources it was
+    // built from, so `ui agent` refuses an older build.
+    if (ui_test_build()) {
+        String_append(&text, "#define UI_TEST 1\n");
+        String_appendf(&text, "#define UI_SOURCE \"%016llx\"\n", serve_signature(self));
+    }
+    String_appendf(&text, "import \"%s\";\nimport \"%s\";\n",
         join(self.root.data, "src/main.esk"), join(self.ui.data, "hosts/bridge.esk"));
     string entry = join(build, "entry.esk");
     fs_write_text(entry, text.data);

@@ -60,7 +60,7 @@
   const reportWindow = () => app._ui_report_window(innerWidth, innerHeight, Math.round(devicePixelRatio * 100));
   reportWindow();
   addEventListener('resize', reportWindow);
-  if (new URLSearchParams(location.search).has('shot')) {
+{{driver}}  if (new URLSearchParams(location.search).has('shot')) {
     const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
     await frame(); await frame(); await frame();
     window.webkit?.messageHandlers?.results?.postMessage({status: 'PASS'});

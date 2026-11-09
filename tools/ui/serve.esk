@@ -11,6 +11,35 @@ int serve_version;
 Mutex serve_lock;
 String serve_error;
 
+// Whether a build is running, and the project being served (for `ui agent`).
+bool serve_building;
+string serve_project_root;
+
+// What the sources were when the last build started (serve_signature), for `ui agent`.
+uint64 serve_built_source;
+
+// `ui agent` finds a running `ui serve` and its last build in build/ui/serve-TARGET.json:
+// {"pid", "port", "version", "building", "error"}.
+string serve_status_path;
+int serve_status_port;
+
+void serve_write_status() {
+    if (serve_status_path == null) { return; }
+    String text;
+    defer String_free(&text);
+    Mutex_lock(&serve_lock);
+    String_appendf(&text, "{\"pid\": %d, \"port\": %d, \"version\": %d, \"building\": %s, \"source\": \"%016llx\", \"error\": ",
+        process_pid(), serve_status_port, atomic_load(&serve_version), serve_building ? "true" : "false", serve_built_source);
+    serve_json_string(&text, serve_error.data == null ? "" : serve_error.data);
+    String_append(&text, "}\n");
+    Mutex_unlock(&serve_lock);
+    String tmp;
+    defer String_free(&tmp);
+    String_appendf(&tmp, "%s.tmp", serve_status_path);
+    fs_write_text(tmp.data, text.data);
+    fs_rename(tmp.data, serve_status_path);
+}
+
 // A hash of what a build reads, mixed into serve_sum by serve_signature.
 uint64 serve_sum;
 int64 serve_now;
@@ -82,6 +111,8 @@ void serve_say(string line) {
 // One build in a child (`ui build web`, `ui run ios`...), its output on ours; true if it built.
 bool serve_build(string command, string target) {
     int64 start = time_monotonic_ms();
+    serve_building = true;
+    serve_write_status();
     List<string> argv;
     defer argv.free();
     argv.push(serve_self); argv.push(command); argv.push(target);
@@ -112,6 +143,8 @@ bool serve_build(string command, string target) {
     String_from(&serve_error, ok ? "" : shown.data);
     Mutex_unlock(&serve_lock);
     atomic_fetch_add(&serve_version, 1);
+    serve_building = false;
+    serve_write_status();
     double seconds = (double)(time_monotonic_ms() - start) / 1000.0;
     if (ok) { printf("ui: built in %.1f s\n", seconds); fflush(null); }
     else { println_err("ui: the build failed; waiting for a change"); }
@@ -133,6 +166,7 @@ void serve_watch(Project* p, string command, string target, uint64 seen) {
             now = settled;
         }
         seen = now;
+        serve_built_source = now;
         serve_say("ui: changed, building");
         serve_build(command, target);
     }
@@ -216,8 +250,133 @@ const string kServeScript = "// Made by ui serve: reload after each build, a fai
 
 const string kServeTag = "<script type=\"module\" src=\"/__ui/serve.mjs\"></script>\n";
 
-// A request under /__ui/: the script, or a wait for the next build.
-void serve_dev_request(int client, String* path, String* query) {
+// The driver channel on the web (docs/agents.md): `ui agent web` posts a request to
+// /__ui/agent and waits; the page asks /__ui/agent/next for it, carries it out and posts the
+// answer to /__ui/agent/reply. One request at a time; the page that takes them is the newest
+// one opened with #ui-agent (the browser `ui agent` starts), else the newest page.
+String agent_pending_request;
+bool agent_waiting;
+bool agent_taken;
+String agent_reply;
+bool agent_answered;
+String agent_page;
+bool agent_page_flag;
+int64 agent_page_seen;
+
+// The value of `name` in a query string ("a=1&b=2"), or "".
+void query_value(String* query, string name, String* out) {
+    String_clear(out);
+    if (query.data == null) { return; }
+    int64 n = (int64)strlen(name);
+    int64 at = 0;
+    while (at < query.len) {
+        if (strncmp(&query.data[at], name, (size_t)n) == 0 && query.data[at + n] == '=') {
+            for (int64 i = at + n + 1; i < query.len && query.data[i] != '&'; i++) { String_push(out, query.data[i]); }
+            return;
+        }
+        while (at < query.len && query.data[at] != '&') { at++; }
+        at++;
+    }
+}
+
+void serve_reply(int client, string status, string type, String* body) {
+    String header;
+    defer String_free(&header);
+    String_appendf(&header, "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %lld\r\n"
+        "Cache-Control: no-store\r\nConnection: close\r\n\r\n", status, type, body.len);
+    net_send_str(client, header.data);
+    int64 sent = 0;
+    while (sent < body.len) {
+        int64 n = net_send(client, &body.data[sent], body.len - sent);
+        if (n <= 0) { break; }
+        sent += n;
+    }
+}
+
+// POST /__ui/agent: hands the request to the page and answers with the page's answer.
+void serve_agent_post(int client, String* request) {
+    String body;
+    defer String_free(&body);
+    int64 until = time_monotonic_ms() + 60000;
+    Mutex_lock(&serve_lock);
+    while (agent_waiting && time_monotonic_ms() < until) {
+        Mutex_unlock(&serve_lock); time_sleep_ms(10); Mutex_lock(&serve_lock);
+    }
+    if (agent_waiting) {
+        Mutex_unlock(&serve_lock);
+        String_from(&body, "{\"ok\": false, \"error\": \"another request is still waiting for the page\"}");
+        serve_reply(client, "200 OK", "application/json", &body);
+        return;
+    }
+    String_clear(&agent_pending_request); String_append(&agent_pending_request, request.data == null ? "" : request.data);
+    agent_waiting = true; agent_taken = false; agent_answered = false;
+    // A page takes it within 10 s, and answers within 60 s (a clock settle can take a while).
+    int64 take_by = time_monotonic_ms() + 10000;
+    int64 answer_by = time_monotonic_ms() + 60000;
+    while (!agent_answered) {
+        int64 now = time_monotonic_ms();
+        if ((!agent_taken && now > take_by) || now > answer_by) { break; }
+        Mutex_unlock(&serve_lock); time_sleep_ms(5); Mutex_lock(&serve_lock);
+    }
+    if (agent_answered) { String_from(&body, agent_reply.data == null ? "" : agent_reply.data); }
+    else if (!agent_taken) { String_from(&body, "{\"ok\": false, \"error\": \"no page took the request: no page of the app is open\"}"); }
+    else { String_from(&body, "{\"ok\": false, \"error\": \"the page did not answer within 60 s\"}"); }
+    agent_waiting = false; agent_taken = false; agent_answered = false;
+    Mutex_unlock(&serve_lock);
+    serve_reply(client, "200 OK", "application/json", &body);
+}
+
+// GET /__ui/agent/next?page=P&agent=A&first=F: the waiting request for this page, within
+// 20 s, else 204. A page opened with #ui-agent (A=1) is preferred; among equals the newest
+// (F=1 on its first ask) takes over.
+void serve_agent_next(int client, String* query) {
+    String page;
+    defer String_free(&page);
+    String flag;
+    defer String_free(&flag);
+    String first;
+    defer String_free(&first);
+    query_value(query, "page", &page);
+    query_value(query, "agent", &flag);
+    query_value(query, "first", &first);
+    bool agent = String_eq_cstr(&flag, "1") == 1;
+    // A page of an older build is about to reload: it takes nothing.
+    String version;
+    defer String_free(&version);
+    query_value(query, "version", &version);
+    int page_version = version.len > 0 ? atoi(version.data) : -1;
+    String body;
+    defer String_free(&body);
+    int64 until = time_monotonic_ms() + 20000;
+    bool took = false;
+    Mutex_lock(&serve_lock);
+    while (time_monotonic_ms() < until) {
+        int64 now = time_monotonic_ms();
+        bool mine = String_eq(&agent_page, &page) == 1;
+        bool stale = agent_page.len == 0 || now - agent_page_seen > 30000;
+        if (!mine && (stale || (agent && !agent_page_flag) || (agent == agent_page_flag && String_eq_cstr(&first, "1") == 1))) {
+            String_clear(&agent_page); String_append(&agent_page, page.data == null ? "" : page.data);
+            agent_page_flag = agent;
+            mine = true;
+        }
+        String_clear(&first);
+        if (mine) { agent_page_seen = now; }
+        bool current = !serve_building && page_version == atomic_load(&serve_version);
+        if (mine && current && agent_waiting && !agent_taken) {
+            agent_taken = true;
+            String_from(&body, agent_pending_request.data);
+            took = true;
+            break;
+        }
+        Mutex_unlock(&serve_lock); time_sleep_ms(5); Mutex_lock(&serve_lock);
+    }
+    Mutex_unlock(&serve_lock);
+    if (took) { serve_reply(client, "200 OK", "application/json", &body); }
+    else { net_send_str(client, "HTTP/1.1 204 No Content\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"); }
+}
+
+// A request under /__ui/: the script, a wait for the next build, or the driver channel.
+void serve_dev_request(int client, String* path, String* query, String* body_in) {
     String body;
     defer String_free(&body);
     string type = "text/javascript";
@@ -227,17 +386,36 @@ void serve_dev_request(int client, String* path, String* query) {
         serve_wait(client, after);
         return;
     }
+    if (String_eq_cstr(path, "/__ui/agent") == 1) { serve_agent_post(client, body_in); return; }
+    if (String_eq_cstr(path, "/__ui/agent/next") == 1) { serve_agent_next(client, query); return; }
+    if (String_eq_cstr(path, "/__ui/agent/reply") == 1) {
+        Mutex_lock(&serve_lock);
+        String_clear(&agent_reply); String_append(&agent_reply, body_in.data == null ? "" : body_in.data);
+        agent_answered = true;
+        Mutex_unlock(&serve_lock);
+        String_from(&body, "{}");
+        serve_reply(client, "200 OK", "application/json", &body);
+        return;
+    }
+    if (String_eq_cstr(path, "/__ui/agent/status") == 1) {
+        Mutex_lock(&serve_lock);
+        bool page = agent_page.len > 0 && time_monotonic_ms() - agent_page_seen < 25000;
+        String_appendf(&body, "{\"version\": %d, \"building\": %s, \"page\": %s, \"root\": ", atomic_load(&serve_version),
+            serve_building ? "true" : "false", page ? "true" : "false");
+        serve_json_string(&body, serve_project_root == null ? "" : serve_project_root);
+        String_append(&body, ", \"error\": ");
+        serve_json_string(&body, serve_error.data == null ? "" : serve_error.data);
+        String_append(&body, "}");
+        Mutex_unlock(&serve_lock);
+        serve_reply(client, "200 OK", "application/json", &body);
+        return;
+    }
     if (String_eq_cstr(path, "/__ui/serve.mjs") == 1) { String_from(&body, kServeScript); }
     else {
         net_send_str(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         return;
     }
-    String header;
-    defer String_free(&header);
-    String_appendf(&header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\n"
-        "Cache-Control: no-store\r\nConnection: close\r\n\r\n", type, body.len);
-    net_send_str(client, header.data);
-    net_send_str(client, body.data);
+    serve_reply(client, "200 OK", type, &body);
 }
 
 // The page at `path` with the script added; a bare page with it when there is none yet (the
@@ -246,6 +424,8 @@ void serve_page(string path, String* out) {
     if (fs_read_text(path, out) != 0) {
         String_from(out, "<!doctype html>\n<meta charset=\"utf-8\">\n<title>ui serve</title>\n<body>\n");
     }
+    // The build the page is, so the driver channel serves only a page of the latest one.
+    String_appendf(out, "<script>globalThis.uiServeVersion = %d;</script>\n", serve_building ? -1 : atomic_load(&serve_version));
     String_append(out, kServeTag);
 }
 
@@ -256,6 +436,13 @@ uint64 desktop_seen;
 
 void serve_command(Project* p, string target) {
     Mutex_init(&serve_lock);
+    serve_project_root = p.root.data;
+    String status;
+    String_appendf(&status, "%s/build/ui/serve-%s.json", p.root.data,
+        strcmp(target, "ios") == 0 || strcmp(target, "android") == 0 ? target : "web");
+    fs_mkdir_p(join(p.root.data, "build/ui"));
+    serve_status_path = status.data;
+    serve_status_port = strcmp(target, "ios") == 0 || strcmp(target, "android") == 0 ? 0 : port();
     if (strcmp(target, "web") == 0) {
         // Listening first: a page opened during the first build waits for it.
         serve_dev = true;
@@ -263,6 +450,7 @@ void serve_command(Project* p, string target) {
         serve_port = port();
         serve_listen();
         uint64 seen = serve_signature(p);
+        serve_built_source = seen;
         serve_build("build", "web");
         String url;
         String_appendf(&url, "http://127.0.0.1:%d/", serve_port);
@@ -272,6 +460,7 @@ void serve_command(Project* p, string target) {
         serve_watch(p, "build", "web", seen);
     } else if (strcmp(target, "macos") == 0 || strcmp(target, "linux") == 0 || strcmp(target, "windows") == 0) {
         desktop_seen = serve_signature(p);
+        serve_built_source = desktop_seen;
         if (!serve_build("build", target)) { exit(1); }
         serve_dev = true;
         serve_root = join(p.root.data, "build/ui/web");
@@ -297,6 +486,7 @@ void serve_command(Project* p, string target) {
         exit(code);
     } else if (strcmp(target, "ios") == 0 || strcmp(target, "android") == 0) {
         uint64 seen = serve_signature(p);
+        serve_built_source = seen;
         serve_build("run", target);
         serve_say("Watching for changes: each one installs and launches the app again (Ctrl+C to stop)");
         serve_watch(p, "run", target, seen);

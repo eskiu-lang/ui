@@ -26,14 +26,23 @@ string build_web(Project* p) {
     cmd.add("--link-arg=-sMODULARIZE=1"); cmd.add("--link-arg=-sEXPORT_ES6=1");
     cmd.add("--link-arg=-sALLOW_MEMORY_GROWTH=1"); cmd.add("--link-arg=-sINVOKE_RUN=0");
     cmd.add("--link-arg=--no-entry");
-    cmd.add("--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_dispatch_text,_ui_dispatch_focus,"
+    // A dev build exports the driver's entry points too (hosts/web/driver.mjs).
+    bool test = ui_test_build();
+    String exported;
+    defer String_free(&exported);
+    String_append(&exported, "--link-arg=-sEXPORTED_FUNCTIONS=_ui_start,_ui_dispatch,_ui_dispatch_text,_ui_dispatch_focus,"
             "_ui_dispatch_toggle,_ui_dispatch_scroll,_ui_dispatch_alert,_ui_dispatch_refresh,_ui_report_back,"
             "_ui_report_link,_ui_report_window,_ui_tick,_ui_stop,_ui_conformance_log,_ui_dispatch_native,"
             "_ui_dispatch_view,_ui_dispatch_route,_ui_dispatch_layout,_ui_dispatch_timer,_ui_dispatch_frame,_ui_dispatch_hover,_ui_dispatch_long_press,_ui_dispatch_value,_ui_report_appearance,_ui_report_accessibility,_ui_report_locale,_ui_dispatch_answer,_ui_dispatch_fetch,_ui_dispatch_pan,_malloc,_free");
-    cmd.add("--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall,stringToUTF8,lengthBytesUTF8");
+    if (test) { String_append(&exported, ",_ui_driver,_ui_driver_done,_ui_driver_time"); }
+    cmd.add(exported.data);
+    cmd.add(test ? "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall,stringToUTF8,lengthBytesUTF8,HEAPU8"
+                 : "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall,stringToUTF8,lengthBytesUTF8");
     cmd.must(null);
     fs_copy(join(p.ui.data, "hosts/web/renderer.mjs"), join(out, "renderer.mjs"));
     fs_copy(join(p.ui.data, "hosts/web/scheduler.mjs"), join(out, "scheduler.mjs"));
+    string driver = join(out, "driver.mjs");
+    if (test) { fs_copy(join(p.ui.data, "hosts/web/driver.mjs"), driver); } else { fs_remove_all(driver); }
     write_web_native(p, out);
     String page;
     defer String_free(&page);
@@ -44,6 +53,9 @@ string build_web(Project* p) {
     String_replace_all(&page, "{{base}}", xml_escape(base != null ? base : "/"));
     String_replace_all(&page, "{{icons}}", web_icon_links(p, out));
     String_replace_all(&page, "{{splash}}", web_splash(p, out));
+    String_replace_all(&page, "{{driver}}", test
+        ? "  // A dev build: `ui agent web` drives the page through the dev server.\n"
+          "  (await import('./driver.mjs')).startDriver({app, host});\n" : "");
     fs_write_text(join(out, "index.html"), page.data);
     p.copy_assets(out);
     return out;
@@ -113,31 +125,53 @@ string content_type(string path) {
 }
 
 void serve_one(int client) {
-    char[8192] request;
-    int64 got = 0;
-    while (got < 8191) {
-        int64 n = net_recv(client, &request[got], 8191 - got);
+    // The request line and headers, and a body as long as its Content-Length (the driver's
+    // requests and answers are posted).
+    String request;
+    defer String_free(&request);
+    char[8192] chunk;
+    int64 header_end = -1;
+    while (header_end < 0 && request.len < 65536) {
+        int64 n = net_recv(client, &chunk[0], 8191);
         if (n <= 0) { break; }
-        got += n;
-        request[got] = 0;
-        if (strstr((string)&request[0], "\r\n\r\n") != null) { break; }
+        chunk[n] = 0;
+        for (int64 i = 0; i < n; i++) { String_push(&request, chunk[i]); }
+        header_end = String_find(&request, "\r\n\r\n", 0);
     }
-    request[got] = 0;
+    String body_in;
+    defer String_free(&body_in);
+    if (header_end >= 0) {
+        int64 length = 0;
+        String lower;
+        String_substring(&request, &lower, 0, header_end);
+        String_lower(&lower);
+        int64 at_length = String_find(&lower, "\r\ncontent-length:", 0);
+        if (at_length >= 0) { length = (int64)atoi(&lower.data[at_length + 17]); }
+        String_free(&lower);
+        String_substring(&request, &body_in, header_end + 4, request.len - header_end - 4);
+        while (body_in.len < length && length < 64 * 1024 * 1024) {
+            int64 n = net_recv(client, &chunk[0], 8191);
+            if (n <= 0) { break; }
+            for (int64 i = 0; i < n; i++) { String_push(&body_in, chunk[i]); }
+        }
+    }
+    int64 got = request.len;
+    string raw = request.data == null ? "" : request.data;
     // "GET /path?query HTTP/1.1"
     String path;
     defer String_free(&path);
     String query;
     defer String_free(&query);
     int at = 0;
-    while (at < got && request[at] != ' ') { at++; }
+    while (at < got && raw[at] != ' ') { at++; }
     at++;
-    while (at < got && request[at] != ' ' && request[at] != '?') { String_push(&path, request[at]); at++; }
-    if (at < got && request[at] == '?') {
+    while (at < got && raw[at] != ' ' && raw[at] != '?') { String_push(&path, raw[at]); at++; }
+    if (at < got && raw[at] == '?') {
         at++;
-        while (at < got && request[at] != ' ') { String_push(&query, request[at]); at++; }
+        while (at < got && raw[at] != ' ') { String_push(&query, raw[at]); at++; }
     }
     if (serve_dev && String_starts_with(&path, "/__ui/") == 1) {
-        serve_dev_request(client, &path, &query);
+        serve_dev_request(client, &path, &query, &body_in);
         net_close(client);
         return;
     }
@@ -212,6 +246,9 @@ int port() {
 }
 
 void open_url(string url) {
+    // UI_NO_OPEN=1: no browser (`ui agent` opens its own).
+    string no_open = env_get("UI_NO_OPEN");
+    if (no_open != null && strcmp(no_open, "1") == 0) { return; }
     Cmd cmd;
     defer cmd.free();
     cmd.add("open"); cmd.add(url);
