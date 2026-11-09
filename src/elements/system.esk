@@ -49,7 +49,8 @@ bool ui_is_active() { ui.environment.get(); return !ui.inactive; }
 enum BarStyle { BarDefault, BarLight, BarDark }
 
 // Sets the status bar's content style (a BarStyle) and whether it is hidden.
-void StatusBar(int bar_style, bool hidden) {
+void StatusBar(int bar_style, bool hidden UI_LOC) {
+    UI_HERE
     ui.next_bar_style = bar_style;
     ui.next_bar_hidden = hidden;
     ui_element(11, Style{}, null, void() {}, void() {}) {}

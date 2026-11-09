@@ -2,7 +2,8 @@
 // Part of <ui/kit> (src/kit.esk imports every part).
 
 // A button in one of the Variant styles.
-void KitButton(string text, int variant, escaping fn()->void on_press) {
+void KitButton(string text, int variant, escaping fn()->void on_press UI_LOC) {
+    UI_HERE
     int64 background = variant == VariantPrimary ? kit.primary : variant == VariantDanger ? kit.danger
                      : variant == VariantSecondary ? kit.surface : 0xFFFFFF00;  // ghost: transparent
     int64 color = variant == VariantPrimary || variant == VariantDanger ? kit.on_primary

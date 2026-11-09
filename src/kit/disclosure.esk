@@ -2,7 +2,8 @@
 // Part of <ui/kit> (src/kit.esk imports every part).
 
 // A header that shows or hides its content (one section of an Accordion).
-void Collapsible(string title, escaping fn()->void content) {
+void Collapsible(string title, escaping fn()->void content UI_LOC) {
+    UI_HERE
     ui_own(void() { ui_release_closure(content); });
     Scope("Collapsible", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
@@ -19,7 +20,8 @@ void Collapsible(string title, escaping fn()->void content) {
 }
 
 // Sections (Collapsibles) in one card.
-void Accordion(escaping fn()->void sections) {
+void Accordion(escaping fn()->void sections UI_LOC) {
+    UI_HERE
     Column(Style{background: kit.surface, radius: kit.radius + 4, border_width: 1, border_color: kit.line, gap: 0},
         sections);
 }

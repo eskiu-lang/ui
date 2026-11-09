@@ -4,7 +4,8 @@
 // A row the user drags left to delete. Past a third of its width, or flicked, it slides out
 // and on_delete runs once it is gone; short of that it springs back. `label` shows on the red
 // band behind it.
-void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->void content) {
+void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->void content UI_LOC) {
+    UI_HERE
     ui_own(void() { ui_release_closure(on_delete); ui_release_closure(content); });
     Scope("SwipeToDelete", Key{}) {
         *Signal<int> offset = use_signal<int>(0);

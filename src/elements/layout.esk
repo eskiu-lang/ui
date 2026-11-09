@@ -32,21 +32,23 @@ void ui_on_long_press(escaping fn()->void handler) {
 }
 
 // Children laid out top to bottom.
-void Column(Style style, escaping fn()->void block) { ui_element(1, style, null, block, void() {}, void() {}); }
+void Column(Style style, escaping fn()->void block UI_LOC) { UI_HERE ui_element(1, style, null, block, void() {}, void() {}); }
 
 // Children laid out left to right.
-void Row(Style style, escaping fn()->void block) { ui_element(2, style, null, block, void() {}, void() {}); }
+void Row(Style style, escaping fn()->void block UI_LOC) { UI_HERE ui_element(2, style, null, block, void() {}, void() {}); }
 
 // A column whose content scrolls when it is taller than the space it gets.
-void Scroll(Style style, escaping fn()->void block) { ui_element(6, style, null, block, void() {}, void() {}); }
+void Scroll(Style style, escaping fn()->void block UI_LOC) { UI_HERE ui_element(6, style, null, block, void() {}, void() {}); }
 
 // A component's own scope: state, identity and its name in diagnostics.
-void Scope(string name, Key k, escaping fn()->void block) {
+void Scope(string name, Key k, escaping fn()->void block UI_LOC) {
+    UI_HERE
     ui.next_name = name;
     ui_element(0, Style{key: k}, null, block, void() {}) {}
 }
 
 // A container that reacts to a press anywhere in it (the children are its content).
-void Pressable(Style style, escaping fn()->void on_press, escaping fn()->void block) {
+void Pressable(Style style, escaping fn()->void on_press, escaping fn()->void block UI_LOC) {
+    UI_HERE
     ui_element(8, style, null, block, on_press) {}
 }

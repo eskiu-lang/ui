@@ -4,12 +4,13 @@
 // Content over the whole screen while `visible`; `on_request_close` runs when the user
 // asks to leave it (Android's back, Escape on the web, a tap on the backdrop outside the
 // content).
-void Modal(bool visible, escaping fn()->void on_request_close, escaping fn()->void block) {
+void Modal(bool visible, escaping fn()->void on_request_close, escaping fn()->void block UI_LOC) {
     if (!visible) {
         ui_release_closure(on_request_close);
         ui_release_closure(block);
         return;
     }
+    UI_HERE
     ui_element(12, Style{padding: 0}, null, block, on_request_close) {}
 }
 
@@ -90,12 +91,13 @@ bool ui_event_alert(int request, int choice) {
 // A layer over the whole screen that does not dim what is under it, for content placed next
 // to something (a popover, a menu): its block positions itself (absolute, with the window
 // position from ui_on_layout). A tap outside the content, back and Escape call on_dismiss.
-void Overlay(bool visible, escaping fn()->void on_dismiss, escaping fn()->void block) {
+void Overlay(bool visible, escaping fn()->void on_dismiss, escaping fn()->void block UI_LOC) {
     if (!visible) {
         ui_release_closure(on_dismiss);
         ui_release_closure(block);
         return;
     }
+    UI_HERE
     // A backdrop the eye cannot see (an alpha of 1 of 255; 0 would be the platform's dim).
     ui_element(12, Style{padding: 0, background: rgba(0, 0, 0, 1)}, null, block, on_dismiss) {}
 }

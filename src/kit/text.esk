@@ -3,16 +3,16 @@
 // kit.dense). For another size or color, use TextWith.
 
 // A screen's title.
-void Title(string text) { TextWith(Style{font_size: kit.title_size, font_weight: 800, color: kit.ink}, text); }
+void Title(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.title_size, font_weight: 800, color: kit.ink}, text); }
 
 // A section's heading.
-void Heading(string text) { TextWith(Style{font_size: kit.heading_size, font_weight: 700, color: kit.ink}, text); }
+void Heading(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.heading_size, font_weight: 700, color: kit.ink}, text); }
 
 // Running text.
-void Body(string text) { TextWith(Style{font_size: kit.body_size, color: kit.ink}, text); }
+void Body(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.body_size, color: kit.ink}, text); }
 
 // Text that explains or qualifies, in the muted color.
-void Secondary(string text) { TextWith(Style{font_size: kit.secondary_size, color: kit.muted}, text); }
+void Secondary(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.secondary_size, color: kit.muted}, text); }
 
 // A small note: a version, a timestamp, a hint under a field.
-void Caption(string text) { TextWith(Style{font_size: kit.caption_size, color: kit.muted}, text); }
+void Caption(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.caption_size, color: kit.muted}, text); }

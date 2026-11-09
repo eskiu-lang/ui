@@ -154,6 +154,10 @@ struct Ui {
     bool has_next_boundary;
     fn(UiError)->void on_error;
     bool has_on_error;
+#ifdef UI_SRCLOC
+    // The position the next element takes (ui_here), cleared as soon as it is taken.
+    UiSourceLoc next_at;
+#endif
 }
 
 
@@ -398,7 +402,7 @@ bool ui_frame() {
         *Node node = ui.render_writes.data[i];
         node.render_write = false;
         node.loop_frames++;
-        ui_require(node.loop_frames < 100, "render loop (100 frames)");
+        if (node.loop_frames >= 100) { ui_fail_node("render loop (100 frames)", node); }
         ui.looping.push(node);
     }
     ui.render_writes.size = 0;

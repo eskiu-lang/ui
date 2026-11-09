@@ -122,6 +122,10 @@ struct Node {
     // Style.test_id, kept for the driver (src/core/driver.esk); hosts never see it.
     string test_id;
 #endif
+#ifdef UI_SRCLOC
+    // Where the element was called from (UiSourceLoc).
+    UiSourceLoc at;
+#endif
 }
 
 
@@ -275,6 +279,10 @@ void ui_run(*Node node) {
     ui_untrack(node.observer);
     ui.tracking = node.observer;
     node.block();
+#ifdef UI_SRCLOC
+    // A position no element took (a component that made none) goes no further.
+    ui.next_at = UiSourceLoc{};
+#endif
     ui_require(ui.next_refresh == null, "RefreshControl must come right before a Scroll or FlatList");
     ui_require(ui.next_owned.size == 0, "ui_own must come right before an element");
     ui_require(node.cursor == node.slots.size, "hook count decreased");
@@ -462,9 +470,17 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         if (duplicate) {
             String message;
             String_appendf(&message, "duplicate key %lld at child %d", k, parent.emitted.size);
+#ifdef UI_SRCLOC
+            // The duplicate's own call.
+            if (!ui.lenient) { ui_fail_where(message.data, parent, ui.next_at); }
+#else
             if (!ui.lenient) { ui_fail(message.data); }
+#endif
             String_append(&message, ", treated as unkeyed\n  in ");
             ui_scope_path(&message);
+#ifdef UI_SRCLOC
+            ui_source_at(&message, ui.next_at);
+#endif
             print_err("ui: warning: "); println_err(message.data);
 #ifdef UI_TEST
             ui_driver_log("warning", message.data);
@@ -559,6 +575,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     node.seen = true;
     node.name = ui.next_name;
     ui.next_name = null;
+#ifdef UI_SRCLOC
+    node.at = ui.next_at;
+    ui.next_at = UiSourceLoc{};
+#endif
     if (style.key.set && parent.new_keys.mask != 0) { parent.new_keys.put(style.key.value, node); }
     // A transition first, so the changes after it in this commit are animated by it.
     ui_prop(node, fresh, 39, style.transition_ms, 0);

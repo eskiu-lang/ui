@@ -302,7 +302,8 @@ void ui_route_owner(*Router router) {
 // mounted (hidden) and keep their state. Back (Android's button, the iOS edge swipe, a
 // modal-free Escape) pops it. The first Navigator mounted follows the platform: the web
 // page's URL and history, and the links the app is opened with (ui_link).
-void Navigator(*Router router, escaping fn(string)->void screen) {
+void Navigator(*Router router, escaping fn(string)->void screen UI_LOC) {
+    UI_HERE
     ui_own(void() { ui_release_text(screen); });
     // A scope that fills its parent, as its screens do.
     ui.next_name = "Navigator";

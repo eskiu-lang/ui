@@ -2,20 +2,22 @@
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
 // A line of text, in the default style.
-void Text(string text) { ui_element(3, Style{}, text, void() {}, void() {}, void() {}); }
+void Text(string text UI_LOC) { UI_HERE ui_element(3, Style{}, text, void() {}, void() {}, void() {}); }
 
 // A button with the platform's look; `handler` runs when it is pressed.
-void Button(string text, escaping fn()->void handler) { ui_element(4, Style{}, text, void() {}, handler, void() {}); }
+void Button(string text, escaping fn()->void handler UI_LOC) { UI_HERE ui_element(4, Style{}, text, void() {}, handler, void() {}); }
 
 // Text and Button with a style: color, font, background and the rest of Style.
-void TextWith(Style style, string text) { ui_element(3, style, text, void() {}, void() {}, void() {}); }
+void TextWith(Style style, string text UI_LOC) { UI_HERE ui_element(3, style, text, void() {}, void() {}, void() {}); }
 
 // A button with a style.
-void ButtonWith(Style style, string text, escaping fn()->void handler) {
+void ButtonWith(Style style, string text, escaping fn()->void handler UI_LOC) {
+    UI_HERE
     ui_element(4, style, text, void() {}, handler) {}
 }
 
 // A Button whose `cleanup` runs when the button unmounts or gets a new handler.
-void Button_owned(string text, escaping fn()->void handler, escaping fn()->void cleanup) {
+void Button_owned(string text, escaping fn()->void handler, escaping fn()->void cleanup UI_LOC) {
+    UI_HERE
     ui_element(4, Style{}, text, void() {}, handler, cleanup);
 }

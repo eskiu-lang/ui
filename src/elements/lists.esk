@@ -56,7 +56,8 @@ void ui_section_rows(*Node list) {
 }
 
 // `count` rows of `item_height` points; render(i) emits row i's content.
-void FlatList(Style style, int count, int item_height, escaping fn(int)->void render) {
+void FlatList(Style style, int count, int item_height, escaping fn(int)->void render UI_LOC) {
+    UI_HERE
     ListExtra list = ListExtra{count: count, item_height: item_height < 1 ? 1 : item_height, on_item: render};
     ui.next_list = &list;
     style.gap = 0;
@@ -66,7 +67,8 @@ void FlatList(Style style, int count, int item_height, escaping fn(int)->void re
 // Sections from `sizes` (the app keeps it alive), each a header of `header_height` and its
 // rows of `item_height`; render(section, -1) emits a header, render(section, i) row i.
 void SectionList(Style style, *List<int> sizes, int header_height, int item_height,
-    escaping fn(int, int)->void render) {
+    escaping fn(int, int)->void render UI_LOC) {
+    UI_HERE
     ListExtra list = ListExtra{item_height: item_height < 1 ? 1 : item_height, header_height: header_height,
         sizes: sizes, on_cell: render};
     ui.next_list = &list;

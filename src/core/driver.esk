@@ -422,6 +422,14 @@ void ui_driver_identity(*String out, *Node node) {
     if (node.text != null) { String_append(out, ", \"text\": "); ui_json_string(out, node.text); }
     if (node.key.set) { String_appendf(out, ", \"key\": %lld", node.key.value); }
     if (node.name != null) { String_append(out, ", \"name\": "); ui_json_string(out, node.name); }
+#ifdef UI_SRCLOC
+    // Where the element was called from.
+    if (node.at.file != null) {
+        String_append(out, ", \"file\": ");
+        ui_json_string(out, ui_source_file(node.at.file));
+        String_appendf(out, ", \"line\": %d, \"col\": %d", node.at.line, node.at.col);
+    }
+#endif
 }
 
 // A node and its children for `tree` (internal).

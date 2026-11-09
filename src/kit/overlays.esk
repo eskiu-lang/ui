@@ -6,7 +6,8 @@ void kit_release_int64(escaping fn(int64)->void callback) { free_closure(callbac
 
 // `content` in a panel next to `trigger` while `open`: below it, or above when there is no room
 // below, kept inside the window. A tap outside, back and Escape call on_dismiss.
-void Popover(bool open, escaping fn()->void on_dismiss, escaping fn()->void trigger, escaping fn()->void content) {
+void Popover(bool open, escaping fn()->void on_dismiss, escaping fn()->void trigger, escaping fn()->void content UI_LOC) {
+    UI_HERE
     ui_own(void() { ui_release_closure(on_dismiss); ui_release_closure(trigger); ui_release_closure(content); });
     Scope("Popover", Key{}) {
         // The trigger's frame in the window, and the panel's height once laid out.
@@ -39,7 +40,8 @@ void Popover(bool open, escaping fn()->void on_dismiss, escaping fn()->void trig
 }
 
 // A row of a menu: a press runs on_press.
-void MenuItem(string text, bool checked, escaping fn()->void on_press) {
+void MenuItem(string text, bool checked, escaping fn()->void on_press UI_LOC) {
+    UI_HERE
     ui_own(void() { ui_release_closure(on_press); });
     Scope("MenuItem", Key{}) {
         *Signal<bool> over = use_signal<bool>(false);
@@ -55,7 +57,8 @@ void MenuItem(string text, bool checked, escaping fn()->void on_press) {
 }
 
 // A button that opens a menu of `options` (a line each); on_select gets the index chosen.
-void DropdownMenu(string label, string options, escaping fn(int)->void on_select) {
+void DropdownMenu(string label, string options, escaping fn(int)->void on_select UI_LOC) {
+    UI_HERE
     ui_own(void() { ui_release_int(on_select); });
     Scope("DropdownMenu", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
@@ -77,7 +80,8 @@ void DropdownMenu(string label, string options, escaping fn(int)->void on_select
 }
 
 // One of `options` (a line each), chosen from a menu under a field that shows it.
-void Select(string options, int selected, escaping fn(int)->void on_change) {
+void Select(string options, int selected, escaping fn(int)->void on_change UI_LOC) {
+    UI_HERE
     ui_own(void() { ui_release_int(on_change); });
     Scope("Select", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
@@ -107,7 +111,8 @@ void Select(string options, int selected, escaping fn(int)->void on_change) {
 
 // `text` in a bubble above `content` while a pointer is over it (no hover on touch screens:
 // the text is also the content's accessible name).
-void Tooltip(string text, escaping fn()->void content) {
+void Tooltip(string text, escaping fn()->void content UI_LOC) {
+    UI_HERE
     ui_own(void() { ui_release_closure(content); });
     Scope("Tooltip", Key{}) {
         *Signal<bool> over = use_signal<bool>(false);
@@ -154,7 +159,8 @@ void kit_toast_owner(*Signal<int> count, *StringState message) {
 
 // Where kit_toast messages show: put it last in the app's root (it sits absolute over the
 // root's bottom and blocks no touch).
-void ToastHost() {
+void ToastHost(UI_LOC_ONLY) {
+    UI_HERE
     // A strip of no height along the parent's bottom: the toast sits above it, and it blocks
     // no touch.
     ui.next_name = "ToastHost";

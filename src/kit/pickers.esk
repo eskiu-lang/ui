@@ -42,7 +42,8 @@ string kit_month_name(int month) {
 // A month's days, weeks from Sunday, with arrows to the months around it; `selected` is
 // circled, and on_select gets the day pressed. The seven columns share the width it gets, at
 // least 280 points.
-void Calendar(Date selected, escaping fn(Date)->void on_select) {
+void Calendar(Date selected, escaping fn(Date)->void on_select UI_LOC) {
+    UI_HERE
     ui_own(void() { kit_release_date(on_select); });
     Scope("Calendar", Key{}) {
         // The month shown, as year * 12 + month - 1.
@@ -101,7 +102,8 @@ void Calendar(Date selected, escaping fn(Date)->void on_select) {
 }
 
 // A field showing `value` that opens a Calendar.
-void DatePicker(Date value, escaping fn(Date)->void on_change) {
+void DatePicker(Date value, escaping fn(Date)->void on_change UI_LOC) {
+    UI_HERE
     ui_own(void() { kit_release_date(on_change); });
     Scope("DatePicker", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
@@ -128,7 +130,8 @@ int64 kit_swatch(int i) {
 }
 
 // A swatch showing `color` that opens a grid of colors to choose from.
-void ColorPicker(int64 color, escaping fn(int64)->void on_change) {
+void ColorPicker(int64 color, escaping fn(int64)->void on_change UI_LOC) {
+    UI_HERE
     ui_own(void() { kit_release_int64(on_change); });
     Scope("ColorPicker", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);

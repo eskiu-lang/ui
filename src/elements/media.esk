@@ -3,13 +3,15 @@
 
 // An image from an http(s) URL or a resource bundled with the app (its file name). Give it
 // a width and height; `label` is its text alternative.
-void Image(Style style, string source) {
+void Image(Style style, string source UI_LOC) {
+    UI_HERE
     ui.next_source = source;
     ui_element(7, style, null, void() {}, void() {}) {}
 }
 
 // The platform's busy indicator, spinning while `animating`.
-void ActivityIndicator(Style style, bool animating) {
+void ActivityIndicator(Style style, bool animating UI_LOC) {
+    UI_HERE
     ui.next_animating = animating;
     ui_element(10, style, null, void() {}, void() {}) {}
 }

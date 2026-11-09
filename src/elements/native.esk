@@ -56,7 +56,8 @@ void ui_native_prop(string name, string value) {
 
 // A view the app registered with each host under `type` (see the hosts' registries). It is
 // a leaf: give it a size. on_event gets the events the view sends (name and payload).
-void NativeView(Style style, string type, escaping fn(string, string)->void on_event) {
+void NativeView(Style style, string type, escaping fn(string, string)->void on_event UI_LOC) {
+    UI_HERE
     ui.next_view_type = type;
     ui_element(13, style, null, void() {}, void() {}) {}
     *Node node = ui.builder.emitted.data[ui.builder.emitted.size - 1];

@@ -50,14 +50,60 @@ void ui_node_path(*Node node, *String out) {
 }
 
 // Prints `message` and the running block's scope path to stderr, then aborts.
-void ui_fail(string message) {
+void ui_fail(string message) { ui_fail_node(message, ui == null ? null : ui.builder); }
+
+// Prints `message` with `node`'s scope path (and, in a UI_SRCLOC build, where its element was
+// called from) to stderr, then aborts.
+void ui_fail_node(string message, *Node node) {
+#ifdef UI_SRCLOC
+    ui_fail_where(message, node, node == null ? UiSourceLoc{} : node.at);
+#else
     // stderr is unbuffered: the message survives the abort when output goes to a file.
     String text;
     String_appendf(&text, "ui: %s\n  in ", message);
-    ui_scope_path(&text);
+    ui_node_path(node, &text);
+    println_err(text.data);
+    abort();
+#endif
+}
+
+#ifdef UI_SRCLOC
+// The root of the app's sources (UI_SOURCE_ROOT, from the ui tool): a position in a file under
+// it is shown from there (src/main.esk:12:5).
+#ifndef UI_SOURCE_ROOT
+#define UI_SOURCE_ROOT ""
+#endif
+
+// A position's file as shown: under the app's root, from there (internal).
+string ui_source_file(string file) {
+    string root = UI_SOURCE_ROOT;
+    int64 n = (int64)strlen(root);
+    if (file != null && n > 0 && strncmp(file, root, (size_t)n) == 0) { return (string)((*char)file + n); }
+    return file;
+}
+
+// "\n  at FILE:LINE:COL" for a known position, appended to `out` (internal).
+void ui_source_at(*String out, UiSourceLoc at) {
+    if (at.file == null) { return; }
+    String_appendf(out, "\n  at %s:%d:%d", ui_source_file(at.file), at.line, at.col);
+}
+
+// For the element the running block makes next: `at` is its call (UI_HERE). The first one
+// given wins, so a component's position goes to the element it makes first.
+void ui_here(UiSourceLoc at) {
+    if (ui != null && ui.next_at.file == null) { ui.next_at = at; }
+}
+
+// ui_fail_node with the position `at` (internal).
+void ui_fail_where(string message, *Node node, UiSourceLoc at) {
+    String text;
+    String_appendf(&text, "ui: %s\n  in ", message);
+    ui_node_path(node, &text);
+    ui_source_at(&text, at);
     println_err(text.data);
     abort();
 }
+#endif
 
 // ui_fail(message) unless `ok`.
 void ui_require(bool ok, string message) {

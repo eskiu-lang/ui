@@ -2,7 +2,8 @@
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
 // A controlled on/off switch: it shows `value`, and on_change gets the user's toggle.
-void Switch(Style style, bool value, escaping fn(bool)->void on_change) {
+void Switch(Style style, bool value, escaping fn(bool)->void on_change UI_LOC) {
+    UI_HERE
     SwitchExtra extra = SwitchExtra{value, on_change};
     ui.next_switch = &extra;
     ui_element(9, style, null, void() {}, void() {}) {}
@@ -10,7 +11,8 @@ void Switch(Style style, bool value, escaping fn(bool)->void on_change) {
 
 // A controlled slider from `min` to `max` in whole steps: it shows `value`, and on_change
 // gets each value the user drags it to (a value the app does not take is sent back).
-void Slider(Style style, int value, int min, int max, escaping fn(int)->void on_change) {
+void Slider(Style style, int value, int min, int max, escaping fn(int)->void on_change UI_LOC) {
+    UI_HERE
     SliderExtra extra = SliderExtra{value, min, max, on_change};
     ui.next_slider = &extra;
     ui_element(15, style, null, void() {}, void() {}) {}
@@ -31,7 +33,8 @@ Style ui_input_style(Input input) {
 
 // A text field showing `input.value`; `on_change` gets each edit's whole text. The app
 // owns the value: a render that keeps the old one puts it back.
-void TextInput(Input input, escaping fn(string)->void on_change) {
+void TextInput(Input input, escaping fn(string)->void on_change UI_LOC) {
+    UI_HERE
     InputExtra extra = InputExtra{on_text: on_change, placeholder: input.placeholder,
         focused: input.focused};
     ui.next_input = &extra;
@@ -40,7 +43,8 @@ void TextInput(Input input, escaping fn(string)->void on_change) {
 }
 
 // The same, with `on_focus` told when the field gains (true) or loses (false) focus.
-void TextInput_focus(Input input, escaping fn(string)->void on_change, escaping fn(bool)->void on_focus) {
+void TextInput_focus(Input input, escaping fn(string)->void on_change, escaping fn(bool)->void on_focus UI_LOC) {
+    UI_HERE
     InputExtra extra = InputExtra{on_text: on_change, on_focus: on_focus, has_on_focus: true,
         placeholder: input.placeholder, focused: input.focused};
     ui.next_input = &extra;

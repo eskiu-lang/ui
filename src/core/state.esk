@@ -27,3 +27,24 @@ int ui_edge_policy;
 
 // The app's data directory (ui_data_dir), set by the host before the app starts.
 string ui_data_path;
+
+// Where an element was called from: the file, line and column of the call, in a dev or test
+// build whose compiler has the call-site builtins (the ui tool defines UI_SRCLOC then;
+// docs/agents.md). `ui agent tree` shows it and the runtime's errors name it. Empty (file
+// null) in a release build and for an element made by a host or a package directly.
+struct UiSourceLoc { string file; int line; int col; }
+
+#ifdef UI_SRCLOC
+// UI_LOC ends an element's parameter list: in a UI_SRCLOC build it is one more parameter,
+// the call's position, defaulted at each call; UI_HERE, first in the element's body (before
+// the element it makes), hands it on. A component built on elements can do the same: its
+// first element then takes the component's call instead of its own. UI_LOC_ONLY is UI_LOC
+// for a function with no other parameter.
+#define UI_LOC , UiSourceLoc at = UiSourceLoc{src_file(), src_line(), src_col()}
+#define UI_LOC_ONLY UiSourceLoc at = UiSourceLoc{src_file(), src_line(), src_col()}
+#define UI_HERE ui_here(at);
+#else
+#define UI_LOC
+#define UI_LOC_ONLY
+#define UI_HERE
+#endif
