@@ -141,11 +141,16 @@ string build_ios(Project* p) {
     List<string> host_sources;
     defer host_sources.free();
     host_sources.push(join(p.ui.data, "hosts/ios/host.mm")); host_sources.push(header);
+    host_sources.push(join(p.ui.data, "hosts/core.h")); host_sources.push(join(p.ui.data, "hosts/driver.h"));
+    bool test = ui_test_build();
+    if (test && !dev) { host = join(out, "host-test.o"); }
     if (stale(host, &host_sources)) {
         Cmd cmd;
         for (i in 0..compiler.size) { cmd.add(compiler.data[i]); }
         cmd.add("-std=c++17"); cmd.add("-fobjc-arc"); cmd.add("-I"); cmd.add(yoga_source());
         if (dev) { cmd.add("-DUI_RELOAD"); }
+        // The driver's channel (hosts/driver.h), in a dev or test build only.
+        if (test) { cmd.add("-DUI_TEST"); }
         cmd.add("-c"); cmd.add(host_sources.data[0]); cmd.add("-o"); cmd.add(host);
         cmd.must(null);
         cmd.free();
@@ -397,6 +402,9 @@ void run_ios(Project* p) {
     List<string> apps;
     apps.push(join(dir.data, "Applications/Simulator.app"));
     apps.push(join(contents.data, "Applications/DeviceHub.app"));
+    // UI_NO_OPEN=1 (`ui agent`): no window, the simulator runs without one.
+    string no_open = env_get("UI_NO_OPEN");
+    if (no_open != null && strcmp(no_open, "1") == 0) { apps.size = 0; }
     for (i in 0..apps.size) {
         if (fs_is_dir(apps.data[i]) != 1) { continue; }
         Cmd show;
@@ -420,6 +428,13 @@ void run_ios(Project* p) {
         String_appendf(&value, "SIMCTL_CHILD_UI_RELOAD_FILE=%s", ios_reload_file(p));
         List<string> env;
         env.push(value.data);
+        // The driver's port (hosts/driver.h), when `ui agent` was told another one.
+        string agent_port = env_get("UI_AGENT_PORT");
+        String port_value;
+        if (agent_port != null && agent_port[0] != 0) {
+            String_appendf(&port_value, "SIMCTL_CHILD_UI_AGENT_PORT=%s", agent_port);
+            env.push(port_value.data);
+        }
         List<string> argv;
         for (i in 0..launch.parts.size) { argv.push(launch.parts.data[i].data); }
         ProcessOptions options = ProcessOptions{env: &env, inherit_stdout: true, inherit_stderr: true};

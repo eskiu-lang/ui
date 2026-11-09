@@ -16,6 +16,14 @@
 #ifdef UI_RELOAD
 static void ui_core_error(const char *message) { fprintf(stderr, "ui: %s\n", message); }
 #endif
+#ifdef UI_TEST
+#include <functional>
+#include <string>
+#include <mach/mach.h>
+static void driverOnMain(std::function<void()> work) { dispatch_async(dispatch_get_main_queue(), ^{ work(); }); }
+static std::string driverCarry(const std::string &directive);
+#include "../driver.h"
+#endif
 
 @interface UiHostNode : NSObject
 @property(nonatomic, strong) UIView *view;
@@ -1035,7 +1043,15 @@ static void hideSplash(void) {
     [UIView animateWithDuration:0.2 animations:^{ view.alpha = 0; } completion:^(BOOL done) { [view removeFromSuperview]; }];
 }
 
+#ifdef UI_TEST
+static void driverClockTo(double now);
+static void driverClock(bool owned, double now, bool settle);
+#endif
 extern "C" void ui_host_commit(const uint8_t *data, int len) {
+#ifdef UI_TEST
+    // The animations this commit starts begin at the driver's time.
+    driverClockTo(ui_driver_time());
+#endif
     ui_commit_each(data, len, ui_host_apply, ui_host_command, ui_host_named);
     ui_host_ready();
     slideScreens();
@@ -1412,6 +1428,10 @@ static NSString *newestCore(void) {
 
 static void restartCore(NSString *path) {
     ui_stop();
+#ifdef UI_TEST
+    // The new core starts on the real clock, until the driver takes it again.
+    driverClock(false, 0, false);
+#endif
     [frameLink invalidate];
     frameLink = nil;
     [clockLink invalidate];
@@ -1440,6 +1460,101 @@ static void restartCore(NSString *path) {
 }
 #endif
 
+#ifdef UI_TEST
+// The driver (hosts/driver.h, docs/agents.md). While it owns the clock the window's layer is
+// stopped (speed 0) and its time is the driver's (timeOffset), so the views' animations move
+// only when the clock does; `clock settle` moves it past their ends.
+static bool clockFrozen;
+static CFTimeInterval clockBase;
+static void driverClockTo(double now) {
+    if (clockFrozen && rootView.window) rootView.window.layer.timeOffset = clockBase + now / 1000.0;
+}
+static void driverClock(bool owned, double now, bool settle) {
+    CALayer *layer = rootView.window.layer;
+    if (!layer) return;
+    if (owned) {
+        if (!clockFrozen) {
+            CFTimeInterval local = [layer convertTime:CACurrentMediaTime() fromLayer:nil];
+            layer.speed = 0;
+            clockFrozen = true;
+            clockBase = local - now / 1000.0;
+        }
+        if (settle) clockBase += 60;
+        driverClockTo(now);
+    } else if (clockFrozen) {
+        CFTimeInterval paused = layer.timeOffset;
+        layer.speed = 1;
+        layer.timeOffset = 0;
+        layer.beginTime = 0;
+        layer.beginTime = [layer convertTime:CACurrentMediaTime() fromLayer:nil] - paused;
+        clockFrozen = false;
+    }
+    [CATransaction flush];
+}
+
+static std::string driverCarry(const std::string &d) {
+    std::string op = driverOp(d);
+    if (op == "hello" || op == "clock") {
+        driverClock(driverFlag(d, "virtual"), driverNumber(d, "now"), driverFlag(d, "settle"));
+        return "";
+    }
+    if (op == "logs") return driverLogs();
+    if (op == "perf") {
+        task_vm_info_data_t info;
+        mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+        if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS) return "0";
+        return std::to_string(info.phys_footprint);
+    }
+    if (op == "layout") {
+        std::string rows;
+        char line[160];
+        for (UiHostNode *node in nodes.allValues) {
+            UIView *view = node.view;
+            if (!view) continue;
+            CGRect r = [view convertRect:view.bounds toView:nil];
+            bool shown = view.window != nil;
+            for (UIView *up = view; up && shown; up = up.superview) if (up.hidden || up.alpha <= 0) shown = false;
+            snprintf(line, sizeof line, "%d %.1f %.1f %.1f %.1f %d\n", node.nodeId, r.origin.x, r.origin.y, r.size.width,
+                     r.size.height, shown ? 1 : 0);
+            rows += line;
+        }
+        return rows;
+    }
+    int id = (int)driverNumber(d, "node");
+    UiHostNode *node = nodes[@(id)];
+    if (!node || !node.view) return "error: #" + std::to_string(id) + " has no view";
+    UIView *view = node.view;
+    if (op == "tap") {
+        if ([view isKindOfClass:UISwitch.class]) {
+            UISwitch *toggle = (UISwitch *)view;
+            [toggle setOn:!toggle.on animated:NO];
+            [toggle sendActionsForControlEvents:UIControlEventValueChanged];
+        } else if ([view isKindOfClass:UITextField.class]) [view becomeFirstResponder];
+        else if (node.kind == 12) ui_dispatch(id, node.generation);
+        else if ([view isKindOfClass:UIControl.class]) [(UIControl *)view sendActionsForControlEvents:UIControlEventTouchUpInside];
+        else return "error: the view takes no press";
+        return "";
+    }
+    if (op == "type") {
+        if (![view isKindOfClass:UITextField.class]) return "error: not a text field";
+        UITextField *field = (UITextField *)view;
+        [field becomeFirstResponder];
+        field.text = @(driverText(d, "text").c_str());
+        [field sendActionsForControlEvents:UIControlEventEditingChanged];
+        return "";
+    }
+    if (op == "scroll") {
+        if (![view isKindOfClass:UIScrollView.class]) return "error: not a scroll view";
+        UIScrollView *scroll = (UIScrollView *)view;
+        CGFloat most = std::max<CGFloat>(0, scroll.contentSize.height - scroll.bounds.size.height);
+        CGFloat y = std::min(most, std::max<CGFloat>(0, scroll.contentOffset.y + driverNumber(d, "dy")));
+        [scroll setContentOffset:CGPointMake(scroll.contentOffset.x, y) animated:NO];
+        return std::to_string((int)std::lround(y));
+    }
+    return "error: the iOS host does not know " + op;
+}
+#endif
+
 @interface UiSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -1451,6 +1566,14 @@ static void restartCore(NSString *path) {
 }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     nodes = [NSMutableDictionary new];
+#ifdef UI_TEST
+    // The driver: the app's output kept for `logs` (and still printed), and its socket.
+    int printed = dup(2);
+    driverCapture([printed](const char *bytes, size_t n) { (void)!write(printed, bytes, n); });
+    const char *agentPort = getenv("UI_AGENT_PORT");
+    int port = agentPort ? atoi(agentPort) : 8766;
+    if (!driverListenTcp(port)) fprintf(stderr, "ui: the driver could not listen on 127.0.0.1:%d\n", port);
+#endif
     modals = [NSMutableArray new];
 #ifdef UI_RELOAD
     loadedCore = newestCore();
