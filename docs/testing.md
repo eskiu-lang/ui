@@ -17,7 +17,9 @@ tools/ci.sh            # on a released eskiuc, as CI runs it
 python3 tools/check.py # everything below, with an eskiu checkout
 ```
 
-`tools/ci.sh` runs the model tests, `tests/tags.esk` (hooks are matched by type),
+`tools/ci.sh` runs the model tests, `tests/ed25519.esk` (Ed25519 and SHA-512 against RFC 8032's
+vectors), `tests/updates.esk` (asset updates against a host stand-in: [updates](updates.md)),
+`tests/tags.esk` (hooks are matched by type),
 `tests/constants.esk` (the app's constants as the ui tool compiles them in),
 the compiled-out check (a release object has no symbol of the driver, a `UI_TEST` one has them),
 `tests/rejections.esk` (each misuse stops with its message: a render loop, a changed hook,
@@ -26,7 +28,8 @@ scope path in a message), the headless counter, and builds the
 `ui` tool and checks `ui new`, `ui serve` and `ui build --json` (with a stand-in compiler,
 `tests/fake_eskiuc.sh`: the page's wait answers each build, a failed one with its output, and
 its text diagnostics, a warning with an option, a hint and notes, become the JSON lines
-`eskiuc --diagnostics=json` would write).
+`eskiuc --diagnostics=json` would write), and `ui publish` (a signed manifest, a key made
+outside the project, the build's update macros, a key that is not `ui.toml`'s refused).
 
 `tools/check.py` also:
 
@@ -131,7 +134,9 @@ them.
 | `python3 tools/check_desktop.py` | the WKWebView host's window running the web build (needs an awake, unlocked display) |
 | `tests/agent/check.sh web\|macos\|ios\|android` | every `ui agent` op on `tests/agent`, through `ui serve` and the host's driver channel: targets, input, layout, state, logs, perf, screenshots, the clock (two screenshots a second apart are the same, `clock settle` finishes the animations), and a reload after an edit that keeps the count, the field and the timeout's result (with source positions, `tree`'s file and line too); web needs emcc and Chrome (`UI_CHROME`) |
 | `ui test HOST` in `tests/conformance` | the conformance scene's UI tests (below) |
-| `tools/ci_host.sh web\|macos\|ios\|android` | what CI runs on a host: the two above and the speed budgets (on macOS also a universal, signed release) |
+| `python3 tests/web/prerender.py [--measure N]` | the prerendered first frame in headless Chrome: content before the module runs (the module blocked), the elements adopted (none made again, a press counts), a different first commit replacing the markup, another route starting empty; with `--measure`, the first contentful paint with and without it |
+| `python3 tests/web/updates.py` | asset updates in headless Chrome against a local update server (`tests/web/updates-app`): a bundle downloaded and used at the next load, a changed file and an added one served by the service worker, a file that does not match its hash and a changed signature refused |
+| `tools/ci_host.sh web\|macos\|ios\|android` | what CI runs on a host: the agent check, the conformance tests and the speed budgets (on macOS also a universal, signed release; on the web the two Chrome tests above) |
 
 They drive `tests/harness/app.esk`, which holds every scene a host can be asked for: the
 counter (0), the TODO list (1), a probe (2), the conformance scene (3), the tasks app (4)
@@ -215,6 +220,7 @@ emulator and the few-millisecond ones), narrow for sizes (+2%). The job summary 
 | `HOST.edit_ms` | under `ui serve`, a text in `examples/counter/src/counter.esk` changed until `ui agent HOST tree` shows it: the rebuild and the reload; the median of three |
 | `HOST.frame_p95_ms` | `perf`'s p95 frame time (the core's render and the host's apply) after `tests/bench`'s 100 frames of 300 rows |
 | `web.wasm_bytes.counter`, `web.wasm_bytes.kit_gallery` | the release `app.wasm` of `examples/counter` and `examples/kit-gallery` |
+| `web.first_paint_ms` | the first contentful paint of `examples/counter`'s release page in headless Chrome on DevTools' "Slow 4G", the median of five loads: the prerendered first frame ([hosts](hosts.md#the-first-frame)) |
 | `model.*` | `tests/benchmark.esk` at `-O2`: a frame over 1000 rows, mounting and reversing 10,000 |
 
 The timings are of `ui serve`'s dev builds (`-O0`), as an app is developed. After a change

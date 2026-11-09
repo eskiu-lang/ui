@@ -108,3 +108,9 @@ Release builds of the desktop hosts have no developer tools.
 - Uploading to Google Play from the command line (its API needs a service account).
 - Android builds for x86_64 devices: releases carry arm64 code, which every phone on Google
   Play runs.
+
+## Between releases
+
+Images and data files in `assets/` can change without a release: `ui publish` makes a signed
+bundle that the installed apps download and use from their next start. See
+[updates](updates.md).

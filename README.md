@@ -60,6 +60,8 @@ void Counter() {
 - **Native code.** An app or a package ships modules and views per platform in `native/`
   (Objective-C or Swift, Java, Kotlin or C, JavaScript), with Maven and Swift package
   dependencies from `ui.toml`. See [native code](docs/native.md).
+- **Fast start and fresh assets.** The web page is prerendered at build time, and `ui publish`
+  sends signed asset updates to installed apps ([updates](docs/updates.md)).
 - **A kit.** `<ui/kit>` adds cards, badges, buttons, fields, checkboxes, tabs, bars,
   accordions, menus, selects, tooltips, toasts and date and color pickers, in a light and a
   dark theme, built from the same elements.

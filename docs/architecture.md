@@ -63,7 +63,7 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `src/style.esk` | `Style`, `key`, colors, `Align`, `Justify` |
 | `src/core/` | `state` (the runtime global, `UiSourceLoc` and `UI_LOC`), `diagnostics`, `keys` (the key table), `wire` (commits and the decoder), `reactive` (signals, memos, effects, hooks), `closures` (freeing closures by type), `tree` (nodes, matching, moves, unmounting, `ui_element`), `runtime` (frames, commits, events), `driver` (what `ui agent` asks and the clock it owns) and `reload` (the routes and signals a reload under `ui serve` keeps), both in dev and test builds only |
 | `src/elements/` | `layout` (containers, `ui_on_layout`, `ui_on_hover`, `ui_on_long_press`), `text`, `input` (fields, switches, sliders), `media`, `lists`, `overlay` (`Modal`, `Overlay`, `Alert`), `system`, `native`, `navigation`, `timers`, `gestures`, `animated` |
-| `src/apis/` | `environment` (platform, appearance, accessibility, language), `actions` (keyboard, share, clipboard, haptics, announcements), `storage`, `network` (`ui_fetch`) |
+| `src/apis/` | `environment` (platform, appearance, accessibility, language), `actions` (keyboard, share, clipboard, haptics, announcements), `storage`, `network` (`ui_fetch`), and in a build with `[updates]` only, `updates` (asset bundles, [updates](updates.md)) and `ed25519` (signatures and SHA-512, which the ui tool uses too) |
 | `src/state/strings.esk` | `use_string` |
 | `src/kit.esk`, `src/kit/` | `<ui/kit>`: `theme` (light and dark), `display`, `buttons`, `forms`, `navigation`, `disclosure`, `swipe`, `overlays` (popovers, menus, tooltips, toasts), `pickers` (calendar, date, color) |
 | `hosts/bridge.esk` | What every host calls (`ui_start`, `ui_dispatch_*`, `ui_report_*`, `ui_tick`, `ui_stop`) and the app's two entry points |
@@ -71,8 +71,9 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `hosts/core.h` | The core's entry points for the native hosts: linked, or loaded from the app's library in a reload build |
 | `hosts/driver.h` | The native hosts' driver channel in a dev build: the socket, the UI thread hop, the app's output ([agents](agents.md)) |
 | `hosts/ios/ui_native.h`, `hosts/android/ui_native.h`, `hosts/macos/ui_native.h` | The C API native code includes ([native code](native.md)) |
+| `hosts/web/prerender.mjs`, `hosts/web/ui-sw.js` | The web's first frame rendered at build time ([hosts](hosts.md#the-first-frame)), and the service worker of asset updates |
 | `hosts/web/`, `hosts/ios/`, `hosts/android/`, `hosts/macos/`, `hosts/linux/`, `hosts/windows/` | The hosts |
-| `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `web`, `macos`, `linux`, `windows`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload), `agent` (`ui agent`, the driver's client), `uitest` (`ui test`), `diagnostics` (`--json`, the compiler's probe) |
+| `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `publish` (`ui publish`, the keys), `web`, `macos`, `linux`, `windows`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload), `agent` (`ui agent`, the driver's client), `uitest` (`ui test`), `diagnostics` (`--json`, the compiler's probe) |
 | `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery`, `native`, `navigation` |
 | `tests/` | The model tests, the host harness and the conformance scene ([testing](testing.md)) |
 

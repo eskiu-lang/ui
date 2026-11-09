@@ -52,6 +52,7 @@ Labels become `aria-label` (an image's `alt`), `accessibilityLabel` (UIKit and A
 | haptics | `navigator.vibrate` | feedback generators | `performHapticFeedback` | `NSHapticFeedbackManager` (a trackpad's) |
 | announcements | a live region | `UIAccessibilityAnnouncementNotification` | `announceForAccessibility` | `NSAccessibilityAnnouncementRequestedNotification` |
 | appearance | `prefers-color-scheme`, `prefers-reduced-motion`, `navigator.language` | trait collection, `UIAccessibility`, `NSLocale` | configuration, `AccessibilityManager`, animator scale | `NSApp.effectiveAppearance` (dark mode), `NSWorkspace` accessibility options, `NSLocale` |
+| asset updates ([updates](updates.md)) | Cache Storage and a service worker | Application Support | `getFilesDir()` | Application Support/BUNDLE_ID |
 
 Each host also has a registry of native view types and a way for native code to post
 events from any thread: [native code](native.md).
@@ -64,6 +65,41 @@ of wasm memory, in one call. `scheduler.mjs` runs `ui_tick` once per animation f
 work is scheduled. `app.html` starts the app, reports the window and the URL, and holds the
 page's styles. The output is `build/ui/web/`: `index.html`, the JavaScript, the wasm module
 and the assets.
+
+### The first frame
+
+`ui build web` (dev and release) renders the app's first frame at build time and writes it
+into `index.html`, so the page shows the app before the module and the wasm load. The tool runs
+`hosts/web/prerender.mjs` with node (`EMSDK_NODE`, else on the `PATH`): it starts the app on a
+small DOM of its own, as the page does at its root route, and writes the markup the renderer
+made, with its inline styles, the renderer's style sheet and the fonts' `@font-face` rules.
+`#app` carries the first commit's fingerprint (`data-ui-prerender`, FNV-1a over its mutations)
+and the route it was made for (`data-ui-route`).
+
+When the module starts, the renderer computes its own first commit's fingerprint. When it is
+the same, the commit adopts the page's elements: each node takes the element with its
+`data-ui-id` instead of a new one, props and text are written again with the values they have
+(nothing moves, nothing is made again), and handlers work on them as on any element. When it is
+not (the first render depended on something the build could not know: saved data, a reload's
+state, an update in use), the renderer drops the markup and builds the tree afresh, in the
+same task, so the page never shows both. A page opened on another route than the root, or one
+a reload under `ui serve` restores, drops the markup before its first paint (an inline script
+right after `#app`) and starts empty, as before. The first render runs before the window, dark
+mode and language are reported, so it does not depend on them; an app that adapts to them
+shows the prerendered frame until the module reports them, a frame later.
+
+`[web] prerender = false` leaves it out. Measured on `examples/counter`'s release page in
+headless Chrome (Chromium 128, an arm64 Mac, the medians of five loads), the first contentful
+paint:
+
+| Network | Without | With the prerendered frame |
+|---|---|---|
+| local server | 35 ms | 30 ms |
+| DevTools' "Slow 4G" (150 ms latency, 1.6 Mbit/s) | 1,710 ms | 220 ms |
+
+`web.first_paint_ms` in `tools/budgets.toml` keeps the second ([testing](testing.md#speed-budgets)).
+
+### Under `ui serve`
 
 Under `ui serve`, the tool's server adds a script to `index.html` as it serves it (the built
 file is unchanged). The script asks `/__ui/wait?v=N`, which answers when the build after N
