@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The README's screenshots: the Tasks showcase (examples/tasks) on the web, the iOS
-simulator, the Android emulator and macOS. A host that is not available is skipped.
+simulator, the Android emulator and macOS (the AppKit host). A host that is not available is
+skipped; `python3 tools/screenshots.py macos` takes only the hosts named.
 Metadata chunks (eXIf, tEXt, iTXt, zTXt, tIME) are dropped from every PNG."""
 import functools
 import http.server
@@ -60,13 +61,20 @@ def shoot_web(server):
 
 
 def shoot_macos(server):
-    binary = BUILD / "desktop/EskiuDesktop"
-    binary.parent.mkdir(exist_ok=True)
-    subprocess.run(["xcrun", "clang", "-fobjc-arc", HERE / "hosts/macos/host.m", "-framework", "Cocoa", "-framework", "WebKit",
-                    "-o", binary], check=True, timeout=60)
-    url = f"http://127.0.0.1:{server.server_port}/?example=tasks&shot=1"
-    result = subprocess.run([binary, url, SHOTS / "tasks-macos.png", "430x880"], capture_output=True, text=True, timeout=60)
-    return None if result.returncode == 0 else "no snapshot (is the display awake?)"
+    """examples/tasks in the AppKit host, 430 by 880 points, through `ui agent macos`."""
+    if sys.platform != "darwin":
+        return "not a Mac"
+    ui = BUILD / "ui"
+    subprocess.run(["eskiuc", HERE / "tools/ui/main.esk", "-o", ui], check=True, timeout=300)
+    project = HERE / "examples/tasks"
+    env = {**os.environ, "UI_AGENT_WINDOW": "430x880"}
+    subprocess.run([ui, "agent", "macos", "--stop"], cwd=project, capture_output=True)
+    try:
+        result = subprocess.run([ui, "agent", "macos", "clock settle", f"screenshot {SHOTS / 'tasks-macos.png'}"],
+                                cwd=project, env=env, capture_output=True, text=True, timeout=600)
+    finally:
+        subprocess.run([ui, "agent", "macos", "--stop"], cwd=project, capture_output=True)
+    return None if result.returncode == 0 else "no screenshot: " + result.stderr[-300:]
 
 
 def shoot_ios():
@@ -101,11 +109,16 @@ def shoot_android():
 
 def main():
     SHOTS.mkdir(exist_ok=True)
-    subprocess.run([sys.executable, HERE / "tools/build_web.py"], check=True, timeout=300, capture_output=True)
+    chosen = sys.argv[1:]
+    if not chosen or "web" in chosen:
+        subprocess.run([sys.executable, HERE / "tools/build_web.py"], check=True, timeout=300, capture_output=True)
     server = serve()
     try:
-        for name, shoot in (("web", lambda: shoot_web(server)), ("macos", lambda: shoot_macos(server)),
-                            ("ios", shoot_ios), ("android", shoot_android)):
+        hosts = (("web", lambda: shoot_web(server)), ("macos", lambda: shoot_macos(server)),
+                 ("ios", shoot_ios), ("android", shoot_android))
+        for name, shoot in hosts:
+            if chosen and name not in chosen:
+                continue
             skipped = shoot()
             path = SHOTS / f"tasks-{name}.png"
             if skipped is None and path.exists():
