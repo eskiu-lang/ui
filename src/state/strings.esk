@@ -26,6 +26,11 @@ struct StringState { Signal<*UiString> signal; }
     *Slot slot = ui_slot(3, &tag);
     if (slot.data == null) {
         *StringState state = alloc<StringState>(1);
+#ifdef UI_TEST
+        // Under `ui serve`, the text it had before a reload, as for use_signal.
+        string saved = ui_reload_text(slot);
+        if (saved != null) { initial = saved; }
+#endif
         state.signal.value = ui_string(initial);
         slot.data = state;
         slot.dispose = void() {

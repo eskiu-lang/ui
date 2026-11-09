@@ -43,8 +43,10 @@ struct Observer {
 // and its observer if any. ui_slot gives one to a package's own hooks.
 struct Slot { int kind; *void tag; *void data; fn()->void dispose; *Observer observer;
 #ifdef UI_TEST
-    // A signal's value type for the driver's `state` (ui_driver_value_type).
+    // A signal's value type for the driver's `state` (ui_driver_value_type), and the key a
+    // use_signal_keyed signal keeps across reloads (a copy, freed with the slot).
     int vtype;
+    string key;
 #endif
 }
 
@@ -247,17 +249,32 @@ string ui_hook_name(int kind) {
 struct Signal<T> { T value; Source source; }
 
 // The scope's signal at this position, holding `initial` on the first render; kept while
-// the scope is mounted, freed when it unmounts.
-*Signal<T> use_signal<T>(T initial) {
+// the scope is mounted, freed when it unmounts. Under `ui serve` a reload gives it back the
+// value it had when its scope and its place in it are the same and so is its type.
+*Signal<T> use_signal<T>(T initial) { return ui_signal_at<T>(null, initial); }
+
+// use_signal, kept across a reload by `key` instead of by its place: the value comes back
+// wherever the signal moved to in the code (another scope, another order), when its type is
+// the same. The key names it in the whole app; two mounted signals with the same key both get
+// the value. A release build keeps nothing across launches and ignores the key.
+*Signal<T> use_signal_keyed<T>(string key, T initial) { return ui_signal_at<T>(key, initial); }
+
+// The signal of use_signal and use_signal_keyed (internal).
+*Signal<T> ui_signal_at<T>(string key, T initial) {
     static int tag;
     *Slot slot = ui_slot(0, &tag);
     if (slot.data == null) {
         *Signal<T> signal = alloc<Signal<T>>(1);
         signal.value = initial;
         slot.data = signal;
-        slot.dispose = void() { ui_detach_source(&signal.source); free(signal); };
 #ifdef UI_TEST
         slot.vtype = ui_driver_value_type<T>();
+        string kept = ui_reload_key(key);
+        slot.key = kept;
+        ui_reload_take(slot, key, (*void)&signal.value);
+        slot.dispose = void() { ui_detach_source(&signal.source); free(signal); free(kept); };
+#else
+        slot.dispose = void() { ui_detach_source(&signal.source); free(signal); };
 #endif
     }
     return (*Signal<T>)slot.data;

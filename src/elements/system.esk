@@ -83,6 +83,9 @@ void ui_drop_back(*BackEntry entry) {
 // from the newest; false lets the platform go back.
 bool ui_back() {
     ui_require_consistent();
+#ifdef UI_TEST
+    ui_reload_input();
+#endif
     if (ui.modals.size > 0) {
         ui.modals.data[ui.modals.size - 1].handler();
         return true;

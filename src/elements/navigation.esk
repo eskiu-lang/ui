@@ -289,6 +289,10 @@ void ui_route_owner(*Router router) {
     if (ui.router == null) {
         ui.router = router;
         router.synced = true;
+#ifdef UI_TEST
+        // Under `ui serve`, the routes it had before a reload.
+        ui_reload_routes(router);
+#endif
         ui_route_sync(router);
     }
     slot.dispose = void() { if (ui.router == router) { ui.router = null; router.synced = false; } };

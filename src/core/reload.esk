@@ -1,0 +1,310 @@
+// Reload that keeps state: under `ui serve` (UI_TEST builds only) the host asks the running
+// core for a snapshot before it stops it for a new build, and hands it to the new core before
+// starting it. The new core gives it back as the app mounts: the router's routes, and each
+// signal whose identity and type did not change.
+// Part of <ui> (src/ui.esk imports it only when UI_TEST is defined).
+//
+// The snapshot is text, one record per line, fields split by tabs (a tab, a newline or a
+// backslash in a field is written \t, \n or \\):
+//
+//   ui-reload 1
+//   route    /places/2                         one per route, root first
+//   signal   Column[0] > TodoRow[key 3]  0  int  5
+//   keyed    filter  text  done
+//
+// A `signal` record is a scope's Nth signal (use_signal or use_string, counted in the order
+// the scope declares them), found by the scope's path as `ui agent state` prints it; a
+// `keyed` one is a use_signal_keyed signal, found by its key wherever it is. The type is
+// spelled: int, int64, int16, uint8, char, uint, uint64, bool, double, float, or text for a
+// use_string. A signal of another type (a pointer, a struct, a closure, a borrowed string)
+// is not saved: it starts from its initial value.
+
+// A signal of the snapshot: its scope path and index, or its key; its type's name and its
+// value as text; whether a signal took it (internal).
+struct UiSavedSignal { String path; int index; String key; String type; String value; bool used; }
+
+// The snapshot the new core restores from, until the first input (internal).
+struct UiReloadState {
+    bool active;
+    List<String> routes;
+    bool routes_taken;
+    List<UiSavedSignal> signals;
+    // The text ui_reload_snapshot hands the host.
+    String out;
+}
+
+UiReloadState ui_rl;
+
+// The name a signal's type is saved under (ui_driver_value_type's codes), or null when its
+// values are not saved (internal).
+string ui_reload_type(int vtype) {
+    if (vtype == 1) { return "int"; }
+    if (vtype == 2) { return "int64"; }
+    if (vtype == 3) { return "bool"; }
+    if (vtype == 4) { return "double"; }
+    if (vtype == 5) { return "float"; }
+    if (vtype == 7) { return "uint8"; }
+    if (vtype == 8) { return "char"; }
+    if (vtype == 9) { return "int16"; }
+    if (vtype == 10) { return "uint"; }
+    if (vtype == 11) { return "uint64"; }
+    return null;
+}
+
+// `text` with tabs, newlines and backslashes escaped, appended to `out` (internal).
+void ui_reload_escape(*String out, string text) {
+    if (text == null) { return; }
+    for (int64 i = 0; text[i] != 0; i++) {
+        char c = text[i];
+        if (c == '\\') { String_append(out, "\\\\"); }
+        else if (c == '\t') { String_append(out, "\\t"); }
+        else if (c == '\n') { String_append(out, "\\n"); }
+        else if (c == '\r') { String_append(out, "\\r"); }
+        else { String_push(out, c); }
+    }
+}
+
+// A slot's value as saved text, into `out`; false when it is not saved (internal).
+bool ui_reload_value_text(Slot slot, *String out) {
+    if (slot.kind == 3) {
+        *StringState state = (*StringState)slot.data;
+        ui_reload_escape(out, state.signal.value.text);
+        return true;
+    }
+    *void at = slot.data;
+    int t = slot.vtype;
+    if (t == 1) { String_appendf(out, "%d", *(*int)at); }
+    else if (t == 2) { String_appendf(out, "%lld", *(*int64)at); }
+    else if (t == 3) { String_append(out, *(*bool)at ? "true" : "false"); }
+    else if (t == 4) { String_appendf(out, "%.17g", *(*double)at); }
+    else if (t == 5) { String_appendf(out, "%.9g", (double)*(*float)at); }
+    else if (t == 7) { String_appendf(out, "%d", (int)*(*uint8)at); }
+    else if (t == 8) { String_appendf(out, "%d", (int)*(*char)at); }
+    else if (t == 9) { String_appendf(out, "%d", (int)*(*int16)at); }
+    else if (t == 10) { String_appendf(out, "%u", *(*uint)at); }
+    else if (t == 11) { String_appendf(out, "%llu", *(*uint64)at); }
+    else { return false; }
+    return true;
+}
+
+// The records of `node`'s signals and its descendants' (internal).
+void ui_reload_save_node(*Node node) {
+    int index = 0;
+    String path;
+    defer String_free(&path);
+    for (i in 0..node.slots.size) {
+        Slot slot = node.slots.data[i];
+        if (slot.kind != 0 && slot.kind != 3) { continue; }
+        int at = index++;
+        string type = slot.kind == 3 ? "text" : ui_reload_type(slot.vtype);
+        if (type == null) { continue; }
+        String value;
+        if (!ui_reload_value_text(slot, &value)) { String_free(&value); continue; }
+        if (slot.key != null) {
+            String_append(&ui_rl.out, "keyed\t");
+            ui_reload_escape(&ui_rl.out, slot.key);
+        } else {
+            if (path.len == 0) { ui_node_path(node, &path); }
+            String_append(&ui_rl.out, "signal\t");
+            ui_reload_escape(&ui_rl.out, path.data);
+            String_appendf(&ui_rl.out, "\t%d", at);
+        }
+        String_appendf(&ui_rl.out, "\t%s\t%s\n", type, value.data == null ? "" : value.data);
+        String_free(&value);
+    }
+    for (i in 0..node.children.size) { ui_reload_save_node(node.children.data[i]); }
+}
+
+// The snapshot of the running app (the text is the core's, valid until the next call): the
+// routes of the router the platform follows and the signals of the mounted scopes.
+string ui_reload_snapshot() {
+    String_clear(&ui_rl.out);
+    String_append(&ui_rl.out, "ui-reload 1\n");
+    if (ui == null || ui.root == null) { return ui_rl.out.data; }
+    if (ui.router != null) {
+        for (i in 0..ui.router.stack.size) {
+            String_append(&ui_rl.out, "route\t");
+            ui_reload_escape(&ui_rl.out, ui.router.stack.data[i].data);
+            String_append(&ui_rl.out, "\n");
+        }
+    }
+    ui_reload_save_node(ui.root);
+    return ui_rl.out.data;
+}
+
+// Frees what the snapshot holds; nothing is restored after it (internal).
+void ui_reload_drop() {
+    for (i in 0..ui_rl.routes.size) { String_free(&ui_rl.routes.data[i]); }
+    ui_rl.routes.free();
+    for (i in 0..ui_rl.signals.size) {
+        *UiSavedSignal saved = &ui_rl.signals.data[i];
+        String_free(&saved.path); String_free(&saved.key); String_free(&saved.type); String_free(&saved.value);
+    }
+    ui_rl.signals.free();
+    ui_rl.active = false;
+    ui_rl.routes_taken = false;
+}
+
+// Frees the snapshot and its text, at shutdown (internal).
+void ui_reload_shutdown() {
+    ui_reload_drop();
+    String_free(&ui_rl.out);
+}
+
+// Splits a snapshot line at its tabs, unescaping each field (internal).
+void ui_reload_fields(string line, int64 n, List<String>* fields) {
+    String field;
+    for (int64 i = 0; i <= n; i++) {
+        char c = i < n ? line[i] : '\t';
+        if (c == '\t') { fields.push(field); field = String{}; continue; }
+        if (c == '\\' && i + 1 < n) {
+            char next = line[++i];
+            String_push(&field, next == 't' ? '\t' : next == 'n' ? '\n' : next == 'r' ? '\r' : next);
+            continue;
+        }
+        String_push(&field, c);
+    }
+}
+
+// Takes a snapshot to restore from, before the app starts (ui_reload_snapshot's text,
+// copied). A text that is not one is ignored.
+void ui_reload_load(string text) {
+    ui_reload_drop();
+    if (text == null || strncmp(text, "ui-reload 1\n", 12) != 0) { return; }
+    ui_rl.active = true;
+    int64 at = 12;
+    while (text[at] != 0) {
+        int64 end = at;
+        while (text[end] != 0 && text[end] != '\n') { end++; }
+        List<String> fields;
+        ui_reload_fields(&text[at], end - at, &fields);
+        string kind = fields.size > 0 ? fields.data[0].data : null;
+        if (kind != null && strcmp(kind, "route") == 0 && fields.size == 2) {
+            ui_rl.routes.push(fields.data[1]);
+            fields.data[1] = String{};
+        } else if (kind != null && strcmp(kind, "signal") == 0 && fields.size == 5) {
+            UiSavedSignal saved;
+            saved.path = fields.data[1];
+            saved.index = atoi(fields.data[2].data == null ? "0" : fields.data[2].data);
+            saved.type = fields.data[3];
+            saved.value = fields.data[4];
+            fields.data[1] = String{}; fields.data[3] = String{}; fields.data[4] = String{};
+            ui_rl.signals.push(saved);
+        } else if (kind != null && strcmp(kind, "keyed") == 0 && fields.size == 4) {
+            UiSavedSignal saved;
+            saved.key = fields.data[1];
+            saved.type = fields.data[2];
+            saved.value = fields.data[3];
+            fields.data[1] = String{}; fields.data[2] = String{}; fields.data[3] = String{};
+            ui_rl.signals.push(saved);
+        }
+        for (i in 0..fields.size) { String_free(&fields.data[i]); }
+        fields.free();
+        at = text[end] == 0 ? end : end + 1;
+    }
+}
+
+// The first input after a reload (a press, an edit, a toggle, back): from then on a scope that
+// mounts is new, so nothing more is restored (internal).
+void ui_reload_input() { if (ui_rl.active) { ui_reload_drop(); } }
+
+// The router the platform follows takes the saved routes, once (internal).
+void ui_reload_routes(*Router router) {
+    if (!ui_rl.active || ui_rl.routes_taken || ui_rl.routes.size == 0) { return; }
+    ui_rl.routes_taken = true;
+    while (router.stack.size > 1) {
+        ui_route_drop(router.stack.data[router.stack.size - 1]);
+        router.stack.size--;
+    }
+    ui_route_drop(router.stack.data[0]);
+    router.stack.size = 0;
+    for (i in 0..ui_rl.routes.size) {
+        String route;
+        String_from(&route, ui_rl.routes.data[i].data);
+        router.stack.push(route);
+    }
+    ui_route_changed(router);
+}
+
+// The saved record for the signal just made in `slot` (the running scope's last slot), by
+// `key` or by the scope's path and the slot's index among its signals; null when there is
+// none. A record whose type is not the signal's is used up and not restored (internal).
+*UiSavedSignal ui_reload_find(*Slot slot, string key) {
+    if (!ui_rl.active || ui_rl.signals.size == 0) { return null; }
+    string type = slot.kind == 3 ? "text" : ui_reload_type(slot.vtype);
+    if (type == null) { return null; }
+    *UiSavedSignal found = null;
+    if (key != null) {
+        for (i in 0..ui_rl.signals.size) {
+            *UiSavedSignal saved = &ui_rl.signals.data[i];
+            if (!saved.used && saved.key.len > 0 && strcmp(saved.key.data, key) == 0) { found = saved; break; }
+        }
+    } else {
+        *Node node = ui.builder;
+        int index = 0;
+        for (i in 0..node.slots.size - 1) {
+            int kind = node.slots.data[i].kind;
+            if (kind == 0 || kind == 3) { index++; }
+        }
+        String path;
+        defer String_free(&path);
+        ui_node_path(node, &path);
+        for (i in 0..ui_rl.signals.size) {
+            *UiSavedSignal saved = &ui_rl.signals.data[i];
+            if (!saved.used && saved.key.len == 0 && saved.index == index && String_eq(&saved.path, &path) == 1) {
+                found = saved;
+                break;
+            }
+        }
+    }
+    if (found == null) { return null; }
+    found.used = true;
+    return String_eq_cstr(&found.type, type) == 1 ? found : null;
+}
+
+// A copy of a use_signal_keyed key, or null for use_signal (internal).
+string ui_reload_key(string key) { return key == null ? null : ui_copy(key); }
+
+// A decimal integer's text as uint64 bits (a leading - negates) (internal).
+uint64 ui_reload_integer(string text) {
+    if (text == null) { return 0; }
+    int i = 0;
+    bool negative = text[0] == '-';
+    if (negative) { i++; }
+    uint64 value = 0;
+    while (text[i] >= '0' && text[i] <= '9') { value = value * 10 + (uint64)(text[i] - '0'); i++; }
+    return negative ? (uint64)0 - value : value;
+}
+
+// Restores the signal just made in `slot` (its value at `at`) from the snapshot, by `key` or
+// by its place; false when the snapshot has nothing for it (internal).
+bool ui_reload_take(*Slot slot, string key, *void at) {
+    *UiSavedSignal saved = ui_reload_find(slot, key);
+    if (saved == null) { return false; }
+    string text = saved.value.data == null ? "" : saved.value.data;
+    uint64 bits = ui_reload_integer(text);
+    int t = slot.vtype;
+    if (t == 1) { *(*int)at = (int)bits; }
+    else if (t == 2) { *(*int64)at = (int64)bits; }
+    else if (t == 3) { *(*bool)at = strcmp(text, "true") == 0; }
+    else if (t == 4 || t == 5) {
+        double value = 0;
+        if (String_parse_double(&saved.value, &value) != 1) { return false; }
+        if (t == 4) { *(*double)at = value; } else { *(*float)at = (float)value; }
+    }
+    else if (t == 7) { *(*uint8)at = (uint8)bits; }
+    else if (t == 8) { *(*char)at = (char)bits; }
+    else if (t == 9) { *(*int16)at = (int16)bits; }
+    else if (t == 10) { *(*uint)at = (uint)bits; }
+    else if (t == 11) { *(*uint64)at = bits; }
+    else { return false; }
+    return true;
+}
+
+// The saved text of the use_string just made in `slot`, or null (borrowed until the next
+// input) (internal).
+string ui_reload_text(*Slot slot) {
+    *UiSavedSignal saved = ui_reload_find(slot, null);
+    if (saved == null) { return null; }
+    return saved.value.data == null ? "" : saved.value.data;
+}

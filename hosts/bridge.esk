@@ -260,6 +260,14 @@ string ui_driver_done(string result) {
 // The driver's clock in ms, where a host starts the animations a commit begins while the
 // driver owns the clock.
 double ui_driver_time() { return app_active ? ui_driver_now() : 0; }
+
+// A reload under `ui serve` (src/core/reload.esk): the running app's routes and signals as
+// text, which the host takes before it stops this core (valid until the next call).
+string ui_reload_save() { return app_active ? ui_reload_snapshot() : ""; }
+
+// The host hands the new core what the old one saved, before ui_start: the app restores
+// it as it mounts.
+void ui_reload_restore(string snapshot) { ui_reload_load(snapshot); }
 #endif
 
 void ui_start(int which) {

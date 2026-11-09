@@ -427,6 +427,11 @@ bool ui_frame() {
 // false only for an event dispatched now whose node is gone or stale; a queued one is
 // checked when it runs.
 bool ui_post(Event event) {
+#ifdef UI_TEST
+    // The user's input after a reload: the scopes that mount from now on start afresh.
+    int k = event.kind;
+    if (k == 1 || k == 2 || k == 4 || k == 6 || k == 7 || k == 14 || k == 17 || k == 20) { ui_reload_input(); }
+#endif
     if (ui.in_flight || ui.phase != 0) {
         if (event.text != null) { event.text = ui_copy(event.text); }
         if (event.name != null) { event.name = ui_copy(event.name); }
@@ -648,6 +653,7 @@ void ui_shutdown() {
     if (ui.has_on_error) { ui_release_fallback(ui.on_error); }
 #ifdef UI_TEST
     ui_driver_shutdown();
+    ui_reload_shutdown();
 #endif
     ui = null;
 }
