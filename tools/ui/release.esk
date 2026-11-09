@@ -187,10 +187,21 @@ string android_upload_key(Project* p) {
 
 // ---- the command ----
 
+// A file's size, or a directory's (a bundle's) files added up.
+int64 release_total;
+
 string release_size(string path) {
     FileStat st;
     String text;
     if (fs_stat(path, &st) != 0) { return ""; }
+    if (st.is_dir) {
+        release_total = 0;
+        fs_walk(path, void(string file, bool dir) {
+            FileStat one;
+            if (!dir && fs_stat(file, &one) == 0) { release_total += one.size; }
+        });
+        st.size = release_total;
+    }
     if (st.size >= 1048576) { String_appendf(&text, "%.1f MB", (double)st.size / 1048576.0); }
     else { String_appendf(&text, "%lld KB", st.size / 1024); }
     return text.data;
