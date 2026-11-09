@@ -46,6 +46,16 @@ function seek(settle) {
     } else animation.currentTime = Math.max(0, now - start);
   }
 }
+// A field's blinking caret moves too: hidden while the driver owns the clock.
+function caret(hidden) {
+  let style = document.getElementById('ui-driver-caret');
+  if (hidden && !style) {
+    style = document.createElement('style');
+    style.id = 'ui-driver-caret';
+    style.textContent = 'input, textarea { caret-color: transparent !important; }';
+    document.head.appendChild(style);
+  } else if (!hidden && style) style.remove();
+}
 function release() {
   for (const animation of started.keys()) { try { animation.play(); } catch {} }
   started.clear();
@@ -56,9 +66,9 @@ async function carry(app, host, d) {
   const node = d.node ? host.nodes.get(d.node) : null;
   if (d.node && !node) return `error: #${d.node} has no element on the page`;
   if (d.host === 'hello' || d.host === 'clock') {
-    if (d.virtual && !virtual) { virtual = true; adopt(app); }
+    if (d.virtual && !virtual) { virtual = true; caret(true); adopt(app); }
     now = d.now;
-    if (!d.virtual && virtual) { virtual = false; release(); }
+    if (!d.virtual && virtual) { virtual = false; caret(false); release(); }
     else seek(d.settle);
     return '';
   }
