@@ -62,7 +62,7 @@ tolerance = 1.0
 # The first contentful paint of examples/counter's release page in headless Chrome on a slow
 # network (DevTools' "Slow 4G"): the prerendered first frame, before the module loads.
 ["web.first_paint_ms"]
-baseline = 220.0
+baseline = 204.0
 tolerance = 0.5
 
 # The release web module (app.wasm) in bytes.

@@ -236,6 +236,7 @@ AppKit host's):
 | edit to change | 1.53 s | 1.61 s | 1.04 s | 1.01 s |
 | frame p95 (300 rows) | 8.0 ms | 20.6 ms | 55.3 ms | 18.0 ms |
 | `app.wasm`, counter / kit gallery | 107,015 / 172,356 bytes | | | |
+| first contentful paint, "Slow 4G" | 204 ms (1,664 ms without the prerendered frame) | | | |
 
 The recording renderer on the Linux runner: a frame over 1000 rows 1.9 ms, mounting 10,000
 rows 38 ms, reversing them 27.6 ms.
