@@ -1,5 +1,5 @@
 // The driver channel of the native hosts (docs/agents.md), in a dev build only (UI_TEST):
-// a socket the app listens on (TCP on 127.0.0.1 on the iOS simulator, an abstract Unix
+// a socket the app listens on (TCP on 127.0.0.1 on the iOS simulator and macOS, an abstract Unix
 // socket on Android that `adb forward` reaches) taking one JSON request per line. Each
 // request runs on the UI thread: the core answers it (ui_driver), or asks the host to do its
 // part first ({"host": ...}), which the host's driverCarry does before ui_driver_done answers.
@@ -8,6 +8,8 @@
 // The host defines, before including this file:
 //   static void driverOnMain(std::function<void()> work);   // runs `work` on the UI thread, now or soon
 //   static std::string driverCarry(const std::string &directive);  // the host's part, its result
+// and, with UI_DRIVER_HOST_REQUESTS defined, the requests it answers without the core:
+//   static bool driverHostRequest(const std::string &request, std::string &answer);
 #pragma once
 #ifdef UI_TEST
 #include <condition_variable>
@@ -142,6 +144,11 @@ static std::string driverPerf(double memory) {
 
 // One request, on the UI thread: the core's answer.
 static std::string driverHandle(const std::string &request) {
+#ifdef UI_DRIVER_HOST_REQUESTS
+    // A request the host answers itself, without the core (macOS's screenshot).
+    std::string own;
+    if (driverHostRequest(request, own)) return own;
+#endif
     std::string answer = ui_driver(request.c_str());
     if (answer.rfind("{\"host\": ", 0) != 0) return answer;
     std::string result;
