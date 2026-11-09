@@ -532,6 +532,8 @@ public final class UiActivity extends Activity {
         View view = nodes.get(id);
         if (view == null) return "error: #" + id + " has no view";
         if (view instanceof EditText) { driverCursor((EditText)view); view.requestFocus(); return ""; }
+        // A switch toggles on a click with no click listener (performClick says false then).
+        if (view instanceof android.widget.CompoundButton) { view.performClick(); return ""; }
         if (!view.performClick()) return "error: the view takes no press";
         return "";
     }
