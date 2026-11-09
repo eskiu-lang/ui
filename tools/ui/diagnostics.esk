@@ -74,7 +74,9 @@ void compiler_probe() {
     fs_remove_all(probe_dir.data);
     String line;
     defer String_free(&line);
-    String_appendf(&line, "%s%s%s\n", key.data, compiler_features.json ? "json " : "", compiler_features.srcloc ? "srcloc" : "");
+    // Never empty after the tab: a line read back is trimmed, and the key must still match.
+    String_appendf(&line, "%s%s%s\n", key.data, compiler_features.json ? "json " : "none ",
+        compiler_features.srcloc ? "srcloc" : "-");
     // Lines for other compilers are kept; one per binary.
     String kept;
     defer String_free(&kept);
