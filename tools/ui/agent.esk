@@ -4,7 +4,7 @@
 // local socket on the iOS simulator, `adb forward` on Android.
 // Part of the ui tool (tools/ui/main.esk imports every part).
 
-// The host being driven ("web", "ios", "android") and how its answers are printed.
+// The host being driven ("web", "macos", "ios", "android") and how its answers are printed.
 string agent_host;
 bool agent_json;
 
@@ -12,11 +12,12 @@ bool agent_json;
 int agent_web_port;
 int agent_cdp_port;
 
-// The driver's port of the dev app on the simulator (and the local end of `adb forward`).
+// The driver's port of the dev app on the simulator or this Mac (and the local end of `adb
+// forward`).
 int agent_native_port() {
     string value = env_get("UI_AGENT_PORT");
     if (value != null && value[0] != 0) { return atoi(value); }
-    return strcmp(agent_host, "android") == 0 ? 8767 : 8766;
+    return strcmp(agent_host, "android") == 0 ? 8767 : strcmp(agent_host, "macos") == 0 ? 8768 : 8766;
 }
 
 void agent_fail(string message) {
@@ -74,15 +75,7 @@ int agent_spawn(string command, string log) {
 }
 
 // `text` quoted for sh.
-string agent_quote(string text) {
-    String out;
-    String_append(&out, "'");
-    for (int i = 0; text[i] != 0; i++) {
-        if (text[i] == '\'') { String_append(&out, "'\\''"); } else { String_push(&out, text[i]); }
-    }
-    String_append(&out, "'");
-    return out.data;
-}
+string agent_quote(string text) { return shell_quote(text); }
 
 // `ui serve HOST` running for this project, started in the background when it is not (no
 // browser or simulator window is opened for it).
@@ -485,9 +478,25 @@ string agent_web_screenshot(Project* p, string file) {
     return "the browser closed the DevTools connection";
 }
 
-// The window's pixels into `file`: the browser's page, the simulator's screen, the device's.
+// The window's pixels into `file`: the browser's page, the simulator's screen, the device's,
+// the macOS window's content (which the host draws into the file itself).
 string agent_screenshot(Project* p, string file) {
     if (strcmp(agent_host, "web") == 0) { return agent_web_screenshot(p, file); }
+    if (strcmp(agent_host, "macos") == 0) {
+        String path;
+        defer String_free(&path);
+        if (file[0] != '/') { fs_cwd(&path); String_append(&path, "/"); }
+        String_append(&path, file);
+        String request;
+        defer String_free(&request);
+        String_append(&request, "{\"op\": \"screenshot\", \"file\": ");
+        serve_json_string(&request, path.data);
+        String_append(&request, "}");
+        *JsonValue answer = agent_request(request.data);
+        bool ok = agent_ok(answer);
+        JsonValue_free(answer);
+        return ok ? null : "the app could not take the screenshot";
+    }
     String command;
     defer String_free(&command);
     if (strcmp(agent_host, "ios") == 0) { String_appendf(&command, "xcrun simctl io booted screenshot %s > /dev/null 2>&1", agent_quote(file)); }
@@ -812,6 +821,7 @@ void agent_restart(Project* p) {
     if (status == null) { return; }
     JsonValue_free(status);
     if (strcmp(agent_host, "ios") == 0) { ios_launch(p, true); return; }
+    if (strcmp(agent_host, "macos") == 0) { macos_launch(p); return; }
     String command;
     defer String_free(&command);
     String_appendf(&command, "%s shell am force-stop %s && %s shell am start -n %s/org.eskiu.ui.UiActivity > /dev/null",
@@ -839,6 +849,10 @@ void agent_stop(Project* p) {
     defer String_free(&command);
     if (strcmp(agent_host, "ios") == 0) { String_appendf(&command, "xcrun simctl terminate booted %s > /dev/null 2>&1", p.id.data); }
     if (strcmp(agent_host, "android") == 0) { String_appendf(&command, "%s shell am force-stop %s > /dev/null 2>&1", agent_quote(adb()), p.id.data); }
+    if (strcmp(agent_host, "macos") == 0 && macos_pid(p) != 0) {
+        macos_terminate(p);
+        if (!agent_json) { printf("ui agent: stopped the app\n"); }
+    }
     if (command.len > 0) {
         ProcessResult result;
         sh(command.data, &result);
@@ -848,8 +862,8 @@ void agent_stop(Project* p) {
 }
 
 void agent_usage() {
-    println_err("usage: ui agent web|ios|android [--json] [--real-clock] OP...\n"
-                "       ui agent web|ios|android --stop\n"
+    println_err("usage: ui agent web|macos|ios|android [--json] [--real-clock] OP...\n"
+                "       ui agent web|macos|ios|android --stop\n"
                 "ops: tree, layout, state, logs, perf, back, \"tap ID\", \"type ID TEXT\", \"scroll ID DY\",\n"
                 "     \"screenshot FILE\", \"clock +MS\", \"clock settle\", \"clock real\" (docs/agents.md)");
     exit(2);
@@ -858,7 +872,8 @@ void agent_usage() {
 void agent_command(Project* p, int argc, string* argv) {
     if (argc < 3) { agent_usage(); }
     agent_host = argv[2];
-    if (strcmp(agent_host, "web") != 0 && strcmp(agent_host, "ios") != 0 && strcmp(agent_host, "android") != 0) { agent_usage(); }
+    if (strcmp(agent_host, "web") != 0 && strcmp(agent_host, "macos") != 0 && strcmp(agent_host, "ios") != 0
+        && strcmp(agent_host, "android") != 0) { agent_usage(); }
     agent_socket = -1;
     bool real_clock = false;
     bool stop = false;
