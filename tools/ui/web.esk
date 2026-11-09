@@ -44,6 +44,9 @@ string build_web(Project* p) {
     string driver = join(out, "driver.mjs");
     if (test) { fs_copy(join(p.ui.data, "hosts/web/driver.mjs"), driver); } else { fs_remove_all(driver); }
     write_web_native(p, out);
+    // The service worker that serves updated assets (docs/updates.md), with [updates] only.
+    string worker = join(out, "ui-sw.js");
+    if (updates_url(p) != null && !test) { fs_copy(join(p.ui.data, "hosts/web/ui-sw.js"), worker); } else { fs_remove_all(worker); }
     String page;
     defer String_free(&page);
     fs_read_text(join(p.ui.data, "hosts/web/app.html"), &page);

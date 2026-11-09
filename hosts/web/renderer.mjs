@@ -519,6 +519,50 @@ export function createHost(root, dispatch, views = {}) {
       }, error => dispatch(c.request, 0, 16, String(error), 0, ''));
     }
     else if (c.command === 3) navigate(c.strings);
+    else if (c.command === 12) update(c);
+  }
+  // Asset updates (src/apis/updates.esk, docs/updates.md): the files go into Cache Storage by
+  // hash, and the service worker (ui-sw.js) serves the bundle in use at the assets' URLs.
+  // `fetch URL HASH PATH` downloads one and checks its SHA-256 (answered "" or why not);
+  // `ready VERSION "PATH HASH"...` records the bundle for the next load and registers the
+  // worker; `apply` uses it now.
+  async function update(c) {
+    const [op, ...rest] = c.strings;
+    const answer = text => { if (c.request) dispatch(c.request, 0, 15, text); };
+    try {
+      const scope = base();
+      const at = path => new URL(scope + '__ui/updates/' + path, location.origin).href;
+      const cache = await caches.open('eskiu-ui-updates');
+      if (op === 'fetch') {
+        const [url, hash] = rest;
+        if (await cache.match(at(hash))) { answer(''); return; }
+        const response = await fetch(url, {cache: 'no-store'});
+        if (!response.ok) { answer(`a file of the bundle did not download (${response.status})`); return; }
+        const bytes = await response.arrayBuffer();
+        const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+        if (digest !== hash) { answer('a file of the bundle does not match its hash'); return; }
+        await cache.put(at(hash), new Response(bytes));
+        answer('');
+        return;
+      }
+      const saved = await cache.match(at('state'));
+      const state = saved ? await saved.json() : {active: null, ready: null};
+      if (op === 'ready') {
+        const [version, ...lines] = rest;
+        state.ready = {version, files: Object.fromEntries(lines.map(line => line.split(' ')))};
+      } else if (op === 'apply' && state.ready) {
+        state.active = state.ready;
+        state.ready = null;
+      }
+      await cache.put(at('state'), new Response(JSON.stringify(state), {headers: {'Content-Type': 'application/json'}}));
+      if (navigator.serviceWorker) {
+        const registration = await navigator.serviceWorker.register(new URL('ui-sw.js', document.baseURI).href, {scope});
+        (registration.active ?? navigator.serviceWorker.controller)?.postMessage('state');
+      }
+      answer('');
+    } catch (error) {
+      answer(`the page could not keep the bundle: ${error}`);
+    }
   }
   // The page's URL follows the app's first Navigator: routes are paths under the page's
   // <base> ("/tasks/42" is BASE + "tasks/42"), and each history entry keeps its index in the
