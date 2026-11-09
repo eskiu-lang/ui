@@ -22,7 +22,11 @@ echo "conformance: $(( $(date +%s) - started )) s"
 started=$(date +%s)
 python3 tools/budgets.py "$HOST"
 echo "budgets: $(( $(date +%s) - started )) s"
-if [ "$HOST" = web ]; then python3 tools/budgets.py model; fi
+if [ "$HOST" = web ]; then
+    python3 tools/budgets.py model
+    # The prerendered first frame: content before the module, the elements adopted.
+    python3 tests/web/prerender.py --measure 3
+fi
 # macOS: a release of the conformance app is a universal, signed bundle.
 if [ "$HOST" = macos ]; then
     started=$(date +%s)

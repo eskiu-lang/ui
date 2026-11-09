@@ -18,6 +18,8 @@ exits 1 when a number is worse than its baseline by more than the tolerance.
   sees the new text in the tree (the median of three edits).
 - frame_p95_ms: `perf`'s p95 frame time after tests/bench's 100 frames of 300 rows.
 - wasm_bytes.*: the release web module of examples/counter and examples/kit-gallery.
+- first_paint_ms: the first contentful paint of examples/counter's release page in headless
+  Chrome on DevTools' "Slow 4G" (the median of five loads): the prerendered first frame.
 - model.*: tests/benchmark.esk, the recording renderer at -O2: a frame over 1000 rows, and
   mounting and reversing 10,000.
 """
@@ -84,6 +86,26 @@ def wasm_bytes(project):
     return (HERE / project / "build/ui/web/app.wasm").stat().st_size
 
 
+def first_paint_ms():
+    """examples/counter's release build (wasm_bytes made it): the median first contentful
+    paint of five loads on a slow network."""
+    sys.path.insert(0, str(HERE / "tools"))
+    sys.path.insert(0, str(HERE / "tests/web"))
+    from cdp import SLOW_4G, Chrome, first_paint
+    from serve import serve
+    server, url = serve(HERE / "examples/counter/build/ui/web")
+    try:
+        with Chrome() as chrome:
+            page = chrome.page()
+            page.send("Network.enable")
+            page.send("Network.emulateNetworkConditions", SLOW_4G)
+            times = [first_paint(page, url) for _ in range(5)]
+    finally:
+        server.shutdown()
+    print("first contentful paint (web, slow 4G): " + ", ".join(f"{t:.0f}" for t in times) + " ms")
+    return statistics.median(times)
+
+
 def model():
     """The recording renderer at -O2: p95 of a frame over 1000 rows (tests/benchmark.esk)."""
     BUILD.mkdir(exist_ok=True)
@@ -113,6 +135,7 @@ def measure(host):
     found[f"{host}.edit_ms"] = edit_ms(host)
     if host == "web":
         found["web.wasm_bytes.counter"] = wasm_bytes("examples/counter")
+        found["web.first_paint_ms"] = first_paint_ms()
         found["web.wasm_bytes.kit_gallery"] = wasm_bytes("examples/kit-gallery")
     return found
 
