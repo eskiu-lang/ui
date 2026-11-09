@@ -7,7 +7,8 @@
 #include <unistd.h>
 #include <libgen.h>
 
-// A real Linux desktop host for the shared wasm/DOM renderer using GTK 3 and WebKitGTK.
+// The web host in a GTK 3 / WebKitGTK window (`ui build linux --webview`); the default Linux
+// host is GTK 4 widgets laid out by Yoga (host.cpp).
 typedef struct {
     GtkWidget *window;
     GtkWidget *webview;
