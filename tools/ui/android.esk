@@ -493,7 +493,14 @@ void android_device() {
 void run_android(Project* p) {
     string apk = build_android(p);
     android_device();
-    // An APK built before but never installed on this device (another device, a new emulator).
+    // A reload build with nothing to install hands the running app its new code in one adb
+    // call; when the app is not on this device (another device, a new emulator) it is
+    // installed first.
+    if (!android_reinstall && android_core != null && android_reload(p, true)) {
+        println("Restarted the app on the new build");
+        return;
+    }
+    if (!android_reinstall && android_core != null) { android_reinstall = true; }
     if (!android_reinstall) {
         Cmd installed;
         installed.add(adb()); installed.add("shell"); installed.add("pm"); installed.add("path"); installed.add(p.id.data);
@@ -517,27 +524,47 @@ void run_android(Project* p) {
         start.free();
         return;
     }
-    // A reload build: the app's library into the app's files (through run-as, which the
-    // debuggable APK allows), named in files/ui-reload, and an intent that tells a running app
-    // to start again on it (or starts the app, which reads ui-reload).
+    android_reload(p, false);
+    println(android_reinstall ? "Installed and started the app" : "Restarted the app on the new build");
+}
+
+// A reload build: the app's library into the app's files (through run-as, which the
+// debuggable APK allows), named in files/ui-reload, and an intent that tells a running app to
+// start again on it (or starts the app, which reads ui-reload). `installed_only`: false, and
+// nothing done, when the app is not installed on the device (one adb shell checks it first).
+bool android_reload(Project* p, bool installed_only) {
+    String activity;
+    defer String_free(&activity);
+    String_appendf(&activity, "%s/org.eskiu.ui.UiActivity", p.id.data);
     String name;
+    defer String_free(&name);
     path_basename(&name, android_core);
     String staged;
+    defer String_free(&staged);
     String_appendf(&staged, "/data/local/tmp/eskiu-ui-%s", name.data);
     Cmd push;
+    defer push.free();
     push.add(adb()); push.add("push"); push.add(android_core); push.add(staged.data);
     String ignored;
+    defer String_free(&ignored);
     if (!push.output(&ignored)) { fail("ui: failed: adb push"); }
-    push.free();
     String target;
+    defer String_free(&target);
     String_appendf(&target, "/data/data/%s/files/%s", p.id.data, name.data);
     String script;
+    defer String_free(&script);
+    // Exit 3: the app is not installed.
+    if (installed_only) { String_appendf(&script, "pm path %s | grep -q package: || { rm -f %s; exit 3; }; ", p.id.data, staged.data); }
     String_appendf(&script, "run-as %s sh -c 'mkdir -p files && rm -f files/app-*.so && cp %s files/%s && echo %s > files/ui-reload'"
         " && rm -f %s && am start -n %s --es ui_reload %s",
         p.id.data, staged.data, name.data, target.data, staged.data, activity.data, target.data);
-    Cmd shell;
-    shell.add(adb()); shell.add("shell"); shell.add(script.data);
-    if (!shell.output(&ignored)) { fail("ui: failed: adb shell run-as (the app must be the debug build ui makes)"); }
-    shell.free();
-    println(android_reinstall ? "Installed and started the app" : "Restarted the app on the new build");
+    List<string> argv;
+    defer argv.free();
+    argv.push(adb()); argv.push("shell"); argv.push(script.data);
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    if (process_run(&argv, null, &result) != 0) { fail("ui: could not run adb"); }
+    if (installed_only && result.exit_code == 3) { return false; }
+    if (result.exit_code != 0) { fail("ui: failed: adb shell run-as (the app must be the debug build ui makes)"); }
+    return true;
 }

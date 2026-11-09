@@ -177,6 +177,8 @@ void Project_copy_assets(Project* self, string dir) {
     copy_tree(assets, dir);
 }
 
+// `from` into `to`, subdirectories included; a file already there with the same size and
+// at least as new is left as it is, so a rebuild under `ui serve` copies only what changed.
 void copy_tree(string from, string to) {
     List<String> names;
     defer fs_list_free(&names);
@@ -187,7 +189,12 @@ void copy_tree(string from, string to) {
         if (fs_is_dir(source) == 1) {
             fs_mkdir_p(target);
             copy_tree(source, target);
-        } else { fs_copy(source, target); }
+        } else {
+            FileStat a;
+            FileStat b;
+            bool same = fs_stat(source, &a) == 0 && fs_stat(target, &b) == 0 && a.size == b.size && b.mtime >= a.mtime;
+            if (!same) { fs_copy(source, target); }
+        }
         free(source); free(target);
     }
 }

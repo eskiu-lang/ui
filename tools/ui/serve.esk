@@ -81,6 +81,13 @@ void serve_mix_file(string path) {
     serve_mix((*uint8)&known.hash, 8);
 }
 
+// The file `name` in `dir`, as serve_mix_file.
+void serve_mix_named(string dir, string name) {
+    string path = join(dir, name);
+    serve_mix_file(path);
+    free(path);
+}
+
 // Every package's src, native, hosts and assets, and the app's ui.toml, eskiu.toml and lock.
 uint64 serve_signature(Project* p) {
     serve_sum = 1469598103934665603;
@@ -91,14 +98,16 @@ uint64 serve_signature(Project* p) {
         dirs.push("src"); dirs.push("native"); dirs.push("hosts"); dirs.push("assets");
         for (j in 0..dirs.size) {
             string dir = join(root, dirs.data[j]);
-            if (fs_is_dir(dir) != 1) { continue; }
-            fs_walk(dir, void(string path, bool is_dir) { if (!is_dir) { serve_mix_file(path); } });
+            if (fs_is_dir(dir) == 1) {
+                fs_walk(dir, void(string path, bool is_dir) { if (!is_dir) { serve_mix_file(path); } });
+            }
+            free(dir);
         }
         dirs.free();
-        serve_mix_file(join(root, "ui.toml"));
-        serve_mix_file(join(root, "eskiu.toml"));
+        serve_mix_named(root, "ui.toml");
+        serve_mix_named(root, "eskiu.toml");
     }
-    serve_mix_file(join(p.root.data, "eskiu.lock"));
+    serve_mix_named(p.root.data, "eskiu.lock");
     return serve_sum;
 }
 
@@ -120,6 +129,14 @@ bool serve_build(string command, string target) {
     List<string> env;
     defer env.free();
     env.push("UI_DEV=1");
+    // Android: the device's ABI, asked once (after the first build, which may start the
+    // emulator) instead of once per build.
+    String abi;
+    defer String_free(&abi);
+    if (strcmp(target, "android") == 0 && android_abi_name != null) {
+        String_appendf(&abi, "UI_ANDROID_ABI=%s", android_abi_name);
+        env.push(abi.data);
+    }
     ProcessOptions options = ProcessOptions{env: &env, merge_stderr: true};
     ProcessResult result;
     defer ProcessResult_free(&result);
@@ -146,6 +163,7 @@ bool serve_build(string command, string target) {
     serve_building = false;
     serve_write_status();
     double seconds = (double)(time_monotonic_ms() - start) / 1000.0;
+    if (ok && strcmp(target, "android") == 0) { android_abi(); }
     if (ok) { printf("ui: built in %.1f s\n", seconds); fflush(null); }
     else { println_err("ui: the build failed; waiting for a change"); }
     return ok;
@@ -155,12 +173,14 @@ bool serve_build(string command, string target) {
 // change made during it is not missed), until the tool is stopped.
 void serve_watch(Project* p, string command, string target, uint64 seen) {
     while (true) {
-        time_sleep_ms(300);
+        // A look costs a stat of each source (and a read of the few changed in the last
+        // seconds), so it can be often: a change is seen within 50 ms.
+        time_sleep_ms(50);
         uint64 now = serve_signature(p);
         if (now == seen) { continue; }
-        // An editor may write a file in steps: build once it holds still.
+        // An editor may write a file in steps: build once it holds still for 50 ms.
         while (true) {
-            time_sleep_ms(150);
+            time_sleep_ms(50);
             uint64 settled = serve_signature(p);
             if (settled == now) { break; }
             now = settled;
@@ -191,7 +211,7 @@ void serve_json_string(String* out, string text) {
 // the request never outlives a proxy's patience): {"version": V, "error": "..."}.
 void serve_wait(int client, int after) {
     int64 until = time_monotonic_ms() + 25000;
-    while (atomic_load(&serve_version) == after && time_monotonic_ms() < until) { time_sleep_ms(100); }
+    while (atomic_load(&serve_version) == after && time_monotonic_ms() < until) { time_sleep_ms(10); }
     String body;
     defer String_free(&body);
     Mutex_lock(&serve_lock);

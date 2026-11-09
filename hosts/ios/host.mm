@@ -1595,7 +1595,8 @@ static std::string driverCarry(const std::string &d) {
     // The pid next to the reload file: `ui run ios` restarts a running app instead of launching it.
     NSString *pidFile = [[@(getenv("UI_RELOAD_FILE")) stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"pid"];
     [[NSString stringWithFormat:@"%d", getpid()] writeToFile:pidFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *t) {
+    // Every 50 ms: a new build shows within a frame or three of being written.
+    [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
         NSString *path = newestCore();
         if (path.length && ![path isEqualToString:loadedCore]) restartCore(path);
     }];

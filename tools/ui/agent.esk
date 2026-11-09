@@ -311,7 +311,7 @@ void agent_attach(Project* p, bool real_clock) {
         *JsonValue building_now = before == null ? null : JsonValue_get(before, "building");
         bool wait = building_now != null && building_now.boolean != 0;
         JsonValue_free(before);
-        if (wait && time_monotonic_ms() < until) { time_sleep_ms(200); continue; }
+        if (wait && time_monotonic_ms() < until) { time_sleep_ms(50); continue; }
         *JsonValue answer = agent_request(hello);
         string built = agent_member(answer, "source");
         bool fresh = agent_ok(answer) && built != null && strcmp(built, source) == 0;
@@ -347,7 +347,7 @@ void agent_attach(Project* p, bool real_clock) {
             said = true;
         }
         agent_native_close();
-        time_sleep_ms(300);
+        time_sleep_ms(50);
     }
 }
 
