@@ -419,10 +419,17 @@ void run_ios(Project* p) {
     install.add("xcrun"); install.add("simctl"); install.add("install"); install.add("booted"); install.add(bundle);
     install.must(null);
     install.free();
+    ios_launch(p, false);
+}
+
+// Launches the installed app on the booted simulator, ending the running one first; a dev
+// build finds its reload file (and the driver's port) in its environment. `quiet`: its
+// output is not ours (`ui agent` starting it again).
+void ios_launch(Project* p, bool quiet) {
     Cmd launch;
     launch.add("xcrun"); launch.add("simctl"); launch.add("launch"); launch.add("--terminate-running-process");
     launch.add("booted"); launch.add(p.id.data);
-    if (ios_dev()) {
+    if (ios_dev() || quiet) {
         // The dev host finds the reload file through its environment (simctl passes SIMCTL_CHILD_*).
         String value;
         String_appendf(&value, "SIMCTL_CHILD_UI_RELOAD_FILE=%s", ios_reload_file(p));
@@ -437,7 +444,7 @@ void run_ios(Project* p) {
         }
         List<string> argv;
         for (i in 0..launch.parts.size) { argv.push(launch.parts.data[i].data); }
-        ProcessOptions options = ProcessOptions{env: &env, inherit_stdout: true, inherit_stderr: true};
+        ProcessOptions options = ProcessOptions{env: &env, inherit_stdout: !quiet, inherit_stderr: !quiet};
         ProcessResult result;
         if (process_run(&argv, &options, &result) != 0 || result.exit_code != 0) { fail("ui: failed: xcrun simctl launch"); }
         ProcessResult_free(&result);

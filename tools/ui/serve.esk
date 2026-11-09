@@ -262,6 +262,9 @@ bool agent_answered;
 String agent_page;
 bool agent_page_flag;
 int64 agent_page_seen;
+// Bumped by /__ui/agent/forget (`ui agent` starting the browser again): a page's wait from
+// before it takes nothing, so no request goes to a page that is gone.
+int agent_epoch;
 
 // The value of `name` in a query string ("a=1&b=2"), or "".
 void query_value(String* query, string name, String* out) {
@@ -350,7 +353,8 @@ void serve_agent_next(int client, String* query) {
     int64 until = time_monotonic_ms() + 20000;
     bool took = false;
     Mutex_lock(&serve_lock);
-    while (time_monotonic_ms() < until) {
+    int epoch = agent_epoch;
+    while (time_monotonic_ms() < until && epoch == agent_epoch) {
         int64 now = time_monotonic_ms();
         bool mine = String_eq(&agent_page, &page) == 1;
         bool stale = agent_page.len == 0 || now - agent_page_seen > 30000;
@@ -388,6 +392,15 @@ void serve_dev_request(int client, String* path, String* query, String* body_in)
     }
     if (String_eq_cstr(path, "/__ui/agent") == 1) { serve_agent_post(client, body_in); return; }
     if (String_eq_cstr(path, "/__ui/agent/next") == 1) { serve_agent_next(client, query); return; }
+    if (String_eq_cstr(path, "/__ui/agent/forget") == 1) {
+        Mutex_lock(&serve_lock);
+        agent_epoch++;
+        String_clear(&agent_page);
+        Mutex_unlock(&serve_lock);
+        String_from(&body, "{}");
+        serve_reply(client, "200 OK", "application/json", &body);
+        return;
+    }
     if (String_eq_cstr(path, "/__ui/agent/reply") == 1) {
         Mutex_lock(&serve_lock);
         String_clear(&agent_reply); String_append(&agent_reply, body_in.data == null ? "" : body_in.data);
