@@ -1415,7 +1415,8 @@ static void runConformance(void) {
 #ifdef UI_RELOAD
 // `ui serve`'s builds: UI_RELOAD_FILE names a file holding the path of the app's newest dylib.
 // When it changes, the app starts again on the new code in the running process: the old core
-// stops, the views, timers and nodes it left go, and the new one starts as at launch.
+// saves its routes and signals and stops, the views, timers and nodes it left go, and the new
+// one starts on what the old one saved.
 static NSString *loadedCore;
 static UIViewController *rootController;
 
@@ -1427,6 +1428,10 @@ static NSString *newestCore(void) {
 }
 
 static void restartCore(NSString *path) {
+#ifdef UI_TEST
+    // What the old core keeps across the reload (src/core/reload.esk): its routes and signals.
+    char *kept = ui_reload_save ? strdup(ui_reload_save()) : nullptr;
+#endif
     ui_stop();
 #ifdef UI_TEST
     // The new core starts on the real clock, until the driver takes it again.
@@ -1449,10 +1454,19 @@ static void restartCore(NSString *path) {
     [modals removeAllObjects];
     [leaving removeAllObjects];
     for (UIView *view in rootView.subviews.copy) [view removeFromSuperview];
-    if (!loadCore(path.UTF8String)) return;
+    if (!loadCore(path.UTF8String)) {
+#ifdef UI_TEST
+        free(kept);
+#endif
+        return;
+    }
     loadedCore = path;
     NSString *data = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
     ui_report_data_dir(data.UTF8String);
+#ifdef UI_TEST
+    if (kept && ui_reload_restore) ui_reload_restore(kept);
+    free(kept);
+#endif
     ui_start(launchExample);
     [rootController.view setNeedsLayout];
     [rootController.view layoutIfNeeded];

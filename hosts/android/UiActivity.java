@@ -47,6 +47,7 @@ public final class UiActivity extends Activity {
     private native void nativeLayout(float width, float height);
     private native void nativeStop();
     private native int nativeReload(String path);
+    private native void nativeKeepState();
     private native int nativeEdgeToEdge();
     private native void nativeInsets(int top, int right, int bottom, int left, int keyboard);
     private native void nativeActive(int active);
@@ -583,9 +584,10 @@ public final class UiActivity extends Activity {
         return android.os.Debug.getNativeHeapAllocatedSize() + runtime.totalMemory() - runtime.freeMemory();
     }
     // A new build of the app's code (an intent with ui_reload from `ui serve`): the old core
-    // stops, the views, timers and per-node state it left go, and the new one starts as at launch.
+    // keeps its routes and signals and stops, the views, timers and per-node state it left go,
+    // and the new one starts on what the old one kept.
     private void restartCore(String path) {
-        if (active) { nativeStop(); active = false; }
+        if (active) { nativeKeepState(); nativeStop(); active = false; }
         driverClock(false);
         cancel();
         for (Runnable tick : timers.values()) mainThread.removeCallbacks(tick);

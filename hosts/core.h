@@ -35,12 +35,15 @@
     X(void, ui_report_data_dir, (const char *path)) \
     X(void, ui_dispatch_fetch, (int request, int status, const char *body, const char *headers)) \
     X(void, ui_dispatch_view, (int id, int generation, const char *name, const char *payload))
-// The driver's entry points (hosts/driver.h), in a dev build only.
+// The driver's entry points (hosts/driver.h) and the reload's state (src/core/reload.esk), in
+// a dev build only.
 #ifdef UI_TEST
 #define UI_CORE_TEST(X) \
     X(const char *, ui_driver, (const char *request)) \
     X(const char *, ui_driver_done, (const char *result)) \
-    X(double, ui_driver_time, (void))
+    X(double, ui_driver_time, (void)) \
+    X(const char *, ui_reload_save, (void)) \
+    X(void, ui_reload_restore, (const char *snapshot))
 #else
 #define UI_CORE_TEST(X)
 #endif

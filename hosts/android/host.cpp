@@ -394,8 +394,25 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStop(JNIEnv
     env = current; ui_stop(); YGNodeFree(root); env->DeleteGlobalRef(activity); activity = nullptr;
 }
 
+#if defined(UI_RELOAD) && defined(UI_TEST)
+// What the old core saved before a reload (src/core/reload.esk), for the new one.
+static std::string keptState;
+static bool hasKeptState;
+#endif
+
+// Before a reload stops the running core: it saves its routes and signals for the next one
+// (a dev build only; nothing otherwise).
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeKeepState(JNIEnv *current, jobject) {
+#if defined(UI_RELOAD) && defined(UI_TEST)
+    env = current;
+    hasKeptState = ui_reload_save != nullptr;
+    keptState = hasKeptState ? ui_reload_save() : "";
+#endif
+}
+
 // `ui serve`'s builds (UI_RELOAD): the app's code in a library of its own, loaded at start and
 // again after each build, once the old one stopped (nativeStop); 0 without a reload build.
+// The new core gets what the old one kept (nativeKeepState) before it starts.
 extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_UiActivity_nativeReload(JNIEnv *current, jobject, jstring path) {
 #ifdef UI_RELOAD
     env = current;
@@ -404,6 +421,11 @@ extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_UiActivity_nativeReload(JNIE
     const char *chars = env->GetStringUTFChars(path, nullptr);
     bool loaded = loadCore(chars);
     env->ReleaseStringUTFChars(path, chars);
+#ifdef UI_TEST
+    if (loaded && hasKeptState && ui_reload_restore) ui_reload_restore(keptState.c_str());
+    hasKeptState = false;
+    keptState.clear();
+#endif
     return loaded ? 1 : 0;
 #else
     return 0;

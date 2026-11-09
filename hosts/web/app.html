@@ -42,7 +42,7 @@
   app = await createApp({uiHost: host, uiEmit: emit});
   // The page's route is the link the app was opened with (the first Navigator shows it).
   app.ccall('ui_report_link', null, ['string'], [host.route()]);
-  app._ui_start(0);
+{{reload}}  app._ui_start(0);
   // The system: dark mode and reduced motion from media queries, the language from the browser.
   const dark = matchMedia('(prefers-color-scheme: dark)');
   const still = matchMedia('(prefers-reduced-motion: reduce)');

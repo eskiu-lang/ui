@@ -208,7 +208,8 @@ void serve_wait(int client, int after) {
 }
 
 // The script `ui serve` adds to the page: it waits for each build, reloads after one that
-// built, and shows one that failed over the app until the next. An error the running app
+// built (keeping the app's routes and signals for the new page, src/core/reload.esk), and
+// shows one that failed over the app until the next. An error the running app
 // reports (the runtime's "ui: error in ..." lines on the console) shows the same way, until
 // a click: the app goes on behind it.
 const string kServeScript = "// Made by ui serve: reload after each build, a failed build's output over the app.\n"
@@ -240,7 +241,11 @@ const string kServeScript = "// Made by ui serve: reload after each build, a fai
     "for (;;) {\n"
     "  try {\n"
     "    const state = await (await fetch('/__ui/wait?v=' + version, {cache: 'no-store'})).json();\n"
-    "    if (version >= 0 && state.version !== version && !state.error) { location.reload(); break; }\n"
+    "    if (version >= 0 && state.version !== version && !state.error) {\n"
+    "      try { const kept = globalThis.uiReloadSave?.(); if (kept) sessionStorage.setItem('ui-reload', kept); } catch {}\n"
+    "      location.reload();\n"
+    "      break;\n"
+    "    }\n"
     "    version = state.version;\n"
     "    if (state.error || panel?.dataset.build) show(state.error);\n"
     "  } catch {\n"
