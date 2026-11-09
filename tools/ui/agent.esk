@@ -546,6 +546,9 @@ void agent_print_tree(*JsonValue node, int depth) {
         }
         String_append(&line, "}");
     }
+    // Where the element was called from (a build with source positions).
+    string file = agent_member(node, "file");
+    if (file != null) { String_appendf(&line, "  %s:%d", file, (int)agent_number(node, "line")); }
     println(line.data);
     *JsonValue children = JsonValue_get(node, "children");
     if (children == null) { return; }

@@ -161,6 +161,16 @@ string Project_entry(Project* self) {
     if (ui_test_build()) {
         String_append(&text, "#define UI_TEST 1\n");
         String_appendf(&text, "#define UI_SOURCE \"%016llx\"\n", serve_signature(self));
+        // Each element keeps where it was called from, when the compiler has the call-site
+        // builtins (src_file(), src_line(), src_col()); positions are shown from the app's root.
+        compiler_probe();
+        if (compiler_features.srcloc) {
+            String_append(&text, "#define UI_SRCLOC 1\n");
+            String root;
+            String_appendf(&root, "%s/", self.root.data);
+            String_appendf(&text, "#define UI_SOURCE_ROOT %s\n", esk_literal(root.data));
+            String_free(&root);
+        }
     }
     String_appendf(&text, "import \"%s\";\nimport \"%s\";\n",
         join(self.root.data, "src/main.esk"), join(self.ui.data, "hosts/bridge.esk"));
