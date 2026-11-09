@@ -93,6 +93,6 @@ op logs '"core":\['
 op perf '"frames":[1-9]' '"memory_bytes":[1-9]'
 op "clock real" '"clock":"real"'
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
-[ "$HOST" = ios ] && xcrun simctl status_bar booted clear > /dev/null 2>&1
+[ "$HOST" = ios ] && { xcrun simctl status_bar booted clear > /dev/null 2>&1 || true; }
 [ "$HOST" = android ] && adb shell am broadcast -a com.android.systemui.demo -e command exit > /dev/null 2>&1
 echo "PASS $HOST: every op"
