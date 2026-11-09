@@ -24,9 +24,12 @@ running, with no browser or simulator window. Its output goes to
   for another size). That page takes the requests before any other page of the app. Without a
   Chrome it drives whatever page of the app is open, and `screenshot` is not available.
 - **ios.** The simulator that is booted, or the first iPhone, booted for it.
-- **android.** The device or emulator `adb` sees (`ANDROID_SERIAL` picks one).
+- **android.** The device or emulator `adb` sees (`ANDROID_SERIAL` picks one). The app is
+  built for its ABI: arm64-v8a, or x86_64 on an x86_64 emulator (`UI_ANDROID_ABI` sets it).
 
 `ui agent HOST --stop` stops what it started: the browser, `ui serve HOST` and the app.
+The browser runs with `--hide-scrollbars`, so a scroll's content is as wide on every system;
+`UI_CHROME_ARGS` adds flags (CI's Linux runner needs `--no-sandbox`).
 
 Before the first op `ui agent` checks that the running build was made from the sources as
 they are now. While `ui serve` is building it waits; when the last build of these sources
@@ -77,7 +80,7 @@ bread"`). The ops run in order, and the first that fails stops `ui agent` with e
 | `clock +MS` | moves the driver's clock MS milliseconds, running each timer and frame on the way |
 | `clock settle` | runs the clock until nothing is pending (at most 60 s of it) |
 | `clock real` | gives the clock back to the platform |
-| `perf` | frame times, commit sizes, live nodes and the app's memory |
+| `perf` | frame times, commit sizes, live nodes, the app's memory and its cold start |
 
 ### tree
 
@@ -173,10 +176,17 @@ See [the clock](#the-clock).
 $ ui agent ios perf
 frames 40 (last 40 measured): p50 0.20 ms, p95 2.20 ms, max 4.90 ms
 commits: last 40 B, max 4283 B, mean 153 B; 74 nodes; memory 16.1 MB
+cold start: 2839 ms to the first commit
 ```
 
 A frame's time is the core's render and the host's apply of its commit. The memory is the
 wasm heap on the web, the process's footprint on iOS, the native and Java heaps on Android.
+The cold start (`startup_ms` with `--json`) is from the process's start (the page's
+navigation on the web) to the first commit applied: the core notes the wall clock at its
+first commit, the host reports when the process started (the kernel's start time of the
+process on iOS and Android, `performance.timeOrigin` on the web). It is the process's: after
+a reload under `ui serve`, which starts the core again in the same process, it includes the
+time before the reload. The speed budgets track it ([testing](testing.md#speed-budgets)).
 
 ## The clock
 
@@ -203,8 +213,26 @@ next op takes it.
 
 ## Testing an app
 
-A test is a shell script of ops and checks on their `--json` answers. `tests/agent/check.sh`
-in this repository is one, run on every host:
+`ui test` runs files of these ops with expectations, `tests/ui/*.uitest`, unchanged on every
+host, and reports each failure with its file and line ([UI tests](testing.md#ui-tests)):
+
+```
+tap add
+type title Milk
+expect title text "Milk"
+tap later
+clock +1000
+expect done text "Done"
+```
+
+```bash
+ui test            # on every host available here
+ui test web ios    # on these
+```
+
+Each file starts the app afresh on the driver's clock. For a check the format has no
+expectation for, a shell script of ops and checks on their `--json` answers does the same;
+`tests/agent/check.sh` in this repository is one, run on every host:
 
 ```bash
 ui agent web --stop                       # a fresh start
@@ -214,8 +242,9 @@ ui agent web --json "tap later" "clock +1000" tree | grep -q '"text":"Done"'
 ui agent web --stop
 ```
 
-No sleeps: what a tap causes has rendered when it answers, and time moves only with
-`clock`.
+No sleeps either way: what a tap causes has rendered when it answers, and time moves only
+with `clock`. CI runs both on headless Chrome, the iOS simulator and the Android emulator
+([CI](testing.md#ci)).
 
 ## The protocol
 

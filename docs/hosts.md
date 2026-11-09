@@ -152,6 +152,7 @@ driver's clock.
 | animations on the clock | `document.getAnimations()` paused and seeked; a field's caret hidden | the window's layer at `speed` 0, `timeOffset` the driver's time | the animator duration scale at 0; a field's cursor hidden |
 | screenshot (by `ui agent`) | the headless browser's DevTools | `simctl io screenshot` | `adb exec-out screencap` |
 | memory (`perf`) | the wasm heap | the process's footprint | the native and Java heaps |
+| start (`perf`'s cold start) | `performance.timeOrigin` | the process's start time (`sysctl`) | the process's start time (`/proc/self/stat`) |
 
 The host compiles its side only with `UI_TEST` (the ui tool passes it for a dev build), and
 the core's only with the `UI_TEST` the ui tool defines in the entry file: a release has
@@ -172,6 +173,6 @@ A host needs to:
 3. Report events and the environment with the `ui_dispatch_*` and `ui_report_*` calls
    ([protocol](protocol.md)), on the UI thread.
 4. Lay the tree out with Yoga (or the platform's flexbox) using the props.
-5. Pass the conformance scene ([testing](testing.md)).
+5. Pass the conformance scene ([testing](testing.md#conformance)).
 6. In a dev build, carry the driver's directives ([agents](agents.md#the-protocol)) and pass
-   `tests/agent/check.sh`.
+   `tests/agent/check.sh` and `ui test` in `tests/conformance`.

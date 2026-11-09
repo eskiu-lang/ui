@@ -80,7 +80,8 @@ ui release        # for the App Store and Google Play
 
 [Getting started](docs/getting-started.md) has what each platform needs and a project's
 layout; [Releasing](docs/releasing.md), what a release needs and makes. `ui agent web tree
-"tap add"` drives the running app, for agents and tests: [Agents](docs/agents.md).
+"tap add"` drives the running app, for agents and tests: [Agents](docs/agents.md); `ui test`
+runs `tests/ui/*.uitest` on every host.
 
 ## Documentation
 
@@ -95,7 +96,7 @@ layout; [Releasing](docs/releasing.md), what a release needs and makes. `ui agen
 | [Navigation](docs/navigation.md) | Screens and pages, back, links, the browser's history |
 | [Native code](docs/native.md) | Modules and views per platform, `ui.toml`, Gradle and Swift packages |
 | [Protocol](docs/protocol.md), [Hosts](docs/hosts.md) | For writing a host |
-| [Testing](docs/testing.md) | Tests, host checks, conformance, measurements |
+| [Testing](docs/testing.md) | Tests, `ui test`, host checks in CI, conformance, speed budgets |
 | [API reference](docs/api.md) | Every public function and type of `<ui>` and `<ui/kit>`, with its documentation |
 
 ## Platforms
