@@ -49,7 +49,7 @@ jobs:
           curl -fsSL -o eskiuc.zip https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-windows-x86_64.zip
           unzip -q eskiuc.zip -d "$HOME/.eskiu"
           cygpath -w "$HOME/.eskiu/bin" >> $GITHUB_PATH
-      - name: The Windows host builds and is packaged
+      - name: The WebView2 host builds and is packaged
         run: |
           # The web part goes through a stand-in compiler (no emscripten); the host is
           # compiled for real with MinGW and the WebView2 SDK the tool fetches.
@@ -57,7 +57,7 @@ jobs:
           eskiuc tools/ui/main.esk -o build/ui.exe
           eskiuc tests/fake_eskiuc.esk -o build/fake_eskiuc.exe
           (cd build && ./ui.exe new newapp --ui "$PWD/..")
-          (cd build/newapp && ESKIUC="$PWD/../fake_eskiuc.exe" ../ui.exe release windows)
+          (cd build/newapp && ESKIUC="$PWD/../fake_eskiuc.exe" ../ui.exe release windows --webview)
           for f in newapp.exe WebView2Loader.dll web/index.html; do
             test -f "build/newapp/build/ui/windows/$f" || { echo "FAIL: no $f"; exit 1; }
           done
