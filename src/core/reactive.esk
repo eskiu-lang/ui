@@ -269,7 +269,7 @@ struct Signal<T> { T value; Source source; }
         slot.data = signal;
 #ifdef UI_TEST
         slot.vtype = ui_driver_value_type<T>();
-        string kept = ui_reload_key(key);
+        string kept = key == null ? null : ui_copy(key);
         slot.key = kept;
         ui_reload_take(slot, key, (*void)&signal.value);
         slot.dispose = void() { ui_detach_source(&signal.source); free(signal); free(kept); };

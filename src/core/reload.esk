@@ -262,9 +262,6 @@ void ui_reload_routes(*Router router) {
     return String_eq_cstr(&found.type, type) == 1 ? found : null;
 }
 
-// A copy of a use_signal_keyed key, or null for use_signal (internal).
-string ui_reload_key(string key) { return key == null ? null : ui_copy(key); }
-
 // A decimal integer's text as uint64 bits (a leading - negates) (internal).
 uint64 ui_reload_integer(string text) {
     if (text == null) { return 0; }

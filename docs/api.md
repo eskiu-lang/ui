@@ -2521,14 +2521,6 @@ The saved record for the signal just made in `slot` (the running scope's last sl
 `key` or by the scope's path and the slot's index among its signals; null when there is
 none. A record whose type is not the signal's is used up and not restored (internal).
 
-### ui_reload_key
-
-```eskiu
-string ui_reload_key(string key)
-```
-
-A copy of a use_signal_keyed key, or null for use_signal (internal).
-
 ### ui_reload_integer
 
 ```eskiu
