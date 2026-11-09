@@ -511,9 +511,10 @@ uint64 desktop_seen;
 void serve_command(Project* p, string target) {
     Mutex_init(&serve_lock);
     serve_project_root = p.root.data;
-    // A native app (iOS, Android, macOS's AppKit host) reloads its code itself; the web and
-    // the webview windows reload the page.
-    bool native = strcmp(target, "ios") == 0 || strcmp(target, "android") == 0 || (strcmp(target, "macos") == 0 && !macos_webview(p));
+    // A native app (iOS, Android, macOS's AppKit host, Linux's GTK host) reloads its code
+    // itself; the web and the webview windows reload the page.
+    bool native = strcmp(target, "ios") == 0 || strcmp(target, "android") == 0 || (strcmp(target, "macos") == 0 && !macos_webview(p))
+        || (strcmp(target, "linux") == 0 && !linux_webview(p));
     String status;
     String_appendf(&status, "%s/build/ui/serve-%s.json", p.root.data, native ? target : "web");
     fs_mkdir_p(join(p.root.data, "build/ui"));
@@ -540,7 +541,7 @@ void serve_command(Project* p, string target) {
         uint64 seen = serve_signature(p);
         serve_built_source = seen;
         serve_build("run", target);
-        serve_note("watching", strcmp(target, "macos") == 0
+        serve_note("watching", strcmp(target, "macos") == 0 || strcmp(target, "linux") == 0
             ? "Watching for changes: each one reloads the app's code in its window (Ctrl+C to stop)"
             : "Watching for changes: each one installs and launches the app again (Ctrl+C to stop)");
         serve_watch(p, "run", target, seen);

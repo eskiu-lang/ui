@@ -1,9 +1,240 @@
-// Linux: the web build in a WebKitGTK window.
+// Linux: the GTK 4 host (hosts/linux/host.cpp) with the app compiled in, or the web build in
+// a WebKitGTK window (hosts/linux/webview.c) with --webview or ui.toml [linux] renderer = "web".
 // Part of the ui tool (tools/ui/main.esk imports every part).
 
 // ---- Linux ----
 
-string build_linux(Project* p) {
+// The WebKitGTK host instead of GTK 4: `--webview` (UI_LINUX_RENDERER=web, which the builds
+// `ui serve` runs inherit) or ui.toml [linux] renderer = "web".
+bool linux_webview(Project* p) {
+    string renderer = env_get("UI_LINUX_RENDERER");
+    if (renderer != null && renderer[0] != 0) { return strcmp(renderer, "web") == 0; }
+    string chosen = p.config.string("linux.renderer");
+    return chosen != null && strcmp(chosen, "web") == 0;
+}
+
+// Under `ui serve` (UI_DEV=1) the app's code is a library the running app loads again after
+// each build (the host's UI_RELOAD mode), so the app is started again only when the host or
+// the native code changed. build_linux says which in linux_relaunch.
+bool linux_relaunch;
+
+bool linux_dev() {
+    string dev = env_get("UI_DEV");
+    return !ui_release && dev != null && strcmp(dev, "1") == 0;
+}
+
+// This machine's architecture, as the native archives name it.
+string linux_arch() {
+#ifdef __aarch64__
+    return "arm64";
+#else
+    return "x86_64";
+#endif
+}
+
+// The file the dev host polls: it holds the newest library's path.
+string linux_reload_file(Project* p) { return join(p.out("linux"), "reload/current"); }
+
+// The C++ compiler: CXX, else c++.
+string linux_cxx() {
+    string cxx = env_get("CXX");
+    return cxx != null && cxx[0] != 0 ? cxx : "c++";
+}
+
+// pkg-config's flags for GTK 4 (and fontconfig and Pango's, which the host registers font
+// files with), split into `out`.
+void linux_gtk_flags(string which, List<String>* out) {
+    Cmd pc;
+    defer pc.free();
+    pc.add("pkg-config"); pc.add(which); pc.add("gtk4");
+#ifdef __linux__
+    pc.add("fontconfig"); pc.add("pangoft2");
+#endif
+    String flags;
+    defer String_free(&flags);
+    if (!pc.output(&flags)) {
+        fail("ui build linux: pkg-config gtk4 not found. Install libgtk-4-dev (Debian, Ubuntu), gtk4-devel (Fedora) or gtk4 (Arch, Homebrew); or build the web host with --webview.");
+    }
+    List<String> parts;
+    String_split(&flags, ' ', &parts);
+    for (i in 0..parts.size) {
+        String_trim(&parts.data[i]);
+        if (parts.data[i].len > 0) {
+            String copy;
+            String_from(&copy, parts.data[i].data);
+            out.push(copy);
+        }
+    }
+    fs_list_free(&parts);
+}
+
+// A C string literal of `text` for app.h.
+string linux_c_string(string text) {
+    String out;
+    String_append(&out, "\"");
+    for (int i = 0; text[i] != 0; i++) {
+        char c = text[i];
+        if (c == '"' || c == '\\') { String_push(&out, '\\'); }
+        String_push(&out, c);
+    }
+    String_append(&out, "\"");
+    return out.data;
+}
+
+// build/ui/linux/app.h, which the host includes: the app's name, id and window size (ui.toml
+// [linux] window). Written only when it changed, so the host is compiled again only then.
+string linux_app_header(Project* p, string out) {
+    String text;
+    defer String_free(&text);
+    String_appendf(&text, "#define UI_APP_NAME %s\n#define UI_APP_ID %s\n", linux_c_string(p.display.data), linux_c_string(p.id.data));
+    string window = p.config.string("linux.window");
+    if (window != null) { String_appendf(&text, "#define UI_WINDOW %s\n", linux_c_string(window)); }
+    string path = join(out, "app.h");
+    String before;
+    defer String_free(&before);
+    if (fs_read_text(path, &before) != 0 || String_eq_cstr(&before, text.data) != 1) { fs_write_text(path, text.data); }
+    return path;
+}
+
+// The app's executable: the host, the native code, Yoga and (but in a dev build, which loads
+// it from a library) the app. Its path, or null when a dev build's executable is as it was.
+string linux_executable(Project* p, string out, bool dev, string app) {
+    bool test = ui_test_build();
+    string cxx = linux_cxx();
+    List<String> cflags;
+    defer fs_list_free(&cflags);
+    linux_gtk_flags("--cflags", &cflags);
+    string host = join(out, dev ? "host-dev.o" : test ? "host-test.o" : "host.o");
+    string header = join(p.ui.data, "hosts/linux/ui_native.h");
+    List<string> host_sources;
+    defer host_sources.free();
+    host_sources.push(join(p.ui.data, "hosts/linux/host.cpp")); host_sources.push(header);
+    host_sources.push(join(p.ui.data, "hosts/core.h")); host_sources.push(join(p.ui.data, "hosts/driver.h"));
+    host_sources.push(join(p.ui.data, "hosts/commit.h")); host_sources.push(linux_app_header(p, out));
+    if (stale(host, &host_sources)) {
+        Cmd cmd;
+        cmd.add(cxx); cmd.add("-std=c++17"); cmd.add("-O2"); cmd.add("-fPIC"); cmd.add("-I"); cmd.add(yoga_source());
+        cmd.add("-include"); cmd.add(host_sources.data[5]);
+        for (i in 0..cflags.size) { cmd.add(cflags.data[i].data); }
+        if (dev) { cmd.add("-DUI_RELOAD"); }
+        // The driver's channel (hosts/driver.h), in a dev or test build only.
+        if (test) { cmd.add("-DUI_TEST"); }
+        cmd.add("-c"); cmd.add(host_sources.data[0]); cmd.add("-o"); cmd.add(host);
+        cmd.must(null);
+        cmd.free();
+        built(host, &host_sources);
+    }
+    // Native code: native/linux/*.c and *.cpp of every package, with ui_native.h on the path.
+    List<String> sources;
+    defer fs_list_free(&sources);
+    p.native("linux", ".c", &sources);
+    p.native("linux", ".cpp", &sources);
+    List<String> native_objects;
+    defer fs_list_free(&native_objects);
+    for (i in 0..sources.size) {
+        String object;
+        String_appendf(&object, "%s/native-%s.o", out, native_object_name(sources.data[i].data));
+        List<string> inputs;
+        inputs.push(sources.data[i].data); inputs.push(header);
+        if (stale(object.data, &inputs)) {
+            bool cpp = String_ends_with(&sources.data[i], ".cpp") == 1;
+            string cc = env_get("CC");
+            Cmd compile;
+            compile.add(cpp ? cxx : cc != null && cc[0] != 0 ? cc : "cc");
+            if (cpp) { compile.add("-std=c++17"); }
+            compile.add("-O2"); compile.add("-fPIC"); compile.add("-I"); compile.add(join(p.ui.data, "hosts/linux"));
+            for (j in 0..cflags.size) { compile.add(cflags.data[j].data); }
+            compile.add("-c"); compile.add(sources.data[i].data); compile.add("-o"); compile.add(object.data);
+            compile.must(null);
+            compile.free();
+            built(object.data, &inputs);
+        }
+        inputs.free();
+        native_objects.push(object);
+    }
+    List<String> objects;
+    defer fs_list_free(&objects);
+    List<string> compiler;
+    defer compiler.free();
+    compiler.push(cxx); compiler.push("-O2"); compiler.push("-fPIC");
+    String cache;
+    String_appendf(&cache, "cache/yoga-linux-%s", linux_arch());
+    yoga_objects(&compiler, join(eskiu_home(), cache.data), &objects);
+    String platform;
+    String_appendf(&platform, "linux-%s", linux_arch());
+    p.native_archives(platform.data, &objects);
+    string executable = join(out, dev ? "exe-dev" : "exe");
+    List<string> inputs;
+    defer inputs.free();
+    inputs.push(host);
+    for (i in 0..native_objects.size) { inputs.push(native_objects.data[i].data); }
+    if (dev && !stale(executable, &inputs)) { return null; }
+    Cmd link;
+    link.add(cxx); link.add(host);
+    // The dev host takes the app from its library, which looks up the host's functions in it.
+#ifdef __APPLE__
+    if (dev) { link.add("-Wl,-export_dynamic"); } else { link.add(app); }
+#else
+    if (dev) { link.add("-rdynamic"); } else { link.add(app); }
+#endif
+    for (i in 0..native_objects.size) { link.add(native_objects.data[i].data); }
+    for (i in 0..objects.size) { link.add(objects.data[i].data); }
+    List<String> libs;
+    defer fs_list_free(&libs);
+    linux_gtk_flags("--libs", &libs);
+    for (i in 0..libs.size) { link.add(libs.data[i].data); }
+    link.add("-lm"); link.add("-lpthread");
+#ifndef __APPLE__
+    link.add("-ldl");
+#endif
+    link.add("-o"); link.add(executable);
+    link.must(null);
+    link.free();
+    if (dev) { built(executable, &inputs); }
+    return executable;
+}
+
+// A dev build's app code: a library the running app loads, named afresh each time (dlopen
+// keeps a path it loaded), and its path in the reload file the running app polls. The older
+// ones go, but for the one the app runs.
+void linux_core(Project* p, string out, string app, string executable) {
+    string reload = join(out, "reload");
+    fs_mkdir_p(reload);
+    List<String> old;
+    fs_glob(join(reload, "app-*.so"), &old);
+    String current;
+    fs_read_text(linux_reload_file(p), &current);
+    String_trim(&current);
+    for (i in 0..old.size) {
+        if (String_eq_cstr(&old.data[i], current.data == null ? "" : current.data) != 1) { fs_remove(old.data[i].data); }
+    }
+    fs_list_free(&old);
+    String_free(&current);
+    String name;
+    String_appendf(&name, "app-%lld.so", time_now_ms());
+    string library = join(reload, name.data);
+    Cmd link;
+    link.add(linux_cxx());
+#ifdef __APPLE__
+    link.add("-bundle"); link.add("-bundle_loader"); link.add(executable);
+#else
+    link.add("-shared");
+#endif
+    link.add(app);
+    List<String> archives;
+    defer fs_list_free(&archives);
+    String platform;
+    String_appendf(&platform, "linux-%s", linux_arch());
+    p.native_archives(platform.data, &archives);
+    for (i in 0..archives.size) { link.add(archives.data[i].data); }
+    link.add("-o"); link.add(library);
+    link.must(null);
+    link.free();
+    fs_write_text(linux_reload_file(p), library);
+}
+
+// The web build in a WebKitGTK window: build/ui/linux/NAME with web/ beside it.
+string build_linux_webview(Project* p) {
     build_web(p);
     string out = p.out("linux");
     string binary = join(out, p.name.data);
@@ -23,7 +254,7 @@ string build_linux(Project* p) {
     String flags;
     defer String_free(&flags);
     if (!pc.output(&flags) || flags.len == 0) {
-        fail("ui build linux: pkg-config webkit2gtk-4.1 or webkit2gtk-4.0 not found. Install libwebkit2gtk-4.1-dev or libwebkit2gtk-4.0-dev.");
+        fail("ui build linux --webview: pkg-config webkit2gtk-4.1 or webkit2gtk-4.0 not found. Install libwebkit2gtk-4.1-dev or libwebkit2gtk-4.0-dev.");
     }
 
     Cmd cmd;
@@ -32,7 +263,7 @@ string build_linux(Project* p) {
     cmd.add(cc_env != null ? cc_env : "cc");
     if (ui_release) { cmd.add("-DUI_RELEASE"); }
     cmd.add("-O2");
-    cmd.add(join(p.ui.data, "hosts/linux/host.c"));
+    cmd.add(join(p.ui.data, "hosts/linux/webview.c"));
 
     List<String> parts;
     defer fs_list_free(&parts);
@@ -47,6 +278,8 @@ string build_linux(Project* p) {
     cmd.add("-o"); cmd.add(binary);
     cmd.must(null);
 
+    // A GTK build left its assets there: not this one's.
+    fs_remove_all(join(out, "assets"));
     string web_out = join(p.root.data, "build/ui/web");
     replace_dir(web_out, join(out, "web"));
 
@@ -55,4 +288,100 @@ string build_linux(Project* p) {
         fs_copy(icon, join(out, "icon.png"));
     }
     return binary;
+}
+
+// The GTK 4 app: build/ui/linux/NAME, with assets/ and icon.png beside it. A dev build
+// (UI_DEV=1) puts the app's code in a library the running app loads, so the executable is
+// linked again only when the host or the native code changed.
+string build_linux(Project* p) {
+    if (linux_webview(p)) { return build_linux_webview(p); }
+    string out = p.out("linux");
+    fs_mkdir_p(out);
+    bool dev = linux_dev();
+    linux_relaunch = true;
+    // A webview build left its web build there: not this one's.
+    fs_remove_all(join(out, "web"));
+    string binary = join(out, p.name.data);
+    string app = join(out, ui_release ? "app-release.o" : "app.o");
+    Cmd esk;
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add(ui_release ? "-O2" : app_opt());
+    esk.add("-o"); esk.add(app);
+    compile_app(&esk);
+    esk.free();
+    string exe = linux_executable(p, out, dev, app);
+    if (dev && exe == null && fs_exists(binary) == 1) { linux_relaunch = false; }
+    else { fs_copy(exe != null ? exe : join(out, "exe-dev"), binary); }
+    string assets = join(out, "assets");
+    fs_mkdir_p(assets);
+    p.copy_assets(assets);
+    string icon = app_icon(p);
+    if (icon != null) { fs_copy(icon, join(out, "icon.png")); }
+    if (dev) { linux_core(p, out, app, binary); }
+    return binary;
+}
+
+// The running dev app's pid (the one it wrote next to the reload file), or 0.
+int linux_pid(Project* p) {
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(join(p.out("linux"), "reload/pid"), &text) != 0) { return 0; }
+    int pid = atoi(text.data);
+#ifdef _WIN32
+    return 0;
+#else
+    return pid > 0 && kill(pid, 0) == 0 ? pid : 0;
+#endif
+}
+
+// Ends the running dev app, waiting until it is gone.
+void linux_terminate(Project* p) {
+    int pid = linux_pid(p);
+    fs_remove(join(p.out("linux"), "reload/pid"));
+    if (pid == 0) { return; }
+#ifndef _WIN32
+    kill(pid, 15);
+    int64 until = time_monotonic_ms() + 5000;
+    while (kill(pid, 0) == 0 && time_monotonic_ms() < until) { time_sleep_ms(20); }
+    if (kill(pid, 0) == 0) { kill(pid, 9); }
+#endif
+}
+
+// Starts the dev app in the background, the running one ended first; its output goes to
+// build/ui/linux/app.log (the driver's `logs` has it too). It finds its reload file, the
+// driver's port (UI_AGENT_PORT) and, from `ui agent`, the window's size in its environment.
+void linux_launch(Project* p) {
+    linux_terminate(p);
+    string executable = join(p.out("linux"), p.name.data);
+    String command;
+    defer String_free(&command);
+    String_appendf(&command, "(exec env UI_RELOAD_FILE=%s", shell_quote(linux_reload_file(p)));
+    string window = env_get("UI_AGENT_WINDOW");
+    if (window != null && window[0] != 0) { String_appendf(&command, " UI_WINDOW=%s", shell_quote(window)); }
+    String_appendf(&command, " %s) > %s 2>&1 < /dev/null &", shell_quote(executable), shell_quote(join(p.out("linux"), "app.log")));
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    if (sh(command.data, &result) != 0 || result.exit_code != 0) { fail("ui: could not start the app"); }
+    // The app writes its pid once it runs.
+    int64 until = time_monotonic_ms() + 20000;
+    while (linux_pid(p) == 0 && time_monotonic_ms() < until) { time_sleep_ms(20); }
+}
+
+// `ui run linux` with the GTK host (main.esk runs the webview's window itself).
+void run_linux(Project* p) {
+    string made = build_linux(p);
+    if (linux_dev()) {
+        // A dev build the running app picks up itself.
+        if (!linux_relaunch && linux_pid(p) != 0) {
+            println("Restarted the app on the new build");
+            return;
+        }
+        linux_launch(p);
+        printf("Started the app (its output: %s)\n", join(p.out("linux"), "app.log"));
+        return;
+    }
+    Cmd app;
+    app.add(made);
+    int code = app.run(null);
+    app.free();
+    exit(code);
 }

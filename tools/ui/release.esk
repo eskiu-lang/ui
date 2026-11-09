@@ -291,13 +291,16 @@ void release_linux(Project* p) {
     Cmd tar;
     tar.add("tar"); tar.add("-czf"); tar.add(tar_path); tar.add("-C"); tar.add(p.out("linux"));
     tar.add(p.name.data);
-    if (fs_is_dir(join(p.out("linux"), "web")) == 1) { tar.add("web"); }
+    bool web = linux_webview(p);
+    if (web && fs_is_dir(join(p.out("linux"), "web")) == 1) { tar.add("web"); }
+    if (!web && fs_is_dir(join(p.out("linux"), "assets")) == 1) { tar.add("assets"); }
     if (fs_exists(join(p.out("linux"), "icon.png")) == 1) { tar.add("icon.png"); }
     tar.must(null);
     tar.free();
     printf("\nlinux: %s (%s)\n  %s (%s), to distribute\n  version %s, build %s\n",
         binary, release_size(binary), tar_path, release_size(tar_path), app_version(p), app_build(p));
-    printf("  next: it needs WebKitGTK 4.1 on the machine (libwebkit2gtk-4.1-0); an AppImage, Flatpak or deb can carry it.\n");
+    if (web) { printf("  next: it needs WebKitGTK 4.1 on the machine (libwebkit2gtk-4.1-0); an AppImage, Flatpak or deb can carry it.\n"); }
+    else { printf("  next: it needs GTK 4.14 or later on the machine (libgtk-4-1); an AppImage, Flatpak or deb can carry it.\n"); }
 }
 
 void release_windows(Project* p) {
