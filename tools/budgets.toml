@@ -19,6 +19,10 @@ tolerance = 0.5
 baseline = 198.8
 tolerance = 1.0
 
+["linux.cold_start_ms"]
+baseline = 84.5
+tolerance = 1.0
+
 ["android.cold_start_ms"]
 baseline = 614.6
 tolerance = 1.0
@@ -35,6 +39,10 @@ tolerance = 0.5
 
 ["macos.edit_ms"]
 baseline = 1011.8
+tolerance = 0.5
+
+["linux.edit_ms"]
+baseline = 919.9
 tolerance = 0.5
 
 ["android.edit_ms"]
@@ -54,6 +62,10 @@ tolerance = 0.5
 ["macos.frame_p95_ms"]
 baseline = 18.0
 tolerance = 0.5
+
+["linux.frame_p95_ms"]
+baseline = 6.020
+tolerance = 1.0
 
 ["android.frame_p95_ms"]
 baseline = 55.3
