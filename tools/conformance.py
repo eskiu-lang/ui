@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""The conformance suite: the scene in tests/harness/conformance.esk on every available host,
-each compared with the frames, roles and event log the scene must produce.
+"""The conformance suite: the scene in tests/harness/conformance.esk on every available host.
 
-Hosts: ios (a booted simulator), android (a booted device or emulator), web (the shared
-DOM renderer in a macOS WKWebView window; needs an awake, unlocked display). A host that
-is not available is reported as skipped. Exit status 1 if an available host differs."""
+Two parts. First `ui test HOST` on tests/conformance, the scene as an app: its frames, its
+handlers driven by the platform's input, the feed and the modal (tests/conformance/tests/ui/,
+the same files on every host). Then what the driver's ops cannot reach, from each host's own
+run of the scene: accessibility roles, what the host drew (colors, radius, font, transform),
+the slider, the alert, the clipboard, the fetch, pull to refresh and the modal's cover.
+
+Hosts: ios (a booted simulator), android (a booted device or emulator), web (`ui test` in a
+headless Chrome, then the shared DOM renderer in a macOS WKWebView window, which needs an
+awake, unlocked display). A host that is not available is reported as skipped. Exit status
+1 if an available host differs."""
 import functools
 import http.server
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import threading
@@ -20,33 +27,7 @@ HERE = Path(__file__).resolve().parents[1]
 BUILD = HERE / "build"
 TOLERANCE = 1.0  # points; Android lays out in whole pixels
 
-# [x, y, width, height] relative to the scene; None: measured by the platform (text, controls).
-EXPECTED_FRAMES = {
-    "Suite": [0, 0, 320, None],
-    "Boxes": [10, 10, 300, 50],
-    "Fixed": [10, 10, 100, 50],
-    "Grow": [120, 10, 190, 50],
-    "List": [10, 70, 300, 100],
-    "Item 0": [10, 70, 300, 40],
-    "Item 1": [10, 118, 300, 40],
-    "Item 2": [10, 166, 300, 40],
-    "Logo": [10, 180, 48, 48],
-    "Field": [10, 238, 300, None],
-    "Tap": [10, None, 300, None],
-    "Press": [10, None, 100, 40],
-    "Toggle": [None, None, None, None],
-    "Volume": [10, None, 300, None],
-    "Busy": [10, None, 24, 24],
-    "Painted": [10, None, 60, 30],
-    "Title": [10, None, None, None],
-    "Feed": [10, None, 300, 120],
-    "Stage": [10, None, 300, 60],
-}
-# [x, y, width, height] relative to another element's frame.
-RELATIVE_FRAMES = {
-    "Pinned": ("Stage", [250, 5, 40, 30]),
-    "Ratio": ("Stage", [0, 0, 100, 50]),
-}
+# The frames are checked by tests/conformance/tests/ui/layout.uitest (`ui test`).
 EXPECTED_ROLES = {"Suite": "group", "Boxes": "group", "Fixed": "group", "Grow": "group", "List": "scroll",
                   "Item 0": "group", "Item 1": "group", "Item 2": "group", "Logo": "image",
                   "Field": "textfield", "Tap": "button", "Press": "button", "Toggle": "switch", "Volume": "slider",
@@ -66,23 +47,6 @@ EXTRA_LOG = {"android": ",close", "web": ",close"}
 
 def differences(report, host=""):
     out = []
-    for label, expected in EXPECTED_FRAMES.items():
-        got = report["frames"].get(label)
-        if got is None:
-            out.append(f"{label}: missing")
-            continue
-        for name, want, have in zip(("x", "y", "width", "height"), expected, got):
-            if want is not None and abs(want - have) > TOLERANCE:
-                out.append(f"{label}.{name}: expected {want}, got {have}")
-    for label, (base, expected) in RELATIVE_FRAMES.items():
-        got, origin = report["frames"].get(label), report["frames"].get(base)
-        if got is None or origin is None:
-            out.append(f"{label}: missing")
-            continue
-        relative = [got[0] - origin[0], got[1] - origin[1], got[2], got[3]]
-        for name, want, have in zip(("x", "y", "width", "height"), expected, relative):
-            if abs(want - have) > TOLERANCE:
-                out.append(f"{label}.{name} from {base}: expected {want}, got {have}")
     for label, role in EXPECTED_ROLES.items():
         if report["roles"].get(label) != role:
             out.append(f"{label}: role {report['roles'].get(label)}, expected {role}")
@@ -93,15 +57,10 @@ def differences(report, host=""):
             same = abs(want - have) <= 0.02 if isinstance(want, (int, float)) and isinstance(have, (int, float)) else want == have
             if not same:
                 out.append(f"{label}.{name}: expected {want!r}, got {have!r}")
-    # After the feed scrolls to 2000 points: row 50 at the top of its viewport, the first rows
-    # unmounted, and only a window of rows alive.
+    # After the feed scrolls to 2000 points only a window of rows is alive (where row 50 is,
+    # and that row 0 is gone, is in tests/conformance/tests/ui/feed.uitest).
     scrolled = report.get("scrolled", {})
     rows = [label for label in scrolled if label.startswith("Row ")]
-    if "Row 50" not in scrolled or "Feed" not in scrolled:
-        out.append(f"feed: row 50 not mounted after scrolling ({len(rows)} rows)")
-    else:
-        if abs(scrolled["Row 50"][1] - scrolled["Feed"][1]) > TOLERANCE:
-            out.append(f"feed: row 50 at y {scrolled['Row 50'][1]}, expected the feed's top {scrolled['Feed'][1]}")
     # The modal: a layer over the whole window, holding the 200 by 100 sheet.
     modal = report.get("modal")
     if not modal:
@@ -112,8 +71,6 @@ def differences(report, host=""):
             out.append(f"modal: covers {cover}, expected the window {window}")
         if any(abs(a - b) > TOLERANCE for a, b in zip(modal["sheet"][2:], [200, 100])):
             out.append(f"modal: sheet {modal['sheet']}, expected 200 by 100")
-    if "Row 0" in scrolled:
-        out.append("feed: row 0 still mounted after scrolling")
     if len(rows) > 30:
         out.append(f"feed: {len(rows)} rows mounted, expected a window")
     expected_log = EXPECTED_LOG + EXTRA_LOG.get(host, "") + ",refresh"
@@ -211,6 +168,29 @@ class Ping(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def ui_tests(name):
+    """`ui test NAME` on tests/conformance; None when the host is not available here."""
+    ui = BUILD / "ui"
+    subprocess.run(["eskiuc", HERE / "tools/ui/main.esk", "-o", ui], check=True, timeout=300)
+    result = subprocess.run([ui, "test", name], cwd=HERE / "tests/conformance", capture_output=True, text=True,
+                            timeout=1800)
+    print(result.stdout, end="")
+    return result.returncode == 0
+
+
+def available(name):
+    if name == "web":
+        return shutil.which("emcc") is not None
+    if name == "ios":
+        devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "booted", "--json"], text=True))
+        return any(d["state"] == "Booted" for group in devices["devices"].values() for d in group)
+    adb = [os.environ.get("ADB", "adb")]
+    try:
+        return any(line.endswith("\tdevice") for line in subprocess.check_output([*adb, "devices"], text=True, timeout=10).split("\n")[1:])
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def main():
     ping = http.server.ThreadingHTTPServer(("127.0.0.1", 8899), Ping)
     threading.Thread(target=ping.serve_forever, daemon=True).start()
@@ -218,6 +198,8 @@ def main():
     hosts = {"ios": run_ios, "android": run_android, "web": run_web}
     results, failed = {}, False
     for name in wanted:
+        if available(name) and not ui_tests(name):
+            failed = True
         report, skipped = hosts[name]()
         if report is None:
             print(f"{name}: SKIPPED ({skipped})")
