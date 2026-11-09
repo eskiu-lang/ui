@@ -381,7 +381,7 @@ bool uitest_expect_screenshot(Project* p, List<String>* w, string dir) {
     if (uitest_update || fs_exists(reference) != 1) {
         fs_mkdir_p(join(dir, "screenshots"));
         if (fs_copy(actual, reference) != 0) { return uitest_fail("could not record the screenshot"); }
-        printf("    recorded %s\n", reference);
+        if (ui_json) { print_err("    recorded "); println_err(reference); } else { printf("    recorded %s\n", reference); }
         return true;
     }
     PngImage have;
@@ -605,7 +605,8 @@ bool uitest_run(Project* p, string path, *JsonValue perf) {
     String text;
     defer String_free(&text);
     if (fs_read_text(path, &text) != 0) {
-        printf("  FAIL %s: cannot read it\n", path);
+        if (ui_json) { uitest_json_result(path, path, false, 0, 0, null, "cannot read it", 0); }
+        else { printf("  FAIL %s: cannot read it\n", path); }
         return false;
     }
     String dir;
@@ -634,26 +635,50 @@ bool uitest_run(Project* p, string path, *JsonValue perf) {
         String_trim(line);
         if (line.len == 0 || line.data[0] == '#') { continue; }
         uitest_line = i + 1;
-        if (uitest_verbose) { printf("    %s:%d: %s\n", shown, uitest_line, line.data); fflush(null); }
+        if (uitest_verbose && !ui_json) { printf("    %s:%d: %s\n", shown, uitest_line, line.data); fflush(null); }
         steps++;
         if (!uitest_step(p, line.data, dir.data)) {
-            printf("  FAIL %s (%s)\n    %s:%d: %s\n      %s\n", name.data, agent_host, shown, uitest_line, line.data,
-                uitest_failure.data);
+            if (ui_json) {
+                uitest_json_result(name.data, shown, false, steps, uitest_line, line.data, uitest_failure.data,
+                    time_monotonic_ms() - start);
+            } else {
+                printf("  FAIL %s (%s)\n    %s:%d: %s\n      %s\n", name.data, agent_host, shown, uitest_line, line.data,
+                    uitest_failure.data);
+            }
             passed = false;
             break;
         }
     }
     if (perf != null) { uitest_record(perf, name.data); }
     agent_native_close();
-    if (passed) {
+    if (passed && ui_json) { uitest_json_result(name.data, shown, true, steps, 0, null, null, time_monotonic_ms() - start); }
+    else if (passed) {
         printf("  PASS %s (%s, %d steps, %.1f s)\n", name.data, agent_host, steps, (double)(time_monotonic_ms() - start) / 1000.0);
     }
     fflush(null);
     return passed;
 }
 
+// Under --json, a test's result: {"test", "host", "file", "ok", "steps", "seconds"}, and for
+// a failure the "line" and "step" that failed and the "error".
+void uitest_json_result(string name, string file, bool ok, int steps, int line, string step, string error, int64 ms) {
+    String out;
+    defer String_free(&out);
+    String_append(&out, "{\"test\": "); diag_json_string(&out, name);
+    String_append(&out, ", \"host\": "); diag_json_string(&out, agent_host);
+    String_append(&out, ", \"file\": "); diag_json_string(&out, file);
+    String_appendf(&out, ", \"ok\": %s, \"steps\": %d, \"seconds\": %.1f", ok ? "true" : "false", steps, (double)ms / 1000.0);
+    if (!ok) {
+        if (line > 0) { String_appendf(&out, ", \"line\": %d, \"step\": ", line); diag_json_string(&out, step); }
+        String_append(&out, ", \"error\": "); diag_json_string(&out, error);
+    }
+    String_append(&out, "}");
+    println(out.data);
+    fflush(null);
+}
+
 void uitest_usage() {
-    println_err("usage: ui test [web|ios|android ...] [--update] [--verbose] [--perf FILE] [--keep] [FILE|DIR ...]\n"
+    println_err("usage: ui test [web|ios|android ...] [--update] [--verbose] [--perf FILE] [--keep] [--json] [FILE|DIR ...]\n"
                 "  runs tests/ui/*.uitest (or the files given) on each host given, else on every host available here");
     exit(2);
 }
@@ -697,13 +722,20 @@ void uitest_command(Project* p, int argc, string* argv) {
         agent_json = true;
         String why;
         if (!chosen && !uitest_available(agent_host, &why)) {
-            printf("ui test: %s skipped (%s)\n", agent_host, why.data);
+            if (ui_json) {
+                String line;
+                String_append(&line, "{\"host\": "); diag_json_string(&line, agent_host);
+                String_append(&line, ", \"skipped\": "); diag_json_string(&line, why.data);
+                String_append(&line, "}");
+                println(line.data);
+                String_free(&line);
+            } else { printf("ui test: %s skipped (%s)\n", agent_host, why.data); }
             String_free(&why);
             continue;
         }
         String_free(&why);
         ran++;
-        printf("ui test: %s\n", agent_host);
+        if (!ui_json) { printf("ui test: %s\n", agent_host); }
         fflush(null);
         *JsonValue before = agent_serve_status(p);
         bool had_serve = before != null;
@@ -738,6 +770,7 @@ void uitest_command(Project* p, int argc, string* argv) {
         String_free(&out);
         JsonValue_free(perf);
     }
-    printf("ui test: %d passed, %d failed\n", passed, failed);
+    if (ui_json) { printf("{\"ok\": %s, \"passed\": %d, \"failed\": %d}\n", failed == 0 ? "true" : "false", passed, failed); }
+    else { printf("ui test: %d passed, %d failed\n", passed, failed); }
     if (failed > 0) { exit(1); }
 }

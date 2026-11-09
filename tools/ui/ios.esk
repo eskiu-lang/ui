@@ -120,7 +120,7 @@ string build_ios(Project* p) {
     Cmd esk;
     esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add(ui_release ? "-O2" : app_opt());
     esk.add("-o"); esk.add(app);
-    esk.must(null);
+    compile_app(&esk);
     esk.free();
     // Swift Package Manager packages (ui.toml [ios.spm]) and Swift sources need Xcode: the
     // tool makes a project around the app's object. UI_XCODE=1 takes that path without them,

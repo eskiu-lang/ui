@@ -50,7 +50,22 @@ string tool_path(string name) {
     return found;
 }
 
+// --json (`ui build`, `ui serve`, `ui test`): standard output holds only JSON lines
+// (tools/ui/diagnostics.esk); what the other tools print goes to standard error.
+bool ui_json;
+
+// Stops the tool with `message`: on standard error, or under --json as the last line,
+// {"ok": false, "error": MESSAGE}.
 void fail(string message) {
+    if (ui_json) {
+        String line;
+        String_append(&line, "{\"ok\": false, \"error\": ");
+        diag_json_string(&line, message);
+        String_append(&line, "}");
+        println(line.data);
+        fflush(null);
+        exit(1);
+    }
     println_err(message);
     exit(1);
 }
@@ -74,10 +89,13 @@ int Cmd_run(Cmd* self, string cwd) {
     List<string> argv;
     defer argv.free();
     for (i in 0..self.parts.size) { argv.push(self.parts.data[i].data); }
-    ProcessOptions options = ProcessOptions{cwd: cwd, inherit_stdout: true, inherit_stderr: true};
+    // Under --json its output goes to standard error, which keeps standard output JSON.
+    ProcessOptions options = ui_json ? ProcessOptions{cwd: cwd, merge_stderr: true}
+        : ProcessOptions{cwd: cwd, inherit_stdout: true, inherit_stderr: true};
     ProcessResult result;
     defer ProcessResult_free(&result);
     if (process_run(&argv, &options, &result) != 0) { return -1; }
+    if (ui_json && result.stdout.data != null) { print_err(result.stdout.data); }
     return result.exit_code;
 }
 

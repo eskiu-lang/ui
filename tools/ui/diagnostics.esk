@@ -1,0 +1,551 @@
+// --json (`ui build`, `ui serve`, `ui test`): the compiler's diagnostics as JSON lines on
+// standard output, one object per error or warning in the shape of eskiuc
+// --diagnostics=json (eskiu's docs/dev/diagnostics.md). A compiler that has the flag writes
+// them; with one that does not (Eskiu 0.14.1), the tool converts its text diagnostics
+// (`error: FILE:LINE:COL: MESSAGE`) the same way. What else the compiler and the other
+// tools print goes to standard error under --json.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// What the compiler can do: --diagnostics=json, and the call-site builtins src_file(),
+// src_line() and src_col() as parameter defaults (UI_SRCLOC builds).
+struct CompilerFeatures { bool probed; bool json; bool srcloc; }
+
+CompilerFeatures compiler_features;
+
+// Runs the compiler on a probe file; true when it exits 0.
+bool compiler_try(string flag, string mode, string file) {
+    List<string> argv;
+    defer argv.free();
+    argv.push(eskiuc());
+    if (flag != null) { argv.push(flag); }
+    argv.push(mode); argv.push(file);
+    ProcessOptions options = ProcessOptions{merge_stderr: true};
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    return process_run(&argv, &options, &result) == 0 && result.exit_code == 0;
+}
+
+// Probes the compiler once per binary (its path, size and modification time), the answer
+// cached in $ESKIU_HOME/cache/eskiuc-features.txt. UI_COMPILER_FEATURES (a list of `json`
+// and `srcloc`, or `none`) skips the probe.
+void compiler_probe() {
+    if (compiler_features.probed) { return; }
+    compiler_features.probed = true;
+    string forced = env_get("UI_COMPILER_FEATURES");
+    if (forced != null && forced[0] != 0) {
+        compiler_features.json = strstr(forced, "json") != null;
+        compiler_features.srcloc = strstr(forced, "srcloc") != null;
+        return;
+    }
+    string path = tool_path(eskiuc());
+    FileStat st;
+    if (fs_stat(path, &st) != 0) { st = FileStat{}; }
+    String key;
+    defer String_free(&key);
+    String_appendf(&key, "%lld %lld %s\t", st.size, st.mtime, path);
+    string dir = join(eskiu_home(), "cache");
+    fs_mkdir_p(dir);
+    string cache = join(dir, "eskiuc-features.txt");
+    String text;
+    defer String_free(&text);
+    fs_read_text(cache, &text);
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&text, &lines);
+    for (i in 0..lines.size) {
+        if (String_starts_with(&lines.data[i], key.data) == 1) {
+            string flags = &lines.data[i].data[key.len];
+            compiler_features.json = strstr(flags, "json") != null;
+            compiler_features.srcloc = strstr(flags, "srcloc") != null;
+            return;
+        }
+    }
+    // An empty file through the lexer with the flag, and a parameter default of src_line().
+    String probe_dir;
+    defer String_free(&probe_dir);
+    String_appendf(&probe_dir, "%s/probe-%d", dir, process_pid());
+    fs_mkdir_p(probe_dir.data);
+    string empty = join(probe_dir.data, "empty.esk");
+    string srcloc = join(probe_dir.data, "srcloc.esk");
+    fs_write_text(empty, "");
+    fs_write_text(srcloc, "int ui_probe(int line = src_line()) { return line; }\n");
+    compiler_features.json = compiler_try("--diagnostics=json", "--test-lexer", empty);
+    compiler_features.srcloc = compiler_try(null, "--test-typechecker", srcloc);
+    fs_remove_all(probe_dir.data);
+    String line;
+    defer String_free(&line);
+    String_appendf(&line, "%s%s%s\n", key.data, compiler_features.json ? "json " : "", compiler_features.srcloc ? "srcloc" : "");
+    // Lines for other compilers are kept; one per binary.
+    String kept;
+    defer String_free(&kept);
+    for (i in 0..lines.size) {
+        if (lines.data[i].len > 0 && String_ends_with(&lines.data[i], path) != 1 && strstr(lines.data[i].data, path) == null) {
+            String_appendf(&kept, "%s\n", lines.data[i].data);
+        }
+    }
+    String_append(&kept, line.data);
+    fs_write_text(cache, kept.data);
+}
+
+// ---- the text form converted ----
+
+// A line that belongs to a diagnostic: a `note:` (with its position when it has one) or
+// text that follows it.
+struct DiagNote { String message; String file; int line; int col; }
+
+// A diagnostic being converted.
+struct Diag { String severity; String message; String file; String option; int line; int col; int end_line; int end_col;
+              List<String> hints; List<DiagNote> notes; }
+
+// The conversion of one compiler run: the diagnostic held until the next one starts (notes
+// may follow it), and the source lines read for the token ranges.
+struct DiagConverter { Diag pending; bool has; String source_path; List<String> source; }
+
+void Diag_free(Diag* self) {
+    String_free(&self.severity); String_free(&self.message); String_free(&self.file); String_free(&self.option);
+    for (i in 0..self.hints.size) { String_free(&self.hints.data[i]); }
+    self.hints.free();
+    for (i in 0..self.notes.size) { String_free(&self.notes.data[i].message); String_free(&self.notes.data[i].file); }
+    self.notes.free();
+    *self = Diag{};
+}
+
+void DiagConverter_free(DiagConverter* self) {
+    if (self.has) { Diag_free(&self.pending); }
+    self.has = false;
+    String_free(&self.source_path);
+    fs_list_free(&self.source);
+}
+
+bool diag_alpha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+
+bool diag_digit(char c) { return c >= '0' && c <= '9'; }
+
+bool diag_alnum(char c) { return diag_alpha(c) || diag_digit(c); }
+
+bool diag_ident(char c) { return diag_alnum(c) || c == '_'; }
+
+// `FILE:LINE:COL: ` at the start of `s`: the first `:<digits>:<digits>: ` after a non-empty
+// file name; `*rest` is where the message starts.
+bool diag_location(string s, String* file, *int line, *int col, *int64 rest) {
+    int64 n = (int64)strlen(s);
+    for (int64 p = 1; p < n; p++) {
+        if (s[p] != ':') { continue; }
+        int64 i = p + 1;
+        int64 a = i;
+        while (i < n && diag_digit(s[i])) { i++; }
+        if (i == a || i >= n || s[i] != ':') { continue; }
+        i++;
+        int64 b = i;
+        while (i < n && diag_digit(s[i])) { i++; }
+        if (i == b || i + 1 >= n || s[i] != ':' || s[i + 1] != ' ') { continue; }
+        if (i - a > 9 || i - b > 9) { continue; }
+        String_clear(file);
+        for (int64 k = 0; k < p; k++) { String_push(file, s[k]); }
+        *line = atoi(&s[a]);
+        *col = atoi(&s[b]);
+        *rest = i + 2;
+        return true;
+    }
+    return false;
+}
+
+// The severity prefix of `s` ("error: ", "warning: ", "note: "): its name, or null.
+string diag_severity(string s) {
+    if (strncmp(s, "error: ", 7) == 0) { return "error"; }
+    if (strncmp(s, "warning: ", 9) == 0) { return "warning"; }
+    if (strncmp(s, "note: ", 6) == 0) { return "note"; }
+    return null;
+}
+
+// A word of an id: letters, or letters joined by `-`.
+bool diag_id_word(String* w) {
+    if (w.len == 0 || !diag_alpha(w.data[0]) || !diag_alpha(w.data[w.len - 1])) { return false; }
+    for (int64 i = 0; i < w.len; i++) {
+        if (diag_alpha(w.data[i])) { continue; }
+        if (w.data[i] != '-' || !diag_alpha(w.data[i + 1])) { return false; }
+    }
+    return true;
+}
+
+// A diagnostic's id, from its message by the compiler's rule: a context prefix dropped, the
+// message up to its first `:` `;` `,` `(` outside quotes, quoted parts dropped, the first
+// five words of letters in lower case joined by `-` (the severity when none is left).
+void diag_id(string message, string severity, String* out) {
+    String_clear(out);
+    string m = message;
+    List<string> contexts;
+    defer contexts.free();
+    contexts.push("initializing '"); contexts.push("In struct '"); contexts.push("In union '");
+    for (i in 0..contexts.size) {
+        int64 k = (int64)strlen(contexts.data[i]);
+        if (strncmp(m, contexts.data[i], (size_t)k) == 0) {
+            string after = strstr(&m[k], "': ");
+            if (after != null) { m = (string)((*char)after + 3); }
+            break;
+        }
+    }
+    List<String> words;
+    defer fs_list_free(&words);
+    String current;
+    int64 n = (int64)strlen(m);
+    int64 i = 0;
+    while (i < n) {
+        char c = m[i];
+        if (c == '\'' && (i == 0 || !diag_alnum(m[i - 1]))) {
+            int64 j = i + 1;
+            while (j < n && !(m[j] == '\'' && (j + 1 == n || !diag_alnum(m[j + 1])))) { j++; }
+            if (j >= n) { break; }
+            words.push(current); current = String{};
+            i = j + 1;
+            continue;
+        }
+        if (c == ':' || c == ';' || c == ',' || c == '(') { break; }
+        if (c == ' ' || c == '\t') { words.push(current); current = String{}; i++; continue; }
+        if (c != '`') { String_push(&current, c); }
+        i++;
+    }
+    words.push(current);
+    int kept = 0;
+    for (k in 0..words.size) {
+        String* w = &words.data[k];
+        if (w.len >= 2 && w.data[w.len - 2] == '\'' && w.data[w.len - 1] == 's') { w.len -= 2; w.data[w.len] = 0; }
+        if (w.len > 0 && w.data[0] == '#') {
+            String rest;
+            String_from(&rest, &w.data[1]);
+            String_free(w);
+            *w = rest;
+        }
+        if (!diag_id_word(w)) { continue; }
+        String_lower(w);
+        if (String_eq_cstr(w, "a") == 1 || String_eq_cstr(w, "an") == 1 || String_eq_cstr(w, "the") == 1) { continue; }
+        if (kept > 0) { String_append(out, "-"); }
+        String_append(out, w.data);
+        kept++;
+        if (kept == 5) { break; }
+    }
+    if (out.len == 0) { String_append(out, severity); }
+}
+
+// ` [-Wname]` at the end of the message is its option, ` (did you mean 'x'?)` a hint.
+void diag_split_message(Diag* d) {
+    String* m = &d.message;
+    int64 ob = -1;
+    for (int64 i = m.len - 4; i >= 0; i--) {
+        if (strncmp(&m.data[i], " [-W", 4) == 0) { ob = i; break; }
+    }
+    if (ob >= 0 && m.data[m.len - 1] == ']') {
+        String opt;
+        for (int64 i = ob + 2; i < m.len - 1; i++) { String_push(&opt, m.data[i]); }
+        bool ok = opt.len > 2;
+        for (int64 i = 2; i < opt.len; i++) {
+            char c = opt.data[i];
+            if (!(diag_alnum(c) || c == '-' || c == '=')) { ok = false; }
+        }
+        if (ok) {
+            String_free(&d.option);
+            d.option = opt;
+            m.len = ob; m.data[ob] = 0;
+        } else { String_free(&opt); }
+    }
+    int64 hp = -1;
+    for (int64 i = m.len - 16; i >= 0; i--) {
+        if (strncmp(&m.data[i], " (did you mean '", 16) == 0) { hp = i; break; }
+    }
+    if (hp >= 0 && m.len >= 2 && m.data[m.len - 2] == '?' && m.data[m.len - 1] == ')') {
+        String hint;
+        for (int64 i = hp + 2; i < m.len - 1; i++) { String_push(&hint, m.data[i]); }
+        d.hints.push(hint);
+        m.len = hp; m.data[hp] = 0;
+    }
+}
+
+// The token at the diagnostic's position (an identifier or keyword, a number, a string
+// literal): end_col is the column just past it.
+void diag_token_range(DiagConverter* self, Diag* d) {
+    if (d.line <= 0 || d.col <= 0 || d.file.len == 0) { return; }
+    if (String_eq(&self.source_path, &d.file) != 1) {
+        String_clear(&self.source_path);
+        String_append(&self.source_path, d.file.data);
+        fs_list_free(&self.source);
+        String text;
+        if (fs_read_text(d.file.data, &text) == 0) { String_lines(&text, &self.source); }
+        String_free(&text);
+    }
+    if (d.line > self.source.size) { return; }
+    String* s = &self.source.data[d.line - 1];
+    int64 i = d.col - 1;
+    int64 j = i;
+    if (i >= s.len) { return; }
+    char c = s.data[i];
+    if (diag_alpha(c) || c == '_') {
+        while (j < s.len && diag_ident(s.data[j])) { j++; }
+    } else if (diag_digit(c)) {
+        while (j < s.len && (diag_ident(s.data[j]) || s.data[j] == '.')) { j++; }
+    } else if (c == '"') {
+        j++;
+        while (j < s.len && s.data[j] != '"') { j += s.data[j] == '\\' ? 2 : 1; }
+        if (j >= s.len) { return; }
+        j++;
+    } else { return; }
+    d.end_line = d.line;
+    d.end_col = (int)j + 1;
+}
+
+// `text` as a JSON string (as the compiler writes it), appended to `out`.
+void diag_json_string(String* out, string text) {
+    String_append(out, "\"");
+    for (int64 i = 0; text != null && text[i] != 0; i++) {
+        uint8 c = (uint8)text[i];
+        if (c == '"') { String_append(out, "\\\""); }
+        else if (c == '\\') { String_append(out, "\\\\"); }
+        else if (c == '\n') { String_append(out, "\\n"); }
+        else if (c == '\t') { String_append(out, "\\t"); }
+        else if (c == '\r') { String_append(out, "\\r"); }
+        else if (c < 32) { String_appendf(out, "\\u%04x", (int)c); }
+        else { String_push(out, (char)c); }
+    }
+    String_append(out, "\"");
+}
+
+// One diagnostic as a JSON line, appended to `out`; `fixed_id` replaces the id when given.
+void diag_emit(Diag* d, string fixed_id, String* out) {
+    String id;
+    defer String_free(&id);
+    if (fixed_id != null) { String_from(&id, fixed_id); } else { diag_id(d.message.data == null ? "" : d.message.data, d.severity.data, &id); }
+    String_append(out, "{\"severity\":"); diag_json_string(out, d.severity.data);
+    String_append(out, ",\"id\":"); diag_json_string(out, id.data);
+    String_append(out, ",\"message\":"); diag_json_string(out, d.message.data);
+    if (d.line > 0) {
+        String_append(out, ",\"file\":"); diag_json_string(out, d.file.data);
+        String_appendf(out, ",\"line\":%d,\"col\":%d", d.line, d.col);
+        if (d.end_line > 0) { String_appendf(out, ",\"end_line\":%d,\"end_col\":%d", d.end_line, d.end_col); }
+    }
+    if (d.option.len > 0) { String_append(out, ",\"option\":"); diag_json_string(out, d.option.data); }
+    String_append(out, ",\"hints\":[");
+    for (i in 0..d.hints.size) {
+        if (i > 0) { String_append(out, ","); }
+        diag_json_string(out, d.hints.data[i].data);
+    }
+    String_append(out, "],\"notes\":[");
+    for (i in 0..d.notes.size) {
+        DiagNote* note = &d.notes.data[i];
+        if (i > 0) { String_append(out, ","); }
+        String_append(out, "{\"message\":"); diag_json_string(out, note.message.data);
+        if (note.line > 0) {
+            String_append(out, ",\"file\":"); diag_json_string(out, note.file.data);
+            String_appendf(out, ",\"line\":%d,\"col\":%d", note.line, note.col);
+        }
+        String_append(out, "}");
+    }
+    String_append(out, "]}\n");
+}
+
+// The held diagnostic, written.
+void diag_flush(DiagConverter* self, String* out) {
+    if (!self.has) { return; }
+    diag_emit(&self.pending, null, out);
+    Diag_free(&self.pending);
+    self.has = false;
+}
+
+// Whether `s` is one of the text form's summary lines, which the JSON form leaves out.
+bool diag_summary(string s) {
+    if (strcmp(s, "Parse failed!") == 0 || strcmp(s, "Type checking failed!") == 0 || strcmp(s, "error: parse failed") == 0) {
+        return true;
+    }
+    int64 n = (int64)strlen(s);
+    return strncmp(s, "error: ", 7) == 0 && n > 21 && strcmp(&s[n - 21], ": type checking failed") == 0;
+}
+
+// One line of the compiler's text output, converted into `out` (a diagnostic is held until
+// the next starts, so the notes after it join it).
+void diag_line(DiagConverter* self, string raw, String* out) {
+    String s;
+    defer String_free(&s);
+    String_from(&s, raw);
+    if (s.len > 0 && s.data[s.len - 1] == '\r') { s.len--; s.data[s.len] = 0; }
+    if (s.len == 0 || diag_summary(s.data)) { return; }
+    string severity = diag_severity(s.data);
+    String file;
+    defer String_free(&file);
+    int line = 0;
+    int col = 0;
+    bool located = false;
+    int64 rest = 0;
+    if (severity != null) {
+        rest = (int64)strlen(severity) + 2;
+        int64 msg = 0;
+        if (diag_location(&s.data[rest], &file, &line, &col, &msg)) { located = true; rest += msg; }
+    } else {
+        int64 msg = 0;
+        if (diag_location(s.data, &file, &line, &col, &msg)) {
+            string after = diag_severity(&s.data[msg]);
+            if (after != null) {
+                severity = after;
+                rest = msg + (int64)strlen(after) + 2;
+                located = true;
+            }
+        }
+    }
+    if (severity == null) {
+        // Not a diagnostic: the text of the one before, or output of its own.
+        if (self.has) {
+            DiagNote note;
+            String_from(&note.message, s.data);
+            self.pending.notes.push(note);
+            return;
+        }
+        Diag d;
+        String_from(&d.severity, "note");
+        String_from(&d.message, s.data);
+        diag_emit(&d, "output", out);
+        Diag_free(&d);
+        return;
+    }
+    if (strcmp(severity, "note") == 0 && self.has) {
+        DiagNote note;
+        String_from(&note.message, &s.data[rest]);
+        if (located) { String_from(&note.file, file.data); note.line = line; note.col = col; }
+        self.pending.notes.push(note);
+        return;
+    }
+    diag_flush(self, out);
+    Diag d;
+    String_from(&d.severity, severity);
+    String_from(&d.message, &s.data[rest]);
+    if (located) { String_from(&d.file, file.data); d.line = line; d.col = col; }
+    diag_split_message(&d);
+    if (located) { diag_token_range(self, &d); }
+    if (strcmp(severity, "note") == 0) {
+        diag_emit(&d, null, out);
+        Diag_free(&d);
+        return;
+    }
+    self.pending = d;
+    self.has = true;
+}
+
+// The compiler's whole text output as JSON lines, into `out`.
+void diag_convert_text(string text, String* out) {
+    DiagConverter conv;
+    defer DiagConverter_free(&conv);
+    String all;
+    defer String_free(&all);
+    String_from(&all, text == null ? "" : text);
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&all, &lines);
+    for (i in 0..lines.size) { diag_line(&conv, lines.data[i].data, out); }
+    diag_flush(&conv, out);
+}
+
+// What a compiler run with --diagnostics=json wrote, as it is: its JSON lines, and any other
+// line (a program the compiler ran, the linker) as an output note.
+void diag_pass_json(string text, String* out) {
+    String all;
+    defer String_free(&all);
+    String_from(&all, text == null ? "" : text);
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&all, &lines);
+    for (i in 0..lines.size) {
+        String* line = &lines.data[i];
+        if (line.len == 0) { continue; }
+        if (String_starts_with(line, "{\"severity\":") == 1) { String_appendf(out, "%s\n", line.data); continue; }
+        Diag d;
+        String_from(&d.severity, "note");
+        String_from(&d.message, line.data);
+        diag_emit(&d, "output", out);
+        Diag_free(&d);
+    }
+}
+
+// A string member of a JSON object, or null.
+string diag_member(*JsonValue v, string key) {
+    *JsonValue m = v == null ? null : JsonValue_get(v, key);
+    return m != null && m.kind == JString ? (m.str.data == null ? "" : m.str.data) : null;
+}
+
+// A number member of a JSON object, or 0.
+double diag_number(*JsonValue v, string key) {
+    *JsonValue m = v == null ? null : JsonValue_get(v, key);
+    return m != null && m.kind == JNumber ? m.num : 0;
+}
+
+// JSON diagnostics back in the text form (`ui serve --json` shows a failed build's errors
+// over the app as text), appended to `out`.
+void diag_json_to_text(string json_lines, String* out) {
+    String all;
+    defer String_free(&all);
+    String_from(&all, json_lines == null ? "" : json_lines);
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&all, &lines);
+    for (i in 0..lines.size) {
+        *JsonValue d = json_parse(lines.data[i].data);
+        if (d == null) { continue; }
+        string severity = diag_member(d, "severity");
+        string message = diag_member(d, "message");
+        string id = diag_member(d, "id");
+        string failure = diag_member(d, "error");
+        if (severity == null && failure != null) { String_appendf(out, "%s\n", failure); }
+        if (severity != null && message != null) {
+            string file = diag_member(d, "file");
+            if (id != null && strcmp(id, "output") == 0) { String_appendf(out, "%s\n", message); }
+            else if (file != null) {
+                String_appendf(out, "%s: %s:%d:%d: %s", severity, file, (int)diag_number(d, "line"), (int)diag_number(d, "col"), message);
+            } else { String_appendf(out, "%s: %s", severity, message); }
+            if (id == null || strcmp(id, "output") != 0) {
+                *JsonValue hints = JsonValue_get(d, "hints");
+                if (hints != null && hints.kind == JArray && JsonValue_len(hints) > 0) {
+                    *JsonValue hint = JsonValue_at(hints, 0);
+                    if (hint.kind == JString) { String_appendf(out, " (%s)", hint.str.data); }
+                }
+                string option = diag_member(d, "option");
+                if (option != null) { String_appendf(out, " [%s]", option); }
+                String_append(out, "\n");
+                *JsonValue notes = JsonValue_get(d, "notes");
+                for (int k = 0; notes != null && notes.kind == JArray && k < JsonValue_len(notes); k++) {
+                    string note = diag_member(JsonValue_at(notes, k), "message");
+                    if (note != null) { String_appendf(out, "%s\n", note); }
+                }
+            }
+        }
+        JsonValue_free(d);
+    }
+}
+
+// The app's compile (`esk` is the compiler's command line): its diagnostics as they are, or
+// under --json as JSON lines on standard output. Stops the tool when it fails.
+void compile_app(Cmd* esk) {
+    if (!ui_json) { esk.must(null); return; }
+    compiler_probe();
+    if (compiler_features.json) { esk.add("--diagnostics=json"); }
+    List<string> argv;
+    defer argv.free();
+    for (i in 0..esk.parts.size) { argv.push(esk.parts.data[i].data); }
+    ProcessOptions options = ProcessOptions{merge_stderr: true};
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    int started = process_run(&argv, &options, &result);
+    String out;
+    defer String_free(&out);
+    string text = result.stdout.data == null ? "" : result.stdout.data;
+    if (compiler_features.json) { diag_pass_json(text, &out); } else { diag_convert_text(text, &out); }
+    print(out.data == null ? "" : out.data);
+    fflush(null);
+    if (started != 0) { fail("ui: could not run the compiler (ESKIUC, or eskiuc on the PATH)"); }
+    if (result.exit_code != 0) { fail("ui: the compile failed"); }
+}
+
+// Under --json: the result of the command as the last line, {"ok": true, "built": PATH}.
+void json_result(string key, string value) {
+    String line;
+    defer String_free(&line);
+    String_appendf(&line, "{\"ok\": true, \"%s\": ", key);
+    diag_json_string(&line, value);
+    String_append(&line, "}\n");
+    print(line.data);
+    fflush(null);
+}

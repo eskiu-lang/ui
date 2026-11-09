@@ -125,6 +125,8 @@ bool serve_build(string command, string target) {
     List<string> argv;
     defer argv.free();
     argv.push(serve_self); argv.push(command); argv.push(target);
+    // --json: the build's diagnostics come back as JSON lines, passed on as they are.
+    if (ui_json) { argv.push("--json"); }
     // UI_DEV=1: the app's code at -O0, which builds about four times faster.
     List<string> env;
     defer env.free();
@@ -142,11 +144,16 @@ bool serve_build(string command, string target) {
     defer ProcessResult_free(&result);
     bool ok = process_run(&argv, &options, &result) == 0 && result.exit_code == 0;
     string output = result.stdout.data == null ? "" : result.stdout.data;
-    print(output);
-    // The page shows the compiler's output, without the tool's line naming the command.
     String shown;
     defer String_free(&shown);
-    if (!ok) {
+    if (ui_json) {
+        // The JSON lines on our standard output, the rest on standard error; the page and
+        // `ui agent` get the text form.
+        serve_pass_json(output);
+        if (!ok) { diag_json_to_text(output, &shown); }
+    } else { print(output); }
+    // The page shows the compiler's output, without the tool's line naming the command.
+    if (!ok && !ui_json) {
         List<String> lines;
         String_lines(&result.stdout, &lines);
         for (i in 0..lines.size) {
@@ -154,8 +161,8 @@ bool serve_build(string command, string target) {
             String_appendf(&shown, "%s\n", lines.data[i].data);
         }
         fs_list_free(&lines);
-        if (shown.len == 0) { String_from(&shown, "ui: the build failed"); }
     }
+    if (!ok && shown.len == 0) { String_from(&shown, "ui: the build failed"); }
     Mutex_lock(&serve_lock);
     String_from(&serve_error, ok ? "" : shown.data);
     Mutex_unlock(&serve_lock);
@@ -164,9 +171,38 @@ bool serve_build(string command, string target) {
     serve_write_status();
     double seconds = (double)(time_monotonic_ms() - start) / 1000.0;
     if (ok && strcmp(target, "android") == 0) { android_abi(); }
-    if (ok) { printf("ui: built in %.1f s\n", seconds); fflush(null); }
+    if (ui_json) { printf("{\"event\": \"%s\", \"seconds\": %.3f}\n", ok ? "built" : "failed", seconds); fflush(null); }
+    else if (ok) { printf("ui: built in %.1f s\n", seconds); fflush(null); }
     else { println_err("ui: the build failed; waiting for a change"); }
     return ok;
+}
+
+// A child build's output under --json: its JSON lines to standard output, as they are, and
+// any other line to standard error.
+void serve_pass_json(string output) {
+    String all;
+    defer String_free(&all);
+    String_from(&all, output);
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&all, &lines);
+    for (i in 0..lines.size) {
+        if (lines.data[i].len == 0) { continue; }
+        if (lines.data[i].data[0] == '{') { println(lines.data[i].data); } else { println_err(lines.data[i].data); }
+    }
+    fflush(null);
+}
+
+// A line on standard output: the text, or under --json an event {"event": NAME, "message":
+// TEXT}.
+void serve_note(string event, string text) {
+    if (!ui_json) { serve_say(text); return; }
+    String line;
+    defer String_free(&line);
+    String_appendf(&line, "{\"event\": \"%s\", \"message\": ", event);
+    diag_json_string(&line, text);
+    String_append(&line, "}");
+    serve_say(line.data);
 }
 
 // Build again whenever the sources differ from `seen` (taken before the first build, so a
@@ -187,7 +223,7 @@ void serve_watch(Project* p, string command, string target, uint64 seen) {
         }
         seen = now;
         serve_built_source = now;
-        serve_say("ui: changed, building");
+        serve_note("building", "ui: changed, building");
         serve_build(command, target);
     }
 }
@@ -492,8 +528,10 @@ void serve_command(Project* p, string target) {
         serve_build("build", "web");
         String url;
         String_appendf(&url, "http://127.0.0.1:%d/", serve_port);
-        printf("Serving %s, building again on each change (Ctrl+C to stop)\n", url.data);
-        fflush(null);
+        String serving;
+        String_appendf(&serving, "Serving %s, building again on each change (Ctrl+C to stop)", url.data);
+        serve_note("serving", serving.data);
+        String_free(&serving);
         open_url(url.data);
         serve_watch(p, "build", "web", seen);
     } else if (strcmp(target, "macos") == 0 || strcmp(target, "linux") == 0 || strcmp(target, "windows") == 0) {
@@ -508,8 +546,10 @@ void serve_command(Project* p, string target) {
         thread_create(void() { serve_watch(desktop_project, "build", "web", desktop_seen); });
         String url;
         String_appendf(&url, "http://127.0.0.1:%d/", serve_port);
-        printf("Serving %s in a window, building again on each change\n", url.data);
-        fflush(null);
+        String serving;
+        String_appendf(&serving, "Serving %s in a window, building again on each change", url.data);
+        serve_note("serving", serving.data);
+        String_free(&serving);
         Cmd window;
         string exe = p.name.data;
         String win_exe;
@@ -526,7 +566,7 @@ void serve_command(Project* p, string target) {
         uint64 seen = serve_signature(p);
         serve_built_source = seen;
         serve_build("run", target);
-        serve_say("Watching for changes: each one installs and launches the app again (Ctrl+C to stop)");
+        serve_note("watching", "Watching for changes: each one installs and launches the app again (Ctrl+C to stop)");
         serve_watch(p, "run", target, seen);
     } else { usage(); }
 }

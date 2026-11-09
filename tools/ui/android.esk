@@ -167,7 +167,7 @@ string build_android(Project* p) {
     Cmd esk;
     esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(triple); esk.add(app_opt());
     esk.add("-o"); esk.add(app);
-    esk.must(null);
+    compile_app(&esk);
     esk.free();
     string libs = join(join(out, "lib"), android_abi());
     fs_mkdir_p(libs);

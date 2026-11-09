@@ -38,7 +38,7 @@ string build_web(Project* p) {
     cmd.add(exported.data);
     cmd.add(test ? "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall,stringToUTF8,lengthBytesUTF8,HEAPU8"
                  : "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall,stringToUTF8,lengthBytesUTF8");
-    cmd.must(null);
+    compile_app(&cmd);
     fs_copy(join(p.ui.data, "hosts/web/renderer.mjs"), join(out, "renderer.mjs"));
     fs_copy(join(p.ui.data, "hosts/web/scheduler.mjs"), join(out, "scheduler.mjs"));
     string driver = join(out, "driver.mjs");

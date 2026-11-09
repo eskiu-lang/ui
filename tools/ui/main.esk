@@ -7,7 +7,7 @@
 //
 // Inside a project, the ui package is the one eskiu.lock names; its hosts (hosts/) are built
 // around the app. Yoga, for the native hosts, is fetched and compiled once into
-// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), xcode (Swift packages), new, serve, agent (`ui agent`, the driver's client), uitest (`ui test`).
+// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), xcode (Swift packages), new, serve, agent (`ui agent`, the driver's client), uitest (`ui test`), diagnostics (--json).
 import <io>;
 import <string>;
 import <list>;
@@ -28,6 +28,7 @@ import <fetch>;
 import <base64>;
 
 import "common.esk";
+import "diagnostics.esk";
 import "config.esk";
 import "project.esk";
 import "png.esk";
@@ -49,8 +50,8 @@ import "agent.esk";
 import "uitest.esk";
 
 void usage() {
-    println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android\n       ui run web|macos|linux|windows|ios|android\n"
-                "       ui serve [web|macos|linux|windows|ios|android]\n       ui agent web|ios|android [--json] OP...\n       ui test [web|ios|android ...] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]");
+    println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android [--json]\n       ui run web|macos|linux|windows|ios|android\n"
+                "       ui serve [web|macos|linux|windows|ios|android] [--json]\n       ui agent web|ios|android [--json] OP...\n       ui test [web|ios|android ...] [--json] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]");
     exit(2);
 }
 
@@ -80,6 +81,14 @@ int desktop_port;
 int main(int argc, string* argv) {
     if (argc < 2) { usage(); }
     serve_self = argv[0];
+    // --json (build, run, serve, test): JSON lines on standard output (tools/ui/diagnostics.esk).
+    if (strcmp(argv[1], "build") == 0 || strcmp(argv[1], "run") == 0 || strcmp(argv[1], "serve") == 0 || strcmp(argv[1], "test") == 0) {
+        int kept = 2;
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--json") == 0) { ui_json = true; } else { argv[kept++] = argv[i]; }
+        }
+        argc = kept;
+    }
     String command;
     String_from(&command, argv[1]);
     if (String_eq_cstr(&command, "serve") == 1) {
@@ -138,7 +147,7 @@ int main(int argc, string* argv) {
         String_from(&target, target_name);
         if (String_eq_cstr(&target, "web") == 1) {
         string out = build_web(&p);
-        printf("Built %s\n", out);
+        if (ui_json) { json_result("built", out); } else { printf("Built %s\n", out); }
         if (run) {
             String url;
             String_appendf(&url, "http://127.0.0.1:%d/", port());
@@ -148,7 +157,7 @@ int main(int argc, string* argv) {
         }
     } else if (String_eq_cstr(&target, "macos") == 1) {
         string binary = build_macos(&p);
-        printf("Built %s\n", binary);
+        if (ui_json) { json_result("built", binary); } else { printf("Built %s\n", binary); }
         if (run) {
             desktop_root = join(p.root.data, "build/ui/web");
             desktop_port = port();
@@ -164,7 +173,7 @@ int main(int argc, string* argv) {
         }
     } else if (String_eq_cstr(&target, "linux") == 1) {
         string binary = build_linux(&p);
-        printf("Built %s\n", binary);
+        if (ui_json) { json_result("built", binary); } else { printf("Built %s\n", binary); }
         if (run) {
             desktop_root = join(p.root.data, "build/ui/web");
             desktop_port = port();
@@ -180,7 +189,7 @@ int main(int argc, string* argv) {
         }
     } else if (String_eq_cstr(&target, "windows") == 1) {
         string binary = build_windows(&p);
-        printf("Built %s\n", binary);
+        if (ui_json) { json_result("built", binary); } else { printf("Built %s\n", binary); }
         if (run) {
             desktop_root = join(p.root.data, "build/ui/web");
             desktop_port = port();
@@ -195,9 +204,9 @@ int main(int argc, string* argv) {
             exit(code);
         }
     } else if (String_eq_cstr(&target, "ios") == 1) {
-        if (run) { run_ios(&p); } else { printf("Built %s\n", build_ios(&p)); }
+        if (run) { run_ios(&p); } else { string built = build_ios(&p); if (ui_json) { json_result("built", built); } else { printf("Built %s\n", built); } }
     } else if (String_eq_cstr(&target, "android") == 1) {
-        if (run) { run_android(&p); } else { printf("Built %s\n", build_android(&p)); }
+        if (run) { run_android(&p); } else { string built = build_android(&p); if (ui_json) { json_result("built", built); } else { printf("Built %s\n", built); } }
     } else { usage(); }
         return 0;
     }

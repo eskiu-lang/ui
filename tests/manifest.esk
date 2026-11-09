@@ -16,8 +16,10 @@ import <atomic>;
 import <bytes>;
 import <mem>;
 import <hash>;
+import <json>;
 
 import "../tools/ui/common.esk";
+import "../tools/ui/diagnostics.esk";
 import "../tools/ui/config.esk";
 import "../tools/ui/project.esk";
 import "../tools/ui/png.esk";

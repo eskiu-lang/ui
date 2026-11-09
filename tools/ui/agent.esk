@@ -20,6 +20,12 @@ int agent_native_port() {
 }
 
 void agent_fail(string message) {
+    // `ui test --json`: the last line is {"ok": false, "error": ...}.
+    if (ui_json) {
+        String text;
+        String_appendf(&text, "ui agent: %s", message);
+        fail(text.data);
+    }
     print_err("ui agent: ");
     println_err(message);
     exit(1);
@@ -325,6 +331,13 @@ void agent_attach(Project* p, bool real_clock) {
         bool busy = building != null && building.boolean != 0;
         // A failed build of these very sources: nothing will change until they do.
         if (!busy && error != null && error[0] != 0 && tried != null && strcmp(tried, source) == 0) {
+            // `ui test --json`: the build's errors as JSON lines first.
+            if (ui_json) {
+                String lines;
+                diag_convert_text(error, &lines);
+                print(lines.data == null ? "" : lines.data);
+                String_free(&lines);
+            }
             String message;
             String_appendf(&message, "refusing to drive a build older than the sources: the last build failed:\n%s"
                 "Fix it and save; ui serve %s builds again (ui agent %s ... retries once it built).", error, agent_host, agent_host);
