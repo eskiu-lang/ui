@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+# A newer push to a branch stops the run of the older one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   linux:
     runs-on: ubuntu-24.04

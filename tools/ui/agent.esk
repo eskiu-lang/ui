@@ -189,9 +189,11 @@ void agent_browser(Project* p) {
     String command;
     defer String_free(&command);
     // UI_CHROME_ARGS: more flags (--no-sandbox where the machine has no sandbox for it).
+    // --hide-scrollbars: a scroll's content is as wide on Linux and Windows as on macOS and
+    // the phones, whose scrollbars take no room.
     string extra = env_get("UI_CHROME_ARGS");
     String_appendf(&command, "exec %s %s--remote-debugging-port=%d --user-data-dir=%s --window-size=%s --no-first-run "
-        "--no-default-browser-check --disable-background-timer-throttling --disable-renderer-backgrounding %s "
+        "--no-default-browser-check --disable-background-timer-throttling --disable-renderer-backgrounding --hide-scrollbars %s "
         "http://127.0.0.1:%d/#ui-agent", agent_quote(chrome), strstr(chrome, "headless-shell") != null ? "" : "--headless=new ",
         agent_cdp_port, agent_quote(join(agent_dir(p), "chrome")), window.data, extra == null ? "" : extra, agent_web_port);
     int pid = agent_spawn(command.data, join(agent_dir(p), "browser.log"));
