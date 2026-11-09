@@ -39,13 +39,24 @@ const string kNewAgents = "# AGENTS.md\n"
 "\n"
 "## Test\n"
 "\n"
-"A test is ops and checks on their `--json` answers, with no sleeps: an op answers once what\n"
-"it caused has rendered, and timers and animations wait for `clock`.\n"
+"`ui test` runs `tests/ui/*.uitest` on every host available here (`ui test web` for one): each\n"
+"line is an op as `ui agent` takes it or an expectation, and each file starts the app afresh\n"
+"on the driver's clock, so no test sleeps. A failure says the file, the line and what it found.\n"
 "\n"
-"```bash\n"
-"ui agent web --stop\n"
-"ui agent web --json \"tap add\" tree | grep -q '\"text\":\"Pressed 1 times\"'\n"
-"```\n";
+"```\n"
+"# A comment is a line of its own.\n"
+"tap add\n"
+"# An element by test id or accessible name, a prop the app set, a frame in points (_: any).\n"
+"expect \"Pressed 1 times\" exists\n"
+"expect add prop background \"#4f46e5ff\"\n"
+"expect add frame _ _ _ 44 ±4\n"
+"# A signal of a scope, as `ui agent state` shows it.\n"
+"expect state Column[0].0 1\n"
+"# The screen against tests/ui/screenshots/home.HOST.png (recorded the first time).\n"
+"expect screenshot home 0.5%\n"
+"```\n"
+"\n"
+"For a check the format has no expectation for, use `ui agent HOST --json` and test its answers.\n";
 
 void create(string name, string ui_path) {
     Cmd make;
@@ -84,6 +95,15 @@ void create(string name, string ui_path) {
     String_appendf(&agents, "%s", kNewAgents);
     String_replace_all(&agents, "{{name}}", name);
     fs_write_text(join(name, "AGENTS.md"), agents.data);
+    // A first UI test (docs/testing.md has the format).
+    fs_mkdir_p(join(name, "tests/ui"));
+    fs_write_text(join(name, "tests/ui/app.uitest"),
+        "# `ui test` runs this on each host; one op or expectation per line (docs/testing.md).\n"
+        "expect \"Pressed 0 times\" exists\n"
+        "tap add\n"
+        "tap add\n"
+        "expect \"Pressed 2 times\" exists\n"
+        "expect state Column[0].0 2\n");
     Cmd add;
     add.add(eskiuc()); add.add("add"); add.add("ui");
     if (ui_path != null) { add.add("--path"); add.add(ui_path); }

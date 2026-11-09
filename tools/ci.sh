@@ -39,7 +39,8 @@ eskiuc tests/manifest.esk -o build/manifest-check
 build/manifest-check
 rm -rf build/newapp
 (cd build && ./ui new newapp --ui "$PWD/..")
-test -f build/newapp/src/main.esk && grep -q "ui	path" build/newapp/eskiu.lock && grep -q "ui agent web" build/newapp/AGENTS.md
+test -f build/newapp/src/main.esk && grep -q "ui	path" build/newapp/eskiu.lock && grep -q "ui agent web" build/newapp/AGENTS.md \
+    && grep -q "ui test" build/newapp/AGENTS.md && grep -q "tap add" build/newapp/tests/ui/app.uitest
 echo "PASS ui new"
 if [ "$(uname)" = "Darwin" ]; then
     (cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build macos) > build/macos.txt 2>&1 || { cat build/macos.txt; exit 1; }
