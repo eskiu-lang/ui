@@ -50,8 +50,8 @@ import "agent.esk";
 import "uitest.esk";
 
 void usage() {
-    println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android [--json]\n       ui run web|macos|linux|windows|ios|android\n"
-                "       ui serve [web|macos|linux|windows|ios|android] [--json]\n       ui agent web|ios|android [--json] OP...\n       ui test [web|ios|android ...] [--json] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]");
+    println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android [--json] [--webview]\n       ui run web|macos|linux|windows|ios|android [--webview]\n"
+                "       ui serve [web|macos|linux|windows|ios|android] [--json] [--webview]\n       ui agent web|macos|ios|android [--json] OP...\n       ui test [web|macos|ios|android ...] [--json] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]");
     exit(2);
 }
 
@@ -82,10 +82,14 @@ int main(int argc, string* argv) {
     if (argc < 2) { usage(); }
     serve_self = argv[0];
     // --json (build, run, serve, test): JSON lines on standard output (tools/ui/diagnostics.esk).
-    if (strcmp(argv[1], "build") == 0 || strcmp(argv[1], "run") == 0 || strcmp(argv[1], "serve") == 0 || strcmp(argv[1], "test") == 0) {
+    if (strcmp(argv[1], "build") == 0 || strcmp(argv[1], "run") == 0 || strcmp(argv[1], "serve") == 0 || strcmp(argv[1], "test") == 0
+        || strcmp(argv[1], "release") == 0) {
         int kept = 2;
         for (int i = 2; i < argc; i++) {
-            if (strcmp(argv[i], "--json") == 0) { ui_json = true; } else { argv[kept++] = argv[i]; }
+            if (strcmp(argv[i], "--json") == 0 && strcmp(argv[1], "release") != 0) { ui_json = true; }
+            // macOS: the WKWebView host instead of AppKit (the builds `ui serve` runs inherit it).
+            else if (strcmp(argv[i], "--webview") == 0) { env_set("UI_MACOS_RENDERER", "web"); }
+            else { argv[kept++] = argv[i]; }
         }
         argc = kept;
     }
@@ -156,6 +160,7 @@ int main(int argc, string* argv) {
             serve(out, port());
         }
     } else if (String_eq_cstr(&target, "macos") == 1) {
+        if (run && !macos_webview(&p)) { run_macos(&p); return 0; }
         string binary = build_macos(&p);
         if (ui_json) { json_result("built", binary); } else { printf("Built %s\n", binary); }
         if (run) {

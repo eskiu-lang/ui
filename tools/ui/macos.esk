@@ -1,38 +1,221 @@
-// macOS: the web build in a WKWebView window.
+// macOS: the AppKit host (hosts/macos/host.mm) with the app compiled in, or the web build in
+// a WKWebView window (hosts/macos/webview.m) with --webview or ui.toml [macos] renderer = "web".
 // Part of the ui tool (tools/ui/main.esk imports every part).
 
 // ---- macOS ----
 
-string build_macos(Project* p) {
-    build_web(p);
-    string out = p.out("macos");
-    string binary = join(out, p.name.data);
-    Cmd cmd;
-    defer cmd.free();
-    // Both architectures, from macOS 11 on, so the app opens on other Macs than this one.
-    cmd.add("xcrun"); cmd.add("clang"); cmd.add("-fobjc-arc"); cmd.add("-O2"); cmd.add("-mmacosx-version-min=11.0");
-    cmd.add("-arch"); cmd.add("arm64"); cmd.add("-arch"); cmd.add("x86_64");
-    if (ui_release) { cmd.add("-DUI_RELEASE"); }
-    cmd.add(join(p.ui.data, "hosts/macos/host.m"));
-    cmd.add("-framework"); cmd.add("Cocoa"); cmd.add("-framework"); cmd.add("WebKit"); cmd.add("-o"); cmd.add(binary);
-    cmd.must(null);
+// The WKWebView host instead of AppKit: `--webview` (UI_MACOS_RENDERER=web, which the
+// builds `ui serve` runs inherit) or ui.toml [macos] renderer = "web".
+bool macos_webview(Project* p) {
+    string renderer = env_get("UI_MACOS_RENDERER");
+    if (renderer != null && renderer[0] != 0) { return strcmp(renderer, "web") == 0; }
+    string chosen = p.config.string("macos.renderer");
+    return chosen != null && strcmp(chosen, "web") == 0;
+}
 
-    // Build standard macOS .app bundle
-    String app_dir_str;
-    defer String_free(&app_dir_str);
-    String_appendf(&app_dir_str, "%s.app", p.name.data);
-    string app_dir = join(out, app_dir_str.data);
-    string contents = join(app_dir, "Contents");
-    string macos_dir = join(contents, "MacOS");
-    string resources = join(contents, "Resources");
-    fs_mkdir_p(macos_dir);
-    fs_mkdir_p(resources);
+// Under `ui serve` (UI_DEV=1) the app's code is a bundle the running app loads again after
+// each build (the host's UI_RELOAD mode), so the app is started again only when the host or
+// the native code changed. build_macos says which in macos_relaunch.
+bool macos_relaunch;
 
-    // Copy binary into bundle
-    string bundle_binary = join(macos_dir, p.name.data);
-    fs_copy(binary, bundle_binary);
+// This Mac's architecture, the one a build other than a release is made for.
+string macos_arch() {
+#ifdef __aarch64__
+    return "arm64";
+#else
+    return "x86_64";
+#endif
+}
 
-    // Info.plist
+bool macos_dev() {
+    string dev = env_get("UI_DEV");
+    return !ui_release && dev != null && strcmp(dev, "1") == 0;
+}
+
+// The file the dev host polls: it holds the newest bundle's path.
+string macos_reload_file(Project* p) { return join(p.out("macos"), "reload/current"); }
+
+// The macOS SDK and its clang++, from xcrun once, then from build/ui/macos/toolchain while
+// both still exist.
+void macos_toolchain(Project* p, String* sdk, String* clang) {
+    string cache = join(p.out("macos"), "toolchain");
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(cache, &text) == 0) {
+        List<String> lines;
+        String_lines(&text, &lines);
+        bool ok = lines.size == 2 && fs_is_dir(lines.data[0].data) == 1 && fs_exists(lines.data[1].data) == 1;
+        if (ok) { String_from(sdk, lines.data[0].data); String_from(clang, lines.data[1].data); }
+        fs_list_free(&lines);
+        if (ok) { return; }
+    }
+    Cmd find;
+    find.add("xcrun"); find.add("--sdk"); find.add("macosx"); find.add("--show-sdk-path");
+    if (!find.output(sdk)) { fail("ui: no macOS SDK (install Xcode's command-line tools)"); }
+    find.free();
+    Cmd tool;
+    tool.add("xcrun"); tool.add("--sdk"); tool.add("macosx"); tool.add("--find"); tool.add("clang++");
+    tool.output(clang);
+    tool.free();
+    String_clear(&text);
+    String_appendf(&text, "%s\n%s\n", sdk.data, clang.data);
+    fs_write_text(cache, text.data);
+}
+
+// The frameworks every link takes, and ui.toml [macos] frameworks.
+void macos_frameworks(Project* p, Cmd* link) {
+    link.add("-framework"); link.add("Cocoa"); link.add("-framework"); link.add("QuartzCore");
+    link.add("-framework"); link.add("CoreText");
+    List<string> frameworks;
+    defer frameworks.free();
+    p.config.all("macos.frameworks", &frameworks);
+    for (i in 0..frameworks.size) { link.add("-framework"); link.add(frameworks.data[i]); }
+}
+
+// The app's executable for one architecture: the host, the native code, Yoga and (but in a
+// dev build, which loads it from a bundle) the app. Its path, or null when a dev build's
+// executable is as it was.
+string macos_executable(Project* p, string out, string arch, bool dev, List<string>* compiler, string app) {
+    bool test = ui_test_build();
+    String host_name;
+    String_appendf(&host_name, "host-%s%s.o", arch, dev ? "-dev" : test ? "-test" : "");
+    string host = join(out, host_name.data);
+    string header = join(p.ui.data, "hosts/macos/ui_native.h");
+    List<string> host_sources;
+    defer host_sources.free();
+    host_sources.push(join(p.ui.data, "hosts/macos/host.mm")); host_sources.push(header);
+    host_sources.push(join(p.ui.data, "hosts/core.h")); host_sources.push(join(p.ui.data, "hosts/driver.h"));
+    host_sources.push(join(p.ui.data, "hosts/commit.h"));
+    if (stale(host, &host_sources)) {
+        Cmd cmd;
+        for (i in 0..compiler.size) { cmd.add(compiler.data[i]); }
+        cmd.add("-std=c++17"); cmd.add("-fobjc-arc"); cmd.add("-I"); cmd.add(yoga_source());
+        if (dev) { cmd.add("-DUI_RELOAD"); }
+        // The driver's channel (hosts/driver.h), in a dev or test build only.
+        if (test) { cmd.add("-DUI_TEST"); }
+        cmd.add("-c"); cmd.add(host_sources.data[0]); cmd.add("-o"); cmd.add(host);
+        cmd.must(null);
+        cmd.free();
+        built(host, &host_sources);
+    }
+    // Native code: native/macos/*.m and *.mm of every package, with ui_native.h on the path.
+    List<String> sources;
+    defer fs_list_free(&sources);
+    p.native("macos", ".m", &sources);
+    p.native("macos", ".mm", &sources);
+    List<String> native_objects;
+    defer fs_list_free(&native_objects);
+    for (i in 0..sources.size) {
+        String object;
+        String_appendf(&object, "%s/native-%s-%s.o", out, arch, native_object_name(sources.data[i].data));
+        List<string> inputs;
+        inputs.push(sources.data[i].data); inputs.push(header);
+        if (stale(object.data, &inputs)) {
+            Cmd compile;
+            for (j in 0..compiler.size) { compile.add(compiler.data[j]); }
+            compile.add("-fobjc-arc"); compile.add("-I"); compile.add(join(p.ui.data, "hosts/macos"));
+            if (String_ends_with(&sources.data[i], ".mm") == 1) { compile.add("-std=c++17"); }
+            compile.add("-c"); compile.add(sources.data[i].data); compile.add("-o"); compile.add(object.data);
+            compile.must(null);
+            compile.free();
+            built(object.data, &inputs);
+        }
+        inputs.free();
+        native_objects.push(object);
+    }
+    List<String> objects;
+    defer fs_list_free(&objects);
+    String cache;
+    String_appendf(&cache, "cache/yoga-macos-%s", arch);
+    yoga_objects(compiler, join(eskiu_home(), cache.data), &objects);
+    String platform;
+    String_appendf(&platform, "macos-%s", arch);
+    p.native_archives(platform.data, &objects);
+    String exe_name;
+    String_appendf(&exe_name, "exe-%s%s", arch, dev ? "-dev" : "");
+    string executable = join(out, exe_name.data);
+    List<string> inputs;
+    defer inputs.free();
+    inputs.push(host);
+    for (i in 0..native_objects.size) { inputs.push(native_objects.data[i].data); }
+    if (dev && !stale(executable, &inputs)) { return null; }
+    Cmd link;
+    for (i in 0..compiler.size) { link.add(compiler.data[i]); }
+    link.add(host);
+    // The dev host takes the app from its bundle, which looks up the host's functions in it.
+    if (dev) { link.add("-Wl,-export_dynamic"); } else { link.add(app); }
+    for (i in 0..native_objects.size) { link.add(native_objects.data[i].data); }
+    for (i in 0..objects.size) { link.add(objects.data[i].data); }
+    macos_frameworks(p, &link);
+    link.add("-o"); link.add(executable);
+    link.must(null);
+    link.free();
+    if (dev) { built(executable, &inputs); }
+    return executable;
+}
+
+// A dev build's app code: a bundle linked against the executable, named afresh each time
+// (dlopen keeps a path it loaded), and its path in the reload file the running app polls.
+// The older ones go, but for the one the app runs.
+void macos_core(Project* p, string out, string app, string executable, List<string>* compiler) {
+    string reload = join(out, "reload");
+    fs_mkdir_p(reload);
+    List<String> old;
+    fs_glob(join(reload, "app-*.dylib"), &old);
+    String current;
+    fs_read_text(macos_reload_file(p), &current);
+    String_trim(&current);
+    for (i in 0..old.size) {
+        if (String_eq_cstr(&old.data[i], current.data == null ? "" : current.data) != 1) { fs_remove(old.data[i].data); }
+    }
+    fs_list_free(&old);
+    String_free(&current);
+    String name;
+    String_appendf(&name, "app-%lld.dylib", time_now_ms());
+    string library = join(reload, name.data);
+    Cmd link;
+    for (i in 0..compiler.size) { link.add(compiler.data[i]); }
+    link.add("-bundle"); link.add("-bundle_loader"); link.add(executable); link.add(app);
+    List<String> archives;
+    defer fs_list_free(&archives);
+    String platform;
+    String_appendf(&platform, "macos-%s", macos_arch());
+    p.native_archives(platform.data, &archives);
+    for (i in 0..archives.size) { link.add(archives.data[i].data); }
+    macos_frameworks(p, &link);
+    link.add("-o"); link.add(library);
+    link.must(null);
+    link.free();
+    fs_write_text(macos_reload_file(p), library);
+}
+
+// The ui.toml [macos] window size, [macos.plist] entries and the app's URL scheme as plist
+// keys and strings.
+string macos_plist_entries(Project* p) {
+    String out;
+    String_from(&out, "");
+    string scheme = p.config.string("app.scheme");
+    if (scheme != null) {
+        String_appendf(&out, "    <key>CFBundleURLTypes</key>\n    <array><dict><key>CFBundleURLName</key><string>%s</string>"
+            "<key>CFBundleURLSchemes</key><array><string>%s</string></array></dict></array>\n", xml_escape(p.id.data), xml_escape(scheme));
+    }
+    string window = p.config.string("macos.window");
+    if (window != null) { String_appendf(&out, "    <key>UiWindowSize</key>\n    <string>%s</string>\n", xml_escape(window)); }
+    List<String> keys;
+    defer fs_list_free(&keys);
+    p.config.names("macos.plist.", &keys);
+    for (i in 0..keys.size) {
+        String key;
+        String_appendf(&key, "macos.plist.%s", keys.data[i].data);
+        String_appendf(&out, "    <key>%s</key>\n    <string>%s</string>\n", xml_escape(keys.data[i].data),
+            xml_escape(p.config.string(key.data)));
+        String_free(&key);
+    }
+    return out.data;
+}
+
+// The bundle's Info.plist (written only when it changed) and its icon.
+void macos_bundle(Project* p, string contents, string resources, bool web) {
     String plist;
     defer String_free(&plist);
     String_append(&plist, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
@@ -45,22 +228,193 @@ string build_macos(Project* p) {
     String_appendf(&plist, "    <key>CFBundleShortVersionString</key>\n    <string>%s</string>\n", xml_escape(app_version(p)));
     String_append(&plist, "    <key>LSMinimumSystemVersion</key>\n    <string>11.0</string>\n");
     String_appendf(&plist, "    <key>CFBundleExecutable</key>\n    <string>%s</string>\n", xml_escape(p.name.data));
-    // Assets & icon if present
-    string icns = macos_icon(p, resources);
-    if (icns != null) {
+    if (macos_icon(p, resources) != null) {
         String_append(&plist, "    <key>CFBundleIconFile</key>\n    <string>AppIcon</string>\n");
     }
+    if (!web) { String_append(&plist, macos_plist_entries(p)); }
     String_append(&plist, "    <key>CFBundlePackageType</key>\n    <string>APPL</string>\n"
+                          "    <key>NSPrincipalClass</key>\n    <string>NSApplication</string>\n"
                           "    <key>NSHighResolutionCapable</key>\n    <true/>\n"
                           "</dict>\n</plist>\n");
-    fs_write_text(join(contents, "Info.plist"), plist.data);
+    String before;
+    defer String_free(&before);
+    string path = join(contents, "Info.plist");
+    if (fs_read_text(path, &before) != 0 || String_eq_cstr(&before, plist.data) != 1) { fs_write_text(path, plist.data); }
+}
 
+// The web build in a WKWebView window: the binary next to the bundle, which `ui run macos
+// --webview` runs with the dev server's URL.
+string build_macos_webview(Project* p) {
+    build_web(p);
+    string out = p.out("macos");
+    string binary = join(out, p.name.data);
+    Cmd cmd;
+    defer cmd.free();
+    // Both architectures, from macOS 11 on, so the app opens on other Macs than this one.
+    cmd.add("xcrun"); cmd.add("clang"); cmd.add("-fobjc-arc"); cmd.add("-O2"); cmd.add("-mmacosx-version-min=11.0");
+    cmd.add("-arch"); cmd.add("arm64"); cmd.add("-arch"); cmd.add("x86_64");
+    if (ui_release) { cmd.add("-DUI_RELEASE"); }
+    cmd.add(join(p.ui.data, "hosts/macos/webview.m"));
+    cmd.add("-framework"); cmd.add("Cocoa"); cmd.add("-framework"); cmd.add("WebKit"); cmd.add("-o"); cmd.add(binary);
+    cmd.must(null);
+    String app_name;
+    String_appendf(&app_name, "%s.app", p.name.data);
+    string contents = join(join(out, app_name.data), "Contents");
+    string resources = join(contents, "Resources");
+    fs_mkdir_p(join(contents, "MacOS"));
+    fs_mkdir_p(resources);
+    fs_copy(binary, join(join(contents, "MacOS"), p.name.data));
+    macos_bundle(p, contents, resources, true);
     string web_out = join(p.root.data, "build/ui/web");
     replace_dir(web_out, join(resources, "web"));
     string icon_path = join(web_out, "apple-touch-icon.png");
-    if (fs_exists(icon_path) == 1) {
-        fs_copy(icon_path, join(resources, "icon.png"));
-    }
-
+    if (fs_exists(icon_path) == 1) { fs_copy(icon_path, join(resources, "icon.png")); }
     return binary;
+}
+
+// The AppKit app: build/ui/macos/NAME.app, for this Mac (both architectures in a release).
+// A dev build (UI_DEV=1) puts the app's code in a bundle the running app loads, so the
+// executable is linked again only when the host or the native code changed.
+string build_macos(Project* p) {
+    if (macos_webview(p)) { return build_macos_webview(p); }
+    string out = p.out("macos");
+    bool dev = macos_dev();
+    macos_relaunch = true;
+    String sdk;
+    String clang;
+    macos_toolchain(p, &sdk, &clang);
+    List<string> archs;
+    defer archs.free();
+    if (ui_release) { archs.push("arm64"); archs.push("x86_64"); } else { archs.push(macos_arch()); }
+    String app_name;
+    String_appendf(&app_name, "%s.app", p.name.data);
+    string bundle = join(out, app_name.data);
+    string contents = join(bundle, "Contents");
+    string resources = join(contents, "Resources");
+    fs_mkdir_p(join(contents, "MacOS"));
+    fs_mkdir_p(resources);
+    // A webview build left its web build and its binary there: not this one's.
+    fs_remove_all(join(resources, "web"));
+    fs_remove(join(out, p.name.data));
+    string executable = join(join(contents, "MacOS"), p.name.data);
+    List<String> made;
+    defer fs_list_free(&made);
+    for (a in 0..archs.size) {
+        string arch = archs.data[a];
+        String target;
+        String_appendf(&target, "%s-apple-macos11.0", arch);
+        List<string> compiler;
+        compiler.push(clang.data); compiler.push("-target"); compiler.push(target.data);
+        compiler.push("-isysroot"); compiler.push(sdk.data); compiler.push("-O2");
+        String app_file;
+        String_appendf(&app_file, "app-%s%s.o", arch, ui_release ? "-release" : "");
+        string app = join(out, app_file.data);
+        Cmd esk;
+        esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(target.data); esk.add(ui_release ? "-O2" : app_opt());
+        esk.add("-o"); esk.add(app);
+        compile_app(&esk);
+        esk.free();
+        string exe = macos_executable(p, out, arch, dev, &compiler, app);
+        if (dev) {
+            if (exe == null && fs_exists(executable) == 1) { macos_relaunch = false; }
+            else {
+                String linked;
+                String_appendf(&linked, "exe-%s-dev", arch);
+                fs_copy(join(out, linked.data), executable);
+            }
+            macos_bundle(p, contents, resources, false);
+            p.copy_assets(resources);
+            macos_core(p, out, app, executable, &compiler);
+            return bundle;
+        }
+        String path;
+        String_from(&path, exe);
+        made.push(path);
+    }
+    if (made.size == 1) { fs_copy(made.data[0].data, executable); }
+    else {
+        Cmd lipo;
+        lipo.add("lipo"); lipo.add("-create");
+        for (i in 0..made.size) { lipo.add(made.data[i].data); }
+        lipo.add("-output"); lipo.add(executable);
+        lipo.must(null);
+        lipo.free();
+    }
+    macos_bundle(p, contents, resources, false);
+    p.copy_assets(resources);
+    Cmd sign;
+    sign.add("codesign"); sign.add("--force"); sign.add("--sign"); sign.add("-"); sign.add(bundle);
+    sign.must(null);
+    sign.free();
+    return bundle;
+}
+
+// The running dev app's pid (the one it wrote next to the reload file), or 0.
+int macos_pid(Project* p) {
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(join(p.out("macos"), "reload/pid"), &text) != 0) { return 0; }
+    int pid = atoi(text.data);
+#ifdef _WIN32
+    return 0;
+#else
+    return pid > 0 && kill(pid, 0) == 0 ? pid : 0;
+#endif
+}
+
+// Ends the running dev app, waiting until it is gone.
+void macos_terminate(Project* p) {
+    int pid = macos_pid(p);
+    fs_remove(join(p.out("macos"), "reload/pid"));
+    if (pid == 0) { return; }
+#ifndef _WIN32
+    kill(pid, 15);
+    int64 until = time_monotonic_ms() + 5000;
+    while (kill(pid, 0) == 0 && time_monotonic_ms() < until) { time_sleep_ms(20); }
+    if (kill(pid, 0) == 0) { kill(pid, 9); }
+#endif
+}
+
+// Starts the dev app in the background, the running one ended first; its output goes to
+// build/ui/macos/app.log (the driver's `logs` has it too). It finds its reload file, the
+// driver's port (UI_AGENT_PORT) and, from `ui agent`, the window's size in its environment.
+void macos_launch(Project* p) {
+    macos_terminate(p);
+    String app_name;
+    String_appendf(&app_name, "%s.app/Contents/MacOS/%s", p.name.data, p.name.data);
+    string executable = join(p.out("macos"), app_name.data);
+    String command;
+    defer String_free(&command);
+    String_appendf(&command, "(exec env UI_RELOAD_FILE=%s", shell_quote(macos_reload_file(p)));
+    string window = env_get("UI_AGENT_WINDOW");
+    if (window != null && window[0] != 0) { String_appendf(&command, " UI_WINDOW=%s", shell_quote(window)); }
+    String_appendf(&command, " %s) > %s 2>&1 < /dev/null &", shell_quote(executable), shell_quote(join(p.out("macos"), "app.log")));
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    if (sh(command.data, &result) != 0 || result.exit_code != 0) { fail("ui: could not start the app"); }
+    // The app writes its pid once it runs.
+    int64 until = time_monotonic_ms() + 20000;
+    while (macos_pid(p) == 0 && time_monotonic_ms() < until) { time_sleep_ms(20); }
+}
+
+// `ui run macos` with the AppKit host (main.esk runs the webview's window itself).
+void run_macos(Project* p) {
+    string made = build_macos(p);
+    if (macos_dev()) {
+        // A dev build the running app picks up itself.
+        if (!macos_relaunch && macos_pid(p) != 0) {
+            println("Restarted the app on the new build");
+            return;
+        }
+        macos_launch(p);
+        printf("Started the app (its output: %s)\n", join(p.out("macos"), "app.log"));
+        return;
+    }
+    String app_name;
+    String_appendf(&app_name, "Contents/MacOS/%s", p.name.data);
+    Cmd app;
+    app.add(join(made, app_name.data));
+    int code = app.run(null);
+    app.free();
+    exit(code);
 }

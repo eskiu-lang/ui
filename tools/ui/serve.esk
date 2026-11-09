@@ -511,12 +511,14 @@ uint64 desktop_seen;
 void serve_command(Project* p, string target) {
     Mutex_init(&serve_lock);
     serve_project_root = p.root.data;
+    // A native app (iOS, Android, macOS's AppKit host) reloads its code itself; the web and
+    // the webview windows reload the page.
+    bool native = strcmp(target, "ios") == 0 || strcmp(target, "android") == 0 || (strcmp(target, "macos") == 0 && !macos_webview(p));
     String status;
-    String_appendf(&status, "%s/build/ui/serve-%s.json", p.root.data,
-        strcmp(target, "ios") == 0 || strcmp(target, "android") == 0 ? target : "web");
+    String_appendf(&status, "%s/build/ui/serve-%s.json", p.root.data, native ? target : "web");
     fs_mkdir_p(join(p.root.data, "build/ui"));
     serve_status_path = status.data;
-    serve_status_port = strcmp(target, "ios") == 0 || strcmp(target, "android") == 0 ? 0 : port();
+    serve_status_port = native ? 0 : port();
     if (strcmp(target, "web") == 0) {
         // Listening first: a page opened during the first build waits for it.
         serve_dev = true;
@@ -534,6 +536,14 @@ void serve_command(Project* p, string target) {
         String_free(&serving);
         open_url(url.data);
         serve_watch(p, "build", "web", seen);
+    } else if (native) {
+        uint64 seen = serve_signature(p);
+        serve_built_source = seen;
+        serve_build("run", target);
+        serve_note("watching", strcmp(target, "macos") == 0
+            ? "Watching for changes: each one reloads the app's code in its window (Ctrl+C to stop)"
+            : "Watching for changes: each one installs and launches the app again (Ctrl+C to stop)");
+        serve_watch(p, "run", target, seen);
     } else if (strcmp(target, "macos") == 0 || strcmp(target, "linux") == 0 || strcmp(target, "windows") == 0) {
         desktop_seen = serve_signature(p);
         serve_built_source = desktop_seen;
@@ -562,11 +572,5 @@ void serve_command(Project* p, string target) {
         int code = window.run(null);
         window.free();
         exit(code);
-    } else if (strcmp(target, "ios") == 0 || strcmp(target, "android") == 0) {
-        uint64 seen = serve_signature(p);
-        serve_built_source = seen;
-        serve_build("run", target);
-        serve_note("watching", "Watching for changes: each one installs and launches the app again (Ctrl+C to stop)");
-        serve_watch(p, "run", target, seen);
     } else { usage(); }
 }

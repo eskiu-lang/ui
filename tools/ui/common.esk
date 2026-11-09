@@ -146,6 +146,17 @@ string eskiuc() {
     return path != null && path[0] != 0 ? path : "eskiuc";
 }
 
+// `text` quoted for sh.
+string shell_quote(string text) {
+    String out;
+    String_append(&out, "'");
+    for (int i = 0; text[i] != 0; i++) {
+        if (text[i] == '\'') { String_append(&out, "'\\''"); } else { String_push(&out, text[i]); }
+    }
+    String_append(&out, "'");
+    return out.data;
+}
+
 // A name for a native source's object, unique per path (two packages may both have clock.m).
 string native_object_name(string path) {
     String name;
