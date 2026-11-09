@@ -1,5 +1,5 @@
 // The driver channel of the native hosts (docs/agents.md), in a dev build only (UI_TEST):
-// a socket the app listens on (TCP on 127.0.0.1 on the iOS simulator and macOS, an abstract Unix
+// a socket the app listens on (TCP on 127.0.0.1 on the iOS simulator, macOS and Windows, an abstract Unix
 // socket on Android that `adb forward` reaches) taking one JSON request per line. Each
 // request runs on the UI thread: the core answers it (ui_driver), or asks the host to do its
 // part first ({"host": ...}), which the host's driverCarry does before ui_driver_done answers.
@@ -20,14 +20,29 @@
 #include <thread>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
+#include <ctime>
+#ifdef _WIN32
+// Winsock and the C runtime's descriptors (the host includes windows.h first).
+#include <winsock2.h>
+#include <io.h>
+#include <fcntl.h>
+typedef SOCKET driver_socket;
+typedef int driver_ssize;
+#define driverCloseSocket closesocket
+#define driverNoSocket INVALID_SOCKET
+#else
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <cstdio>
-#include <ctime>
 #include <sys/time.h>
+typedef int driver_socket;
+typedef ssize_t driver_ssize;
+#define driverCloseSocket close
+#define driverNoSocket -1
+#endif
 #ifdef __APPLE__
 #include <sys/sysctl.h>
 #endif
@@ -73,20 +88,35 @@ static std::string driverLogs() {
 // it on to `echo` (the original stderr, or a log).
 static void driverCapture(std::function<void(const char *, size_t)> echo) {
     int fds[2];
+#ifdef _WIN32
+    if (_pipe(fds, 65536, _O_BINARY) != 0) return;
+    // The C runtime's buffering: a line at a time on a pipe needs no buffer at all here.
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    _dup2(fds[1], 1);
+    _dup2(fds[1], 2);
+    SetStdHandle(STD_OUTPUT_HANDLE, (HANDLE)_get_osfhandle(1));
+    SetStdHandle(STD_ERROR_HANDLE, (HANDLE)_get_osfhandle(2));
+#else
     if (pipe(fds) != 0) return;
     setvbuf(stdout, nullptr, _IOLBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
     dup2(fds[1], 1);
     dup2(fds[1], 2);
+#endif
     std::thread([fd = fds[0], echo]() {
         char buffer[4096];
         std::string line;
         for (;;) {
+#ifdef _WIN32
+            int n = _read(fd, buffer, sizeof buffer);
+#else
             ssize_t n = read(fd, buffer, sizeof buffer);
+#endif
             if (n <= 0) return;
             echo(buffer, (size_t)n);
             std::lock_guard<std::mutex> hold(driverLogLock);
-            for (ssize_t i = 0; i < n; i++) {
+            for (long i = 0; i < (long)n; i++) {
                 if (buffer[i] != '\n') { line += buffer[i]; continue; }
                 driverLogLines.push_back(line);
                 line.clear();
@@ -99,7 +129,15 @@ static void driverCapture(std::function<void(const char *, size_t)> echo) {
 // When this process started, in wall clock ms (0 when unknown), for the cold start `perf`
 // reports: the kernel's start time of the process.
 static double driverStartedMs() {
-#ifdef __APPLE__
+#ifdef _WIN32
+    // The process's creation time, in 100 ns units from 1601.
+    FILETIME created, exited, kernel, user;
+    if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) return 0;
+    ULARGE_INTEGER t;
+    t.LowPart = created.dwLowDateTime;
+    t.HighPart = created.dwHighDateTime;
+    return (double)(t.QuadPart - 116444736000000000ULL) / 10000.0;
+#elif defined(__APPLE__)
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)getpid()};
     struct kinfo_proc info = {};
     size_t size = sizeof info;
@@ -157,11 +195,11 @@ static std::string driverHandle(const std::string &request) {
 }
 
 // Each connection: its lines, each answered on the UI thread, one line back.
-static void driverServe(int client) {
+static void driverServe(driver_socket client) {
     std::string pending;
     char buffer[4096];
     for (;;) {
-        ssize_t n = recv(client, buffer, sizeof buffer, 0);
+        driver_ssize n = recv(client, buffer, sizeof buffer, 0);
         if (n <= 0) break;
         pending.append(buffer, (size_t)n);
         size_t end;
@@ -182,23 +220,23 @@ static void driverServe(int client) {
             done.wait(wait, [&]() { return finished; });
             answer += '\n';
             for (size_t sent = 0; sent < answer.size();) {
-                ssize_t k = send(client, answer.data() + sent, answer.size() - sent, 0);
+                driver_ssize k = send(client, answer.data() + sent, (int)(answer.size() - sent), 0);
                 if (k <= 0) break;
                 sent += (size_t)k;
             }
         }
     }
-    close(client);
+    driverCloseSocket(client);
 }
 
 // Accepts connections on `listener`, one thread each.
-static void driverAccept(int listener) {
+static void driverAccept(driver_socket listener) {
     std::thread([listener]() {
         for (;;) {
-            int client = accept(listener, nullptr, nullptr);
-            if (client < 0) continue;
-            int on = 1;
+            driver_socket client = accept(listener, nullptr, nullptr);
+            if (client == driverNoSocket) continue;
 #ifdef SO_NOSIGPIPE
+            int on = 1;
             setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
 #endif
             std::thread(driverServe, client).detach();
@@ -206,17 +244,26 @@ static void driverAccept(int listener) {
     }).detach();
 }
 
-// The simulator: TCP on 127.0.0.1:port (UI_AGENT_PORT, 8766 by default).
+// The simulator, macOS and Windows: TCP on 127.0.0.1:port (UI_AGENT_PORT).
 static bool driverListenTcp(int port) {
-    int listener = socket(AF_INET, SOCK_STREAM, 0);
-    if (listener < 0) return false;
+#ifdef _WIN32
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
+#endif
+    driver_socket listener = socket(AF_INET, SOCK_STREAM, 0);
+    if (listener == driverNoSocket) return false;
     int on = 1;
+#ifdef _WIN32
+    // Windows' SO_REUSEADDR lets two listen on one port: one app at a time takes it.
+    setsockopt(listener, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char *)&on, sizeof on);
+#else
     setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &on, sizeof on);
+#endif
     sockaddr_in address = {};
     address.sin_family = AF_INET;
     address.sin_port = htons((uint16_t)port);
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (bind(listener, (sockaddr *)&address, sizeof address) != 0 || listen(listener, 4) != 0) { close(listener); return false; }
+    if (bind(listener, (sockaddr *)&address, sizeof address) != 0 || listen(listener, 4) != 0) { driverCloseSocket(listener); return false; }
     driverAccept(listener);
     return true;
 }

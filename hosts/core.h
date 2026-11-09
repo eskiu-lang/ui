@@ -50,16 +50,30 @@
 #ifdef UI_RELOAD
 // Where a failed load is reported (stderr, Android's log).
 static void ui_core_error(const char *message);
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 #include <cstdio>
 #define UI_CORE_POINTER(ret, name, params) static ret (*name) params;
 UI_CORE(UI_CORE_POINTER)
 UI_CORE_TEST(UI_CORE_POINTER)
 // The app's library at `path`, its entry points into the pointers; false if it does not load.
 static bool loadCore(const char *path) {
+#ifdef _WIN32
+    // A DLL importing the host's functions from the executable (ui build windows).
+    HMODULE core = LoadLibraryA(path);
+    if (!core) {
+        char message[160];
+        snprintf(message, sizeof message, "could not load %s (error %lu)", path, (unsigned long)GetLastError());
+        ui_core_error(message);
+        return false;
+    }
+#define UI_CORE_LOOKUP(ret, name, params) name = (ret (*) params)(void *)GetProcAddress(core, #name);
+#else
     void *core = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!core) { ui_core_error(dlerror()); return false; }
 #define UI_CORE_LOOKUP(ret, name, params) name = (ret (*) params)dlsym(core, #name);
+#endif
     UI_CORE(UI_CORE_LOOKUP)
     UI_CORE_TEST(UI_CORE_LOOKUP)
     return true;
