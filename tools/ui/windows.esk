@@ -161,7 +161,15 @@ string windows_windres(string cxx) {
     if (dash >= 0 && name.data[dash] != '-') { String_append(&out, "windres"); }
     else if (dash >= 0) { String_append(&out, "windres"); }
     else { String_from(&out, "windres"); }
-    return out.data;
+    // A toolchain without the prefixed one (MinGW's g++ on Windows has x86_64-w64-mingw32-g++
+    // and plain windres).
+    Cmd probe;
+    probe.add(out.data); probe.add("--version");
+    String said;
+    bool ok = probe.output(&said);
+    probe.free();
+    String_free(&said);
+    return ok ? out.data : "windres";
 }
 
 // The libraries the host and the app take from Windows.

@@ -46,7 +46,8 @@ def run(args, cwd=None, timeout=1800, **kwargs):
 
 
 def ui_tool():
-    run(["eskiuc", HERE / "tools/ui/main.esk", "-o", UI])
+    # A relative path: eskiuc 0.14.1 on Windows misreads a backslashed main file's directory.
+    run(["eskiuc", "tools/ui/main.esk", "-o", UI], cwd=HERE)
 
 
 def perf_of(host, project, test):
