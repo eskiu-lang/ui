@@ -39,6 +39,10 @@ if [ "$HOST" = macos ]; then
     codesign --verify tests/conformance/build/ui/macos/conformance.app || { echo "FAIL release macos: not signed"; exit 1; }
     echo "release macos: $(( $(date +%s) - started )) s"
 fi
+# Linux: what GTK said about the host's use of it in the last runs (shown, not failed on).
+if [ "$HOST" = linux ]; then
+    cat tests/*/build/ui/linux/app.log examples/*/build/ui/linux/app.log 2>/dev/null | grep -E "Gtk-|Gdk-|Gsk-|GLib-" | sort | uniq -c | sort -rn | head -20 || true
+fi
 # Linux: a release of the conformance app is the GTK host with the app in, no driver, packaged
 # with its assets.
 if [ "$HOST" = linux ]; then

@@ -177,7 +177,11 @@ jobs:
           curl -fsSL https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-x86_64.tar.gz | tar -xz -C $HOME/.eskiu
           echo "$HOME/.eskiu/bin" >> $GITHUB_PATH
       - name: GTK 4 and a virtual display
-        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev xvfb
+        run: |
+          # Without the manual pages' index and the recommended packages: a minute, not four.
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libgtk-4-dev xvfb xauth libgl1-mesa-dri > /dev/null
       - name: Yoga, compiled once
         uses: actions/cache@v4
         with:
