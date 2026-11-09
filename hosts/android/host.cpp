@@ -20,6 +20,18 @@ static void ui_core_error(const char *message) { __android_log_print(ANDROID_LOG
 
 static JNIEnv *env;
 static jobject activity;
+static JavaVM *vm;
+#ifdef UI_TEST
+#include <functional>
+#include <deque>
+#include <mutex>
+#include <unistd.h>
+#include <android/looper.h>
+#include <android/log.h>
+static void driverOnMain(std::function<void()> work);
+static std::string driverCarry(const std::string &directive);
+#include "../driver.h"
+#endif
 static jmethodID applyMethod, measureMethod, placeMethod, widthMethod, heightMethod, scaleMethod;
 static jmethodID scheduleMethod, cancelMethod, committedMethod, contentMethod, commandMethod, screenWidthMethod,
     screenHeightMethod;
@@ -35,7 +47,6 @@ static std::unordered_map<int, std::array<int, 6>> layouts;
 
 // An edge offset that is not set (kUnset in src/core/state.esk).
 static const int kUnset = -1000000;
-static JavaVM *vm;
 static jclass activityClass;
 static jobject classLoader;
 static jmethodID namedMethod, emitMethod, loadClassMethod, timerStartMethod, timerStopMethod, windowMethod, framesMethod, assetPathMethod;
@@ -209,6 +220,84 @@ extern "C" void ui_host_ready() {
     env->CallVoidMethod(activity, committedMethod); checked();
 }
 
+#ifdef UI_TEST
+// The driver (hosts/driver.h, docs/agents.md): work for the UI thread through a pipe its
+// looper watches; the host's part through the activity's driver* methods.
+static std::mutex mainLock;
+static std::deque<std::function<void()>> mainWork;
+static int mainPipe[2] = {-1, -1};
+static jmethodID driverTapMethod, driverTypeMethod, driverScrollMethod, driverLayoutMethod, driverClockMethod, driverMemoryMethod;
+static void driverOnMain(std::function<void()> work) {
+    { std::lock_guard<std::mutex> hold(mainLock); mainWork.push_back(std::move(work)); }
+    char wake = 1;
+    (void)!write(mainPipe[1], &wake, 1);
+}
+static int driverWake(int fd, int, void *) {
+    char buffer[64];
+    (void)!read(fd, buffer, sizeof buffer);
+    for (;;) {
+        std::function<void()> work;
+        {
+            std::lock_guard<std::mutex> hold(mainLock);
+            if (mainWork.empty()) break;
+            work = std::move(mainWork.front());
+            mainWork.pop_front();
+        }
+        vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
+        work();
+    }
+    return 1;
+}
+static std::string driverString(jstring text) {
+    if (!text) return "";
+    const char *chars = env->GetStringUTFChars(text, nullptr);
+    std::string out = chars;
+    env->ReleaseStringUTFChars(text, chars);
+    env->DeleteLocalRef(text);
+    return out;
+}
+static std::string driverCarry(const std::string &d) {
+    std::string op = driverOp(d);
+    if (!activity) return "error: the app is not running";
+    if (op == "hello" || op == "clock") {
+        env->CallVoidMethod(activity, driverClockMethod, (jboolean)driverFlag(d, "virtual")); checked();
+        return "";
+    }
+    if (op == "logs") return driverLogs();
+    if (op == "perf") return std::to_string((long long)env->CallLongMethod(activity, driverMemoryMethod));
+    if (op == "layout") { std::string rows = driverString((jstring)env->CallObjectMethod(activity, driverLayoutMethod)); checked(); return rows; }
+    int id = (int)driverNumber(d, "node");
+    if (op == "tap" && (int)driverNumber(d, "kind") == 12) { ui_dispatch(id, generations[id]); return ""; }
+    jstring result = nullptr;
+    if (op == "tap") result = (jstring)env->CallObjectMethod(activity, driverTapMethod, id);
+    else if (op == "type") {
+        jstring text = env->NewStringUTF(driverText(d, "text").c_str());
+        result = (jstring)env->CallObjectMethod(activity, driverTypeMethod, id, text);
+        env->DeleteLocalRef(text);
+    } else if (op == "scroll") result = (jstring)env->CallObjectMethod(activity, driverScrollMethod, id, (jint)driverNumber(d, "dy"));
+    else return "error: the Android host does not know " + op;
+    checked();
+    return driverString(result);
+}
+// Starts the driver once, on the UI thread: its pipe, the app's output kept for `logs` (and
+// written to the log), and the abstract socket `adb forward` reaches.
+static void driverStart(jclass cls) {
+    driverTapMethod = env->GetMethodID(cls, "driverTap", "(I)Ljava/lang/String;");
+    driverTypeMethod = env->GetMethodID(cls, "driverType", "(ILjava/lang/String;)Ljava/lang/String;");
+    driverScrollMethod = env->GetMethodID(cls, "driverScroll", "(II)Ljava/lang/String;");
+    driverLayoutMethod = env->GetMethodID(cls, "driverLayout", "()Ljava/lang/String;");
+    driverClockMethod = env->GetMethodID(cls, "driverClock", "(Z)V");
+    driverMemoryMethod = env->GetMethodID(cls, "driverMemory", "()J");
+    if (mainPipe[0] >= 0 || pipe(mainPipe) != 0) return;
+    ALooper_addFd(ALooper_forThread(), mainPipe[0], ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT, driverWake, nullptr);
+    driverCapture([](const char *bytes, size_t n) {
+        std::string text(bytes, n);
+        __android_log_write(ANDROID_LOG_INFO, "ui", text.c_str());
+    });
+    if (!driverListenAbstract("eskiu-ui-agent")) __android_log_write(ANDROID_LOG_ERROR, "ui", "the driver could not listen");
+}
+#endif
+
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStart(JNIEnv *current, jobject self, jint example) {
     env = current;
     // A second start (the self-test's TODO) reuses the activity and the root.
@@ -241,6 +330,9 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStart(JNIEn
     jclass loaderClass = env->FindClass("java/lang/ClassLoader");
     loadClassMethod = env->GetMethodID(loaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
     env->DeleteLocalRef(loader); env->DeleteLocalRef(loaderClass); env->DeleteLocalRef(classClass);
+#ifdef UI_TEST
+    driverStart(cls);
+#endif
     env->DeleteLocalRef(cls); checked();
     root = YGNodeNew();
     YGNodeStyleSetFlexDirection(root, YGFlexDirectionColumn);

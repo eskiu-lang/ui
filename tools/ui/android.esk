@@ -85,10 +85,15 @@ string build_android(Project* p) {
     List<string> host_sources;
     defer host_sources.free();
     host_sources.push(join(p.ui.data, "hosts/android/host.cpp")); host_sources.push(header);
+    host_sources.push(join(p.ui.data, "hosts/core.h")); host_sources.push(join(p.ui.data, "hosts/driver.h"));
+    bool test = ui_test_build();
+    if (test && !dev) { host = join(out, "host-test.o"); }
     if (stale(host, &host_sources)) {
         Cmd cmd;
         cmd.add(clang); cmd.add("-fPIC"); cmd.add("-O2"); cmd.add("-std=c++17"); cmd.add("-I"); cmd.add(yoga_source());
         if (dev) { cmd.add("-DUI_RELOAD"); }
+        // The driver's channel (hosts/driver.h), in a dev or test build only.
+        if (test) { cmd.add("-DUI_TEST"); }
         cmd.add("-c"); cmd.add(host_sources.data[0]); cmd.add("-o"); cmd.add(host);
         cmd.must(null);
         cmd.free();
@@ -444,6 +449,15 @@ void android_device() {
 void run_android(Project* p) {
     string apk = build_android(p);
     android_device();
+    // An APK built before but never installed on this device (another device, a new emulator).
+    if (!android_reinstall) {
+        Cmd installed;
+        installed.add(adb()); installed.add("shell"); installed.add("pm"); installed.add("path"); installed.add(p.id.data);
+        String found;
+        if (!installed.output(&found) || String_contains(&found, "package:") != 1) { android_reinstall = true; }
+        installed.free();
+        String_free(&found);
+    }
     if (android_reinstall) {
         Cmd install;
         install.add(adb()); install.add("install"); install.add("-r"); install.add(apk);
