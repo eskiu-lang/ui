@@ -1,0 +1,738 @@
+// `ui test [HOST...] [FILE...]`: scripted UI tests, run unchanged on each host through the
+// driver `ui agent` talks to. A test is a text file (tests/ui/*.uitest), one op or
+// expectation per line; docs/testing.md has the format. Each file starts the app afresh.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// The file and line being run, and why the step failed ("" while it passes).
+string uitest_file;
+int uitest_line;
+String uitest_failure;
+
+// --update: screenshots are recorded again; --verbose: each step's answer is printed.
+bool uitest_update;
+bool uitest_verbose;
+
+// Notes why the step failed (the first reason given wins); always false, for `return`.
+bool uitest_fail(string message) {
+    if (uitest_failure.len == 0) { String_from(&uitest_failure, message); }
+    return false;
+}
+
+// One word at `*at` of `line` into `out`: a word in double quotes may hold blanks, \" and
+// \\. False when its quote is not closed.
+bool uitest_word(string line, *int at, String* out) {
+    int i = *at;
+    String_clear(out);
+    if (line[i] != '"') {
+        while (line[i] != 0 && line[i] != ' ' && line[i] != '\t') { String_push(out, line[i]); i++; }
+        *at = i;
+        return true;
+    }
+    i++;
+    while (line[i] != '"') {
+        if (line[i] == 0) { return false; }
+        if (line[i] == '\\' && (line[i + 1] == '"' || line[i + 1] == '\\')) { i++; }
+        String_push(out, line[i]);
+        i++;
+    }
+    *at = i + 1;
+    // An empty quoted word is a word too.
+    if (out.data == null) { String_from(out, ""); }
+    return true;
+}
+
+// The words of a line. After `limit` words (limit < 0: no limit) the rest of the line is one
+// more word, without its quotes when it is one quoted word. False when a quote is not closed.
+bool uitest_words(string line, int limit, List<String>* out) {
+    int i = 0;
+    while (true) {
+        while (line[i] == ' ' || line[i] == '\t') { i++; }
+        if (line[i] == 0) { return true; }
+        if (limit >= 0 && out.size == limit) {
+            String rest;
+            String_from(&rest, &line[i]);
+            String_trim(&rest);
+            if (rest.data[0] == '"') {
+                int at = 0;
+                String word;
+                if (uitest_word(rest.data, &at, &word) && rest.data[at] == 0) {
+                    String_free(&rest);
+                    out.push(word);
+                    return true;
+                }
+                String_free(&word);
+            }
+            out.push(rest);
+            return true;
+        }
+        String word;
+        if (!uitest_word(line, &i, &word)) { String_free(&word); return false; }
+        out.push(word);
+    }
+    return true;
+}
+
+// ---- answers ----
+
+// The app's answer to `request`, or null with the reason noted. The caller frees it.
+*JsonValue uitest_ask(string request) {
+    *JsonValue answer = agent_request(request);
+    if (answer == null) { uitest_fail("the app did not answer"); return null; }
+    if (!agent_ok(answer)) {
+        String message;
+        defer String_free(&message);
+        string error = agent_member(answer, "error");
+        String_appendf(&message, "the app refused it: %s", error == null ? "(no reason)" : error);
+        uitest_fail(message.data);
+        JsonValue_free(answer);
+        return null;
+    }
+    if (uitest_verbose) {
+        String text;
+        JsonValue_stringify(answer, &text);
+        printf("      %s\n", text.data);
+        String_free(&text);
+    }
+    return answer;
+}
+
+// A node's accessible name, as the driver has it: its label, else a Text's or Button's text.
+string uitest_name(*JsonValue node) {
+    string label = agent_member(node, "label");
+    if (label != null) { return label; }
+    string kind = agent_member(node, "kind");
+    if (kind != null && (strcmp(kind, "Text") == 0 || strcmp(kind, "Button") == 0)) { return agent_member(node, "text"); }
+    return null;
+}
+
+// The nodes at and below `node` that `target` names: mode 0 by test_id, 1 by accessible name,
+// 2 by id ("#N").
+void uitest_collect(*JsonValue node, string target, int mode, List<*JsonValue>* found) {
+    bool hit = false;
+    if (mode == 0) { string id = agent_member(node, "test_id"); hit = id != null && strcmp(id, target) == 0; }
+    else if (mode == 1) { string name = uitest_name(node); hit = name != null && strcmp(name, target) == 0; }
+    else { hit = JsonValue_get(node, "id") != null && (int)agent_number(node, "id") == atoi(&target[1]); }
+    if (hit) { found.push(node); }
+    *JsonValue children = JsonValue_get(node, "children");
+    if (children == null) { return; }
+    for (i in 0..JsonValue_len(children)) { uitest_collect(JsonValue_at(children, i), target, mode, found); }
+}
+
+// The one element `target` names among `nodes` (an array: the root's children, or the
+// layout's frames), by the driver's rule: #N, else a test_id, else an accessible name. Null
+// when none or several match, with the reason in `error`.
+*JsonValue uitest_find(*JsonValue nodes, string target, String* error) {
+    List<*JsonValue> found;
+    defer found.free();
+    for (mode in 0..3) {
+        if ((mode == 2) != (target[0] == '#')) { continue; }
+        for (i in 0..JsonValue_len(nodes)) { uitest_collect(JsonValue_at(nodes, i), target, mode, &found); }
+        if (found.size > 0) { break; }
+    }
+    if (found.size == 1) { return found.data[0]; }
+    if (found.size == 0) { String_appendf(error, "no element with test_id or accessible name '%s'", target); return null; }
+    String_appendf(error, "%d elements match '%s' (give one a test_id)", found.size, target);
+    return null;
+}
+
+// What a JSON value is, as a test writes it: a string as itself, anything else as JSON.
+void uitest_show(*JsonValue v, String* out) {
+    String_clear(out);
+    if (v == null) { String_from(out, "(nothing)"); return; }
+    if (v.kind == JString) { String_from(out, v.str.data == null ? "" : v.str.data); return; }
+    JsonValue_stringify(v, out);
+}
+
+// Whether `actual` is what the test wrote: a number by value, true and false, a string as
+// written, an array or object by its JSON (blanks aside).
+bool uitest_same(*JsonValue actual, string expected) {
+    if (actual == null) { return false; }
+    if (actual.kind == JNumber) {
+        String text;
+        defer String_free(&text);
+        String_from(&text, expected);
+        double want = 0;
+        if (String_parse_double(&text, &want) != 1) { return false; }
+        double diff = actual.num - want;
+        return diff < 1e-6 && diff > -1e-6;
+    }
+    if (actual.kind == JString) { return strcmp(actual.str.data == null ? "" : actual.str.data, expected) == 0; }
+    String have;
+    defer String_free(&have);
+    JsonValue_stringify(actual, &have);
+    *JsonValue parsed = json_parse(expected);
+    if (parsed == null) { return false; }
+    String want;
+    defer String_free(&want);
+    JsonValue_stringify(parsed, &want);
+    JsonValue_free(parsed);
+    return String_eq(&have, &want) == 1;
+}
+
+// ---- expectations ----
+
+// `expect ID exists|missing|text T|prop NAME VALUE` against the tree.
+bool uitest_expect_tree(List<String>* w) {
+    string target = w.data[1].data;
+    string what = w.data[2].data;
+    *JsonValue answer = uitest_ask("{\"op\": \"tree\"}");
+    if (answer == null) { return false; }
+    defer JsonValue_free(answer);
+    *JsonValue root = JsonValue_get(answer, "root");
+    *JsonValue children = root == null ? null : JsonValue_get(root, "children");
+    *JsonValue empty = JsonValue_array();
+    defer JsonValue_free(empty);
+    String error;
+    defer String_free(&error);
+    *JsonValue node = uitest_find(children == null ? empty : children, target, &error);
+    String message;
+    defer String_free(&message);
+    if (strcmp(what, "missing") == 0) {
+        if (node == null && String_starts_with(&error, "no element") == 1) { return true; }
+        String_appendf(&message, "expected no '%s', found %s", target, node != null ? "one" : error.data);
+        return uitest_fail(message.data);
+    }
+    if (node == null) { return uitest_fail(error.data); }
+    if (strcmp(what, "exists") == 0) { return true; }
+    String found;
+    defer String_free(&found);
+    if (strcmp(what, "text") == 0) {
+        *JsonValue text = JsonValue_get(node, "text");
+        if (text != null && text.kind == JString && uitest_same(text, w.data[3].data)) { return true; }
+        uitest_show(text, &found);
+        String_appendf(&message, "expected the text \"%s\", found \"%s\"", w.data[3].data, found.data);
+        return uitest_fail(message.data);
+    }
+    // prop: the props the app set (the tree leaves out defaults), then the node's own members.
+    string name = w.data[3].data;
+    *JsonValue props = JsonValue_get(node, "props");
+    *JsonValue value = props == null ? null : JsonValue_get(props, name);
+    if (value == null) { value = JsonValue_get(node, name); }
+    if (value == null) {
+        String_appendf(&message, "expected %s %s, found it at its default (unset)", name, w.data[4].data);
+        return uitest_fail(message.data);
+    }
+    if (uitest_same(value, w.data[4].data)) { return true; }
+    uitest_show(value, &found);
+    String_appendf(&message, "expected %s %s, found %s", name, w.data[4].data, found.data);
+    return uitest_fail(message.data);
+}
+
+// A number of a frame expectation ("_" is any); false when it is neither.
+bool uitest_frame_value(string word, *double out, *bool any) {
+    *any = strcmp(word, "_") == 0;
+    if (*any) { return true; }
+    String text;
+    defer String_free(&text);
+    String_from(&text, word);
+    return String_parse_double(&text, out) == 1;
+}
+
+// `expect ID frame X Y W H [±TOL] [in OTHER]`: the element's frame in points, from the
+// window's top left or OTHER's, each within TOL (1 by default); `_` takes any value.
+bool uitest_expect_frame(List<String>* w) {
+    string target = w.data[1].data;
+    double[4] want;
+    bool[4] any;
+    for (k in 0..4) {
+        if (w.size <= 3 + k || !uitest_frame_value(w.data[3 + k].data, &want[k], &any[k])) {
+            return uitest_fail("frame takes X Y W H (numbers or _), then ±TOL and in OTHER if wanted");
+        }
+    }
+    double tolerance = 1;
+    string other = null;
+    int at = 7;
+    if (at < w.size && (String_starts_with(&w.data[at], "±") == 1 || String_starts_with(&w.data[at], "+-") == 1)) {
+        String text;
+        String_from(&text, &w.data[at].data[2]);
+        if (String_parse_double(&text, &tolerance) != 1) { String_free(&text); return uitest_fail("±TOL takes a number of points"); }
+        String_free(&text);
+        at++;
+    }
+    if (at + 1 < w.size && strcmp(w.data[at].data, "in") == 0) { other = w.data[at + 1].data; at += 2; }
+    if (at != w.size) { return uitest_fail("frame takes X Y W H, then ±TOL and in OTHER if wanted"); }
+    *JsonValue answer = uitest_ask("{\"op\": \"layout\"}");
+    if (answer == null) { return false; }
+    defer JsonValue_free(answer);
+    *JsonValue frames = JsonValue_get(answer, "frames");
+    String error;
+    defer String_free(&error);
+    *JsonValue node = uitest_find(frames, target, &error);
+    if (node == null) { return uitest_fail(error.data); }
+    double ox = 0;
+    double oy = 0;
+    if (other != null) {
+        *JsonValue base = uitest_find(frames, other, &error);
+        if (base == null) { return uitest_fail(error.data); }
+        ox = agent_number(base, "x");
+        oy = agent_number(base, "y");
+    }
+    double[4] have;
+    have[0] = agent_number(node, "x") - ox;
+    have[1] = agent_number(node, "y") - oy;
+    have[2] = agent_number(node, "width");
+    have[3] = agent_number(node, "height");
+    bool ok = true;
+    for (k in 0..4) {
+        double diff = have[k] - want[k];
+        if (!any[k] && (diff > tolerance + 1e-9 || diff < -tolerance - 1e-9)) { ok = false; }
+    }
+    if (ok) { return true; }
+    String message;
+    defer String_free(&message);
+    String_append(&message, "expected the frame");
+    for (k in 3..7) { String_appendf(&message, " %s", w.data[k].data); }
+    String_appendf(&message, " ±%g%s%s, found %g %g %g %g", tolerance, other != null ? " in " : "", other != null ? other : "",
+        have[0], have[1], have[2], have[3]);
+    return uitest_fail(message.data);
+}
+
+// `expect state PATH VALUE`: PATH is a member of the state (modals, timers, fetches, frames,
+// clock, now, routes: the stack as "/ > /a") or SCOPE.N, the Nth signal of the scope whose
+// test_id, component name or path (as `ui agent state` prints it) is SCOPE.
+bool uitest_expect_state(List<String>* w) {
+    string path = w.data[2].data;
+    string expected = w.data[3].data;
+    *JsonValue answer = uitest_ask("{\"op\": \"state\"}");
+    if (answer == null) { return false; }
+    defer JsonValue_free(answer);
+    String message;
+    defer String_free(&message);
+    String found;
+    defer String_free(&found);
+    // SCOPE.N: the last dot.
+    string dot = null;
+    for (int k = 0; path[k] != 0; k++) { if (path[k] == '.') { dot = &path[k]; } }
+    if (dot == null) {
+        if (strcmp(path, "routes") == 0) {
+            *JsonValue routes = JsonValue_get(answer, "routes");
+            for (i in 0..JsonValue_len(routes)) { String_appendf(&found, "%s%s", i > 0 ? " > " : "", JsonValue_at(routes, i).str.data); }
+            if (String_eq_cstr(&found, expected) == 1) { return true; }
+            String_appendf(&message, "expected routes \"%s\", found \"%s\"", expected, found.data == null ? "" : found.data);
+            return uitest_fail(message.data);
+        }
+        *JsonValue value = JsonValue_get(answer, path);
+        if (value == null) {
+            String_appendf(&message, "the state has no '%s' (modals, timers, fetches, frames, clock, now, routes, or SCOPE.N)", path);
+            return uitest_fail(message.data);
+        }
+        if (uitest_same(value, expected)) { return true; }
+        uitest_show(value, &found);
+        String_appendf(&message, "expected %s %s, found %s", path, expected, found.data);
+        return uitest_fail(message.data);
+    }
+    String scope;
+    defer String_free(&scope);
+    int length = (int)strlen(path) - (int)strlen(dot);
+    for (k in 0..length) { String_push(&scope, path[k]); }
+    int index = atoi(&dot[1]);
+    *JsonValue scopes = JsonValue_get(answer, "scopes");
+    *JsonValue picked = null;
+    int count = 0;
+    for (i in 0..JsonValue_len(scopes)) {
+        *JsonValue s = JsonValue_at(scopes, i);
+        string id = agent_member(s, "test_id");
+        string name = agent_member(s, "name");
+        string at = agent_member(s, "path");
+        bool hit = (id != null && String_eq_cstr(&scope, id) == 1) || (name != null && String_eq_cstr(&scope, name) == 1)
+            || (at != null && String_eq_cstr(&scope, at) == 1);
+        if (hit) { picked = s; count++; }
+    }
+    if (count != 1) {
+        String_appendf(&message, count == 0 ? "no scope with signals is '%s' (a test_id, a component name or a path)"
+                                            : "several scopes are '%s'; name one by its path", scope.data);
+        return uitest_fail(message.data);
+    }
+    *JsonValue signals = JsonValue_get(picked, "signals");
+    if (index < 0 || index >= JsonValue_len(signals)) {
+        String_appendf(&message, "%s has %d signals, no %d", scope.data, JsonValue_len(signals), index);
+        return uitest_fail(message.data);
+    }
+    *JsonValue value = JsonValue_at(signals, index);
+    if (uitest_same(value, expected)) { return true; }
+    uitest_show(value, &found);
+    String_appendf(&message, "expected %s %s, found %s", path, expected, found.data);
+    return uitest_fail(message.data);
+}
+
+// `expect screenshot NAME [THRESHOLD%]`: the window against screenshots/NAME.HOST.png next to
+// the test; at most THRESHOLD of the pixels (0.1% by default) may differ by more than a
+// little. A missing reference (or --update) is recorded and passes.
+bool uitest_expect_screenshot(Project* p, List<String>* w, string dir) {
+    double threshold = 0.1;
+    if (w.size == 4) {
+        String text;
+        String_from(&text, w.data[3].data);
+        if (String_ends_with(&text, "%") == 1) { text.len--; text.data[text.len] = 0; }
+        if (String_parse_double(&text, &threshold) != 1) { String_free(&text); return uitest_fail("screenshot takes NAME, then a threshold like 0.5%"); }
+        String_free(&text);
+    }
+    string out_dir = join(p.root.data, "build/ui/test");
+    fs_mkdir_p(out_dir);
+    String file;
+    defer String_free(&file);
+    String_appendf(&file, "%s.%s.png", w.data[2].data, agent_host);
+    string actual = join(out_dir, file.data);
+    string error = agent_screenshot(p, actual);
+    if (error != null) { return uitest_fail(error); }
+    string reference = join(join(dir, "screenshots"), file.data);
+    String message;
+    defer String_free(&message);
+    if (uitest_update || fs_exists(reference) != 1) {
+        fs_mkdir_p(join(dir, "screenshots"));
+        if (fs_copy(actual, reference) != 0) { return uitest_fail("could not record the screenshot"); }
+        printf("    recorded %s\n", reference);
+        return true;
+    }
+    PngImage have;
+    defer PngImage_free(&have);
+    PngImage want;
+    defer PngImage_free(&want);
+    string bad = png_read(actual, &have);
+    if (bad == null) { bad = png_read(reference, &want); }
+    if (bad != null) { return uitest_fail(bad); }
+    if (have.width != want.width || have.height != want.height) {
+        String_appendf(&message, "the screenshot is %dx%d, the reference %s %dx%d", have.width, have.height, reference,
+            want.width, want.height);
+        return uitest_fail(message.data);
+    }
+    // A pixel differs when a channel is off by more than 24 of 255 (antialiasing, dithering).
+    int64 total = (int64)have.width * (int64)have.height;
+    int64 differ = 0;
+    PngImage diff = PngImage{have.width, have.height, alloc<uint8>(total * 4)};
+    defer PngImage_free(&diff);
+    for (int64 i = 0; i < total; i++) {
+        bool off = false;
+        for (c in 0..4) {
+            int d = (int)have.rgba[i * 4 + c] - (int)want.rgba[i * 4 + c];
+            if (d > 24 || d < -24) { off = true; }
+        }
+        int gray = ((int)want.rgba[i * 4] + (int)want.rgba[i * 4 + 1] + (int)want.rgba[i * 4 + 2]) / 6 + 128;
+        diff.rgba[i * 4] = (uint8)(off ? 255 : gray);
+        diff.rgba[i * 4 + 1] = (uint8)(off ? 0 : gray);
+        diff.rgba[i * 4 + 2] = (uint8)(off ? 0 : gray);
+        diff.rgba[i * 4 + 3] = (uint8)255;
+        if (off) { differ++; }
+    }
+    double percent = total > 0 ? (double)differ * 100.0 / (double)total : 0;
+    if (percent <= threshold) { return true; }
+    String diff_name;
+    defer String_free(&diff_name);
+    String_appendf(&diff_name, "%s.%s.diff.png", w.data[2].data, agent_host);
+    png_write(join(out_dir, diff_name.data), &diff);
+    String_appendf(&message, "%.2f%% of the pixels differ from %s (at most %g%%); see %s and %s", percent, reference,
+        threshold, actual, join(out_dir, diff_name.data));
+    return uitest_fail(message.data);
+}
+
+// One `expect` line.
+bool uitest_expect(Project* p, string line, string dir) {
+    List<String> w;
+    defer fs_list_free(&w);
+    if (!uitest_words(line, -1, &w)) { return uitest_fail("a quote is not closed"); }
+    if (w.size < 3) { return uitest_fail("expect ID exists|missing|text|prop|frame, expect state PATH VALUE or expect screenshot NAME"); }
+    string first = w.data[1].data;
+    string what = w.data[2].data;
+    if (strcmp(first, "state") == 0) {
+        if (w.size != 4) { return uitest_fail("expect state PATH VALUE (quote a value with blanks)"); }
+        return uitest_expect_state(&w);
+    }
+    if (strcmp(first, "screenshot") == 0) {
+        if (w.size > 4) { return uitest_fail("expect screenshot NAME [THRESHOLD%]"); }
+        return uitest_expect_screenshot(p, &w, dir);
+    }
+    if (strcmp(what, "frame") == 0) { return uitest_expect_frame(&w); }
+    int need = strcmp(what, "exists") == 0 || strcmp(what, "missing") == 0 ? 3 : strcmp(what, "text") == 0 ? 4
+        : strcmp(what, "prop") == 0 ? 5 : 0;
+    if (need == 0) {
+        String message;
+        String_appendf(&message, "unknown expectation '%s' (exists, missing, text, prop, frame)", what);
+        bool ok = uitest_fail(message.data);
+        String_free(&message);
+        return ok;
+    }
+    if (w.size != need) {
+        return uitest_fail(need == 3 ? "takes nothing after it" : need == 4 ? "text takes one quoted text"
+                                                                 : "prop takes a name and a value");
+    }
+    return uitest_expect_tree(&w);
+}
+
+// ---- steps ----
+
+// Whether `name` is one of `ui agent`'s ops.
+bool uitest_is_op(string name) {
+    string ops = " tap type scroll back clock tree layout state logs perf screenshot ";
+    String key;
+    defer String_free(&key);
+    String_appendf(&key, " %s ", name);
+    return strstr(ops, key.data) != null;
+}
+
+// One line of a test: an op (as `ui agent` takes it), `repeat N OP` or an expectation;
+// false when it failed (uitest_failure says why).
+bool uitest_step(Project* p, string line, string dir) {
+    List<String> head;
+    defer fs_list_free(&head);
+    uitest_words(line, 1, &head);
+    string name = head.data[0].data;
+    if (strcmp(name, "expect") == 0) { return uitest_expect(p, line, dir); }
+    if (strcmp(name, "repeat") == 0) {
+        List<String> w;
+        defer fs_list_free(&w);
+        uitest_words(line, 2, &w);
+        int times = w.size == 3 ? atoi(w.data[1].data) : 0;
+        if (times <= 0) { return uitest_fail("repeat takes a count and an op: repeat 10 tap add"); }
+        for (k in 0..times) { if (!uitest_step(p, w.data[2].data, dir)) { return false; } }
+        return true;
+    }
+    if (!uitest_is_op(name)) {
+        String message;
+        String_appendf(&message, "unknown step '%s': an op (tap, type, scroll, back, clock, tree, layout, state, logs, perf, "
+            "screenshot), repeat or expect", name);
+        bool ok = uitest_fail(message.data);
+        String_free(&message);
+        return ok;
+    }
+    int arity = agent_arity(name);
+    List<String> w;
+    defer fs_list_free(&w);
+    if (!uitest_words(line, arity == 0 ? -1 : arity, &w)) { return uitest_fail("a quote is not closed"); }
+    if (w.size != arity + 1) {
+        String message;
+        String_appendf(&message, "%s takes %d argument%s", name, arity, arity == 1 ? "" : "s");
+        bool ok = uitest_fail(message.data);
+        String_free(&message);
+        return ok;
+    }
+    if (strcmp(name, "screenshot") == 0) {
+        string error = agent_screenshot(p, w.data[1].data);
+        return error == null ? true : uitest_fail(error);
+    }
+    String request;
+    defer String_free(&request);
+    string wrong = agent_request_text(&w, &request);
+    if (wrong != null) { return uitest_fail(wrong); }
+    *JsonValue answer = uitest_ask(request.data);
+    if (answer == null) { return false; }
+    JsonValue_free(answer);
+    return true;
+}
+
+// ---- the command ----
+
+// Whether `host` can run tests here; why not in `why`.
+bool uitest_available(string host, String* why) {
+    String_clear(why);
+    if (strcmp(host, "web") == 0) {
+        string cc = env_get("CC");
+        if (tool_path("emcc")[0] != '/' && (cc == null || strstr(cc, "emcc") == null)) { String_from(why, "no emcc"); return false; }
+        if (agent_chrome() == null) { String_from(why, "no Chrome (UI_CHROME)"); return false; }
+        return true;
+    }
+    if (strcmp(host, "ios") == 0) {
+#ifdef __APPLE__
+        Cmd list;
+        list.add("xcrun"); list.add("simctl"); list.add("list"); list.add("devices"); list.add("available");
+        String devices;
+        bool ok = list.output(&devices) && String_contains(&devices, "iPhone") == 1;
+        list.free();
+        String_free(&devices);
+        if (!ok) { String_from(why, "no iPhone simulator"); }
+        return ok;
+#else
+        String_from(why, "the simulator needs macOS");
+        return false;
+#endif
+    }
+    Cmd list;
+    list.add(adb()); list.add("devices");
+    String devices;
+    bool ok = list.output(&devices) && String_contains(&devices, "\tdevice") == 1;
+    list.free();
+    String_free(&devices);
+    if (!ok) { String_from(why, "no device or emulator (adb devices)"); }
+    return ok;
+}
+
+// The test files the arguments name (files, or directories of .uitest files), else
+// tests/ui/*.uitest of the project.
+void uitest_files(Project* p, List<string>* args, List<String>* out) {
+    if (args.size == 0) {
+        fs_glob(join(p.root.data, "tests/ui/*.uitest"), out);
+        return;
+    }
+    for (i in 0..args.size) {
+        if (fs_is_dir(args.data[i]) == 1) { fs_glob(join(args.data[i], "*.uitest"), out); continue; }
+        if (fs_exists(args.data[i]) != 1) {
+            String message;
+            String_appendf(&message, "ui test: no file %s", args.data[i]);
+            fail(message.data);
+        }
+        String path;
+        String_from(&path, args.data[i]);
+        out.push(path);
+    }
+}
+
+// The test's name: its file name without .uitest.
+void uitest_name_of(string path, String* out) {
+    path_basename(out, path);
+    if (String_ends_with(out, ".uitest") == 1) { out.len -= 7; out.data[out.len] = 0; }
+}
+
+// What `perf` says after a test, kept under perf[HOST][TEST] for --perf.
+void uitest_record(*JsonValue perf, string test) {
+    *JsonValue answer = agent_request("{\"op\": \"perf\"}");
+    if (answer == null || !agent_ok(answer)) { JsonValue_free(answer); return; }
+    *JsonValue host = JsonValue_get(perf, agent_host);
+    if (host == null) { host = JsonValue_object(); JsonValue_set(perf, agent_host, host); }
+    *JsonValue entry = JsonValue_object();
+    *JsonValue frame = JsonValue_get(answer, "frame_ms");
+    JsonValue_set(entry, "frames", JsonValue_number(agent_number(answer, "frames")));
+    JsonValue_set(entry, "frame_p50_ms", JsonValue_number(agent_number(frame, "p50")));
+    JsonValue_set(entry, "frame_p95_ms", JsonValue_number(agent_number(frame, "p95")));
+    JsonValue_set(entry, "memory_bytes", JsonValue_number(agent_number(answer, "memory_bytes")));
+    if (JsonValue_get(answer, "startup_ms") != null) {
+        JsonValue_set(entry, "startup_ms", JsonValue_number(agent_number(answer, "startup_ms")));
+    }
+    JsonValue_set(host, test, entry);
+    JsonValue_free(answer);
+}
+
+// Runs one test file on the host being driven; true when it passed.
+bool uitest_run(Project* p, string path, *JsonValue perf) {
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(path, &text) != 0) {
+        printf("  FAIL %s: cannot read it\n", path);
+        return false;
+    }
+    String dir;
+    defer String_free(&dir);
+    path_dirname(&dir, path);
+    if (dir.len == 0) { String_from(&dir, "."); }
+    String name;
+    defer String_free(&name);
+    uitest_name_of(path, &name);
+    // Shown from the project's root.
+    int n = (int)strlen(p.root.data);
+    string shown = strncmp(path, p.root.data, (size_t)n) == 0 && path[n] == '/' ? &path[n + 1] : path;
+    int64 start = time_monotonic_ms();
+    // A fresh app for each test, on the driver's clock.
+    agent_restart(p);
+    agent_attach(p, false);
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&text, &lines);
+    uitest_file = shown;
+    String_clear(&uitest_failure);
+    int steps = 0;
+    bool passed = true;
+    for (i in 0..lines.size) {
+        String* line = &lines.data[i];
+        String_trim(line);
+        if (line.len == 0 || line.data[0] == '#') { continue; }
+        uitest_line = i + 1;
+        if (uitest_verbose) { printf("    %s:%d: %s\n", shown, uitest_line, line.data); fflush(null); }
+        steps++;
+        if (!uitest_step(p, line.data, dir.data)) {
+            printf("  FAIL %s (%s)\n    %s:%d: %s\n      %s\n", name.data, agent_host, shown, uitest_line, line.data,
+                uitest_failure.data);
+            passed = false;
+            break;
+        }
+    }
+    if (perf != null) { uitest_record(perf, name.data); }
+    agent_native_close();
+    if (passed) {
+        printf("  PASS %s (%s, %d steps, %.1f s)\n", name.data, agent_host, steps, (double)(time_monotonic_ms() - start) / 1000.0);
+    }
+    fflush(null);
+    return passed;
+}
+
+void uitest_usage() {
+    println_err("usage: ui test [web|ios|android ...] [--update] [--verbose] [--perf FILE] [--keep] [FILE|DIR ...]\n"
+                "  runs tests/ui/*.uitest (or the files given) on each host given, else on every host available here");
+    exit(2);
+}
+
+void uitest_command(Project* p, int argc, string* argv) {
+    List<string> hosts;
+    defer hosts.free();
+    List<string> args;
+    defer args.free();
+    string perf_path = null;
+    bool keep = false;
+    for (int i = 2; i < argc; i++) {
+        string a = argv[i];
+        if (strcmp(a, "web") == 0 || strcmp(a, "ios") == 0 || strcmp(a, "android") == 0) { hosts.push(a); }
+        else if (strcmp(a, "--update") == 0) { uitest_update = true; }
+        else if (strcmp(a, "--verbose") == 0) { uitest_verbose = true; }
+        else if (strcmp(a, "--keep") == 0) { keep = true; }
+        else if (strcmp(a, "--perf") == 0 && i + 1 < argc) { perf_path = argv[++i]; }
+        else if (a[0] == '-') { uitest_usage(); }
+        else { args.push(a); }
+    }
+    List<String> files;
+    defer fs_list_free(&files);
+    uitest_files(p, &args, &files);
+    if (files.size == 0) { fail("ui test: no tests; add tests/ui/NAME.uitest (docs/testing.md)"); }
+    bool chosen = hosts.size > 0;
+    if (!chosen) { hosts.push("web"); hosts.push("ios"); hosts.push("android"); }
+    *JsonValue perf = null;
+    if (perf_path != null) {
+        String old;
+        if (fs_read_text(perf_path, &old) == 0) { perf = json_parse(old.data); }
+        String_free(&old);
+        if (perf == null || perf.kind != JObject) { JsonValue_free(perf); perf = JsonValue_object(); }
+    }
+    int passed = 0;
+    int failed = 0;
+    int ran = 0;
+    for (h in 0..hosts.size) {
+        agent_host = hosts.data[h];
+        agent_socket = -1;
+        agent_json = true;
+        String why;
+        if (!chosen && !uitest_available(agent_host, &why)) {
+            printf("ui test: %s skipped (%s)\n", agent_host, why.data);
+            String_free(&why);
+            continue;
+        }
+        String_free(&why);
+        ran++;
+        printf("ui test: %s\n", agent_host);
+        fflush(null);
+        *JsonValue before = agent_serve_status(p);
+        bool had_serve = before != null;
+        JsonValue_free(before);
+        // Android's status bar (its clock, signal, battery) held still for screenshots.
+        if (strcmp(agent_host, "android") == 0) {
+            String demo;
+            String_appendf(&demo, "%s shell settings put global sysui_demo_allowed 1 && %s shell am broadcast -a com.android.systemui.demo "
+                "-e command enter && %s shell am broadcast -a com.android.systemui.demo -e command clock -e hhmm 0941",
+                agent_quote(adb()), agent_quote(adb()), agent_quote(adb()));
+            ProcessResult result;
+            sh(demo.data, &result);
+            ProcessResult_free(&result);
+            String_free(&demo);
+        }
+        for (f in 0..files.size) {
+            if (uitest_run(p, files.data[f].data, perf)) { passed++; } else { failed++; }
+        }
+        if (!had_serve && !keep) { agent_stop(p); }
+    }
+    if (ran == 0) { fail("ui test: no host available here (web needs emcc and Chrome, ios a simulator, android adb)"); }
+    if (perf != null) {
+        String out;
+        JsonValue_pretty(perf, 2, &out);
+        String_append(&out, "\n");
+        fs_write_text(perf_path, out.data);
+        String_free(&out);
+        JsonValue_free(perf);
+    }
+    printf("ui test: %d passed, %d failed\n", passed, failed);
+    if (failed > 0) { exit(1); }
+}

@@ -7,7 +7,7 @@
 //
 // Inside a project, the ui package is the one eskiu.lock names; its hosts (hosts/) are built
 // around the app. Yoga, for the native hosts, is fetched and compiled once into
-// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), xcode (Swift packages), new, serve, agent (`ui agent`, the driver's client).
+// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), xcode (Swift packages), new, serve, agent (`ui agent`, the driver's client), uitest (`ui test`).
 import <io>;
 import <string>;
 import <list>;
@@ -46,10 +46,11 @@ import "new.esk";
 import "serve.esk";
 import "release.esk";
 import "agent.esk";
+import "uitest.esk";
 
 void usage() {
     println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android\n       ui run web|macos|linux|windows|ios|android\n"
-                "       ui serve [web|macos|linux|windows|ios|android]\n       ui agent web|ios|android [--json] OP...\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]");
+                "       ui serve [web|macos|linux|windows|ios|android]\n       ui agent web|ios|android [--json] OP...\n       ui test [web|ios|android ...] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]");
     exit(2);
 }
 
@@ -91,6 +92,12 @@ int main(int argc, string* argv) {
         Project p;
         p.find();
         agent_command(&p, argc, argv);
+        return 0;
+    }
+    if (String_eq_cstr(&command, "test") == 1) {
+        Project p;
+        p.find();
+        uitest_command(&p, argc, argv);
         return 0;
     }
     if (String_eq_cstr(&command, "release") == 1) {
