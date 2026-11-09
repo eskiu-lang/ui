@@ -23,6 +23,12 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <cstdio>
+#include <ctime>
+#include <sys/time.h>
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
 
 // The member `key` of a directive: a number, a flag, a string (unescaped).
 static double driverNumber(const std::string &d, const char *key) {
@@ -86,6 +92,52 @@ static void driverCapture(std::function<void(const char *, size_t)> echo) {
             }
         }
     }).detach();
+}
+
+// When this process started, in wall clock ms (0 when unknown), for the cold start `perf`
+// reports: the kernel's start time of the process.
+static double driverStartedMs() {
+#ifdef __APPLE__
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)getpid()};
+    struct kinfo_proc info = {};
+    size_t size = sizeof info;
+    if (sysctl(mib, 4, &info, &size, nullptr, 0) != 0) return 0;
+    struct timeval start = info.kp_proc.p_starttime;
+    return (double)start.tv_sec * 1000.0 + (double)start.tv_usec / 1000.0;
+#elif defined(__linux__)
+    // /proc/self/stat field 22: clock ticks after boot, which CLOCK_BOOTTIME counts too.
+    FILE *file = std::fopen("/proc/self/stat", "r");
+    if (!file) return 0;
+    char text[1024] = {};
+    size_t n = std::fread(text, 1, sizeof text - 1, file);
+    std::fclose(file);
+    text[n] = 0;
+    const char *at = std::strrchr(text, ')');
+    if (!at) return 0;
+    at += 2;
+    for (int field = 3; field < 22 && *at; field++) {
+        at = std::strchr(at, ' ');
+        if (!at) return 0;
+        at++;
+    }
+    double ticks = std::strtod(at, nullptr);
+    long hz = sysconf(_SC_CLK_TCK);
+    struct timespec boot = {}, wall = {};
+    clock_gettime(CLOCK_BOOTTIME, &boot);
+    clock_gettime(CLOCK_REALTIME, &wall);
+    double boot_ms = (double)boot.tv_sec * 1000.0 + (double)boot.tv_nsec / 1e6;
+    double wall_ms = (double)wall.tv_sec * 1000.0 + (double)wall.tv_nsec / 1e6;
+    return wall_ms - (boot_ms - ticks * 1000.0 / (double)(hz > 0 ? hz : 100));
+#else
+    return 0;
+#endif
+}
+
+// The `perf` directive's result: the memory in bytes, then when the process started.
+static std::string driverPerf(double memory) {
+    char out[96];
+    std::snprintf(out, sizeof out, "%.0f %.3f", memory, driverStartedMs());
+    return out;
 }
 
 // One request, on the UI thread: the core's answer.

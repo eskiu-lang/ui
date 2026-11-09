@@ -264,7 +264,7 @@ static std::string driverCarry(const std::string &d) {
         return "";
     }
     if (op == "logs") return driverLogs();
-    if (op == "perf") return std::to_string((long long)env->CallLongMethod(activity, driverMemoryMethod));
+    if (op == "perf") return driverPerf((double)env->CallLongMethod(activity, driverMemoryMethod));
     if (op == "layout") { std::string rows = driverString((jstring)env->CallObjectMethod(activity, driverLayoutMethod)); checked(); return rows; }
     int id = (int)driverNumber(d, "node");
     if (op == "tap" && (int)driverNumber(d, "kind") == 12) { ui_dispatch(id, generations[id]); return ""; }

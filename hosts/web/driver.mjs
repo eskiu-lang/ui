@@ -99,7 +99,8 @@ async function carry(app, host, d) {
     return rows.join('\n');
   }
   if (d.host === 'logs') return logs.join('\n');
-  if (d.host === 'perf') return String(app.HEAPU8?.length ?? performance.memory?.usedJSHeapSize ?? 0);
+  // The memory, then when the page was navigated to (the cold start counts from it).
+  if (d.host === 'perf') return `${app.HEAPU8?.length ?? performance.memory?.usedJSHeapSize ?? 0} ${performance.timeOrigin}`;
   return `error: the web host does not know ${d.host}`;
 }
 

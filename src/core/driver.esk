@@ -49,6 +49,8 @@ struct UiDriver {
     int64 commit_bytes;
     int commit_max;
     int commit_last;
+    // When the first commit was applied (wall clock ms), for the cold start `perf` reports.
+    double first_commit;
     // The core's errors and warnings, the last 500.
     List<String> logs;
 }
@@ -108,6 +110,7 @@ void ui_driver_log(string level, string text) {
 
 // Notes a frame's time and its commit's size for `perf` (internal).
 void ui_driver_note_frame(double ms, int bytes) {
+    if (ui_drv.frame_count == 0) { ui_drv.first_commit = (double)time_now_ms(); }
     if (ui_drv.frame_ms.size >= 600) { ui_drv.frame_ms.remove(0); }
     ui_drv.frame_ms.push(ms);
     ui_drv.frame_count++;
@@ -310,6 +313,7 @@ void ui_driver_shutdown() {
     String_free(&ui_drv.out);
     ui_drv.frame_ms.free();
     ui_drv.frame_count = 0; ui_drv.commit_bytes = 0; ui_drv.commit_max = 0; ui_drv.commit_last = 0;
+    ui_drv.first_commit = 0;
     for (i in 0..ui_drv.logs.size) { String_free(&ui_drv.logs.data[i]); }
     ui_drv.logs.free();
 }
@@ -887,9 +891,16 @@ string ui_driver_finish(string result) {
         String_appendf(&ui_drv.out, ", \"commit_bytes\": {\"last\": %d, \"max\": %d, \"mean\": %lld}, \"nodes\": %d",
             ui_drv.commit_last, ui_drv.commit_max,
             ui_drv.frame_count > 0 ? ui_drv.commit_bytes / ui_drv.frame_count : 0, live);
+        // The host's result: its memory, then when the process started or the page was
+        // navigated to (wall clock ms; 0 when it does not know).
         int at = 0;
         String_append(&ui_drv.out, ", \"memory_bytes\": ");
         ui_json_number(&ui_drv.out, ui_driver_read(result, &at));
+        double started = ui_driver_read(result, &at);
+        if (started > 0 && ui_drv.first_commit > 0) {
+            String_append(&ui_drv.out, ", \"startup_ms\": ");
+            ui_json_number(&ui_drv.out, ui_drv.first_commit - started);
+        }
     }
     String_append(&ui_drv.out, "}");
     return ui_drv.out.data;

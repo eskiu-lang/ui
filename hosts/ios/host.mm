@@ -1502,8 +1502,8 @@ static std::string driverCarry(const std::string &d) {
     if (op == "perf") {
         task_vm_info_data_t info;
         mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
-        if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS) return "0";
-        return std::to_string(info.phys_footprint);
+        if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS) return driverPerf(0);
+        return driverPerf((double)info.phys_footprint);
     }
     if (op == "layout") {
         std::string rows;
