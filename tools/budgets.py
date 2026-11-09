@@ -5,6 +5,7 @@ tools/budgets.toml, where each budget has the baseline measured on CI and a tole
     python3 tools/budgets.py web        # cold start, edit to change, frame time, module sizes
     python3 tools/budgets.py macos      # the AppKit host in a window on this Mac
     python3 tools/budgets.py linux      # the GTK 4 host in a window (a display: Xvfb on CI)
+    python3 tools/budgets.py windows    # the Win32 host in a window on this Windows machine
     python3 tools/budgets.py ios        # a booted simulator (or the first iPhone, booted)
     python3 tools/budgets.py android    # a device or a running emulator
     python3 tools/budgets.py model      # the recording renderer's benchmark (no host)
@@ -37,7 +38,7 @@ import tomllib
 HERE = Path(__file__).resolve().parents[1]
 BUILD = HERE / "build"
 BUDGETS = HERE / "tools/budgets.toml"
-UI = BUILD / "ui"
+UI = BUILD / ("ui.exe" if os.name == "nt" else "ui")
 
 
 def run(args, cwd=None, timeout=1800, **kwargs):
@@ -207,7 +208,7 @@ def check(found):
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    if len(args) != 1 or args[0] not in ("web", "macos", "linux", "ios", "android", "model"):
+    if len(args) != 1 or args[0] not in ("web", "macos", "linux", "windows", "ios", "android", "model"):
         raise SystemExit(__doc__)
     host = args[0]
     found = measure(host)

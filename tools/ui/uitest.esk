@@ -552,6 +552,14 @@ bool uitest_available(string host, String* why) {
 #endif
         return true;
     }
+    if (strcmp(host, "windows") == 0) {
+#ifdef _WIN32
+        return true;
+#else
+        String_from(why, "the Win32 host needs Windows");
+        return false;
+#endif
+    }
     if (strcmp(host, "ios") == 0) {
 #ifdef __APPLE__
         Cmd list;
@@ -700,7 +708,7 @@ void uitest_json_result(string name, string file, bool ok, int steps, int line, 
 }
 
 void uitest_usage() {
-    println_err("usage: ui test [web|macos|linux|ios|android ...] [--update] [--verbose] [--perf FILE] [--keep] [--json] [FILE|DIR ...]\n"
+    println_err("usage: ui test [web|macos|linux|windows|ios|android ...] [--update] [--verbose] [--perf FILE] [--keep] [--json] [FILE|DIR ...]\n"
                 "  runs tests/ui/*.uitest (or the files given) on each host given, else on every host available here");
     exit(2);
 }
@@ -715,7 +723,7 @@ void uitest_command(Project* p, int argc, string* argv) {
     for (int i = 2; i < argc; i++) {
         string a = argv[i];
         if (strcmp(a, "web") == 0 || strcmp(a, "macos") == 0 || strcmp(a, "linux") == 0 || strcmp(a, "ios") == 0
-            || strcmp(a, "android") == 0) { hosts.push(a); }
+            || strcmp(a, "android") == 0 || strcmp(a, "windows") == 0) { hosts.push(a); }
         else if (strcmp(a, "--update") == 0) { uitest_update = true; }
         else if (strcmp(a, "--verbose") == 0) { uitest_verbose = true; }
         else if (strcmp(a, "--keep") == 0) { keep = true; }
@@ -735,6 +743,9 @@ void uitest_command(Project* p, int argc, string* argv) {
         hosts.push("linux");
 #endif
         hosts.push("ios"); hosts.push("android");
+#ifdef _WIN32
+        hosts.push("windows");
+#endif
     }
     *JsonValue perf = null;
     if (perf_path != null) {

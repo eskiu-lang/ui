@@ -18,6 +18,7 @@ int agent_native_port() {
     string value = env_get("UI_AGENT_PORT");
     if (value != null && value[0] != 0) { return atoi(value); }
     if (strcmp(agent_host, "linux") == 0) { return 8769; }
+    if (strcmp(agent_host, "windows") == 0) { return 8770; }
     return strcmp(agent_host, "android") == 0 ? 8767 : strcmp(agent_host, "macos") == 0 ? 8768 : 8766;
 }
 
@@ -40,13 +41,7 @@ string agent_dir(Project* p) {
     return dir;
 }
 
-bool agent_alive(int pid) {
-#ifdef _WIN32
-    return false;
-#else
-    return pid > 0 && kill(pid, 0) == 0;
-#endif
-}
+bool agent_alive(int pid) { return windows_alive(pid); }
 
 // The running `ui serve` for this host: its status file (serve.esk) parsed, or null when
 // none runs. The caller frees it.
@@ -85,12 +80,14 @@ string agent_quote(string text) { return shell_quote(text); }
     if (status != null) { return status; }
     String log;
     String_appendf(&log, "%s/serve-%s.log", agent_dir(p), agent_host);
-    String command;
-    String_appendf(&command, "env UI_NO_OPEN=1 %s serve %s", agent_quote(tool_path(serve_self)), agent_host);
-    String cd;
-    String_appendf(&cd, "cd %s && exec %s", agent_quote(p.root.data), command.data);
+    List<string> argv;
+    defer argv.free();
+    argv.push(tool_path(serve_self)); argv.push("serve"); argv.push(agent_host);
+    List<string> env;
+    defer env.free();
+    env.push("UI_NO_OPEN=1");
     if (!agent_json) { printf("ui agent: starting ui serve %s (its output: %s)\n", agent_host, log.data); fflush(null); }
-    if (agent_spawn(cd.data, log.data) < 0) { agent_fail("could not start ui serve"); }
+    if (!spawn_detached(&argv, &env, p.root.data, log.data)) { agent_fail("could not start ui serve"); }
     int64 until = time_monotonic_ms() + 30000;
     while (time_monotonic_ms() < until) {
         time_sleep_ms(200);
@@ -480,13 +477,15 @@ string agent_web_screenshot(Project* p, string file) {
 }
 
 // The window's pixels into `file`: the browser's page, the simulator's screen, the device's,
-// the macOS or Linux window's content (which the host draws into the file itself).
+// the macOS, Linux or Windows window's content (which the host draws into the file itself).
 string agent_screenshot(Project* p, string file) {
     if (strcmp(agent_host, "web") == 0) { return agent_web_screenshot(p, file); }
-    if (strcmp(agent_host, "macos") == 0 || strcmp(agent_host, "linux") == 0) {
+    if (strcmp(agent_host, "macos") == 0 || strcmp(agent_host, "linux") == 0
+        || strcmp(agent_host, "windows") == 0) {
         String path;
         defer String_free(&path);
-        if (file[0] != '/') { fs_cwd(&path); String_append(&path, "/"); }
+        bool absolute = file[0] == '/' || file[0] == '\\' || (file[0] != 0 && file[1] == ':');
+        if (!absolute) { fs_cwd(&path); String_append(&path, "/"); }
         String_append(&path, file);
         String request;
         defer String_free(&request);
@@ -824,6 +823,7 @@ void agent_restart(Project* p) {
     if (strcmp(agent_host, "ios") == 0) { ios_launch(p, true); return; }
     if (strcmp(agent_host, "macos") == 0) { macos_launch(p); return; }
     if (strcmp(agent_host, "linux") == 0) { linux_launch(p); return; }
+    if (strcmp(agent_host, "windows") == 0) { windows_launch(p); return; }
     String command;
     defer String_free(&command);
     String_appendf(&command, "%s shell am force-stop %s && %s shell am start -n %s/org.eskiu.ui.UiActivity > /dev/null",
@@ -840,7 +840,9 @@ void agent_stop(Project* p) {
     *JsonValue status = agent_serve_status(p);
     if (status != null) {
         int pid = (int)agent_number(status, "pid");
-#ifndef _WIN32
+#ifdef _WIN32
+        windows_kill(pid);
+#else
         if (pid > 0) { kill(pid, 15); }
 #endif
         JsonValue_free(status);
@@ -859,6 +861,10 @@ void agent_stop(Project* p) {
         linux_terminate(p);
         if (!agent_json) { printf("ui agent: stopped the app\n"); }
     }
+    if (strcmp(agent_host, "windows") == 0 && windows_pid(p) != 0) {
+        windows_terminate(p);
+        if (!agent_json) { printf("ui agent: stopped the app\n"); }
+    }
     if (command.len > 0) {
         ProcessResult result;
         sh(command.data, &result);
@@ -868,8 +874,8 @@ void agent_stop(Project* p) {
 }
 
 void agent_usage() {
-    println_err("usage: ui agent web|macos|linux|ios|android [--json] [--real-clock] OP...\n"
-                "       ui agent web|macos|linux|ios|android --stop\n"
+    println_err("usage: ui agent web|macos|linux|windows|ios|android [--json] [--real-clock] OP...\n"
+                "       ui agent web|macos|linux|windows|ios|android --stop\n"
                 "ops: tree, layout, state, logs, perf, back, \"tap ID\", \"type ID TEXT\", \"scroll ID DY\",\n"
                 "     \"screenshot FILE\", \"clock +MS\", \"clock settle\", \"clock real\" (docs/agents.md)");
     exit(2);
@@ -879,7 +885,8 @@ void agent_command(Project* p, int argc, string* argv) {
     if (argc < 3) { agent_usage(); }
     agent_host = argv[2];
     if (strcmp(agent_host, "web") != 0 && strcmp(agent_host, "macos") != 0 && strcmp(agent_host, "linux") != 0
-        && strcmp(agent_host, "ios") != 0 && strcmp(agent_host, "android") != 0) { agent_usage(); }
+        && strcmp(agent_host, "ios") != 0 && strcmp(agent_host, "android") != 0
+        && strcmp(agent_host, "windows") != 0) { agent_usage(); }
     agent_socket = -1;
     bool real_clock = false;
     bool stop = false;

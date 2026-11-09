@@ -4,6 +4,7 @@
 #   tests/agent/check.sh web       # needs emcc and Chrome (UI_CHROME to pick one)
 #   tests/agent/check.sh macos     # the AppKit host on this Mac
 #   tests/agent/check.sh linux     # the GTK 4 host (a display: Xvfb on CI)
+#   tests/agent/check.sh windows   # the Win32 host (Git Bash on Windows)
 #   tests/agent/check.sh ios       # a booted simulator, or the first iPhone it boots
 #   tests/agent/check.sh android   # a device or a running emulator (adb)
 #
@@ -15,6 +16,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 UI="$ROOT/build/ui"
 OUT="$ROOT/build/agent-$HOST"
+# Windows (Git Bash): the tool is an .exe, and the paths it is given are Windows paths.
+case "$(uname)" in MINGW*|MSYS*|CYGWIN*) UI="$UI.exe"; OUT=$(cygpath -m "$OUT");; esac
 mkdir -p "$OUT"
 eskiuc "$ROOT/tools/ui/main.esk" -o "$UI"
 export UI_PORT=${UI_PORT:-8796}

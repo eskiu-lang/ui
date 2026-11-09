@@ -4,21 +4,23 @@
 #   tools/ci_host.sh web       # emcc and Chrome (UI_CHROME), as on the Linux runner
 #   tools/ci_host.sh macos     # the AppKit host in a window (an awake, unlocked display)
 #   tools/ci_host.sh linux     # the GTK 4 host in a window (a display: Xvfb on CI)
+#   tools/ci_host.sh windows   # the Win32 host in a window (Git Bash, a MinGW-w64 C++ compiler)
 #   tools/ci_host.sh ios       # a booted simulator, or the first iPhone, booted for it
 #   tools/ci_host.sh android   # a device or a running emulator (adb)
 #
 # Every `ui agent` op (tests/agent/check.sh), the conformance scene's ui tests, then the
 # speed budgets, which run the counter's and the benchmark's ui tests (tools/budgets.py).
 set -e
-HOST=${1:?usage: tools/ci_host.sh web|macos|linux|ios|android}
+HOST=${1:?usage: tools/ci_host.sh web|macos|linux|windows|ios|android}
 cd "$(dirname "$0")/.."
 mkdir -p build
-eskiuc tools/ui/main.esk -o build/ui
+EXE=; case "$(uname)" in MINGW*|MSYS*|CYGWIN*) EXE=.exe;; esac
+eskiuc tools/ui/main.esk -o build/ui$EXE
 started=$(date +%s)
 tests/agent/check.sh "$HOST"
 echo "agent check: $(( $(date +%s) - started )) s"
 started=$(date +%s)
-(cd tests/conformance && ../../build/ui test "$HOST")
+(cd tests/conformance && ../../build/ui$EXE test "$HOST")
 echo "conformance: $(( $(date +%s) - started )) s"
 started=$(date +%s)
 python3 tools/budgets.py "$HOST"
