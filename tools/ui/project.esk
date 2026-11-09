@@ -131,6 +131,47 @@ string esk_literal(string text) {
 
 // The file every host build compiles: the app's constants (the macros <ui> reads), the app
 // and the bridge to the hosts.
+// Whether two path parts are the same name, as Windows compares them (ASCII case folded).
+bool same_name(string a, string b) {
+    int i = 0;
+    while (a[i] != 0 && b[i] != 0) {
+        char x = a[i] >= 'A' && a[i] <= 'Z' ? (char)(a[i] + 32) : a[i];
+        char y = b[i] >= 'A' && b[i] <= 'Z' ? (char)(b[i] + 32) : b[i];
+        if (x != y) { return false; }
+        i++;
+    }
+    return a[i] == b[i];
+}
+
+// `path` as an import of a file in `dir`. On Windows it is relative with forward slashes:
+// backslashes would be escapes in the literal, and eskiuc 0.14.1 reads "C:/..." as relative.
+string import_path(string dir, string path) {
+#ifdef _WIN32
+    String from;
+    String_from(&from, dir);
+    String_replace_all(&from, "\\", "/");
+    String to;
+    String_from(&to, path);
+    String_replace_all(&to, "\\", "/");
+    List<String> a;
+    List<String> b;
+    String_split(&from, '/', &a);
+    String_split(&to, '/', &b);
+    int common = 0;
+    while (common < a.size && common < b.size - 1 && same_name(a.data[common].data, b.data[common].data)) { common++; }
+    String out;
+    if (common == 0) { return to.data; }
+    for (int i = common; i < a.size; i++) { if (a.data[i].len > 0) { String_append(&out, "../"); } }
+    for (int i = common; i < b.size; i++) {
+        String_append(&out, b.data[i].data);
+        if (i + 1 < b.size) { String_append(&out, "/"); }
+    }
+    return out.data;
+#else
+    return path;
+#endif
+}
+
 string Project_entry(Project* self) {
     string build = join(self.root.data, "build/ui");
     fs_mkdir_p(build);
@@ -175,7 +216,7 @@ string Project_entry(Project* self) {
         }
     }
     String_appendf(&text, "import \"%s\";\nimport \"%s\";\n",
-        join(self.root.data, "src/main.esk"), join(self.ui.data, "hosts/bridge.esk"));
+        import_path(build, join(self.root.data, "src/main.esk")), import_path(build, join(self.ui.data, "hosts/bridge.esk")));
     string entry = join(build, "entry.esk");
     fs_write_text(entry, text.data);
     return entry;

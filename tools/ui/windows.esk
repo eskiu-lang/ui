@@ -1,7 +1,18 @@
-// Windows: the web build in a WebView2 window.
+// Windows: the Win32 host (hosts/windows/host.cpp) with the app compiled in, or the web build
+// in a WebView2 window (hosts/windows/webview.cpp) with --webview or ui.toml [windows]
+// renderer = "web".
 // Part of the ui tool (tools/ui/main.esk imports every part).
 
 // ---- Windows ----
+
+// The WebView2 host instead of Win32: `--webview` (UI_WINDOWS_RENDERER=web, which the builds
+// `ui serve` runs inherit) or ui.toml [windows] renderer = "web".
+bool windows_webview(Project* p) {
+    string renderer = env_get("UI_WINDOWS_RENDERER");
+    if (renderer != null && renderer[0] != 0) { return strcmp(renderer, "web") == 0; }
+    string chosen = p.config.string("windows.renderer");
+    return chosen != null && strcmp(chosen, "web") == 0;
+}
 
 // The WebView2 SDK (its NuGet package): the header the host compiles with and the loader
 // DLL that goes next to the executable.
@@ -44,7 +55,8 @@ string windows_cxx(bool* msvc) {
     return cxx;
 }
 
-string build_windows(Project* p) {
+// The WebView2 host: the web build in a Win32 window.
+string build_windows_webview(Project* p) {
     build_web(p);
     string out = p.out("windows");
     String exe_name;
@@ -68,7 +80,7 @@ string build_windows(Project* p) {
         String obj;
         String_appendf(&obj, "/Fo%s\\", out);
         cmd.add(obj.data);
-        cmd.add(join(p.ui.data, "hosts/windows/host.cpp"));
+        cmd.add(join(p.ui.data, "hosts/windows/webview.cpp"));
         cmd.add("/link"); cmd.add("/SUBSYSTEM:WINDOWS");
         cmd.add("user32.lib"); cmd.add("ole32.lib"); cmd.add("shell32.lib"); cmd.add("shlwapi.lib"); cmd.add("uuid.lib");
         String out_flag;
@@ -78,7 +90,7 @@ string build_windows(Project* p) {
         cmd.add("-std=c++17"); cmd.add("-O2"); cmd.add("-mwindows");
         if (ui_release) { cmd.add("-DUI_RELEASE"); }
         cmd.add("-I"); cmd.add(include);
-        cmd.add(join(p.ui.data, "hosts/windows/host.cpp"));
+        cmd.add(join(p.ui.data, "hosts/windows/webview.cpp"));
         cmd.add("-static"); cmd.add("-static-libgcc"); cmd.add("-static-libstdc++");
         cmd.add("-lole32"); cmd.add("-luser32"); cmd.add("-lshell32"); cmd.add("-lshlwapi"); cmd.add("-luuid");
         cmd.add("-o"); cmd.add(binary);
@@ -94,4 +106,381 @@ string build_windows(Project* p) {
     copy_dir_all(web_out, join(out, "web"));
     windows_icon(p, out);
     return binary;
+}
+
+// ---- the Win32 host ----
+
+// Under `ui serve` (UI_DEV=1) the app's code is a DLL the running app loads again after each
+// build (the host's UI_RELOAD mode), so the app is started again only when the host or the
+// native code changed. build_windows says which in windows_relaunch.
+bool windows_relaunch;
+
+bool windows_dev() {
+    string dev = env_get("UI_DEV");
+    return !ui_release && dev != null && strcmp(dev, "1") == 0;
+}
+
+// The C++ compiler of the Win32 host: $CXX, else MinGW-w64's clang++ (llvm-mingw) or g++, as
+// x86_64-w64-mingw32-* from macOS or Linux. The app's object is MinGW's (eskiuc's Windows
+// target), so MSVC does not link it.
+string windows_native_cxx() {
+    string cxx = env_get("CXX");
+    if (cxx != null && cxx[0] != 0) { return cxx; }
+    List<string> names;
+    defer names.free();
+    names.push("x86_64-w64-mingw32-clang++"); names.push("x86_64-w64-mingw32-g++");
+#ifdef _WIN32
+    names.push("clang++"); names.push("g++");
+#endif
+    for (i in 0..names.size) {
+        Cmd probe;
+        probe.add(names.data[i]); probe.add("--version");
+        String said;
+        bool ok = probe.output(&said);
+        probe.free();
+        String_free(&said);
+        if (ok) { return names.data[i]; }
+    }
+    fail("ui build windows: no MinGW-w64 C++ compiler (llvm-mingw's clang++ or g++, x86_64-w64-mingw32-clang++ from macOS or "
+         "Linux); set CXX to one. --webview builds the WebView2 host, which MSVC compiles too.");
+    return null;
+}
+
+// windres for the manifest, next to the compiler: x86_64-w64-mingw32-clang++ gives
+// x86_64-w64-mingw32-windres, g++ gives windres.
+string windows_windres(string cxx) {
+    string over = env_get("WINDRES");
+    if (over != null && over[0] != 0) { return over; }
+    String name;
+    String_from(&name, cxx);
+    int64 dash = -1;
+    for (int64 i = 0; i < name.len; i++) { if (name.data[i] == '-' || name.data[i] == '/' || name.data[i] == '\\') { dash = i; } }
+    String out;
+    for (int64 i = 0; i <= dash; i++) { String_push(&out, name.data[i]); }
+    // A directory, not a prefix: the windres in it.
+    if (dash >= 0 && name.data[dash] != '-') { String_append(&out, "windres"); }
+    else if (dash >= 0) { String_append(&out, "windres"); }
+    else { String_from(&out, "windres"); }
+    return out.data;
+}
+
+// The libraries the host and the app take from Windows.
+void windows_libs(Cmd* link) {
+    List<string> libs;
+    defer libs.free();
+    libs.push("-lcomctl32"); libs.push("-lgdiplus"); libs.push("-luxtheme"); libs.push("-ldwmapi"); libs.push("-lole32");
+    libs.push("-loleaut32"); libs.push("-loleacc"); libs.push("-lshlwapi"); libs.push("-lshell32"); libs.push("-lwinhttp");
+    libs.push("-lpsapi"); libs.push("-lws2_32"); libs.push("-luuid"); libs.push("-lpthread"); libs.push("-lbcrypt"); libs.push("-lntdll");
+    for (i in 0..libs.size) { link.add(libs.data[i]); }
+}
+
+// The file the dev host polls: it holds the newest DLL's path.
+string windows_reload_file(Project* p) { return join(p.out("windows"), "reload/current"); }
+
+// The executable: the host, the native code, Yoga, the manifest and (but in a dev build, which
+// loads it from a DLL) the app. Its path, or null when a dev build's executable is as it was.
+string windows_executable(Project* p, string out, bool dev, string cxx, string app, string binary) {
+    bool test = ui_test_build();
+    List<string> compiler;
+    defer compiler.free();
+    compiler.push(cxx); compiler.push("-O2");
+    String host_name;
+    String_appendf(&host_name, "host%s.o", dev ? "-dev" : test ? "-test" : "");
+    string host = join(out, host_name.data);
+    string header = join(p.ui.data, "hosts/windows/ui_native.h");
+    List<string> host_sources;
+    defer host_sources.free();
+    host_sources.push(join(p.ui.data, "hosts/windows/host.cpp")); host_sources.push(header);
+    host_sources.push(join(p.ui.data, "hosts/core.h")); host_sources.push(join(p.ui.data, "hosts/driver.h"));
+    host_sources.push(join(p.ui.data, "hosts/commit.h"));
+    if (stale(host, &host_sources)) {
+        Cmd cmd;
+        for (i in 0..compiler.size) { cmd.add(compiler.data[i]); }
+        cmd.add("-std=c++17"); cmd.add("-I"); cmd.add(yoga_source());
+        if (dev) { cmd.add("-DUI_RELOAD"); }
+        // The driver's channel (hosts/driver.h), in a dev or test build only.
+        if (test) { cmd.add("-DUI_TEST"); }
+        cmd.add("-c"); cmd.add(host_sources.data[0]); cmd.add("-o"); cmd.add(host);
+        cmd.must(null);
+        cmd.free();
+        built(host, &host_sources);
+    }
+    // The manifest: common controls 6, the DPI awareness, the Windows versions it knows.
+    string resource = join(out, "host-res.o");
+    List<string> res_sources;
+    defer res_sources.free();
+    res_sources.push(join(p.ui.data, "hosts/windows/host.rc")); res_sources.push(join(p.ui.data, "hosts/windows/host.manifest"));
+    if (stale(resource, &res_sources)) {
+        Cmd rc;
+        rc.add(windows_windres(cxx)); rc.add("-I"); rc.add(join(p.ui.data, "hosts/windows"));
+        rc.add("-i"); rc.add(res_sources.data[0]); rc.add("-o"); rc.add(resource);
+        rc.must(null);
+        rc.free();
+        built(resource, &res_sources);
+    }
+    // Native code: native/windows/*.c and *.cpp of every package, with ui_native.h on the path.
+    List<String> sources;
+    defer fs_list_free(&sources);
+    p.native("windows", ".c", &sources);
+    p.native("windows", ".cpp", &sources);
+    List<String> native_objects;
+    defer fs_list_free(&native_objects);
+    for (i in 0..sources.size) {
+        String object;
+        String_appendf(&object, "%s/native-%s.o", out, native_object_name(sources.data[i].data));
+        List<string> inputs;
+        inputs.push(sources.data[i].data); inputs.push(header);
+        if (stale(object.data, &inputs)) {
+            Cmd compile;
+            for (j in 0..compiler.size) { compile.add(compiler.data[j]); }
+            if (String_ends_with(&sources.data[i], ".c") == 1) { compile.add("-x"); compile.add("c"); }
+            else { compile.add("-std=c++17"); }
+            compile.add("-I"); compile.add(join(p.ui.data, "hosts/windows"));
+            compile.add("-c"); compile.add(sources.data[i].data); compile.add("-o"); compile.add(object.data);
+            compile.must(null);
+            compile.free();
+            built(object.data, &inputs);
+        }
+        inputs.free();
+        native_objects.push(object);
+    }
+    List<String> objects;
+    defer fs_list_free(&objects);
+    yoga_objects(&compiler, join(eskiu_home(), "cache/yoga-windows-x86_64"), &objects);
+    p.native_archives("windows-x86_64", &objects);
+    List<string> inputs;
+    defer inputs.free();
+    inputs.push(host); inputs.push(resource);
+    for (i in 0..native_objects.size) { inputs.push(native_objects.data[i].data); }
+    if (dev && !stale(binary, &inputs)) { return null; }
+    // A running dev app holds its executable: it goes first.
+    if (dev) { windows_terminate(p); }
+    Cmd link;
+    for (i in 0..compiler.size) { link.add(compiler.data[i]); }
+    link.add(host); link.add(resource);
+    // The dev host exports its functions, which the app's DLL imports through host.dll.a.
+    if (dev) {
+        link.add("-Wl,--export-all-symbols");
+        String implib;
+        String_appendf(&implib, "-Wl,--out-implib,%s", join(out, "host.dll.a"));
+        link.add(implib.data);
+    } else { link.add(app); }
+    for (i in 0..native_objects.size) { link.add(native_objects.data[i].data); }
+    for (i in 0..objects.size) { link.add(objects.data[i].data); }
+    link.add("-mwindows"); link.add("-static");
+    windows_libs(&link);
+    link.add("-o"); link.add(binary);
+    link.must(null);
+    link.free();
+    if (dev) { built(binary, &inputs); }
+    return binary;
+}
+
+// A dev build's app code: a DLL importing the host's functions from the executable, named
+// afresh each time (a loaded DLL stays locked), and its path in the reload file the running
+// app polls. The older ones go, but for the one the app runs (Windows keeps those it holds).
+void windows_core(Project* p, string out, string app, string cxx) {
+    string reload = join(out, "reload");
+    fs_mkdir_p(reload);
+    List<String> old;
+    fs_glob(join(reload, "app-*.dll"), &old);
+    String current;
+    fs_read_text(windows_reload_file(p), &current);
+    String_trim(&current);
+    for (i in 0..old.size) {
+        if (String_eq_cstr(&old.data[i], current.data == null ? "" : current.data) != 1) { fs_remove(old.data[i].data); }
+    }
+    fs_list_free(&old);
+    String_free(&current);
+    String name;
+    String_appendf(&name, "app-%lld.dll", time_now_ms());
+    string library = join(reload, name.data);
+    Cmd link;
+    link.add(cxx); link.add("-shared"); link.add("-static"); link.add(app);
+    List<String> archives;
+    defer fs_list_free(&archives);
+    p.native_archives("windows-x86_64", &archives);
+    for (i in 0..archives.size) { link.add(archives.data[i].data); }
+    link.add(join(out, "host.dll.a"));
+    windows_libs(&link);
+    link.add("-o"); link.add(library);
+    link.must(null);
+    link.free();
+    fs_write_text(windows_reload_file(p), library);
+}
+
+// The Win32 app: build/ui/windows/NAME.exe with assets/, icon.ico and window.txt (ui.toml
+// [windows] window) next to it. A dev build (UI_DEV=1) puts the app's code in a DLL the
+// running app loads, so the executable is linked again only when the host or the native code
+// changed.
+string build_windows(Project* p) {
+    if (windows_webview(p)) { return build_windows_webview(p); }
+    string out = p.out("windows");
+    fs_mkdir_p(out);
+    bool dev = windows_dev();
+    windows_relaunch = true;
+    string cxx = windows_native_cxx();
+    // A webview build left its web build and loader there: not this one's.
+    fs_remove_all(join(out, "web"));
+    fs_remove(join(out, "WebView2Loader.dll"));
+    String exe_name;
+    String_appendf(&exe_name, "%s.exe", p.name.data);
+    string binary = join(out, exe_name.data);
+    string app = join(out, ui_release ? "app-release.o" : "app.o");
+    Cmd esk;
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add("x86_64-w64-windows-gnu");
+    esk.add(ui_release ? "-O2" : app_opt());
+    esk.add("-o"); esk.add(app);
+    compile_app(&esk);
+    esk.free();
+    string made = windows_executable(p, out, dev, cxx, app, binary);
+    if (dev && made == null && fs_exists(binary) == 1) { windows_relaunch = false; }
+    fs_mkdir_p(join(out, "assets"));
+    p.copy_assets(join(out, "assets"));
+    windows_icon(p, out);
+    string window = p.config.string("windows.window");
+    string window_file = join(out, "window.txt");
+    if (window != null) { fs_write_text(window_file, window); } else { fs_remove(window_file); }
+    if (dev) { windows_core(p, out, app, cxx); }
+    return binary;
+}
+
+// ---- running the dev app ----
+
+#ifdef _WIN32
+extern *void OpenProcess(uint32 access, int inherit, uint32 pid);
+extern int GetExitCodeProcess(*void process, *uint32 code);
+extern int TerminateProcess(*void process, uint32 code);
+extern int SetHandleInformation(*void handle, uint32 mask, uint32 flags);
+#endif
+
+// Whether the process `pid` runs (Windows: it has not exited).
+bool windows_alive(int pid) {
+#ifdef _WIN32
+    if (pid <= 0) { return false; }
+    *void process = OpenProcess((uint32)4096, 0, (uint32)pid);
+    if (process == null) { return false; }
+    uint32 code = (uint32)0;
+    int ok = GetExitCodeProcess(process, &code);
+    CloseHandle(process);
+    return ok != 0 && code == (uint32)259;
+#else
+    return pid > 0 && kill(pid, 0) == 0;
+#endif
+}
+
+// Ends the process `pid` (Windows: TerminateProcess; elsewhere SIGTERM) and waits until it is
+// gone, at most 5 seconds.
+void windows_kill(int pid) {
+    if (!windows_alive(pid)) { return; }
+#ifdef _WIN32
+    *void process = OpenProcess((uint32)1 | (uint32)1048576, 0, (uint32)pid);
+    if (process != null) { TerminateProcess(process, (uint32)1); CloseHandle(process); }
+#else
+    kill(pid, 15);
+#endif
+    int64 until = time_monotonic_ms() + 5000;
+    while (windows_alive(pid) && time_monotonic_ms() < until) { time_sleep_ms(20); }
+}
+
+// `command` started in the background in `cwd`, its output in `log`, the child's environment
+// ours with `env` ("NAME=value" entries) added; false when it did not start. On Windows it runs
+// through a batch file, and none of our standard handles goes to it (a pipe a caller reads
+// would stay open while it runs).
+bool spawn_detached(List<string>* argv, List<string>* env, string cwd, string log) {
+#ifdef _WIN32
+    String script;
+    defer String_free(&script);
+    String_append(&script, "@echo off\r\n");
+    for (i in 0..env.size) { String_appendf(&script, "set \"%s\"\r\n", env.data[i]); }
+    for (i in 0..argv.size) { String_appendf(&script, "%s\"%s\"", i > 0 ? " " : "", argv.data[i]); }
+    String_appendf(&script, " > \"%s\" 2>&1 < NUL\r\n", log);
+    String batch;
+    defer String_free(&batch);
+    String_appendf(&batch, "%s.cmd", log);
+    fs_write_text(batch.data, script.data);
+    SetHandleInformation(GetStdHandle((uint32)4294967286), (uint32)1, (uint32)0);
+    SetHandleInformation(GetStdHandle((uint32)4294967285), (uint32)1, (uint32)0);
+    SetHandleInformation(GetStdHandle((uint32)4294967284), (uint32)1, (uint32)0);
+    List<string> cmd;
+    defer cmd.free();
+    cmd.push("cmd.exe"); cmd.push("/d"); cmd.push("/c"); cmd.push(batch.data);
+    ProcessOptions options = ProcessOptions{cwd: cwd};
+    Process child;
+    if (process_spawn(&cmd, &options, &child) != 0) { return false; }
+    Process_free(&child);
+    return true;
+#else
+    String line;
+    defer String_free(&line);
+    String_append(&line, "(");
+    if (cwd != null) { String_appendf(&line, "cd %s && ", shell_quote(cwd)); }
+    String_append(&line, "exec env");
+    for (i in 0..env.size) { String_appendf(&line, " %s", shell_quote(env.data[i])); }
+    for (i in 0..argv.size) { String_appendf(&line, " %s", shell_quote(argv.data[i])); }
+    String_appendf(&line, ") > %s 2>&1 < /dev/null &", shell_quote(log));
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    return sh(line.data, &result) == 0 && result.exit_code == 0;
+#endif
+}
+
+// The running dev app's pid (the one it wrote next to the reload file), or 0.
+int windows_pid(Project* p) {
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(join(p.out("windows"), "reload/pid"), &text) != 0) { return 0; }
+    int pid = atoi(text.data);
+    return windows_alive(pid) ? pid : 0;
+}
+
+// Ends the running dev app, waiting until it is gone.
+void windows_terminate(Project* p) {
+    int pid = windows_pid(p);
+    fs_remove(join(p.out("windows"), "reload/pid"));
+    windows_kill(pid);
+}
+
+// Starts the dev app in the background, the running one ended first; its output goes to
+// build/ui/windows/app.log (the driver's `logs` has it too). It finds its reload file, the
+// driver's port (UI_AGENT_PORT) and, from `ui agent`, the window's size in its environment.
+void windows_launch(Project* p) {
+    windows_terminate(p);
+    String exe_name;
+    String_appendf(&exe_name, "%s.exe", p.name.data);
+    List<string> argv;
+    defer argv.free();
+    argv.push(join(p.out("windows"), exe_name.data));
+    List<string> env;
+    defer env.free();
+    String reload;
+    String_appendf(&reload, "UI_RELOAD_FILE=%s", windows_reload_file(p));
+    env.push(reload.data);
+    string window = env_get("UI_AGENT_WINDOW");
+    String size;
+    if (window != null && window[0] != 0) { String_appendf(&size, "UI_WINDOW=%s", window); env.push(size.data); }
+    if (!spawn_detached(&argv, &env, null, join(p.out("windows"), "app.log"))) { fail("ui: could not start the app"); }
+    // The app writes its pid once it runs.
+    int64 until = time_monotonic_ms() + 20000;
+    while (windows_pid(p) == 0 && time_monotonic_ms() < until) { time_sleep_ms(20); }
+}
+
+// `ui run windows` with the Win32 host (main.esk runs the webview's window itself).
+void run_windows(Project* p) {
+    string made = build_windows(p);
+    if (windows_dev()) {
+        // A dev build the running app picks up itself.
+        if (!windows_relaunch && windows_pid(p) != 0) {
+            println("Restarted the app on the new build");
+            return;
+        }
+        windows_launch(p);
+        printf("Started the app (its output: %s)\n", join(p.out("windows"), "app.log"));
+        return;
+    }
+    Cmd app;
+    app.add(made);
+    int code = app.run(null);
+    app.free();
+    exit(code);
 }

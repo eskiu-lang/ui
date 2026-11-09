@@ -314,12 +314,19 @@ void release_windows(Project* p) {
     String_appendf(&exe_name, "%s.exe", p.name.data);
     List<string> names;
     defer names.free();
-    names.push(exe_name.data); names.push("web"); names.push("WebView2Loader.dll");
+    bool web = windows_webview(p);
+    names.push(exe_name.data);
+    if (web) { names.push("web"); names.push("WebView2Loader.dll"); }
+    else {
+        if (fs_is_dir(join(p.out("windows"), "assets")) == 1) { names.push("assets"); }
+        if (fs_exists(join(p.out("windows"), "window.txt")) == 1) { names.push("window.txt"); }
+    }
     if (fs_exists(join(p.out("windows"), "icon.ico")) == 1) { names.push("icon.ico"); }
     release_zip(p.out("windows"), &names, zip_path);
     printf("\nwindows: %s (%s)\n  %s (%s), to distribute\n  version %s, build %s\n",
         binary, release_size(binary), zip_path, release_size(zip_path), app_version(p), app_build(p));
-    printf("  next: it needs the WebView2 Runtime, which Windows 10 and 11 carry; an installer (Inno Setup, MSIX) can add it.\n");
+    if (web) { printf("  next: it needs the WebView2 Runtime, which Windows 10 and 11 carry; an installer (Inno Setup, MSIX) can add it.\n"); }
+    else { printf("  next: it runs on Windows 10 and 11 as it is; an installer (Inno Setup, MSIX) can add a Start menu entry.\n"); }
 }
 
 void release_web(Project* p) {

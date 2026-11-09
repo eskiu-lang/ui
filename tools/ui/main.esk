@@ -53,7 +53,7 @@ import "uitest.esk";
 
 void usage() {
     println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android [--json] [--webview]\n       ui run web|macos|linux|windows|ios|android [--webview]\n"
-                "       ui serve [web|macos|linux|windows|ios|android] [--json] [--webview]\n       ui agent web|macos|linux|ios|android [--json] OP...\n       ui test [web|macos|linux|ios|android ...] [--json] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]\n       ui publish");
+                "       ui serve [web|macos|linux|windows|ios|android] [--json] [--webview]\n       ui agent web|macos|linux|windows|ios|android [--json] OP...\n       ui test [web|macos|linux|windows|ios|android ...] [--json] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]\n       ui publish");
     exit(2);
 }
 
@@ -90,7 +90,7 @@ int main(int argc, string* argv) {
         for (int i = 2; i < argc; i++) {
             if (strcmp(argv[i], "--json") == 0 && strcmp(argv[1], "release") != 0) { ui_json = true; }
             // macOS: the WKWebView host instead of AppKit (the builds `ui serve` runs inherit it).
-            else if (strcmp(argv[i], "--webview") == 0) { env_set("UI_MACOS_RENDERER", "web"); env_set("UI_LINUX_RENDERER", "web"); }
+            else if (strcmp(argv[i], "--webview") == 0) { env_set("UI_MACOS_RENDERER", "web"); env_set("UI_LINUX_RENDERER", "web"); env_set("UI_WINDOWS_RENDERER", "web"); }
             else { argv[kept++] = argv[i]; }
         }
         argc = kept;
@@ -202,6 +202,7 @@ int main(int argc, string* argv) {
             exit(code);
         }
     } else if (String_eq_cstr(&target, "windows") == 1) {
+        if (run && !windows_webview(&p)) { run_windows(&p); return 0; }
         string binary = build_windows(&p);
         if (ui_json) { json_result("built", binary); } else { printf("Built %s\n", binary); }
         if (run) {

@@ -31,6 +31,15 @@ bool ui_object;
 // made absolute, else the first match on PATH.
 string tool_path(string name) {
     if (name[0] == '/') { return name; }
+#ifdef _WIN32
+    // C:\... or C:/... (and \\server\...) is absolute; a name with a backslash is a path.
+    if (name[0] == '\\' || (name[0] != 0 && name[1] == ':')) { return name; }
+    if (strchr(name, '\\') != null) {
+        String here;
+        fs_cwd(&here);
+        return join(here.data, name);
+    }
+#endif
     if (strchr(name, '/') != null) {
         String cwd;
         fs_cwd(&cwd);
@@ -138,7 +147,10 @@ string join(string a, string b) {
 string eskiu_home() {
     string home = env_get("ESKIU_HOME");
     if (home != null && home[0] != 0) { return home; }
-    return join(env_get("HOME"), ".eskiu");
+    string user = env_get("HOME");
+    // Windows outside a POSIX shell has no HOME.
+    if (user == null || user[0] == 0) { user = env_get("USERPROFILE"); }
+    return join(user, ".eskiu");
 }
 
 string eskiuc() {
