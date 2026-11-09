@@ -1,0 +1,230 @@
+// `ui publish`: a signed bundle of the app's assets for the apps already installed to download
+// (docs/updates.md), and what a build with [updates] compiles in: the bundle's URL, the public
+// key and the hashes of the assets it ships with.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+#ifdef _WIN32
+#pragma link("bcrypt")
+extern int BCryptGenRandom(*void algorithm, *uint8 buffer, uint32 size, uint32 flags);
+#else
+extern int getentropy(*void buffer, size_t size);
+#endif
+
+// [updates] url, ending in a slash; null when the app has no updates.
+string updates_url(Project* p) {
+    string url = p.config.string("updates.url");
+    if (url == null || url[0] == 0) { return null; }
+    if (ends_with(url, "/")) { return url; }
+    String slashed;
+    String_appendf(&slashed, "%s/", url);
+    return slashed.data;
+}
+
+// The file with the secret key bundles are signed with: UI_UPDATE_KEY_FILE, else
+// ESKIU_HOME/keys/ID/updates.key, beside the Android upload key, never in the project.
+string updates_key_file(Project* p) {
+    string chosen = env_get("UI_UPDATE_KEY_FILE");
+    if (chosen != null && chosen[0] != 0) { return chosen; }
+    return join(join(join(eskiu_home(), "keys"), p.id.data), "updates.key");
+}
+
+// The secret key's 32 bytes into `seed`: read from its file, or made (from the system's random
+// source) and written there, readable by its owner only, when `make` and there is none. False
+// when there is none and none was made.
+bool updates_secret(Project* p, *uint8 seed, bool make) {
+    string file = updates_key_file(p);
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(file, &text) == 0) {
+        String_trim(&text);
+        if (text.len != 64 || hash_hex_decode(text.data, seed, 32) != 32) {
+            String message;
+            String_appendf(&message, "ui: %s is not a key (64 hex digits)", file);
+            fail(message.data);
+        }
+        return true;
+    }
+    if (!make) { return false; }
+#ifdef _WIN32
+    bool random = BCryptGenRandom(null, seed, 32, 2) == 0;
+#else
+    bool random = getentropy((*void)seed, 32) == 0;
+#endif
+    if (!random) { fail("ui: no random bytes for a key"); }
+    String dir;
+    path_dirname(&dir, file);
+    fs_mkdir_p(dir.data);
+    String hex;
+    hash_hex_encode(seed, 32, &hex);
+    String_append(&hex, "\n");
+    fs_write_text(file, hex.data);
+#ifndef _WIN32
+    chmod(file, (_fs_mode_t)384);
+#endif
+    uint8[32] public_key;
+    ui_ed25519_public_key(seed, &public_key[0]);
+    String shown;
+    hash_hex_encode(&public_key[0], 32, &shown);
+    String message;
+    String_appendf(&message, "ui: made the key that signs this app's updates: %s (keep it safe and out of the repository).\n"
+        "    Builds on other machines need its public half; put it in ui.toml:\n\n    [updates]\n    public_key = \"%s\"\n",
+        file, shown.data);
+    println_err(message.data);
+    String_free(&dir); String_free(&hex); String_free(&shown); String_free(&message);
+    return true;
+}
+
+// The public key an app checks bundles with, as hex: [updates] public_key, else this machine's
+// key's (made on first use).
+string updates_public_key(Project* p) {
+    string pinned = p.config.string("updates.public_key");
+    if (pinned != null && pinned[0] != 0) {
+        uint8[32] check;
+        if (strlen(pinned) != 64 || hash_hex_decode(pinned, &check[0], 32) != 32) { fail("ui.toml: [updates] public_key must be 64 hex digits"); }
+        return pinned;
+    }
+    uint8[32] seed;
+    updates_secret(p, &seed[0], true);
+    uint8[32] public_key;
+    ui_ed25519_public_key(&seed[0], &public_key[0]);
+    String hex;
+    hash_hex_encode(&public_key[0], 32, &hex);
+    return hex.data;
+}
+
+// Whether the asset `name` may be updated: [updates] include names files and directories of
+// assets/; without it, every asset may.
+bool updates_included(Project* p, string name) {
+    List<string> include;
+    defer include.free();
+    p.config.all("updates.include", &include);
+    if (include.size == 0) { return true; }
+    for (i in 0..include.size) {
+        string entry = include.data[i];
+        int64 n = (int64)strlen(entry);
+        while (n > 0 && entry[n - 1] == '/') { n--; }
+        if (strncmp(name, entry, (size_t)n) == 0 && (name[n] == 0 || name[n] == '/')) { return true; }
+    }
+    return false;
+}
+
+// The assets a bundle may hold, as paths in assets/ with '/' ("screens/home.json"), sorted.
+void updates_assets(Project* p, string dir, string prefix, List<String>* out) {
+    List<String> names;
+    defer fs_list_free(&names);
+    fs_list_dir(dir, &names);
+    for (i in 0..names.size) {
+        string full = join(dir, names.data[i].data);
+        String name;
+        String_appendf(&name, "%s%s", prefix, names.data[i].data);
+        if (fs_is_dir(full) == 1) {
+            String_append(&name, "/");
+            updates_assets(p, full, name.data, out);
+            String_free(&name);
+        } else if (updates_included(p, name.data)) {
+            out.push(name);
+        } else {
+            String_free(&name);
+        }
+        free(full);
+    }
+}
+
+// "PATH SHA256\n" for each asset a bundle may replace: what the app is built with
+// (UI_UPDATE_BASE), so it downloads only the files a bundle changed.
+string updates_base(Project* p) {
+    String text;
+    string assets = join(p.root.data, "assets");
+    if (fs_is_dir(assets) != 1) { return ""; }
+    List<String> names;
+    defer fs_list_free(&names);
+    updates_assets(p, assets, "", &names);
+    for (i in 0..names.size) {
+        String hash;
+        file_sha256(join(assets, names.data[i].data), &hash);
+        String_appendf(&text, "%s %s\n", names.data[i].data, hash.data);
+        String_free(&hash);
+    }
+    return text.data == null ? "" : text.data;
+}
+
+// The macros an app with [updates] is built with (src/apis/updates.esk), into the entry's
+// text. Builds under `ui serve` leave updates out, so the assets being edited are what shows.
+void updates_entry(Project* p, String* text) {
+    string url = updates_url(p);
+    if (url == null || ui_test_build()) { return; }
+    String_append(text, "#define UI_UPDATES 1\n");
+    String_appendf(text, "#define UI_UPDATE_URL %s\n", esk_literal(url));
+    String_appendf(text, "#define UI_UPDATE_KEY %s\n", esk_literal(updates_public_key(p)));
+    String_appendf(text, "#define UI_UPDATE_BASE %s\n", esk_literal(updates_base(p)));
+}
+
+// `ui publish`: build/ui/updates/ gets manifest.txt (the version, this app's id and version,
+// each asset's path, size and SHA-256, and the Ed25519 signature of all that) and files/HASH for
+// each asset. Upload the directory's contents to [updates] url.
+void publish_command(Project* p, int argc, string* argv) {
+    string url = updates_url(p);
+    if (url == null) {
+        fail("ui publish: the app has no update URL. Name where the bundle will be served in ui.toml:\n\n"
+             "  [updates]\n  url = \"https://cdn.example.com/myapp/\"");
+    }
+    uint8[32] seed;
+    if (!updates_secret(p, &seed[0], true)) { fail("ui publish: no key"); }
+    uint8[32] public_key;
+    ui_ed25519_public_key(&seed[0], &public_key[0]);
+    String public_hex;
+    hash_hex_encode(&public_key[0], 32, &public_hex);
+    string pinned = p.config.string("updates.public_key");
+    if (pinned != null && pinned[0] != 0 && strcmp(pinned, public_hex.data) != 0) {
+        String message;
+        String_appendf(&message, "ui publish: %s is not the key of ui.toml's [updates] public_key; the apps would refuse this bundle "
+            "(UI_UPDATE_KEY_FILE names another key file)", updates_key_file(p));
+        fail(message.data);
+    }
+    string assets = join(p.root.data, "assets");
+    List<String> names;
+    defer fs_list_free(&names);
+    if (fs_is_dir(assets) == 1) { updates_assets(p, assets, "", &names); }
+    string out = p.out("updates");
+    fs_remove_all(out);
+    string files = join(out, "files");
+    fs_mkdir_p(files);
+    // The version only grows: seconds since 2024, as a release's build number.
+    string version = release_build_number();
+    for (int i = 2; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--version") == 0) { version = argv[i + 1]; }
+    }
+    String manifest;
+    String_appendf(&manifest, "eskiu-ui-update 1\napp %s\nbase %s\nversion %s\n", p.id.data, app_version(p), version);
+    int64 total = 0;
+    for (i in 0..names.size) {
+        string name = names.data[i].data;
+        for (int k = 0; name[k] != 0; k++) {
+            if (name[k] <= ' ') {
+                String message;
+                String_appendf(&message, "ui publish: assets/%s: a name with a blank cannot be in a bundle; rename it", name);
+                fail(message.data);
+            }
+        }
+        string source = join(assets, name);
+        String hash;
+        file_sha256(source, &hash);
+        FileStat stat;
+        fs_stat(source, &stat);
+        String_appendf(&manifest, "file %s %lld %s\n", name, stat.size, hash.data);
+        fs_copy(source, join(files, hash.data));
+        total += stat.size;
+        String_free(&hash);
+    }
+    uint8[64] signature;
+    ui_ed25519_sign(&seed[0], (*uint8)manifest.data, manifest.len, &signature[0]);
+    String hex;
+    hash_hex_encode(&signature[0], 64, &hex);
+    String_appendf(&manifest, "sig %s\n", hex.data);
+    fs_write_text(join(out, "manifest.txt"), manifest.data);
+    printf("Published version %s of %s's assets for version %s of the app: %d files, %lld bytes\n", version, p.display.data,
+        app_version(p), names.size, total);
+    printf("  %s\n", out);
+    printf("Upload what it holds (manifest.txt and files/) to %s; the installed apps of version %s take it at their next\n"
+           "start after they see it. Serve manifest.txt with a short cache time.\n", url, app_version(p));
+}

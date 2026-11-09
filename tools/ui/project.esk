@@ -156,6 +156,8 @@ string Project_entry(Project* self) {
         }
     }
     String_append(&text, "\n");
+    // Updates of the assets ([updates] url, tools/ui/publish.esk).
+    updates_entry(self, &text);
     // A dev or test build has the driver (src/core/driver.esk) and says what sources it was
     // built from, so `ui agent` refuses an older build.
     if (ui_test_build()) {

@@ -7,7 +7,7 @@
 //
 // Inside a project, the ui package is the one eskiu.lock names; its hosts (hosts/) are built
 // around the app. Yoga, for the native hosts, is fetched and compiled once into
-// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), xcode (Swift packages), new, serve, agent (`ui agent`, the driver's client), uitest (`ui test`), diagnostics (--json).
+// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), xcode (Swift packages), new, serve, agent (`ui agent`, the driver's client), uitest (`ui test`), diagnostics (--json), publish (`ui publish`, with src/apis/ed25519.esk).
 import <io>;
 import <string>;
 import <list>;
@@ -46,12 +46,14 @@ import "xcode.esk";
 import "new.esk";
 import "serve.esk";
 import "release.esk";
+import "../../src/apis/ed25519.esk";
+import "publish.esk";
 import "agent.esk";
 import "uitest.esk";
 
 void usage() {
     println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android [--json] [--webview]\n       ui run web|macos|linux|windows|ios|android [--webview]\n"
-                "       ui serve [web|macos|linux|windows|ios|android] [--json] [--webview]\n       ui agent web|macos|ios|android [--json] OP...\n       ui test [web|macos|ios|android ...] [--json] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]");
+                "       ui serve [web|macos|linux|windows|ios|android] [--json] [--webview]\n       ui agent web|macos|ios|android [--json] OP...\n       ui test [web|macos|ios|android ...] [--json] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]\n       ui publish");
     exit(2);
 }
 
@@ -111,6 +113,12 @@ int main(int argc, string* argv) {
         Project p;
         p.find();
         uitest_command(&p, argc, argv);
+        return 0;
+    }
+    if (String_eq_cstr(&command, "publish") == 1) {
+        Project p;
+        p.find();
+        publish_command(&p, argc, argv);
         return 0;
     }
     if (String_eq_cstr(&command, "release") == 1) {

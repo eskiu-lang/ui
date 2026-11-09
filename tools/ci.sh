@@ -144,3 +144,23 @@ if (cd build/newapp && ../ui release ios) > build/release.txt 2>&1; then echo "F
 grep -q "the App Store needs an icon" build/release.txt || { cat build/release.txt; exit 1; }
 grep -q "warning: the app's id is org.eskiu.app.newapp" build/release.txt || { cat build/release.txt; exit 1; }
 echo "PASS ui release checks"
+# ui publish: a signed bundle of the assets, with a key made outside the project; a build with
+# [updates] compiles in the URL, the public key and the assets' hashes; a ui.toml key that is
+# not the signing key's stops the publish.
+printf '[updates]\nurl = "https://cdn.example.com/newapp"\n' > build/newapp/ui.toml
+mkdir -p build/newapp/assets/screens
+printf 'home' > build/newapp/assets/screens/home.json
+rm -f build/update.key
+(cd build/newapp && UI_UPDATE_KEY_FILE="$PWD/../update.key" ../ui publish --version 7) > build/publish.txt 2>&1 || { cat build/publish.txt; exit 1; }
+test -f build/update.key && grep -q 'public_key = "[0-9a-f]\{64\}"' build/publish.txt || { cat build/publish.txt; echo "FAIL publish: no key made"; exit 1; }
+grep -q "^version 7$" build/newapp/build/ui/updates/manifest.txt && grep -q "^file screens/home.json 4 " build/newapp/build/ui/updates/manifest.txt \
+    && grep -q "^sig [0-9a-f]\{128\}$" build/newapp/build/ui/updates/manifest.txt || { cat build/newapp/build/ui/updates/manifest.txt; echo "FAIL publish: manifest"; exit 1; }
+test "$(ls build/newapp/build/ui/updates/files | wc -l)" -eq "$(grep -c '^file ' build/newapp/build/ui/updates/manifest.txt)" || { echo "FAIL publish: files"; exit 1; }
+(cd build/newapp && UI_UPDATE_KEY_FILE="$PWD/../update.key" ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build web) > build/publish.txt 2>&1 || { cat build/publish.txt; exit 1; }
+grep -q '^#define UI_UPDATE_URL "https://cdn.example.com/newapp/"$' build/newapp/build/ui/entry.esk && grep -q 'UI_UPDATE_BASE ".*screens/home.json' build/newapp/build/ui/entry.esk \
+    && test -f build/newapp/build/ui/web/ui-sw.js || { cat build/newapp/build/ui/entry.esk; echo "FAIL publish: the build has no updates"; exit 1; }
+printf '[updates]\nurl = "https://cdn.example.com/newapp/"\npublic_key = "%064d"\n' 0 > build/newapp/ui.toml
+if (cd build/newapp && UI_UPDATE_KEY_FILE="$PWD/../update.key" ../ui publish) > build/publish.txt 2>&1; then echo "FAIL publish: another key accepted"; exit 1; fi
+grep -q "is not the key of ui.toml" build/publish.txt || { cat build/publish.txt; exit 1; }
+rm -rf build/newapp/assets build/newapp/ui.toml
+echo "PASS ui publish"
