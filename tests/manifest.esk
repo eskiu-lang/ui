@@ -37,6 +37,8 @@ import "../tools/ui/xcode.esk";
 import "../tools/ui/new.esk";
 import "../tools/ui/serve.esk";
 import "../tools/ui/release.esk";
+import "../src/apis/ed25519.esk";
+import "../tools/ui/publish.esk";
 
 // main.esk's, which serve.esk and release.esk call.
 void usage() { exit(2); }

@@ -118,11 +118,12 @@ int64[16] ui_ed_x = {0xd51a, 0x8f25, 0x2d60, 0xc956, 0xa7b2, 0x9525, 0xc760, 0x6
 int64[16] ui_ed_y = {0x6658, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666};
 int64[16] ui_ed_i = {0xa0b0, 0x4a0e, 0x1b27, 0xc4ee, 0xe478, 0xad2f, 0x1806, 0x2f43, 0xd7a7, 0x3dfb, 0x0099, 0x2b4d, 0xdf0b, 0x4fc1, 0x2480, 0x2b83};
 
-// Field helpers (internal): copy, carry, conditional swap, pack to 32 bytes, compare, parity,
-// unpack, add, subtract, multiply, inverse and the power (p - 5) / 8.
+// r = a (internal; the field helpers below are all internal).
 void ui_fe_copy(*int64 r, *int64 a) { for (int i = 0; i < 16; i++) { r[i] = a[i]; } }
+// r = v, a small number.
 void ui_fe_set(*int64 r, int64 v) { for (int i = 0; i < 16; i++) { r[i] = 0; } r[0] = v; }
 
+// Carries each limb into the next, so each fits 16 bits again.
 void ui_fe_carry(*int64 o) {
     for (int i = 0; i < 16; i++) {
         o[i] += (int64)1 << 16;
@@ -132,6 +133,7 @@ void ui_fe_carry(*int64 o) {
     }
 }
 
+// Swaps p and q when b is 1, in constant time.
 void ui_fe_swap(*int64 p, *int64 q, int b) {
     int64 c = ~((int64)b - 1);
     for (int i = 0; i < 16; i++) {
@@ -141,6 +143,7 @@ void ui_fe_swap(*int64 p, *int64 q, int b) {
     }
 }
 
+// The element reduced mod p, as 32 little-endian bytes.
 void ui_fe_pack(*uint8 o, *int64 n) {
     int64[16] m;
     int64[16] t;
@@ -170,6 +173,7 @@ int ui_bytes_differ(*uint8 a, *uint8 b, int n) {
     return d != 0 ? 1 : 0;
 }
 
+// 1 when a and b are different elements.
 int ui_fe_neq(*int64 a, *int64 b) {
     uint8[32] c;
     uint8[32] d;
@@ -178,20 +182,25 @@ int ui_fe_neq(*int64 a, *int64 b) {
     return ui_bytes_differ(&c[0], &d[0], 32);
 }
 
+// The lowest bit of the reduced element.
 int ui_fe_parity(*int64 a) {
     uint8[32] d;
     ui_fe_pack(&d[0], a);
     return (int)(d[0] & 1);
 }
 
+// An element from 32 little-endian bytes (the top bit ignored).
 void ui_fe_unpack(*int64 o, *uint8 n) {
     for (int i = 0; i < 16; i++) { o[i] = (int64)n[2 * i] + ((int64)n[2 * i + 1] << 8); }
     o[15] &= 0x7fff;
 }
 
+// o = a + b.
 void ui_fe_add(*int64 o, *int64 a, *int64 b) { for (int i = 0; i < 16; i++) { o[i] = a[i] + b[i]; } }
+// o = a - b.
 void ui_fe_sub(*int64 o, *int64 a, *int64 b) { for (int i = 0; i < 16; i++) { o[i] = a[i] - b[i]; } }
 
+// o = a * b.
 void ui_fe_mul(*int64 o, *int64 a, *int64 b) {
     int64[31] t;
     for (int i = 0; i < 16; i++) {
@@ -203,6 +212,7 @@ void ui_fe_mul(*int64 o, *int64 a, *int64 b) {
     ui_fe_carry(o);
 }
 
+// o = 1 / i.
 void ui_fe_inverse(*int64 o, *int64 i) {
     int64[16] c;
     ui_fe_copy(&c[0], i);
@@ -213,6 +223,7 @@ void ui_fe_inverse(*int64 o, *int64 i) {
     ui_fe_copy(o, &c[0]);
 }
 
+// o = i ^ ((p - 5) / 8), for square roots.
 void ui_fe_pow2523(*int64 o, *int64 i) {
     int64[16] c;
     ui_fe_copy(&c[0], i);
@@ -239,10 +250,12 @@ void ui_ed_add(*int64 p, *int64 q) {
     ui_fe_mul(&p[32], &g[0], &f[0]); ui_fe_mul(&p[48], &e[0], &h[0]);
 }
 
+// Swaps the points p and q when b is 1, in constant time (internal).
 void ui_ed_swap(*int64 p, *int64 q, int b) {
     for (int i = 0; i < 4; i++) { ui_fe_swap(&p[i * 16], &q[i * 16], b); }
 }
 
+// A point as 32 bytes: y, with x's parity in the top bit (internal).
 void ui_ed_pack(*uint8 r, *int64 p) {
     int64[16] tx; int64[16] ty; int64[16] zi;
     ui_fe_inverse(&zi[0], &p[32]);
