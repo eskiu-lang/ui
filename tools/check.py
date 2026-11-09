@@ -22,10 +22,10 @@ def run(args, **kwargs):
     return subprocess.run([str(arg) for arg in args], check=True, env=ENV, timeout=60, **kwargs)
 
 
-def build_model(compiler, name, opt, asan=False):
+def build_model(compiler, name, opt, asan=False, entry=HERE / "tests/model/main.esk"):
     # Rename allocator references in generated test IR only. The C shim calls libc,
     # counting ALL Eskiu allocations, including compiler-created closure envs.
-    args = [compiler, HERE / "tests/model/main.esk", "--test-codegen", opt]
+    args = [compiler, entry, "--test-codegen", opt]
     if asan:
         args += ["--asan"]
     raw = run(args, capture_output=True, text=True).stdout
@@ -58,6 +58,17 @@ def main():
         measurements[name] = build_model(ESKIUC, name, opt, asan)
     selfhost = Path(find_compiler("ESKIUC_SELF", "eskiuc-esk"))
     measurements["model-selfhost"] = build_model(selfhost, "model-selfhost", "-O0")
+    # Source positions (UI_SRCLOC), with a compiler that has src_line(): both compilers.
+    probe = BUILD / "srcloc_probe.esk"
+    probe.write_text("int probe(int line = src_line()) { return line; }\n")
+    if subprocess.run([ESKIUC, probe, "--test-typechecker"], env=ENV, capture_output=True).returncode == 0:
+        entry = BUILD / "model_srcloc.esk"
+        entry.write_text('#define UI_SRCLOC 1\nimport "../tests/model/main.esk";\n')
+        for name, compiler in [("model-srcloc", ESKIUC), ("model-srcloc-self", selfhost)]:
+            out = build_model(compiler, name, "-O0", entry=entry)
+            assert "PASS source positions" in out, name
+    else:
+        print("SKIP source positions: this eskiuc has no src_line()")
     for name, compiler in [("tags-cpp", ESKIUC), ("tags-self", selfhost)]:
         run([compiler, HERE / "tests/tags.esk", "-o", BUILD / name])
         run([BUILD / name])

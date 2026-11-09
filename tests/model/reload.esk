@@ -63,7 +63,6 @@ void reload_keeps_state() {
     rl_router.push("/places/2");
     ui_frame();
     String saved;
-    defer String_free(&saved);
     String_from(&saved, ui_reload_snapshot());
     check(strstr(saved.data, "ui-reload 1\nroute\t/\nroute\t/places/2\n") == saved.data, "the routes, root first");
     check(strstr(saved.data, "signal\tColumn[0]\t0\tint\t3\n") != null, "an int by its scope and place");
@@ -74,7 +73,8 @@ void reload_keeps_state() {
     check(strstr(saved.data, "Gone[1]\t0\tint\t41") != null, "a scope's signal");
     ui_shutdown();
     Router_free(rl_router);
-    balanced("reload snapshot leak");
+    // Only the copy of the snapshot is left.
+    check(!ui_allocations_counted() || ui_live_allocations() == 1, "reload snapshot leak");
 
     // The edited app on a new runtime, as the new core after a reload.
     rl_version = 1;
@@ -109,6 +109,7 @@ void reload_keeps_state() {
     check(!ui_rl.active, "an input ends the restore");
     ui_shutdown();
     Router_free(rl_router);
+    String_free(&saved);
     balanced("reload restore leak");
 
     // A snapshot that is not one is ignored.

@@ -22,6 +22,22 @@ for case in "1:render loop" "2:hook kind/type changed" "3:duplicate key" "4:memo
     grep -q "$message" build/rejection.txt || { cat build/rejection.txt; exit 1; }
     echo "PASS rejection: $message"
 done
+# Source positions (UI_SRCLOC) need a compiler with src_line() as a parameter default (after
+# Eskiu 0.14.1); with one, the model tests run again with them and the rejections name the
+# element's line.
+printf 'int probe(int line = src_line()) { return line; }\n' > build/srcloc_probe.esk
+if eskiuc build/srcloc_probe.esk --test-typechecker > /dev/null 2>&1; then
+    printf '#define UI_SRCLOC 1\nimport "../tests/model/main.esk";\n' > build/model_srcloc.esk
+    eskiuc build/model_srcloc.esk -O2 --link-arg build/heap.o -o build/model-srcloc
+    build/model-srcloc | grep -q "PASS source positions" || { echo "FAIL source positions"; exit 1; }
+    printf '#define UI_SRCLOC 1\nimport "../tests/rejections.esk";\n' > build/rejections_srcloc.esk
+    eskiuc build/rejections_srcloc.esk -o build/rejections-srcloc
+    if build/rejections-srcloc 3 > build/rejection.txt 2>&1; then echo "FAIL rejection: exited 0"; exit 1; fi
+    grep -q "at .*tests/rejections.esk:24:13" build/rejection.txt || { cat build/rejection.txt; exit 1; }
+    echo "PASS source positions"
+else
+    echo "SKIP source positions: this eskiuc has no src_line()"
+fi
 eskiuc tests/harness/headless.esk -o build/counter
 build/counter
 # The driver (src/core/driver.esk) is in a UI_TEST build only: a release object has none of

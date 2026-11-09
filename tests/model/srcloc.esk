@@ -1,0 +1,56 @@
+// Where each element was called from (UI_SRCLOC builds, with a compiler that has src_line()):
+// the node keeps its call's position, a kit component's first element takes the component's
+// call, and `tree` shows it. Without UI_SRCLOC there is nothing to check.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+// The line this is called on.
+int sl_line(int line = src_line()) { return line; }
+
+// A component of the test's own, with no position of its own: its element is where it is.
+void SlPlain() { Text("plain"); }
+
+int sl_base;
+
+void sl_app() {
+    Column(Style{test_id: "outer"}) {
+        Text("first");
+        Card() {
+            Text("in card");
+        }
+        SlPlain();
+    }
+}
+
+// The line of `node` (0 when it has none).
+int sl_node_line(string text) {
+    for (i in 0..ui.by_id.size) {
+        *Node node = ui.by_id.data[i];
+        if (node != null && node.text != null && strcmp(node.text, text) == 0) { return node.at.line; }
+    }
+    return -1;
+}
+
+void source_positions() {
+    sl_base = sl_line();
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() { sl_app(); }
+    ui_frame();
+    // The calls in sl_app, from its Column 19 lines above the sl_line() call.
+    int column = sl_base - 19;
+    *Node outer = ui.root.children.data[0];
+    check(outer.at.line == column && outer.at.col == 5, "a Column's call");
+    check(strstr(outer.at.file, "tests/model/srcloc.esk") != null, "the file of the call");
+    check(sl_node_line("first") == column + 1, "a Text's call");
+    *Node card = outer.children.data[1];
+    check(card.at.line == column + 2, "a kit component's element takes the component's call");
+    check(sl_node_line("in card") == column + 3, "inside it, the app's call");
+    check(sl_node_line("plain") == sl_base - 24, "a component without a position: its element's call");
+    string tree = ui_driver_request("{\"op\": \"tree\"}", "");
+    String expected;
+    String_format(&expected, "\"line\": %d, \"col\": 5", column);
+    check(strstr(tree, expected.data) != null, "tree shows where");
+    String_free(&expected);
+    ui_shutdown();
+    balanced("source positions leak");
+}

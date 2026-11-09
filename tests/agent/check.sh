@@ -52,6 +52,10 @@ fi
 "$UI" agent "$HOST" state > "$OUT/start.txt" 2>&1 || { cat "$OUT/start.txt"; fail "attach"; }
 # A fresh start: the app as it launches.
 op tree '"test_id":"add"' '"text":"Count: 0"' '"kind":"TextInput","test_id":"title"'
+# A build with source positions (a compiler with src_line()): each element's call.
+if grep -q UI_SRCLOC build/ui/entry.esk 2>/dev/null; then
+    op tree '"test_id":"add","text":"Add","file":"src/main.esk","line":22,"col":9'
+fi
 op "tap add" '"ok":true,"op":"tap","target":"add"'
 op "tap Add" '"kind":"Button"'
 op state '"signals":\[2,'

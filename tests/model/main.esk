@@ -20,6 +20,9 @@ import "errors.esk";
 import "apps.esk";
 import "driver.esk";
 import "reload.esk";
+#ifdef UI_SRCLOC
+import "srcloc.esk";
+#endif
 
 int main() {
     independent(); printf("PASS independent\n");
@@ -80,6 +83,9 @@ int main() {
     errors(); printf("PASS error recovery\n");
     driver(); printf("PASS driver\n");
     reload_keeps_state(); printf("PASS reload keeps state\n");
+#ifdef UI_SRCLOC
+    source_positions(); printf("PASS source positions\n");
+#endif
     leak_gate(); printf("PASS leak gates\n");
     return 0;
 }
