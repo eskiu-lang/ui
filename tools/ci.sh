@@ -77,10 +77,12 @@ if [ "$(uname)" = "Darwin" ]; then
     echo "PASS ui release macos --webview"
 fi
 if [ "$(uname)" = "Linux" ] && pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
-    (cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build linux) > build/linux.txt 2>&1 || { cat build/linux.txt; exit 1; }
+    # The WebKitGTK host (--webview), around the stand-in compiler's web build; the GTK 4 host
+    # is built and driven by the host-linux job (tools/ci_host.sh linux).
+    (cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build linux --webview) > build/linux.txt 2>&1 || { cat build/linux.txt; exit 1; }
     test -f build/newapp/build/ui/linux/newapp || { echo "FAIL linux: no binary"; exit 1; }
     test -f build/newapp/build/ui/linux/web/index.html || { echo "FAIL linux: no bundled web"; exit 1; }
-    echo "PASS ui build linux"
+    echo "PASS ui build linux --webview"
 fi
 # ui.toml is read before building: a malformed one stops with its line.
 printf '[app]\nname = "New app"\n\n[ios]\nframeworks = ["CoreLocation", 3]\n' > build/newapp/ui.toml

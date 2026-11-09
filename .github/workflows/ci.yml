@@ -65,7 +65,8 @@ jobs:
           echo "PASS ui release windows"
 
   # The host checks (docs/testing.md): every `ui agent` op, the ui tests and the speed
-  # budgets on a headless Chrome, the macOS AppKit host, the iOS simulator and the Android emulator.
+  # budgets on a headless Chrome, the macOS AppKit host, the Linux GTK host, the iOS simulator
+  # and the Android emulator.
   host-web:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -163,6 +164,40 @@ jobs:
             examples/*/build/ui/agent/*.log
             examples/*/build/ui/macos/app.log
             build/agent-macos
+          if-no-files-found: ignore
+
+  host-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Eskiu
+        run: |
+          mkdir -p $HOME/.eskiu
+          curl -fsSL https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-x86_64.tar.gz | tar -xz -C $HOME/.eskiu
+          echo "$HOME/.eskiu/bin" >> $GITHUB_PATH
+      - name: GTK 4 and a virtual display
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev xvfb
+      - name: Yoga, compiled once
+        uses: actions/cache@v4
+        with:
+          path: ~/.eskiu/cache
+          key: yoga-linux-x86_64-${{ hashFiles('tools/ui/yoga.esk') }}
+      - name: Host checks and budgets
+        # The GTK host's window on Xvfb, with a session bus for GTK's settings and AT-SPI.
+        run: dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" tools/ci_host.sh linux
+      - name: Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-linux-logs
+          path: |
+            tests/*/build/ui/agent/*.log
+            tests/*/build/ui/linux/app.log
+            tests/*/build/ui/test
+            examples/*/build/ui/agent/*.log
+            examples/*/build/ui/linux/app.log
+            build/agent-linux
           if-no-files-found: ignore
 
   host-android:
