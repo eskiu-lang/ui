@@ -1,0 +1,172 @@
+// The driver (src/core/driver.esk): test ids, the ops the core answers, the directives it
+// gives the host, and the virtual clock.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+// What the fake host's own clock was asked for while the core used it.
+List<int> drv_host_armed;
+int drv_host_stopped;
+int drv_host_frames;
+*Signal<int> drv_count;
+int drv_timeouts;
+int drv_intervals;
+int drv_ticks;
+*Signal<bool> drv_open;
+
+// Whether `text` holds `part`.
+bool has(string text, string part) { return strstr(text, part) != null; }
+
+// One request; a directive is carried out by this fake host (a press for a tap, the text
+// for a type) and its answer returned.
+string drive(string request) {
+    string answer = ui_driver_request(request, "source-1");
+    if (!has(answer, "{\"host\": ")) { return answer; }
+    String copy;
+    String_from(&copy, answer);
+    defer String_free(&copy);
+    string result = "";
+    if (has(copy.data, "\"host\": \"tap\"") || has(copy.data, "\"host\": \"type\"")) {
+        int id = atoi(&strstr(copy.data, "\"node\": ")[8]);
+        *Node node = ui.by_id.data[id];
+        if (has(copy.data, "\"host\": \"tap\"")) { ui_event(node.id, node.generation); }
+        else { ui_event_text(node.id, node.generation, "Milk"); }
+    }
+    if (has(copy.data, "\"host\": \"layout\"")) { result = "2 0 0 320 480 1\n3 10 20 100 30 1\n"; }
+    if (has(copy.data, "\"host\": \"logs\"")) { result = "printed by the app\n"; }
+    if (has(copy.data, "\"host\": \"perf\"")) { result = "4096"; }
+    if (has(copy.data, "\"host\": \"scroll\"")) { result = "120"; }
+    return ui_driver_finish(result);
+}
+
+void driver_test_ids() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        drv_count = use_signal<int>(0);
+        *StringState title = use_string("");
+        Column(Style{padding: 4}) {
+            text_number(drv_count.get());
+            ButtonWith(Style{test_id: "add"}, "Add") { drv_count.set(drv_count.get() + 1); }
+            ButtonWith(Style{label: "Remove item"}, "Remove") { drv_count.set(drv_count.get() - 1); }
+            Button("Twice") {}
+            Button("Twice") {}
+            TextInput(Input{value: title.get(), placeholder: "Title", style: Style{test_id: "title"}},
+                void(string text) { title.set(text); });
+            Pressable(Style{}, void() { drv_count.set(100); }) { TextWith(Style{test_id: "inner"}, "Press me"); }
+        }
+    }
+    ui_frame();
+    // The test id never goes to the host, and is not the accessible name.
+    for (i in 0..mutation_count) {
+        check(mutation_texts[i] == null || (strcmp(mutation_texts[i], "add") != 0 && strcmp(mutation_texts[i], "title") != 0),
+            "a test id is not sent to the host");
+    }
+    *Node add = find_label(ui.root, "Remove item");
+    check(add != null, "the label is the accessible name");
+    string tree = drive("{\"op\": \"tree\"}");
+    check(has(tree, "\"test_id\": \"add\"") && has(tree, "\"kind\": \"Button\", \"test_id\": \"add\", \"text\": \"Add\""),
+        "tree shows the test id");
+    check(has(drive("{\"op\": \"tap\", \"target\": \"add\"}"), "\"ok\": true, \"op\": \"tap\", \"target\": \"add\""), "tap by test id");
+    check(drv_count.value == 1, "the tap reached the handler and rendered");
+    check(has(drive("{\"op\": \"tap\", \"target\": \"Remove item\"}"), "\"ok\": true"), "tap by label");
+    check(drv_count.value == 0, "the label's button");
+    check(has(drive("{\"op\": \"tap\", \"target\": \"Add\"}"), "\"ok\": true"), "tap by a button's text");
+    check(drv_count.value == 1, "the text's button");
+    check(has(drive("{\"op\": \"tap\", \"target\": \"Twice\"}"), "2 elements match 'Twice'"), "an ambiguous name is refused");
+    check(has(drive("{\"op\": \"tap\", \"target\": \"nothing\"}"), "no element with test_id or accessible name 'nothing'"),
+        "a missing name is refused");
+    check(has(drive("{\"op\": \"tap\", \"target\": \"inner\"}"), "\"kind\": \"Pressable\""), "a tap on a text reaches its pressable");
+    check(drv_count.value == 100, "the pressable's handler");
+    string typed = drive("{\"op\": \"type\", \"target\": \"title\", \"text\": \"Milk\"}");
+    check(has(typed, "\"ok\": true, \"op\": \"type\""), "type into a field");
+    check(has(drive("{\"op\": \"type\", \"target\": \"add\", \"text\": \"x\"}"), "is not a TextInput"), "type needs a field");
+    check(has(drive("{\"op\": \"scroll\", \"target\": \"add\", \"dy\": 10}"), "is not a scroll or inside one"), "scroll needs a scroll");
+    String by_id;
+    String_format(&by_id, "{\"op\": \"tap\", \"target\": \"#%d\"}", add.id);
+    check(has(drive(by_id.data), "\"ok\": true"), "#id targets a node");
+    String_free(&by_id);
+    // state: the scopes' signals, with their values.
+    string state = drive("{\"op\": \"state\"}");
+    check(has(state, "\"signals\": [99, \"Milk\"]"), "state shows the signals");
+    string layout = drive("{\"op\": \"layout\"}");
+    check(has(layout, "\"id\": 3, \"kind\": \"Text\"") && has(layout, "\"x\": 10, \"y\": 20, \"width\": 100, \"height\": 30"),
+        "layout merges the host's frames with the tree");
+    check(has(drive("{\"op\": \"perf\"}"), "\"memory_bytes\": 4096") && has(drive("{\"op\": \"perf\"}"), "\"frames\": "),
+        "perf from the core and the host");
+    check(has(drive("{\"op\": \"logs\"}"), "\"host\": [\"printed by the app\"]"), "logs from the host");
+    check(has(drive("{\"op\": \"nope\"}"), "unknown op 'nope'") && has(drive("not json"), "\"ok\": false"), "bad requests");
+    ui_shutdown(); balanced("driver test ids leak");
+}
+
+void driver_core_ops() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        drv_open = use_signal<bool>(false);
+        Button("Open") { drv_open.set(true); }
+        Button("Throw") { throw 5; }
+        Modal(drv_open.get(), void() { drv_open.set(false); }) { Text("Inside"); }
+    }
+    ui_frame();
+    check(has(drive("{\"op\": \"back\"}"), "\"handled\": false"), "nothing to go back from");
+    drive("{\"op\": \"tap\", \"target\": \"Open\"}");
+    check(has(drive("{\"op\": \"state\"}"), "\"modals\": 1"), "the modal is open");
+    check(has(drive("{\"op\": \"back\"}"), "\"handled\": true") && !drv_open.value, "back closes the modal");
+    drive("{\"op\": \"tap\", \"target\": \"Throw\"}");
+    check(has(drive("{\"op\": \"logs\"}"), "\"core\": [\"error: error in a handler: int 5"), "a handler's error is in the logs");
+    ui_shutdown(); balanced("driver core ops leak");
+}
+
+void driver_clock() {
+    Ui runtime;
+    drv_timeouts = 0; drv_intervals = 0; drv_ticks = 0;
+    ui_init(&runtime, record);
+    ui_set_timer_host(void(int token, int ms, bool repeat) { drv_host_armed.push(token); },
+        void(int token) { drv_host_stopped++; });
+    ui_set_frame_host(void(bool on) { drv_host_frames++; });
+    ui_mount() {
+        *Signal<int> target = use_signal<int>(0);
+        drv_count = target;
+        use_timeout(100) { drv_timeouts++; }
+        use_interval(30) { drv_intervals++; }
+        int shown = use_animated(target.get(), 200, EaseLinear);
+        text_number(shown);
+    }
+    ui_frame();
+    check(drv_host_armed.size == 2, "before the driver, timers go to the host");
+    check(has(drive("{\"op\": \"hello\", \"clock\": \"virtual\"}"), "\"clock\": \"virtual\", \"now\": 0, \"source\": \"source-1\""),
+        "hello takes the clock and tells the build's source");
+    check(drv_host_stopped == 2, "the host's timers are stopped");
+    // Nothing moves between requests: frames and events do not fire timers.
+    for (i in 0..5) { ui_frame(); }
+    check(drv_timeouts == 0 && drv_intervals == 0, "no timer fires without the clock moving");
+    check(has(drive("{\"op\": \"clock\", \"ms\": 50}"), "\"now\": 50, \"advanced\": 50, \"fired\": 1"), "clock +50");
+    check(drv_intervals == 1 && drv_timeouts == 0, "the interval once, at 30");
+    drive("{\"op\": \"clock\", \"ms\": 50}");
+    check(drv_intervals == 3 && drv_timeouts == 1, "at 60, 90 and the timeout at 100");
+    check(has(drive("{\"op\": \"clock\", \"settle\": true}"), "\"idle\": true"), "settle with only an interval left is idle");
+    // use_frame ticks run on the virtual clock: an animation moves only as it advances.
+    drv_count.set(1000);
+    ui_driver_flush();
+    check(drv_host_frames == 0, "display frames do not go to the host");
+    string moving = drive("{\"op\": \"clock\", \"ms\": 100}");
+    check(has(moving, "\"idle\": false, \"busy\": \"use_frame\""), "an animation keeps frames running");
+    *Node shown = ui.root.children.data[0];
+    int halfway = atoi(shown.text);
+    check(halfway > 300 && halfway < 600, "halfway after 100 of 200 ms");
+    check(has(drive("{\"op\": \"clock\", \"settle\": true}"), "\"idle\": true"), "settle runs it to the end");
+    check(strcmp(shown.text, "1000") == 0, "the animation arrived");
+    // Back to the host's clock: its timers start again there.
+    int armed = drv_host_armed.size;
+    check(has(drive("{\"op\": \"clock\", \"real\": true}"), "\"clock\": \"real\""), "clock real gives the clock back");
+    check(drv_host_armed.size == armed + 1, "the interval is armed with the host again");
+    check(has(drive("{\"op\": \"clock\", \"ms\": 10}"), "\"clock\": \"virtual\""), "a clock request takes it again");
+    ui_shutdown();
+    drv_host_armed.free();
+    balanced("driver clock leak");
+}
+
+void driver() {
+    driver_test_ids();
+    driver_core_ops();
+    driver_clock();
+}

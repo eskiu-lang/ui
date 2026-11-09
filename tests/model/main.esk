@@ -1,5 +1,7 @@
 // The model tests: the runtime against a recording renderer, every case ending with no
 // allocation left (tools/check.py counts them; under ASan and with the self-host too).
+// UI_TEST builds the driver in (src/core/driver.esk), as the ui tool does for `ui serve`.
+#define UI_TEST 1
 import "../../src/ui.esk";
 import "../../examples/counter/src/counter.esk";
 import "../../examples/todo/src/todo.esk";
@@ -16,6 +18,7 @@ import "system.esk";
 import "navigation.esk";
 import "errors.esk";
 import "apps.esk";
+import "driver.esk";
 
 int main() {
     independent(); printf("PASS independent\n");
@@ -74,6 +77,7 @@ int main() {
     owned_strings(); printf("PASS owned snapshots\n");
     navigation(); printf("PASS navigation\n");
     errors(); printf("PASS error recovery\n");
+    driver(); printf("PASS driver\n");
     leak_gate(); printf("PASS leak gates\n");
     return 0;
 }

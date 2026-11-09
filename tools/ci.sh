@@ -24,6 +24,14 @@ for case in "1:render loop" "2:hook kind/type changed" "3:duplicate key" "4:memo
 done
 eskiuc tests/harness/headless.esk -o build/counter
 build/counter
+# The driver (src/core/driver.esk) is in a UI_TEST build only: a release object has none of
+# its symbols.
+eskiuc tests/harness/headless.esk -O2 -c -o build/release.o
+printf '#define UI_TEST 1\nimport "../tests/harness/headless.esk";\n' > build/headless_test.esk
+eskiuc build/headless_test.esk -O2 -c -o build/test.o
+nm build/test.o | grep -q ui_driver_request || { echo "FAIL driver: not in a UI_TEST build"; exit 1; }
+if nm build/release.o | grep -q ui_driver; then echo "FAIL driver: in a release build"; exit 1; fi
+echo "PASS driver compiled out: $(wc -c < build/release.o) bytes release, $(wc -c < build/test.o) with the driver"
 # The ui tool builds, and `ui new` makes a project on this checkout.
 eskiuc tools/ui/main.esk -o build/ui
 # The Android manifest from ui.toml files (tools/ui's parts, no SDK needed).
