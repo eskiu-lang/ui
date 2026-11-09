@@ -7,6 +7,8 @@ mkdir -p build
 cc -c tests/heap.c -o build/heap.o
 eskiuc tests/model/main.esk -O2 --link-arg build/heap.o -o build/model
 build/model
+eskiuc tests/ed25519.esk -o build/ed25519
+build/ed25519
 eskiuc tests/tags.esk -o build/tags
 build/tags
 eskiuc tests/constants.esk -o build/constants
