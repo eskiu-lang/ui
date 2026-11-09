@@ -708,7 +708,12 @@ void uitest_command(Project* p, int argc, string* argv) {
         *JsonValue before = agent_serve_status(p);
         bool had_serve = before != null;
         JsonValue_free(before);
-        // Android's status bar (its clock, signal, battery) held still for screenshots.
+        // The status bar (its clock, signal, battery) held still for screenshots.
+        if (strcmp(agent_host, "ios") == 0) {
+            ProcessResult result;
+            sh("xcrun simctl status_bar booted override --time 9:41 --batteryState charged --batteryLevel 100 > /dev/null 2>&1", &result);
+            ProcessResult_free(&result);
+        }
         if (strcmp(agent_host, "android") == 0) {
             String demo;
             String_appendf(&demo, "%s shell settings put global sysui_demo_allowed 1 && %s shell am broadcast -a com.android.systemui.demo "

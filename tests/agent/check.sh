@@ -37,7 +37,11 @@ refused() {
     done
     echo "PASS $HOST: $request (refused)"
 }
-# Android's status bar (clock, signal, battery) moves on its own: its demo mode holds it.
+# The status bar (clock, signal, battery) moves on its own: the simulator's override and
+# Android's demo mode hold it.
+if [ "$HOST" = ios ]; then
+    xcrun simctl status_bar booted override --time 9:41 --batteryState charged --batteryLevel 100 > /dev/null 2>&1 || true
+fi
 if [ "$HOST" = android ]; then
     adb shell settings put global sysui_demo_allowed 1 > /dev/null 2>&1 || true
     adb shell am broadcast -a com.android.systemui.demo -e command enter > /dev/null 2>&1 || true
@@ -89,5 +93,6 @@ op logs '"core":\['
 op perf '"frames":[1-9]' '"memory_bytes":[1-9]'
 op "clock real" '"clock":"real"'
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
+[ "$HOST" = ios ] && xcrun simctl status_bar booted clear > /dev/null 2>&1
 [ "$HOST" = android ] && adb shell am broadcast -a com.android.systemui.demo -e command exit > /dev/null 2>&1
 echo "PASS $HOST: every op"
