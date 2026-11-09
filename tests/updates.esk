@@ -1,0 +1,253 @@
+// Asset updates (src/apis/updates.esk) against a host stand-in that answers the core's fetches:
+// the manifest format and its checks (signature, app, version, paths), a bundle downloaded with
+// only the files it changed, kept for the next start and used then (an Image's source and
+// ui_asset_path), a file whose hash does not match and a bad signature refused, an older bundle
+// ignored, and ui_update_apply using a waiting bundle at once.
+#define UI_APP_NAME "Walker"
+#define UI_APP_ID "com.example.walker"
+#define UI_APP_VERSION "2.1.0"
+#define UI_APP_BUILD "37"
+#define UI_APP_CONFIG(key)
+#define UI_UPDATES 1
+#define UI_UPDATE_URL "https://updates.test/walker/"
+// RFC 8032's first key; its seed signs the bundles below.
+#define UI_UPDATE_KEY "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+// The app's own assets: logo.png is "old logo", screens/home.json is "{}".
+#define UI_UPDATE_BASE "logo.png 072433e80b3267358fe2e55f9fe49ba603608eae43da6851133074aaf1db2a67\nscreens/home.json 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\n"
+import <fs>;
+import "../src/ui.esk";
+
+string seed_hex = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
+
+int failures;
+
+void check(bool ok, string what) {
+    if (!ok) { printf("FAIL %s\n", what); failures++; }
+}
+
+// The fetches the core asked for since the last answer: request id, URL, file to save to.
+List<int> fetch_ids;
+List<String> fetch_urls;
+List<String> fetch_saves;
+// The last image source committed.
+String image_source;
+
+Ui runtime;
+
+void record(*uint8 data, int len) {
+    List<Mutation> decoded;
+    ui_decode(data, len, &decoded);
+    for (i in 0..decoded.size) {
+        Mutation m = decoded.data[i];
+        if (m.op == 9 && m.kind == 3) { String_clear(&image_source); String_append(&image_source, m.text); }
+        if (m.op == 10 && m.kind == 10) {
+            // The strings follow each other: length, bytes, NUL.
+            string at = m.text;
+            String url;
+            String_from(&url, at);
+            for (k in 0..6) { at = &at[strlen(at) + 1 + 4]; }
+            String save;
+            String_from(&save, at);
+            fetch_ids.push(m.id);
+            fetch_urls.push(url);
+            fetch_saves.push(save);
+        }
+    }
+    decoded.free();
+    ui_complete(ui.sequence);
+}
+
+void start() {
+    ui_init(&runtime, void(*uint8 data, int len) { record(data, len); });
+    ui_updates_start();
+    ui_mount(void() { Image(Style{width: 10, height: 10}, "logo.png"); });
+    ui_frame();
+    ui_update_check();
+    ui_frame();
+}
+
+void stop() {
+    ui_shutdown();
+    ui_updates_stop();
+    for (i in 0..fetch_urls.size) { String_free(&fetch_urls.data[i]); String_free(&fetch_saves.data[i]); }
+    fetch_ids.size = 0; fetch_urls.size = 0; fetch_saves.size = 0;
+}
+
+string sha_hex(string text) {
+    String out;
+    hash_sha256_hex((*uint8)text, strlen(text), &out);
+    return out.data;
+}
+
+// A manifest for `files` ("PATH CONTENT" pairs), signed with the test key (or not, when
+// `forge`), for `app` at `base`.
+string manifest(int64 version, string app, string base, List<string>* files, bool forge) {
+    String text;
+    String_appendf(&text, "eskiu-ui-update 1\napp %s\nbase %s\nversion %lld\n", app, base, version);
+    for (int i = 0; i + 1 < files.size; i += 2) {
+        String_appendf(&text, "file %s %d %s\n", files.data[i], (int)strlen(files.data[i + 1]), sha_hex(files.data[i + 1]));
+    }
+    uint8[32] seed;
+    hash_hex_decode(seed_hex, &seed[0], 32);
+    uint8[64] signature;
+    ui_ed25519_sign(&seed[0], (*uint8)text.data, text.len, &signature[0]);
+    if (forge) { signature[3] ^= 1; }
+    String hex;
+    hash_hex_encode(&signature[0], 64, &hex);
+    String_appendf(&text, "sig %s\n", hex.data);
+    return text.data;
+}
+
+// Answers the fetches until none is left: the manifest with `served`, each file with its
+// content from `contents` ("HASH CONTENT" pairs) written where the core asked, or `wrong` for
+// every file when it is not null.
+void serve(string served, List<string>* contents, string wrong) {
+    int rounds = 0;
+    while (fetch_ids.size > 0 && rounds < 20) {
+        rounds++;
+        int id = fetch_ids.data[0];
+        String url = fetch_urls.data[0];
+        String save = fetch_saves.data[0];
+        fetch_ids.remove(0); fetch_urls.remove(0); fetch_saves.remove(0);
+        if (String_ends_with(&url, "manifest.txt") == 1) {
+            ui_event_fetch(id, served == null ? 404 : 200, served == null ? "" : served, "");
+        } else {
+            string body = null;
+            for (int i = 0; i + 1 < contents.size; i += 2) {
+                String wanted;
+                String_appendf(&wanted, "files/%s", contents.data[i]);
+                if (String_ends_with(&url, wanted.data) == 1) { body = contents.data[i + 1]; }
+                String_free(&wanted);
+            }
+            if (wrong != null) { body = wrong; }
+            if (body != null && save.len > 0) { fs_write_text(save.data, body); }
+            ui_event_fetch(id, body == null ? 404 : 200, "", "");
+        }
+        String_free(&url); String_free(&save);
+        ui_frame();
+    }
+}
+
+int main() {
+    check(strcmp(sha_hex("old logo"), "072433e80b3267358fe2e55f9fe49ba603608eae43da6851133074aaf1db2a67") == 0, "the base's hash of logo.png");
+    check(strcmp(sha_hex("{}"), "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a") == 0, "the base's hash of home.json");
+    // The format and its checks.
+    List<string> files;
+    files.push("logo.png"); files.push("new logo");
+    files.push("screens/home.json"); files.push("{}");
+    files.push("screens/new.json"); files.push("{\"title\": \"New\"}");
+    UiUpdateBundle bundle;
+    string good = manifest(100, "com.example.walker", "2.1.0", &files, false);
+    check(ui_update_parse(good, UI_UPDATE_KEY, "com.example.walker", "2.1.0", &bundle) == null, "a signed bundle is accepted");
+    check(bundle.version == 100 && bundle.files.size == 3, "its version and files");
+    check(bundle.files.size == 3 && bundle.files.data[2].size == 16 && String_eq_cstr(&bundle.files.data[2].path, "screens/new.json") == 1, "a file's path and size");
+    String tampered;
+    String_from(&tampered, good);
+    String_replace_all(&tampered, "version 100", "version 900");
+    string error = ui_update_parse(tampered.data, UI_UPDATE_KEY, "com.example.walker", "2.1.0", &bundle);
+    check(error != null && strstr(error, "signature") != null && bundle.files.size == 0, "a changed manifest is refused (signature)");
+    error = ui_update_parse(manifest(100, "com.example.walker", "2.1.0", &files, true), UI_UPDATE_KEY, "com.example.walker", "2.1.0", &bundle);
+    check(error != null && strstr(error, "signature") != null, "a forged signature is refused");
+    error = ui_update_parse(good, "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c", "com.example.walker", "2.1.0", &bundle);
+    check(error != null && strstr(error, "signature") != null, "another key's app refuses it");
+    error = ui_update_parse(manifest(100, "com.example.other", "2.1.0", &files, false), UI_UPDATE_KEY, "com.example.walker", "2.1.0", &bundle);
+    check(error != null && strstr(error, "another app") != null, "a bundle for another app is refused");
+    error = ui_update_parse(manifest(100, "com.example.walker", "2.0.0", &files, false), UI_UPDATE_KEY, "com.example.walker", "2.1.0", &bundle);
+    check(error != null && strstr(error, "another version") != null, "a bundle for another version is refused");
+    List<string> outside;
+    outside.push("../code.so"); outside.push("x");
+    error = ui_update_parse(manifest(100, "com.example.walker", "2.1.0", &outside, false), UI_UPDATE_KEY, "com.example.walker", "2.1.0", &bundle);
+    check(error != null && strstr(error, "not valid") != null, "a path out of assets/ is refused, signed or not");
+    check(ui_update_parse("hello", UI_UPDATE_KEY, "com.example.walker", "2.1.0", &bundle) != null, "a page that is not a bundle is refused");
+    ui_update_free(&bundle);
+
+    fs_remove_all("build/updates-test");
+    fs_mkdir_p("build/updates-test");
+    ui_set_data_dir("build/updates-test");
+    ui_storage_unload();
+
+    // A first start: nothing in use; the check downloads only the two changed files.
+    start();
+    check(String_eq_cstr(&image_source, "logo.png") == 1, "the app's own logo at first");
+    check(fetch_ids.size == 1 && String_eq_cstr(&fetch_urls.data[0], "https://updates.test/walker/manifest.txt") == 1, "the check asks for the manifest after the first frame");
+    List<string> contents;
+    contents.push(sha_hex("new logo")); contents.push("new logo");
+    contents.push(sha_hex("{\"title\": \"New\"}")); contents.push("{\"title\": \"New\"}");
+    // Counted as the core asks: the manifest, then one file at a time.
+    serve(good, &contents, null);
+    check(strcmp(ui_update_error(), "") == 0, "no error");
+    check(strcmp(ui_update_ready(), "100") == 0 && strcmp(ui_update_version(), "") == 0, "bundle 100 waits for the next start");
+    check(String_eq_cstr(&image_source, "logo.png") == 1, "the running app keeps its logo");
+    String blob;
+    ui_update_blob(&blob, sha_hex("new logo"), "logo.png");
+    check(fs_exists(blob.data) == 1 && String_ends_with(&blob, ".png") == 1, "the new logo is kept by its hash, with its extension");
+    String home;
+    ui_update_blob(&home, sha_hex("{}"), "screens/home.json");
+    check(fs_exists(home.data) != 1, "a file the bundle did not change is not downloaded");
+    check(ui_storage_get("ui.update.ready") != null, "the waiting bundle is in the store");
+    stop();
+
+    // The next start uses it.
+    ui_storage_unload();
+    start();
+    check(strcmp(ui_update_version(), "100") == 0 && strcmp(ui_update_ready(), "") == 0, "bundle 100 in use after a start");
+    check(String_eq(&image_source, &blob) == 1, "the Image shows the new logo's file");
+    string path = ui_asset_path("logo.png");
+    check(path != null && strcmp(path, blob.data) == 0, "ui_asset_path gives the new logo");
+    free(path);
+    check(ui_asset_path("screens/home.json") == null, "an unchanged asset is the app's own (no host here)");
+    string added = ui_asset_path("screens/new.json");
+    check(added != null && strstr(added, "ui-updates/") != null, "a file the bundle added has a path");
+    free(added);
+    // The same bundle again: nothing downloaded.
+    serve(good, &contents, null);
+    check(strcmp(ui_update_ready(), "") == 0 && strcmp(ui_update_error(), "") == 0, "the bundle in use is not downloaded again");
+
+    // A newer bundle whose file does not match its hash: refused, nothing kept.
+    List<string> newer;
+    newer.push("logo.png"); newer.push("newer logo");
+    string bundle200 = manifest(200, "com.example.walker", "2.1.0", &newer, false);
+    ui_update_check();
+    ui_frame();
+    serve(bundle200, &contents, "tampered bytes");
+    check(strstr(ui_update_error(), "does not match its hash") != null, "a file that does not match its hash is refused");
+    check(strcmp(ui_update_ready(), "") == 0 && ui_storage_get("ui.update.ready") == null, "and no bundle waits");
+    String part;
+    ui_update_blob(&part, sha_hex("newer logo"), "logo.png");
+    String_append(&part, ".part");
+    check(fs_exists(part.data) != 1, "the partial file is removed");
+    // A bundle with a bad signature: refused before any download.
+    ui_update_check();
+    ui_frame();
+    serve(manifest(300, "com.example.walker", "2.1.0", &newer, true), &contents, null);
+    check(strstr(ui_update_error(), "signature") != null, "a bundle with a bad signature is refused");
+    // An older bundle: nothing.
+    ui_update_check();
+    ui_frame();
+    serve(manifest(50, "com.example.walker", "2.1.0", &newer, false), &contents, null);
+    check(strcmp(ui_update_ready(), "") == 0, "an older bundle is ignored");
+
+    // A good newer bundle, used at once.
+    List<string> logo;
+    logo.push(sha_hex("newer logo")); logo.push("newer logo");
+    ui_update_check();
+    ui_frame();
+    serve(bundle200, &logo, null);
+    check(strcmp(ui_update_ready(), "200") == 0, "bundle 200 waits");
+    ui_update_apply();
+    ui_frame();
+    String newest;
+    ui_update_blob(&newest, sha_hex("newer logo"), "logo.png");
+    check(strcmp(ui_update_version(), "200") == 0 && String_eq(&image_source, &newest) == 1, "applied: the Image shows bundle 200's logo");
+    stop();
+    // The next start prunes what no bundle uses.
+    ui_storage_unload();
+    start();
+    serve(null, &contents, null);
+    check(fs_exists(newest.data) == 1 && fs_exists(blob.data) != 1, "the old bundle's files are removed");
+    stop();
+    ui_storage_unload();
+    if (failures > 0) { return 1; }
+    printf("PASS updates: format, signature, hashes, download, next start, apply\n");
+    return 0;
+}

@@ -1,0 +1,493 @@
+// Updates of the app's assets without a store release (docs/updates.md). After the first
+// frame the app asks [updates] url for the bundle `ui publish` made last; when it is newer, for
+// this app and for this version of it, the app checks its Ed25519 signature against the public
+// key compiled in, downloads each file it changed and checks the file's SHA-256, and uses the
+// files from the next start (or at once, with ui_update_apply). Only assets/ is updated: the
+// code is native and comes from the stores.
+//
+// Where the files go: the app's data directory (iOS: Application Support, Android: the files
+// directory) under ui-updates/, by hash; on the web, the page's Cache Storage, served at the
+// assets' own URLs by a service worker (hosts/web/ui-sw.js).
+// Part of <ui> in a build with [updates] (src/ui.esk imports it under UI_UPDATES; the ui tool
+// defines UI_UPDATES, UI_UPDATE_URL, UI_UPDATE_KEY and UI_UPDATE_BASE in the app's entry).
+
+// A file of a bundle: its path in assets/, its SHA-256 as hex, its size, and where it is kept
+// on this device once downloaded ("" when the app's own copy is the same).
+struct UiUpdateFile { String path; String hash; int64 size; String local; }
+
+// A bundle's manifest once checked: its version and its files.
+struct UiUpdateBundle { int64 version; List<UiUpdateFile> files; }
+
+// The updater's state (internal): the bundle in use and its manifest, the one waiting for the
+// next start, the one downloading and how far it is, and the last error.
+struct UiUpdater {
+    UiUpdateBundle active;
+    String active_text;
+    String ready_text;
+    int64 ready_version;
+    UiUpdateBundle incoming;
+    String incoming_text;
+    int next;
+    bool busy;
+    bool started;
+    String error;
+    String version;
+    String ready_shown;
+    *Signal<int> changed;
+}
+
+UiUpdater ui_updater;
+
+// The version of the bundle the app uses ("" with the assets it was built with).
+string ui_update_version() {
+    if (ui_updater.changed != null) { ui_updater.changed.get(); }
+    String_clear(&ui_updater.version);
+    if (ui_updater.active.version > 0) { String_appendf(&ui_updater.version, "%lld", ui_updater.active.version); }
+    return ui_updater.version.data == null ? "" : ui_updater.version.data;
+}
+
+// The version of a newer bundle downloaded and checked, which the app uses from its next start
+// or after ui_update_apply; "" when there is none. A component reading it renders again when
+// one arrives.
+string ui_update_ready() {
+    if (ui_updater.changed != null) { ui_updater.changed.get(); }
+    if (ui_updater.ready_version <= 0) { return ""; }
+    String_clear(&ui_updater.ready_shown);
+    String_appendf(&ui_updater.ready_shown, "%lld", ui_updater.ready_version);
+    return ui_updater.ready_shown.data;
+}
+
+// Why the last check did not install a bundle ("" when it did, or found nothing newer): a
+// failed download, a signature or a hash that does not match. The check runs again at the
+// next start.
+string ui_update_error() { return ui_updater.error.data == null ? "" : ui_updater.error.data; }
+
+// Frees a bundle's files (internal).
+void ui_update_free(UiUpdateBundle* bundle) {
+    for (i in 0..bundle.files.size) {
+        String_free(&bundle.files.data[i].path);
+        String_free(&bundle.files.data[i].hash);
+        String_free(&bundle.files.data[i].local);
+    }
+    bundle.files.free();
+    bundle.version = 0;
+}
+
+// The hash the app was built with for `path` (from UI_UPDATE_BASE, "PATH HASH" lines) into
+// `out`; false when the app has no such asset (internal).
+bool ui_update_builtin(string path, String* out) {
+    string base = UI_UPDATE_BASE;
+    int64 n = (int64)strlen(path);
+    int64 at = 0;
+    while (base[at] != 0) {
+        int64 end = at;
+        while (base[end] != 0 && base[end] != '\n') { end++; }
+        if (end - at > n && strncmp(&base[at], path, (size_t)n) == 0 && base[at + n] == ' ') {
+            String_clear(out);
+            for (int64 i = at + n + 1; i < end; i++) { String_push(out, base[i]); }
+            return true;
+        }
+        at = base[end] == 0 ? end : end + 1;
+    }
+    return false;
+}
+
+// Whether a bundle's path stays inside assets/: relative, no "..", no blanks (internal).
+bool ui_update_path_ok(string path) {
+    if (path[0] == 0 || path[0] == '/') { return false; }
+    for (int i = 0; path[i] != 0; i++) {
+        char c = path[i];
+        if (c <= ' ' || c == '\\' || c == 127) { return false; }
+        bool start = i == 0 || path[i - 1] == '/';
+        if (start && c == '.' && path[i + 1] == '.' && (path[i + 2] == '/' || path[i + 2] == 0)) { return false; }
+    }
+    return true;
+}
+
+// Whether `text` is 64 lowercase hex digits (internal).
+bool ui_update_hash_ok(string text) {
+    int n = 0;
+    while (text[n] != 0) {
+        char c = text[n];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) { return false; }
+        n++;
+    }
+    return n == 64;
+}
+
+// The number `text` spells (decimal digits only), or -1 (internal).
+int64 ui_update_number(string text) {
+    if (text[0] == 0) { return -1; }
+    int64 value = 0;
+    for (int i = 0; text[i] != 0; i++) {
+        if (text[i] < '0' || text[i] > '9' || value > 100000000000000000) { return -1; }
+        value = value * 10 + (int64)(text[i] - '0');
+    }
+    return value;
+}
+
+// Checks a manifest as served and reads it into `out`: null when it is good, else why not.
+// The format (`ui publish`): "eskiu-ui-update 1", then "app ID", "base VERSION", "version N"
+// and a "file PATH SIZE SHA256" line per file, each line ending in a newline, then
+// "sig HEX": the Ed25519 signature of every byte before that line, by the key whose public half
+// is `public_key` (hex). `app` and `base` are the app's id and version; a bundle for another
+// app or another version is refused.
+string ui_update_parse(string text, string public_key, string app, string base, UiUpdateBundle* out) {
+    ui_update_free(out);
+    int64 length = (int64)strlen(text);
+    int64 sig = -1;
+    for (int64 i = length - 5; i >= 0; i--) {
+        if ((i == 0 || text[i - 1] == '\n') && strncmp(&text[i], "sig ", 4) == 0) { sig = i; break; }
+    }
+    if (strncmp(text, "eskiu-ui-update 1\n", 18) != 0 || sig < 0) { return "not an update bundle"; }
+    uint8[32] key;
+    uint8[64] signature;
+    String hex;
+    for (int64 i = sig + 4; i < length && text[i] != '\n' && text[i] != '\r'; i++) { String_push(&hex, text[i]); }
+    bool decoded = hex.len == 128 && hash_hex_decode(hex.data, &signature[0], 64) == 64
+        && strlen(public_key) == 64 && hash_hex_decode(public_key, &key[0], 32) == 32;
+    String_free(&hex);
+    if (!decoded) { return "the bundle's signature or the app's key is not hex"; }
+    if (!ui_ed25519_verify(&key[0], (*uint8)text, sig, &signature[0])) { return "the bundle's signature does not match the app's key"; }
+    // The lines that were signed.
+    bool has_app = false;
+    bool has_base = false;
+    String line;
+    defer String_free(&line);
+    int64 at = 18;
+    string error = null;
+    while (at < sig && error == null) {
+        String_clear(&line);
+        while (at < sig && text[at] != '\n') { String_push(&line, text[at]); at++; }
+        at++;
+        List<String> words;
+        String_split(&line, ' ', &words);
+        string head = words.size > 0 ? words.data[0].data : "";
+        if (words.size == 2 && strcmp(head, "app") == 0) {
+            has_app = true;
+            if (app[0] != 0 && strcmp(words.data[1].data, app) != 0) { error = "the bundle is for another app"; }
+        } else if (words.size == 2 && strcmp(head, "base") == 0) {
+            has_base = true;
+            if (strcmp(words.data[1].data, base) != 0) { error = "the bundle is for another version of the app"; }
+        } else if (words.size == 2 && strcmp(head, "version") == 0) {
+            out.version = ui_update_number(words.data[1].data);
+        } else if (words.size == 4 && strcmp(head, "file") == 0) {
+            int64 size = ui_update_number(words.data[2].data);
+            if (!ui_update_path_ok(words.data[1].data) || size < 0 || !ui_update_hash_ok(words.data[3].data)) {
+                error = "a file line of the bundle is not valid";
+            } else {
+                UiUpdateFile file;
+                String_from(&file.path, words.data[1].data);
+                String_from(&file.hash, words.data[3].data);
+                file.size = size;
+                out.files.push(file);
+            }
+        } else if (line.len > 0) {
+            error = "the bundle has a line this app does not know";
+        }
+        for (i in 0..words.size) { String_free(&words.data[i]); }
+        words.free();
+    }
+    if (error == null && (!has_app || !has_base || out.version <= 0)) { error = "the bundle has no app, base or version"; }
+    if (error != null) { ui_update_free(out); }
+    return error;
+}
+
+// Where a file with this hash and path is kept on this device: DATA/ui-updates/HASH.EXT, the
+// path's extension kept for the decoders that look at it (internal).
+void ui_update_blob(String* out, string hash, string path) {
+    String_clear(out);
+    String_appendf(out, "%s/ui-updates/%s", ui_data_dir(), hash);
+    int dot = -1;
+    for (int i = 0; path[i] != 0; i++) {
+        if (path[i] == '/') { dot = -1; }
+        else if (path[i] == '.') { dot = i; }
+    }
+    if (dot < 0) { return; }
+    int n = (int)strlen(&path[dot]);
+    if (n > 9) { return; }
+    for (int i = dot; path[i] != 0; i++) {
+        char c = path[i];
+        if (c == '.' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) { String_push(out, c); }
+    }
+}
+
+// Fills each file's `local`: the device's copy of a file the bundle changed, "" for one that
+// is the app's own. False when a changed file is missing (internal).
+bool ui_update_locate(UiUpdateBundle* bundle) {
+    String builtin;
+    defer String_free(&builtin);
+    bool complete = true;
+    for (i in 0..bundle.files.size) {
+        UiUpdateFile* file = &bundle.files.data[i];
+        String_clear(&file.local);
+        if (ui_update_builtin(file.path.data, &builtin) && String_eq(&builtin, &file.hash) == 1) { continue; }
+#ifdef __wasm__
+        // The service worker serves it at its own URL.
+        String_from(&file.local, file.path.data);
+#else
+        ui_update_blob(&file.local, file.hash.data, file.path.data);
+        if (fs_exists(file.local.data) != 1) { complete = false; }
+#endif
+    }
+    return complete;
+}
+
+// An asset's source as the app uses it: the updated file's path when the bundle in use changed
+// it (iOS and Android), else `name` itself. The path is the updater's, valid until the next
+// update; reading it subscribes, so an Image shows a bundle applied while it runs.
+string ui_update_source(string name) {
+    if (name == null || ui_updater.changed == null) { return name; }
+    ui_updater.changed.get();
+#ifndef __wasm__
+    for (i in 0..ui_updater.active.files.size) {
+        UiUpdateFile* file = &ui_updater.active.files.data[i];
+        if (file.local.len > 0 && String_eq_cstr(&file.path, name) == 1) { return file.local.data; }
+    }
+#endif
+    return name;
+}
+
+// The bundle in use: `text` (a manifest checked before) when its files are all here, else none
+// (internal).
+void ui_update_use(string text) {
+    ui_update_free(&ui_updater.active);
+    String_clear(&ui_updater.active_text);
+    if (text == null || text[0] == 0) { return; }
+    // Checked when it was downloaded; checked again here, in case the store was changed.
+    if (ui_update_parse(text, UI_UPDATE_KEY, ui_app_id(), ui_app_version(), &ui_updater.active) != null
+        || !ui_update_locate(&ui_updater.active)) {
+        ui_update_free(&ui_updater.active);
+        ui_storage_remove("ui.update.active");
+        return;
+    }
+    String_from(&ui_updater.active_text, text);
+}
+
+// At start, before the app mounts: a bundle downloaded last time becomes the one in use, and
+// the one in use is read (internal; the bridge calls it).
+void ui_updates_start() {
+    ui_updater.changed = signal_new<int>(0);
+    ui_updater.started = true;
+    string ready = ui_storage_get("ui.update.ready");
+    if (ready != null && ready[0] != 0) {
+        ui_storage_set("ui.update.active", ready);
+        ui_storage_remove("ui.update.ready");
+    }
+    string active = ui_storage_get("ui.update.active");
+    ui_update_use(active);
+    ui_updater.ready_version = 0;
+    String_clear(&ui_updater.ready_text);
+}
+
+// At stop: the updater's state is freed; a download in progress stops (internal).
+void ui_updates_stop() {
+    if (!ui_updater.started) { return; }
+    ui_update_free(&ui_updater.active);
+    ui_update_free(&ui_updater.incoming);
+    String_free(&ui_updater.active_text);
+    String_free(&ui_updater.ready_text);
+    String_free(&ui_updater.incoming_text);
+    String_free(&ui_updater.error);
+    String_free(&ui_updater.version);
+    String_free(&ui_updater.ready_shown);
+    ui_updater.changed.free();
+    ui_updater.changed = null;
+    ui_updater.busy = false;
+    ui_updater.started = false;
+    ui_updater.ready_version = 0;
+}
+
+// The download stopped: `error` is why (null when it finished) (internal).
+void ui_update_finish(string error) {
+    ui_updater.busy = false;
+    String_clear(&ui_updater.error);
+    if (error != null) {
+        String_append(&ui_updater.error, error);
+        ui_update_report(error);
+        ui_update_free(&ui_updater.incoming);
+        String_clear(&ui_updater.incoming_text);
+        return;
+    }
+    ui_storage_set("ui.update.ready", ui_updater.incoming_text.data);
+    String_clear(&ui_updater.ready_text);
+    String_append(&ui_updater.ready_text, ui_updater.incoming_text.data);
+    ui_updater.ready_version = ui_updater.incoming.version;
+#ifdef __wasm__
+    // The service worker's list: the changed files by hash.
+    List<string> strings;
+    String version;
+    String_appendf(&version, "%lld", ui_updater.incoming.version);
+    strings.push("ready");
+    strings.push(version.data);
+    for (i in 0..ui_updater.incoming.files.size) {
+        UiUpdateFile* file = &ui_updater.incoming.files.data[i];
+        if (file.local.len == 0) { continue; }
+        String line;
+        String_appendf(&line, "%s %s", file.path.data, file.hash.data);
+        strings.push(line.data);
+    }
+    ui_command(0, 12, &strings);
+    for (int i = 2; i < strings.size; i++) { free(strings.data[i]); }
+    strings.free();
+    String_free(&version);
+#endif
+    ui_update_free(&ui_updater.incoming);
+    String_clear(&ui_updater.incoming_text);
+    ui_updater.changed.set(ui_updater.changed.value + 1);
+}
+
+// Says why an update was not installed on standard error (the app's logs) (internal).
+void ui_update_report(string error) {
+    String line;
+    String_appendf(&line, "ui: update: %s", error);
+    println_err(line.data);
+    String_free(&line);
+}
+
+// The next file of the incoming bundle that this device does not have: downloaded and checked,
+// then the one after it; the bundle is ready after the last (internal).
+void ui_update_next() {
+    while (ui_updater.next < ui_updater.incoming.files.size) {
+        UiUpdateFile* file = &ui_updater.incoming.files.data[ui_updater.next];
+        if (file.local.len == 0) { ui_updater.next++; continue; }
+        String url;
+        String_appendf(&url, "%sfiles/%s", UI_UPDATE_URL, file.hash.data);
+#ifdef __wasm__
+        // The page downloads it into Cache Storage and checks its hash (hosts/web/renderer.mjs).
+        int request = ++ui.next_request;
+        ui.text_requests.push(PendingText{request, void(string answer) {
+            if (answer != null && answer[0] != 0) { ui_update_finish(answer); return; }
+            ui_updater.next++;
+            ui_update_next();
+        }});
+        List<string> strings;
+        strings.push("fetch"); strings.push(url.data); strings.push(file.hash.data); strings.push(file.path.data);
+        ui_command(request, 12, &strings);
+        strings.free();
+        String_free(&url);
+        return;
+#else
+        if (fs_exists(file.local.data) == 1) { String_free(&url); ui_updater.next++; continue; }
+        String part;
+        String_appendf(&part, "%s.part", file.local.data);
+        ui_fetch(FetchRequest{url: url.data, save_to: part.data}, void(FetchResult result) {
+            if (!ui_updater.busy) { return; }
+            UiUpdateFile* got = &ui_updater.incoming.files.data[ui_updater.next];
+            String partial;
+            String_appendf(&partial, "%s.part", got.local.data);
+            String hash;
+            int64 size = 0;
+            *uint8 data = result.status >= 200 && result.status < 300 ? fs_read_all(partial.data, &size) : null;
+            if (data != null) { hash_sha256_hex(data, size, &hash); free(data); }
+            string error = null;
+            if (data == null) { error = "a file of the bundle did not download"; }
+            else if (size != got.size || String_eq(&hash, &got.hash) != 1) { error = "a file of the bundle does not match its hash"; }
+            else if (fs_rename(partial.data, got.local.data) != 0) { error = "a file of the bundle could not be kept"; }
+            if (error != null) { fs_remove(partial.data); }
+            String_free(&partial);
+            String_free(&hash);
+            if (error != null) { ui_update_finish(error); return; }
+            ui_updater.next++;
+            ui_update_next();
+        });
+        String_free(&part);
+        String_free(&url);
+        return;
+#endif
+    }
+    ui_update_finish(null);
+}
+
+// Removes the files of ui-updates/ that neither the bundle in use nor the waiting one needs
+// (internal).
+void ui_update_prune() {
+#ifndef __wasm__
+    if (ui_data_dir()[0] == 0) { return; }
+    String dir;
+    String_appendf(&dir, "%s/ui-updates", ui_data_dir());
+    fs_mkdir_p(dir.data);
+    List<String> names;
+    fs_list_dir(dir.data, &names);
+    UiUpdateBundle ready;
+    if (ui_updater.ready_text.len > 0) {
+        ui_update_parse(ui_updater.ready_text.data, UI_UPDATE_KEY, ui_app_id(), ui_app_version(), &ready);
+    }
+    for (i in 0..names.size) {
+        bool used = false;
+        for (k in 0..2) {
+            UiUpdateBundle* bundle = k == 0 ? &ui_updater.active : &ready;
+            for (j in 0..bundle.files.size) {
+                if (String_starts_with(&names.data[i], bundle.files.data[j].hash.data) == 1
+                    && String_ends_with(&names.data[i], ".part") != 1) { used = true; }
+            }
+        }
+        if (!used) {
+            String path;
+            String_appendf(&path, "%s/%s", dir.data, names.data[i].data);
+            fs_remove(path.data);
+            String_free(&path);
+        }
+        String_free(&names.data[i]);
+    }
+    names.free();
+    ui_update_free(&ready);
+    String_free(&dir);
+#endif
+}
+
+// Asks [updates] url for a newer bundle now (the app does once after its first frame; call it
+// again when the app comes to the foreground, say). Nothing while a check runs.
+void ui_update_check() {
+    if (!ui_updater.started || ui_updater.busy) { return; }
+    ui_updater.busy = true;
+    String url;
+    String_appendf(&url, "%smanifest.txt", UI_UPDATE_URL);
+    ui_fetch(FetchRequest{url: url.data}, void(FetchResult result) {
+        if (!ui_updater.busy) { return; }
+        if (result.status != 200) {
+            // Nothing published yet, or no network: no error, the next start asks again.
+            ui_updater.busy = false;
+            return;
+        }
+        string error = ui_update_parse(result.body, UI_UPDATE_KEY, ui_app_id(), ui_app_version(), &ui_updater.incoming);
+        if (error != null) { ui_update_finish(error); return; }
+        int64 newest = ui_updater.active.version > ui_updater.ready_version ? ui_updater.active.version : ui_updater.ready_version;
+        if (ui_updater.incoming.version <= newest) {
+            ui_update_free(&ui_updater.incoming);
+            ui_updater.busy = false;
+            return;
+        }
+        String_clear(&ui_updater.incoming_text);
+        String_append(&ui_updater.incoming_text, result.body);
+        ui_update_locate(&ui_updater.incoming);
+        ui_updater.next = 0;
+        ui_update_next();
+    });
+    String_free(&url);
+#ifndef __wasm__
+    ui_update_prune();
+#endif
+}
+
+// Uses the waiting bundle now instead of at the next start: Images and ui_asset_path take its
+// files from the next frame (on the web, what the page loads from now on; images it shows
+// already keep theirs until it loads again). Nothing when no bundle is waiting.
+void ui_update_apply() {
+    if (ui_updater.ready_version <= 0) { return; }
+    ui_storage_set("ui.update.active", ui_updater.ready_text.data);
+    ui_storage_remove("ui.update.ready");
+    String text;
+    String_from(&text, ui_updater.ready_text.data);
+    ui_update_use(text.data);
+    String_free(&text);
+    ui_updater.ready_version = 0;
+    String_clear(&ui_updater.ready_text);
+#ifdef __wasm__
+    List<string> strings;
+    strings.push("apply");
+    ui_command(0, 12, &strings);
+    strings.free();
+#endif
+    ui_updater.changed.set(ui_updater.changed.value + 1);
+}

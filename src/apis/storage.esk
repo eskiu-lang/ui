@@ -20,6 +20,11 @@ bool ui_has_asset_host;
 // which serve the assets by URL, for a file that is not there, and outside a host. The caller
 // frees the path.
 string ui_asset_path(string name) {
+#ifdef UI_UPDATES
+    // A file the bundle in use changed (src/apis/updates.esk).
+    string updated = ui_update_source(name);
+    if (updated != name) { return ui_copy(updated); }
+#endif
     if (!ui_has_asset_host || name == null) { return null; }
     return ui_asset_host(name);
 }

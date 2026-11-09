@@ -5,6 +5,10 @@
 // a width and height; `label` is its text alternative.
 void Image(Style style, string source UI_LOC) {
     UI_HERE
+#ifdef UI_UPDATES
+    // A file the bundle in use changed (src/apis/updates.esk).
+    source = ui_update_source(source);
+#endif
     ui.next_source = source;
     ui_element(7, style, null, void() {}, void() {}) {}
 }

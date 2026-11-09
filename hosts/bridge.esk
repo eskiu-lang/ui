@@ -231,6 +231,9 @@ void ui_stop() {
     app_active = false;
     ui_host_cancel();
     ui_shutdown();
+#ifdef UI_UPDATES
+    ui_updates_stop();
+#endif
     ui_app_stop();
 }
 
@@ -286,7 +289,15 @@ void ui_start(int which) {
         free(pending_link);
         pending_link = null;
     }
+#ifdef UI_UPDATES
+    // The bundle downloaded last time becomes the one in use, before the app renders.
+    ui_updates_start();
+#endif
     ui_app_start(which);
     ui_frame();
+#ifdef UI_UPDATES
+    // After the first frame: a newer bundle is looked for, not waited for.
+    ui_update_check();
+#endif
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
