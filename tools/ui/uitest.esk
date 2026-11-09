@@ -538,6 +538,20 @@ bool uitest_available(string host, String* why) {
         return false;
 #endif
     }
+    if (strcmp(host, "linux") == 0) {
+        // The GTK host: GTK 4's development files and a display (X11 or Wayland; Xvfb on CI).
+        Cmd check;
+        check.add("pkg-config"); check.add("--exists"); check.add("gtk4");
+        bool gtk = check.run(null) == 0;
+        check.free();
+        if (!gtk) { String_from(why, "no GTK 4 (pkg-config gtk4)"); return false; }
+#ifdef __linux__
+        string x11 = env_get("DISPLAY");
+        string wayland = env_get("WAYLAND_DISPLAY");
+        if ((x11 == null || x11[0] == 0) && (wayland == null || wayland[0] == 0)) { String_from(why, "no display (DISPLAY or WAYLAND_DISPLAY)"); return false; }
+#endif
+        return true;
+    }
     if (strcmp(host, "ios") == 0) {
 #ifdef __APPLE__
         Cmd list;
@@ -686,7 +700,7 @@ void uitest_json_result(string name, string file, bool ok, int steps, int line, 
 }
 
 void uitest_usage() {
-    println_err("usage: ui test [web|macos|ios|android ...] [--update] [--verbose] [--perf FILE] [--keep] [--json] [FILE|DIR ...]\n"
+    println_err("usage: ui test [web|macos|linux|ios|android ...] [--update] [--verbose] [--perf FILE] [--keep] [--json] [FILE|DIR ...]\n"
                 "  runs tests/ui/*.uitest (or the files given) on each host given, else on every host available here");
     exit(2);
 }
@@ -700,7 +714,8 @@ void uitest_command(Project* p, int argc, string* argv) {
     bool keep = false;
     for (int i = 2; i < argc; i++) {
         string a = argv[i];
-        if (strcmp(a, "web") == 0 || strcmp(a, "macos") == 0 || strcmp(a, "ios") == 0 || strcmp(a, "android") == 0) { hosts.push(a); }
+        if (strcmp(a, "web") == 0 || strcmp(a, "macos") == 0 || strcmp(a, "linux") == 0 || strcmp(a, "ios") == 0
+            || strcmp(a, "android") == 0) { hosts.push(a); }
         else if (strcmp(a, "--update") == 0) { uitest_update = true; }
         else if (strcmp(a, "--verbose") == 0) { uitest_verbose = true; }
         else if (strcmp(a, "--keep") == 0) { keep = true; }
@@ -713,7 +728,14 @@ void uitest_command(Project* p, int argc, string* argv) {
     uitest_files(p, &args, &files);
     if (files.size == 0) { fail("ui test: no tests; add tests/ui/NAME.uitest (docs/testing.md)"); }
     bool chosen = hosts.size > 0;
-    if (!chosen) { hosts.push("web"); hosts.push("macos"); hosts.push("ios"); hosts.push("android"); }
+    if (!chosen) {
+        hosts.push("web"); hosts.push("macos");
+        // The GTK host by default on Linux only (on a Mac it is there for its development).
+#ifdef __linux__
+        hosts.push("linux");
+#endif
+        hosts.push("ios"); hosts.push("android");
+    }
     *JsonValue perf = null;
     if (perf_path != null) {
         String old;
@@ -769,7 +791,7 @@ void uitest_command(Project* p, int argc, string* argv) {
         }
         if (!had_serve && !keep) { agent_stop(p); }
     }
-    if (ran == 0) { fail("ui test: no host available here (web needs emcc and Chrome, macos a Mac, ios a simulator, android adb)"); }
+    if (ran == 0) { fail("ui test: no host available here (web needs emcc and Chrome, macos a Mac, linux GTK 4 and a display, ios a simulator, android adb)"); }
     if (perf != null) {
         String out;
         JsonValue_pretty(perf, 2, &out);

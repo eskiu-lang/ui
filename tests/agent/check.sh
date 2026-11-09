@@ -2,6 +2,8 @@
 # Every `ui agent` op on a host, against tests/agent (an app with a test_id on each part):
 #
 #   tests/agent/check.sh web       # needs emcc and Chrome (UI_CHROME to pick one)
+#   tests/agent/check.sh macos     # the AppKit host on this Mac
+#   tests/agent/check.sh linux     # the GTK 4 host (a display: Xvfb on CI)
 #   tests/agent/check.sh ios       # a booted simulator, or the first iPhone it boots
 #   tests/agent/check.sh android   # a device or a running emulator (adb)
 #

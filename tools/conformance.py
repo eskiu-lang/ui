@@ -183,6 +183,8 @@ def available(name):
         return shutil.which("emcc") is not None
     if name == "macos":
         return sys.platform == "darwin"
+    if name == "linux":
+        return sys.platform.startswith("linux") and subprocess.run(["pkg-config", "--exists", "gtk4"]).returncode == 0
     if name == "ios":
         devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "booted", "--json"], text=True))
         return any(d["state"] == "Booted" for group in devices["devices"].values() for d in group)
@@ -197,8 +199,9 @@ def main():
     ping = http.server.ThreadingHTTPServer(("127.0.0.1", 8899), Ping)
     threading.Thread(target=ping.serve_forever, daemon=True).start()
     wanted = sys.argv[1:] or ["ios", "android", "web", "macos"]
-    # The AppKit host has its ui tests and no run of its own yet.
-    hosts = {"ios": run_ios, "android": run_android, "web": run_web, "macos": lambda: (None, "the ui tests only")}
+    # The AppKit and GTK hosts have their ui tests and no run of their own yet.
+    hosts = {"ios": run_ios, "android": run_android, "web": run_web, "macos": lambda: (None, "the ui tests only"),
+             "linux": lambda: (None, "the ui tests only")}
     results, failed = {}, False
     for name in wanted:
         if available(name) and not ui_tests(name):
