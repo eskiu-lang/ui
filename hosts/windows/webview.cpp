@@ -1,4 +1,4 @@
-// The Windows desktop host: the web build in a WebView2 window. The tool compiles it with
+// The Windows desktop host with --webview: the web build in a WebView2 window. The tool compiles it with
 // the WebView2 SDK's header (its NuGet package, which tools/ui/windows.esk fetches) and puts
 // WebView2Loader.dll next to the executable. With no argument it shows the app bundled in
 // web/ beside the executable, served as https://app.assets/; an argument is a URL to open
