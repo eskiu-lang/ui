@@ -61,7 +61,7 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 |---|---|
 | `src/ui.esk` | `<ui>`, importing its parts in order |
 | `src/style.esk` | `Style`, `key`, colors, `Align`, `Justify` |
-| `src/core/` | `state` (the runtime global), `diagnostics`, `keys` (the key table), `wire` (commits and the decoder), `reactive` (signals, memos, effects, hooks), `closures` (freeing closures by type), `tree` (nodes, matching, moves, unmounting, `ui_element`), `runtime` (frames, commits, events), `driver` (what `ui agent` asks and the clock it owns; in dev and test builds only) |
+| `src/core/` | `state` (the runtime global, `UiSourceLoc` and `UI_LOC`), `diagnostics`, `keys` (the key table), `wire` (commits and the decoder), `reactive` (signals, memos, effects, hooks), `closures` (freeing closures by type), `tree` (nodes, matching, moves, unmounting, `ui_element`), `runtime` (frames, commits, events), `driver` (what `ui agent` asks and the clock it owns) and `reload` (the routes and signals a reload under `ui serve` keeps), both in dev and test builds only |
 | `src/elements/` | `layout` (containers, `ui_on_layout`, `ui_on_hover`, `ui_on_long_press`), `text`, `input` (fields, switches, sliders), `media`, `lists`, `overlay` (`Modal`, `Overlay`, `Alert`), `system`, `native`, `navigation`, `timers`, `gestures`, `animated` |
 | `src/apis/` | `environment` (platform, appearance, accessibility, language), `actions` (keyboard, share, clipboard, haptics, announcements), `storage`, `network` (`ui_fetch`) |
 | `src/state/strings.esk` | `use_string` |
@@ -72,7 +72,7 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `hosts/driver.h` | The native hosts' driver channel in a dev build: the socket, the UI thread hop, the app's output ([agents](agents.md)) |
 | `hosts/ios/ui_native.h`, `hosts/android/ui_native.h` | The C API native code includes ([native code](native.md)) |
 | `hosts/web/`, `hosts/ios/`, `hosts/android/`, `hosts/macos/`, `hosts/linux/`, `hosts/windows/` | The hosts |
-| `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `web`, `macos`, `linux`, `windows`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload), `agent` (`ui agent`, the driver's client) |
+| `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `web`, `macos`, `linux`, `windows`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload), `agent` (`ui agent`, the driver's client), `uitest` (`ui test`), `diagnostics` (`--json`, the compiler's probe) |
 | `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery`, `native`, `navigation` |
 | `tests/` | The model tests, the host harness and the conformance scene ([testing](testing.md)) |
 

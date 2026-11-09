@@ -23,8 +23,10 @@ the compiled-out check (a release object has no symbol of the driver, a `UI_TEST
 `tests/rejections.esk` (each misuse stops with its message: a render loop, a changed hook,
 a duplicate key, a memo cycle, the root's fallback throwing, a misplaced RefreshControl, the
 scope path in a message), the headless counter, and builds the
-`ui` tool and checks `ui new` and `ui serve` (with a stand-in compiler,
-`tests/fake_eskiuc.sh`: the page's wait answers each build, a failed one with its output).
+`ui` tool and checks `ui new`, `ui serve` and `ui build --json` (with a stand-in compiler,
+`tests/fake_eskiuc.sh`: the page's wait answers each build, a failed one with its output, and
+its text diagnostics, a warning with an option, a hint and notes, become the JSON lines
+`eskiuc --diagnostics=json` would write).
 
 `tools/check.py` also:
 
@@ -34,6 +36,13 @@ scope path in a message), the headless counter, and builds the
 - runs the tests at `-O0` and `-O2`, under AddressSanitizer (with a negative control that
   must be reported) and built by the self-hosted compiler;
 - runs `tests/benchmark.esk` (10,000 rows mounted, reversed, updated and unmounted).
+
+`reload.esk` checks what a reload keeps: the snapshot's text, the routes and the signals
+restored, a changed type and a removed component's state dropped, a keyed signal found where it
+moved, and nothing restored after the first input. With a compiler that has `src_line()`,
+`tools/ci.sh` and `tools/check.py` build the model tests again with `UI_SRCLOC`, where
+`srcloc.esk` checks each element's call position (a kit component's included) and `tree`'s,
+and a rejection names the element's line; with Eskiu 0.14.1 they say SKIP.
 
 A new element or behavior gets a model test in the file for its area. The model tests are
 built with `UI_TEST`, so they include the driver; `driver.esk` checks test ids (kept in the
@@ -120,7 +129,7 @@ them.
 | `python3 tools/check_android.py` | a booted arm64 device or emulator (`ANDROID_SERIAL`), SDK 35, NDK 28.2 |
 | `python3 tools/check_native.py` | the native example on the simulator and the Android device: module events, a view's props and events |
 | `python3 tools/check_desktop.py` | a WKWebView window running the web build (needs an awake, unlocked display) |
-| `tests/agent/check.sh web\|ios\|android` | every `ui agent` op on `tests/agent`, through `ui serve` and the host's driver channel: targets, input, layout, state, logs, perf, screenshots, and the clock (two screenshots a second apart are the same, `clock settle` finishes the animations); web needs emcc and Chrome (`UI_CHROME`) |
+| `tests/agent/check.sh web\|ios\|android` | every `ui agent` op on `tests/agent`, through `ui serve` and the host's driver channel: targets, input, layout, state, logs, perf, screenshots, the clock (two screenshots a second apart are the same, `clock settle` finishes the animations), and a reload after an edit that keeps the count, the field and the timeout's result (with source positions, `tree`'s file and line too); web needs emcc and Chrome (`UI_CHROME`) |
 | `ui test HOST` in `tests/conformance` | the conformance scene's UI tests (below) |
 | `tools/ci_host.sh web\|ios\|android` | what CI runs on a host: the two above and the speed budgets |
 
@@ -218,6 +227,19 @@ The baselines, measured on the runners on 2026-11-09:
 
 The recording renderer on the Linux runner: a frame over 1000 rows 1.9 ms, mounting 10,000
 rows 38 ms, reversing them 27.6 ms.
+
+Edit to change on the web, `examples/counter` on an arm64 Mac (the median of three), before
+and after `ui serve` looked at the sources every 50 ms instead of 300 ms with a 50 ms settle
+instead of 150 ms, answered the page's wait within 10 ms, `ui agent` polled every 50 ms, and
+the iOS host every 50 ms:
+
+| Compiler | Build (`ui build web`, dev) | Before | After |
+|---|---|---|---|
+| Eskiu 0.14.1 | 0.98 s | 1.45 s | 1.12 s |
+| Eskiu develop (2026-11-09, faster front end) | 0.73 s | 1.19 s | 0.90 s |
+
+What is left is the compiler (0.55 s and 0.30 s to an object) and emscripten's link (about
+0.45 s), then the page's reload.
 
 ## Measurements
 

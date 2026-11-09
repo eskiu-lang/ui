@@ -97,19 +97,27 @@ Under `ui serve`, builds set `UI_DEV=1`: the app's code is compiled at `-O0`, an
 Android it goes into a library of its own instead of the host's binary. The host is compiled
 with `UI_RELOAD`, which makes the core's entry points (`hosts/core.h`) pointers that it fills
 with `dlopen` and `dlsym`. After a build the tool hands the running app the new library and
-the app starts again on it, in the same process: the old core stops, the host drops the views,
-timers and per-node state it left, and the new core starts as at launch. The app is installed
-and launched again only when the host, the native code, the plist or manifest, or the assets
-changed.
+the app starts again on it, in the same process: the host asks the old core for what it keeps
+(`ui_reload_save`: its routes and signals, [State](state.md#a-reload-under-ui-serve)), stops
+it, drops the views, timers and per-node state it left, loads the new core, hands it the saved
+text (`ui_reload_restore`) and starts it. The app is installed and launched again only when the
+host, the native code, the plist or manifest, or the assets changed. On the web the serve
+script saves the text in `sessionStorage` before it reloads the page, and the page hands it to
+the new module before `ui_start`.
 
 - **iOS.** The app's code is a bundle linked against the executable (`-bundle_loader`), which
   exports the host's and the native code's functions (`-export_dynamic`). The simulator's apps
   read this Mac's files, so the host polls `build/ui/ios/reload/current` (its path comes in
-  `UI_RELOAD_FILE`) for the newest bundle's path, and writes its pid next to it, which tells
-  the tool the app is running.
-- **Android.** The app's code is a library linked against `libeskiu_ui.so`. The tool copies it
-  into the app's files with `run-as` (the debug APK allows it), names it in `files/ui-reload`,
-  and sends the activity an intent with `ui_reload`; the activity loads it at start too.
+  `UI_RELOAD_FILE`) every 50 ms for the newest bundle's path, and writes its pid next to it,
+  which tells the tool the app is running.
+- **Android.** The app's code is a library linked against `libeskiu_ui.so`. The tool pushes it
+  and, in one `adb shell`, checks the app is installed, copies it into the app's files with
+  `run-as` (the debug APK allows it), names it in `files/ui-reload` and sends the activity an
+  intent with `ui_reload`; the activity loads it at start too. `ui serve` asks the device's ABI
+  once, not for each build.
+
+`ui serve` looks at the sources every 50 ms and builds once they held still for 50 ms; the
+assets are copied again only when they changed.
 
 ## macOS
 

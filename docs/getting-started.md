@@ -55,12 +55,18 @@ ui serve android      # the same on the device or emulator
 app and of every package it depends on, and `eskiu.toml` and `eskiu.lock`. After a change it
 builds again, with the app's code at `-O0` and the host, the native code and Yoga reused when
 they did not change. On the web and in the macOS window, the page reloads once the build is
-done, keeping its route and its saved data. On the simulator and on Android the running app
-starts again on the new code in the same process, without being installed and launched again,
-so it starts from its first screen; a change to the host, the native code or the assets
-installs it again. A change takes about 0.3 s to show on iOS, 0.4 s on Android and 0.6 s on the
-web for the kit gallery. A failed build shows the compiler's errors over the app on the web
-and in the terminal; the app keeps running the last build.
+done; on the simulator and on Android the running app starts again on the new code in the same
+process, without being installed and launched again (a change to the host, the native code or
+the assets installs it again). Either way the app comes back where it was: the routes of its
+Navigator, and each signal whose scope, place and type did not change, keep their values
+([State](state.md#a-reload-under-ui-serve)); the saved data is kept too. A failed build shows
+the compiler's errors over the app on the web and in the terminal; the app keeps running the
+last build.
+
+A change to the counter shows in about 1.1 s on the web with Eskiu 0.14.1 on an arm64 Mac, of
+which the compiler and emscripten's link take 1 s; the next Eskiu release's faster front end
+brings it to 0.9 s. `ui serve --json` writes the compiler's diagnostics as JSON lines
+([Agents](agents.md#diagnostics-as-json)).
 
 `src/main.esk` is the app:
 

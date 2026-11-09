@@ -86,15 +86,16 @@ bread"`). The ops run in order, and the first that fails stops `ui agent` with e
 
 ```
 $ ui agent web tree
-Column #2 {padding: 16, grow: 1}
-  Text #3 [count] "Count: 0"
-  Button #4 [add] "Add"
-  TextInput #5 [title] "" placeholder="Title"
+Column #2 {padding: 16, grow: 1}  src/main.esk:14
+  Text #3 [count] "Count: 0"  src/main.esk:10
+  Button #4 [add] "Add"  src/main.esk:22
+  TextInput #5 [title] "" placeholder="Title"  src/main.esk:23
 ```
 
-`[name]` is the test_id. With `--json` the answer is `{"ok": true, "op": "tree", "root":
-{...}}`, each element `{"id", "kind", "test_id", "label", "text", "key", "name", "props",
-"children"}` (members it does not have are left out).
+`[name]` is the test_id, and the file and line at the end are where the element was called
+([source positions](#source-positions)). With `--json` the answer is `{"ok": true, "op":
+"tree", "root": {...}}`, each element `{"id", "kind", "test_id", "label", "text", "key",
+"name", "file", "line", "col", "props", "children"}` (members it does not have are left out).
 
 ### layout
 
@@ -209,7 +210,57 @@ From then on nothing moves between two ops:
 
 The clock stays taken across `ui agent` calls until the app reloads or `clock real` gives it
 back. A reload (a change under `ui serve`) starts the app on the platform's clock again; the
-next op takes it.
+next op takes it. The reload keeps the app's routes and signals
+([State](state.md#a-reload-under-ui-serve)), so an agent can edit the code and go on from the
+same screen: `tests/agent/check.sh` edits a text, and the next `tree` shows the new text with
+the count and the field as they were.
+
+## Source positions
+
+In a dev or test build each element keeps where it was called from: `tree` shows `file:line`
+(`"file"`, `"line"`, `"col"` with `--json`; a file under the app is shown from its root), and
+the runtime's errors that stop the program name it:
+
+```
+ui: duplicate key 3 at child 4
+  in Column[0] > TodoList[0]
+  at src/todo.esk:41:13
+```
+
+Every element and kit component takes the position of its call (a component's first element
+takes the component's call, so a kit `Card` points at the app's line, not the kit's). An app's
+own components need nothing: the elements they call are in the app's files.
+
+It needs a compiler with the call-site builtins `src_file()`, `src_line()` and `src_col()` (the
+Eskiu release after 0.14.1). The ui tool probes the compiler (once per binary, cached in
+`$ESKIU_HOME/cache/eskiuc-features.txt`) and, when it has them, defines `UI_SRCLOC` in a dev or
+test build's entry file; each element then ends its parameters with `UI_LOC`, a default
+`UiSourceLoc at = UiSourceLoc{src_file(), src_line(), src_col()}` (`src/core/state.esk`). A
+release build, and any build with Eskiu 0.14.1, has no such parameter and no position: the same
+code, the same size. `UI_COMPILER_FEATURES` (`json`, `srcloc`, or `none`) skips the probe.
+
+## Diagnostics as JSON
+
+`ui build TARGET --json`, `ui serve --json` and `ui test --json` write JSON lines on standard
+output; what the other tools print goes to standard error. Each compiler error or warning is
+one object in the shape of `eskiuc --diagnostics=json` (Eskiu's `docs/dev/diagnostics.md`
+has the members and how ids are made):
+
+```
+$ ui build web --json
+{"severity":"error","id":"undefined-variable","message":"undefined variable 'cuont'","file":"/path/app/src/counter.esk","line":20,"col":44,"end_line":20,"end_col":49,"hints":["did you mean 'count'?"],"notes":[]}
+{"ok": false, "error": "ui: the compile failed"}
+```
+
+A compiler with `--diagnostics=json` writes them itself; with one without it (Eskiu 0.14.1)
+the tool converts the text form (`error: FILE:LINE:COL: MESSAGE`, its notes, hints and
+`[-Wname]` options) by the same rules, ids and token ranges included, so the lines are the
+same either way. The last line is the result: `{"ok": true, "built": PATH}` or `{"ok": false,
+"error": ...}`. Under `ui serve --json` each build adds `{"event": "building"}` and `{"event":
+"built" | "failed", "seconds": S}`, and the page and `ui agent` still show the errors as text.
+`ui test --json` writes a line per test, `{"test", "host", "file", "ok", "steps", "seconds"}`
+with the failed `"line"`, `"step"` and `"error"`, then `{"ok", "passed", "failed"}`; a build
+that failed comes first as its diagnostics.
 
 ## Testing an app
 

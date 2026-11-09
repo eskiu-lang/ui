@@ -16,6 +16,37 @@ next frame. Setting the same value does nothing.
 A signal holds a value with built-in equality: a number, a `bool`, a pointer. A pointer in
 a signal is borrowed; the signal does not own what it points to. Text goes in `use_string`.
 
+## A reload under `ui serve`
+
+A change under `ui serve` reloads the app on every host (a new page on the web, a new core in
+the running app on iOS and Android), and the app comes back where it was:
+
+- the routes of the router the platform follows (the first `Navigator`'s), root first;
+- each `use_signal` and `use_string` whose identity and type did not change. Its identity is
+  its scope's path, as `ui agent state` prints it (`Column[0] > TodoRow[key 3]`), and its
+  place among that scope's signals (the first is 0). A scope that moved, an element added
+  before it among its siblings, or a signal added before it in its scope gives it another
+  identity, and it starts from its initial value; so does one whose type changed (an `int` that
+  became a `bool`), and the state of a component the edit removed is dropped.
+
+```eskiu
+*Signal<int> filter = use_signal_keyed<int>("tasks.filter", 0);
+```
+
+`use_signal_keyed(key, initial)` is a `use_signal` whose identity is `key` alone, so its value
+survives moving the code to another scope or reordering the hooks. A release build has no
+reloads and ignores the key.
+
+Only values that mean the same in the new code are kept: integers (`int`, `int64`, `int16`,
+`uint8`, `char`, `uint`, `uint64`), `bool`, `float`, `double`, and `use_string` text. A pointer,
+a borrowed `string`, a struct, a closure or a native handle is not: what it points to belonged
+to the old code, so its signal starts from its initial value, as a memo, an effect and a timer
+do (they run again). Model signals (`signal_new`) are made by `ui_app_start`, which runs again.
+
+What is kept is restored as each scope mounts, until the first input (a press, an edit, a
+toggle, back): a scope that mounts after it is new. The kept state is text, one line per route
+and signal (`src/core/reload.esk` has the format); it exists only in a dev build.
+
 ## Memos
 
 ```eskiu

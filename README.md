@@ -73,7 +73,7 @@ passes the block as the call's last argument, `Column(Style{padding: 16}, void()
 git clone https://github.com/eskiu-lang/ui && eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
 ui new myapp && cd myapp
 ui run web        # or macos, linux, windows, ios, android
-ui serve          # builds again and reloads on each change
+ui serve          # builds again and reloads on each change, keeping the app's state
 ui open ios       # in Xcode (or android, in Android Studio)
 ui release        # for the App Store and Google Play
 ```
