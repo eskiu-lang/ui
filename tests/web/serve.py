@@ -3,7 +3,6 @@ the module types, no caching, and a hook that may rewrite a file as it is served
 import functools
 import http.server
 from pathlib import Path
-import socket
 import threading
 
 
@@ -23,7 +22,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         # A route the app shows (/tasks/42) is the page itself, as ui's own server serves it.
-        if "." not in path.rsplit("/", 1)[-1]:
+        if "." not in path.rsplit("/", 1)[-1] and not (Path(self.directory) / path.lstrip("/")).is_file():
             path = "/index.html"
             self.path = "/index.html"
         if self.rewrite and path == "/index.html":
@@ -40,11 +39,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def serve(directory, rewrite=None, cors=False):
-    """Serves `directory` on 127.0.0.1; (the server, its URL). `rewrite(text)` changes
-    index.html as it is served; set server.handler.rewrite to change it later."""
+def serve(directory, rewrite=None, cors=False, port=0):
+    """Serves `directory` on 127.0.0.1 (on `port`, else a free one); (the server, its URL).
+    `rewrite(text)` changes index.html as it is served; set server.handler.rewrite to change it
+    later. With `cors`, any origin may read what it serves."""
     handler = type("H", (Handler,), {"rewrite": staticmethod(rewrite) if rewrite else None, "cors": cors})
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(handler, directory=str(directory)))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(handler, directory=str(directory)))
     server.handler = handler
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, f"http://127.0.0.1:{server.server_address[1]}/"

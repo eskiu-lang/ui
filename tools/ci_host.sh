@@ -26,6 +26,8 @@ if [ "$HOST" = web ]; then
     python3 tools/budgets.py model
     # The prerendered first frame: content before the module, the elements adopted.
     python3 tests/web/prerender.py --measure 3
+    # Asset updates: a bundle published, downloaded, used at the next load; bad ones refused.
+    python3 tests/web/updates.py
 fi
 # macOS: a release of the conformance app is a universal, signed bundle.
 if [ "$HOST" = macos ]; then

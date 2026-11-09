@@ -1,0 +1,6 @@
+[app]
+id = "org.eskiu.test.updates"
+
+# tests/web/updates.py serves the bundles here.
+[updates]
+url = "http://127.0.0.1:8793/"

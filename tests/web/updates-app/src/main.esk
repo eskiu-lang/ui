@@ -1,0 +1,23 @@
+// The app tests/web/updates.py updates: the bundle in use, the one waiting, the last error,
+// and an image and a text file of its assets.
+import <string>;
+import <ui>;
+
+void Line(string test_id, string label, string value) {
+    String text;
+    defer String_free(&text);
+    String_format(&text, "%s: %s", label, value);
+    TextWith(Style{test_id: test_id}, text.data);
+}
+
+void App() {
+    Column(Style{padding: 16, gap: 8}) {
+        Line("version", "Version", ui_update_version());
+        Line("ready", "Ready", ui_update_ready());
+        Line("error", "Error", ui_update_error());
+        Image(Style{width: 32, height: 32, label: "Logo"}, "logo.png");
+    }
+}
+
+void ui_app_start(int which) { ui_mount(void() { App(); }); }
+void ui_app_stop() {}
