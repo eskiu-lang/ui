@@ -1,7 +1,8 @@
 # Speed budgets, checked on every CI run by tools/budgets.py (docs/testing.md). Each budget
 # is the baseline a CI runner measured and a tolerance: a run fails when a number is worse
 # than baseline * (1 + tolerance). Timings on shared runners are noisy, so their tolerance
-# is wide (+50%; +100% for the emulator and for the few-millisecond ones); sizes are exact, so theirs is narrow (+2%).
+# is wide (+50%; +100% for the emulator, the few-millisecond ones and the Windows runners' frame
+# time, which differs by half between their machines); sizes are exact, so theirs is narrow (+2%).
 # `python3 tools/budgets.py HOST --update` writes what a run measured as the baselines; do it
 # from a CI run's numbers (the job summary has them), not from a laptop's.
 
@@ -77,7 +78,7 @@ tolerance = 1.0
 
 ["windows.frame_p95_ms"]
 baseline = 24.8
-tolerance = 0.5
+tolerance = 1.0
 
 ["android.frame_p95_ms"]
 baseline = 55.3
