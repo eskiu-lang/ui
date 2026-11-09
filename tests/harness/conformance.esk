@@ -141,6 +141,21 @@ void Conformance() {
             });
             Row(Style{width: 100, aspect_ratio: 2.0, label: "Ratio"}) {}
         }
+        // A grid: fixed, fr and auto columns, a fixed row then auto ones, spans, a definite cell
+        // and a definite column; the rest placed row by row (tests/grid/grid.cpp has the same).
+        Column(Style{label: "Grid", grid_columns: "60 1fr auto 2fr", grid_rows: "40 auto", padding: 5, gap: 10}) {
+            Row(Style{height: 30, label: "A"}) {}
+            Row(Style{label: "B"}) {}
+            Row(Style{width: 50, height: 20, label: "C"}) {}
+            Row(Style{label: "D"}) {}
+            Row(Style{height: 25, grid_column_span: 2, label: "E"}) {}
+            Row(Style{height: 20, grid_column: 4, grid_row: 3, label: "F"}) {}
+            Row(Style{grid_row_span: 2, label: "G"}) {}
+            Row(Style{height: 35, label: "H"}) {}
+            Row(Style{height: 30, label: "I"}) {}
+            TextWith(Style{label: "J"}, "J");
+            Row(Style{height: 15, grid_column: 2, label: "K"}) {}
+        }
         // Last, so the frames above are those of the hosts' own runs.
         if (conformance_driven) {
             conformance_revision = use_signal<int>(0);

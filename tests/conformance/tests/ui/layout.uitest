@@ -21,6 +21,19 @@ expect Stage frame 10 _ 300 60 in Suite
 # Out of the flow: pinned to the stage's top right; a ratio gives the height.
 expect Pinned frame 250 5 40 30 in Stage
 expect Ratio frame 0 0 100 50 in Stage
+# A grid (tests/harness/conformance.esk): the same frames as Chrome's CSS grid.
+expect Grid frame 10 _ 300 160 in Suite
+expect A frame 5 5 60 30 in Grid
+expect B frame 75 5 50 40 in Grid
+expect C frame 135 5 50 20 in Grid
+expect D frame 195 5 100 40 in Grid
+expect E frame 5 55 120 25 in Grid
+expect G frame 135 55 50 75 in Grid
+expect H frame 195 55 100 35 in Grid
+expect F frame 195 100 100 20 in Grid
+expect I frame 5 100 60 30 in Grid
+expect J frame 75 100 50 30 in Grid
+expect K frame 75 140 50 15 in Grid
 # What the styled elements ask the host to draw.
 expect Painted prop background "#ff0000ff"
 expect Painted prop radius 8
