@@ -35,8 +35,8 @@ echo "PASS driver compiled out: $(wc -c < build/release.o) bytes release, $(wc -
 # The ui tool builds, and `ui new` makes a project on this checkout.
 eskiuc tools/ui/main.esk -o build/ui
 # The Android manifest from ui.toml files (tools/ui's parts, no SDK needed).
-eskiuc tests/manifest.esk -o build/manifest
-build/manifest
+eskiuc tests/manifest.esk -o build/manifest-check
+build/manifest-check
 rm -rf build/newapp
 (cd build && ./ui new newapp --ui "$PWD/..")
 test -f build/newapp/src/main.esk && grep -q "ui	path" build/newapp/eskiu.lock && grep -q "ui agent web" build/newapp/AGENTS.md

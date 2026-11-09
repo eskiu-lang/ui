@@ -47,7 +47,7 @@ void check(bool ok, string what) {
 }
 
 int main() {
-    string dir = "build/manifest";
+    string dir = "build/manifest-test";
     fs_remove_all(dir);
     fs_mkdir_p(join(dir, "app"));
     fs_mkdir_p(join(dir, "pkg"));
