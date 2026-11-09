@@ -1,0 +1,71 @@
+# Speed budgets, checked on every CI run by tools/budgets.py (docs/testing.md). Each budget
+# is the baseline a CI runner measured and a tolerance: a run fails when a number is worse
+# than baseline * (1 + tolerance). Timings on shared runners are noisy, so their tolerance
+# is wide (+50%, +100% for the emulator); sizes are exact, so theirs is narrow (+2%).
+# `python3 tools/budgets.py HOST --update` writes what a run measured as the baselines; do it
+# from a CI run's numbers (the job summary has them), not from a laptop's.
+
+# Cold start: process start (a new page on the web) to the first commit applied, the
+# counter's dev build.
+["web.cold_start_ms"]
+baseline = 0
+tolerance = 0.5
+
+["ios.cold_start_ms"]
+baseline = 0
+tolerance = 0.5
+
+["android.cold_start_ms"]
+baseline = 0
+tolerance = 1.0
+
+# Edit to change on screen under `ui serve`: a source file changed until `ui agent` sees the
+# new tree (a build, and a reload or a restart in the app).
+["web.edit_ms"]
+baseline = 0
+tolerance = 0.5
+
+["ios.edit_ms"]
+baseline = 0
+tolerance = 0.5
+
+["android.edit_ms"]
+baseline = 0
+tolerance = 1.0
+
+# Frame time p95 of the benchmark scene (tests/bench: 300 rows rendered and committed per
+# frame), the core's render and the host's apply, a dev build at -O0.
+["web.frame_p95_ms"]
+baseline = 0
+tolerance = 0.5
+
+["ios.frame_p95_ms"]
+baseline = 0
+tolerance = 0.5
+
+["android.frame_p95_ms"]
+baseline = 0
+tolerance = 1.0
+
+# The release web module (app.wasm) in bytes.
+["web.wasm_bytes.counter"]
+baseline = 0
+tolerance = 0.02
+
+["web.wasm_bytes.kit_gallery"]
+baseline = 0
+tolerance = 0.02
+
+# The recording renderer (tests/benchmark.esk at -O2), no host: a frame over 1000 rows,
+# and mounting and reversing 10,000.
+["model.frame_p95_ms.rows1000"]
+baseline = 0
+tolerance = 0.5
+
+["model.mount_ms.rows10000"]
+baseline = 0
+tolerance = 0.5
+
+["model.reverse_ms.rows10000"]
+baseline = 0
+tolerance = 0.5
