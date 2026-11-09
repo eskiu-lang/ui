@@ -65,7 +65,7 @@ jobs:
           echo "PASS ui release windows"
 
   # The host checks (docs/testing.md): every `ui agent` op, the ui tests and the speed
-  # budgets on a headless Chrome, the iOS simulator and the Android emulator.
+  # budgets on a headless Chrome, the macOS AppKit host, the iOS simulator and the Android emulator.
   host-web:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -135,6 +135,34 @@ jobs:
             tests/*/build/ui/test
             examples/*/build/ui/agent/*.log
             build/agent-ios
+          if-no-files-found: ignore
+
+  host-macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Eskiu
+        run: brew install eskiu-lang/eskiu/eskiu
+      - name: Yoga, compiled once
+        uses: actions/cache@v4
+        with:
+          path: ~/.eskiu/cache
+          key: yoga-macos-${{ hashFiles('tools/ui/yoga.esk') }}
+      - name: Host checks and budgets
+        run: tools/ci_host.sh macos
+      - name: Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-macos-logs
+          path: |
+            tests/*/build/ui/agent/*.log
+            tests/*/build/ui/macos/app.log
+            tests/*/build/ui/test
+            examples/*/build/ui/agent/*.log
+            examples/*/build/ui/macos/app.log
+            build/agent-macos
           if-no-files-found: ignore
 
   host-android:
