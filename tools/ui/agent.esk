@@ -754,6 +754,17 @@ void agent_stop(Project* p) {
         JsonValue_free(status);
         printf("ui agent: stopped ui serve %s\n", agent_host);
     }
+    // The app itself on the simulator or the device, so the next start is a fresh one.
+    String command;
+    defer String_free(&command);
+    if (strcmp(agent_host, "ios") == 0) { String_appendf(&command, "xcrun simctl terminate booted %s > /dev/null 2>&1", p.id.data); }
+    if (strcmp(agent_host, "android") == 0) { String_appendf(&command, "adb shell am force-stop %s > /dev/null 2>&1", p.id.data); }
+    if (command.len > 0) {
+        ProcessResult result;
+        sh(command.data, &result);
+        ProcessResult_free(&result);
+        printf("ui agent: stopped the app\n");
+    }
 }
 
 void agent_usage() {
