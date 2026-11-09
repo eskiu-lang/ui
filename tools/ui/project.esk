@@ -258,7 +258,7 @@ void toml_inline_value(String* line, string key, String* out) {
 
 // The prebuilt static archives (`libNAME.a`) from `[native.NAME]` in every package's
 // eskiu.toml for `platform` ("ios-arm64", "ios-arm64-simulator", "ios-x86_64-simulator",
-// "android-arm64"), downloaded and unpacked into $ESKIU_HOME/native/SHA256 when missing.
+// "android-arm64", "macos-arm64", "macos-x86_64"), downloaded and unpacked into $ESKIU_HOME/native/SHA256 when missing.
 void Project_native_archives(Project* self, string platform, List<String>* out) {
     for (i in 0..self.roots.size) {
         string toml = join(self.roots.data[i].data, "eskiu.toml");

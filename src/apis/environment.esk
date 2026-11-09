@@ -1,7 +1,8 @@
 // What the app adapts to: the platform, light or dark, accessibility settings, the language.
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
-// The platform, known when the app is compiled (macOS runs the web host, so it is web).
+// The platform, known when the app is compiled (macOS's AppKit host is desktop, its WKWebView host
+// web).
 enum Platform { PlatformDesktop, PlatformWeb, PlatformIos, PlatformAndroid }
 
 // The platform the app was compiled for (a Platform).

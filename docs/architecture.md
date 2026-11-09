@@ -8,7 +8,7 @@
  elements       <ui>: Column, Text, TextInput, FlatList, Modal, NativeView...
  core           the tree, reactivity, frames and commits, the wire format
  ── commit (bytes) ──▶                     ◀── events (calls) ──
- hosts          web (DOM), iOS (UIKit + Yoga), Android (android.view + Yoga), macOS (WKWebView), Linux (WebKitGTK), Windows (WebView2)
+ hosts          web (DOM), iOS (UIKit + Yoga), Android (android.view + Yoga), macOS (AppKit + Yoga, or WKWebView), Linux (WebKitGTK), Windows (WebView2)
  tool           tools/ui: new, build, run, serve; compiles the app and links it into each host
 ```
 
@@ -43,7 +43,7 @@ commit completes, parents first.
 
 There is one UI thread. Every host calls into the core on its main thread: the web from
 the page's event loop and `requestAnimationFrame`, iOS from the main run loop and a display
-link, Android from the UI thread's `Choreographer`, macOS from the webview. A native module
+link, Android from the UI thread's `Choreographer`, macOS from the main run loop. A native module
 that works on another thread posts its result back to the UI thread before it calls
 `ui_event_native` (see [the platform](platform.md)).
 
@@ -70,7 +70,7 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `hosts/commit.h` | A C decoder of commits, shared by the native hosts |
 | `hosts/core.h` | The core's entry points for the native hosts: linked, or loaded from the app's library in a reload build |
 | `hosts/driver.h` | The native hosts' driver channel in a dev build: the socket, the UI thread hop, the app's output ([agents](agents.md)) |
-| `hosts/ios/ui_native.h`, `hosts/android/ui_native.h` | The C API native code includes ([native code](native.md)) |
+| `hosts/ios/ui_native.h`, `hosts/android/ui_native.h`, `hosts/macos/ui_native.h` | The C API native code includes ([native code](native.md)) |
 | `hosts/web/`, `hosts/ios/`, `hosts/android/`, `hosts/macos/`, `hosts/linux/`, `hosts/windows/` | The hosts |
 | `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `web`, `macos`, `linux`, `windows`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload), `agent` (`ui agent`, the driver's client), `uitest` (`ui test`), `diagnostics` (`--json`, the compiler's probe) |
 | `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery`, `native`, `navigation` |

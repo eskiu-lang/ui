@@ -94,7 +94,8 @@ export function setup(ui) {
 }
 ```
 
-macOS, Linux and Windows run the web host, so they use the web's native code.
+macOS's AppKit host takes `native/macos` (below); its WKWebView host, Linux and Windows run the
+web host, so they use the web's native code.
 
 Arguments reach a `.js` extern as JavaScript numbers: an integer or a float as itself, a
 `string` as a pointer into the app's memory, read with `UTF8ToString(pointer)`. Send text
@@ -177,6 +178,30 @@ class in the app's Info.plist.
 
 The view fills the `NativeView`'s box (its autoresizing mask follows the box).
 
+## macOS
+
+The AppKit host takes the same shape of native code as iOS, over AppKit:
+
+| File | What it is |
+|---|---|
+| `native/macos/*.m`, `*.mm` | Objective-C and Objective-C++, compiled with ARC and `ui_native.h` (in `hosts/macos/`) on the include path, for each architecture the build makes. |
+
+```objc
+void ui_native_emit(const char *channel, const char *payload);   // any thread
+void ui_register_view(NSString *type, NSView *(^create)(UiViewEmit emit),
+                      void (^set)(NSView *view, NSString *name, NSString *value));
+NSWindow *ui_native_window(void);   // to present sheets and panels from
+#define UI_NATIVE_SETUP(name) ...   // a function that runs before the app starts
+```
+
+A package with code for iOS often moves to macOS by swapping the UIKit class for its AppKit
+one (`examples/native/native/macos/` is the iOS example's): `UISlider` is `NSSlider`, a
+control's target is weak (keep it alive with the view), and a view controller to present
+from is the window's sheet. ui.toml's `[macos] frameworks` adds system frameworks, and
+`[native.NAME]` archives for `macos-arm64` and `macos-x86_64` are linked in. Swift is not
+built for macOS yet. A package without `native/macos` still builds: its externs must then be
+defined somewhere else, or the app run with `--webview`, which takes `native/web`.
+
 ## Android
 
 | File | What it is |
@@ -257,6 +282,14 @@ NSLocationWhenInUseUsageDescription = "Shows tasks near you"
 
 [ios.spm]
 Collections = { url = "https://github.com/apple/swift-collections", from = "1.1.0" }
+
+[macos]
+renderer = "web"                 # the WKWebView host instead of AppKit (as --webview)
+window = "430x880"               # the window's size in points (default 900x700)
+frameworks = ["CoreLocation"]    # system frameworks to link
+
+[macos.plist]
+NSLocationUsageDescription = "Shows tasks near you"
 
 [android]
 permissions = ["android.permission.ACCESS_FINE_LOCATION"]
@@ -352,9 +385,9 @@ native side, and an example app. A package like it starts and stops its service 
 mounted.
 
 If a package in `eskiu.lock` also declares prebuilt native archives in its `eskiu.toml`
-(`[native.NAME]` for `ios-arm64`, `ios-arm64-simulator`, `ios-x86_64-simulator` or
-`android-arm64`, as [`eskiu-lang/gpu`](https://github.com/eskiu-lang/gpu) does for
-`wgpu_native`), `ui build ios` and `ui build android` download the archive into
+(`[native.NAME]` for `ios-arm64`, `ios-arm64-simulator`, `ios-x86_64-simulator`,
+`android-arm64`, `macos-arm64` or `macos-x86_64`, as [`eskiu-lang/gpu`](https://github.com/eskiu-lang/gpu)
+does for `wgpu_native`), `ui build ios`, `ui build android` and `ui build macos` download the archive into
 `~/.eskiu/native/` when missing and link its `libNAME.a` into the app bundle automatically.
 
 ## Hooks in a package

@@ -27,6 +27,13 @@
 //   [ios.spm]
 //   FirebaseAuth = { url = "https://github.com/firebase/firebase-ios-sdk", from = "11.0.0" }
 //
+//   [macos]
+//   renderer = "web"                     the WKWebView host instead of AppKit (as --webview)
+//   window = "430x880"                   the window's size in points (default 900x700)
+//   frameworks = ["AVFoundation"]        system frameworks to link
+//   [macos.plist]
+//   NSCameraUsageDescription = "Scan codes"   Info.plist entries
+//
 //   [android]
 //   permissions = ["android.permission.CAMERA"]
 //   dependencies = ["com.google.android.material:material:1.12.0"]

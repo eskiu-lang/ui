@@ -30,7 +30,7 @@ once per toolchain into `$ESKIU_HOME/cache` (`~/.eskiu/cache`).
 ui new myapp          # a project that depends on github.com/eskiu-lang/ui
 cd myapp
 ui run web            # serves build/ui/web and opens the browser (UI_PORT to change the port)
-ui run macos          # a WKWebView window
+ui run macos          # an AppKit window (--webview: the web build in a WKWebView)
 ui run linux          # a WebKitGTK window
 ui run windows        # a WebView2 window
 ui run ios            # the simulator; boots the first iPhone when none is running
@@ -44,7 +44,7 @@ builds without running.
 
 ```bash
 ui serve              # the web: builds, serves, and reloads the page after each change
-ui serve macos        # the same in the macOS window
+ui serve macos        # the same in the macOS window, its code reloaded in place
 ui serve linux        # the same in the Linux window
 ui serve windows      # the same in the Windows window
 ui serve ios          # each change installs and launches the app on the simulator again

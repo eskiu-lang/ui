@@ -180,7 +180,8 @@ Part of `<ui>` (src/ui.esk imports every part; they are not imported alone).
 enum Platform { PlatformDesktop, PlatformWeb, PlatformIos, PlatformAndroid }
 ```
 
-The platform, known when the app is compiled (macOS runs the web host, so it is web).
+The platform, known when the app is compiled (macOS's AppKit host is desktop, its WKWebView host
+web).
 
 ### ui_platform
 

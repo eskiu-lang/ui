@@ -1,13 +1,14 @@
 # Agents
 
 `ui agent` lets a program (a coding agent, a test script) build, drive, see and test an app
-on the web, the iOS simulator and Android with one small set of operations. It talks to the
+on the web, macOS, the iOS simulator and Android with one small set of operations. It talks to the
 app's dev build, the one `ui serve` makes, through a driver the core has in those builds
 only.
 
 ```bash
 ui agent web tree "tap add" "type title Milk" state "screenshot out.png"
 ui agent ios --json tap add clock settle layout
+ui agent macos "screenshot shot.png"
 ui agent android --stop
 ```
 
@@ -23,6 +24,12 @@ running, with no browser or simulator window. Its output goes to
   `chromium` or `chrome-headless-shell` on the `PATH`), 390 by 844 points (`UI_AGENT_WINDOW=WxH`
   for another size). That page takes the requests before any other page of the app. Without a
   Chrome it drives whatever page of the app is open, and `screenshot` is not available.
+- **macos.** The AppKit host in a window on this Mac, started in the background without
+  taking the focus (`UI_AGENT_WINDOW=WxH` sets its size, 900 by 700 points by default); its
+  output goes to `build/ui/macos/app.log` too. The window needs a display (an awake, unlocked
+  one locally; CI's macOS runners have one). One dev app at a time takes the driver's port:
+  `ui agent macos --stop` in a project before driving another one (or give each its own
+  `UI_AGENT_PORT`).
 - **ios.** The simulator that is booted, or the first iPhone, booted for it.
 - **android.** The device or emulator `adb` sees (`ANDROID_SERIAL` picks one). The app is
   built for its ABI: arm64-v8a, or x86_64 on an x86_64 emulator (`UI_ANDROID_ABI` sets it).
@@ -117,7 +124,10 @@ screenshot: shot.png (390x844 pixels)
 ```
 
 The browser's page through its DevTools, `xcrun simctl io booted screenshot` on iOS,
-`adb exec-out screencap -p` on Android.
+`adb exec-out screencap -p` on Android. On macOS the host draws its window's content into the
+file itself (AppKit's `cacheDisplayInRect:`, converted to sRGB), with no window frame and no
+screen recording permission; it shows each view as the model has it (a transition in flight
+shows its end), and a sheet is not in it.
 
 ### tap, type, scroll
 
@@ -130,7 +140,9 @@ scrolled list (Scroll #13) to 300
 
 The input is the platform's: `click()` and an `input` event on the web,
 `sendActionsForControlEvents` and `setContentOffset` on iOS, `performClick`, `setText` and
-`scrollBy` on Android. Each op answers once what it caused has rendered.
+`scrollBy` on Android, and on macOS a control's action (`accessibilityPerformPress` for a
+pressable), the field editor's text with `NSControlTextDidChangeNotification`, and the clip
+view's `scrollToPoint:`. Each op answers once what it caused has rendered.
 
 ### back
 
@@ -181,11 +193,11 @@ cold start: 2839 ms to the first commit
 ```
 
 A frame's time is the core's render and the host's apply of its commit. The memory is the
-wasm heap on the web, the process's footprint on iOS, the native and Java heaps on Android.
+wasm heap on the web, the process's footprint on iOS and macOS, the native and Java heaps on Android.
 The cold start (`startup_ms` with `--json`) is from the process's start (the page's
 navigation on the web) to the first commit applied: the core notes the wall clock at its
 first commit, the host reports when the process started (the kernel's start time of the
-process on iOS and Android, `performance.timeOrigin` on the web). It is the process's: after
+process on iOS, macOS and Android, `performance.timeOrigin` on the web). It is the process's: after
 a reload under `ui serve`, which starts the core again in the same process, it includes the
 time before the reload. The speed budgets track it ([testing](testing.md#speed-budgets)).
 
@@ -200,7 +212,8 @@ From then on nothing moves between two ops:
   the way at its own time (frames every 1/60 s), with the renders they cause, in order.
 - The platform's animations follow it: on the web each CSS transition and animation is
   paused when it starts and moved to the driver's time (`Element.getAnimations()`); on iOS the
-  window's layer has `speed` 0 and its `timeOffset` is the driver's time; on Android the
+  window's layer, and on macOS the window content's layer, has `speed` 0 and its `timeOffset`
+  is the driver's time; on Android the
   animators' duration scale is 0, so the host's transitions and slides end in the frame that
   starts them. A text field's blinking caret is hidden on the web and Android (iOS stops it
   with the layer).
@@ -294,7 +307,7 @@ ui agent web --stop
 ```
 
 No sleeps either way: what a tap causes has rendered when it answers, and time moves only
-with `clock`. CI runs both on headless Chrome, the iOS simulator and the Android emulator
+with `clock`. CI runs both on headless Chrome, the macOS host, the iOS simulator and the Android emulator
 ([CI](testing.md#ci)).
 
 ## The protocol
@@ -318,6 +331,7 @@ VISIBLE`), `logs` (its lines), `perf` (the memory in bytes) and `hello`/`clock` 
 |---|---|
 | web | `ui agent` posts the request to the dev server (`POST /__ui/agent`); the page asks `/__ui/agent/next` for it and posts the answer to `/__ui/agent/reply` (`hosts/web/driver.mjs`) |
 | iOS simulator | TCP on 127.0.0.1:8766 (`UI_AGENT_PORT`) in the app, one request per line (`hosts/driver.h`) |
+| macOS | TCP on 127.0.0.1:8768 (`UI_AGENT_PORT`) in the app, the same; the host also answers `{"op": "screenshot", "file": PATH}` itself |
 | Android | the abstract socket `eskiu-ui-agent` in the app, reached by `adb forward tcp:8767 localabstract:eskiu-ui-agent` (`UI_AGENT_PORT` for another local port) |
 
 Compiled out: `tools/ci.sh` checks that a release object has no symbol of the driver. The

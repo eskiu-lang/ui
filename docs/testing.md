@@ -54,7 +54,7 @@ the directives it gives the host, and the virtual clock (timers fire only when i
 
 `ui test` runs an app's UI tests on each host through the driver `ui agent` uses
 ([Agents](agents.md)). A test is a text file, `tests/ui/NAME.uitest` in the app, and the same
-file runs unchanged on the web, the iOS simulator and Android:
+file runs unchanged on the web, macOS, the iOS simulator and Android:
 
 ```bash
 ui test                    # every test on every host available here
@@ -64,7 +64,7 @@ ui test web --update       # record the screenshots again
 ```
 
 With no host it runs on each one this machine has: the web needs emcc and Chrome
-(`UI_CHROME`), iOS a simulator, Android a device or a running emulator (`adb devices`); the
+(`UI_CHROME`), macOS a Mac (the window needs a display), iOS a simulator, Android a device or a running emulator (`adb devices`); the
 others are reported as skipped. Each file starts the app afresh (a new process, a new page on
 the web) through `ui serve HOST`, which `ui test` starts when it is not running and stops
 after, and takes the driver's clock, so a test never sleeps: what an op causes has rendered
@@ -128,10 +128,10 @@ them.
 | `python3 tools/check_ios.py` | a booted simulator (`DEVICE` picks one) |
 | `python3 tools/check_android.py` | a booted arm64 device or emulator (`ANDROID_SERIAL`), SDK 35, NDK 28.2 |
 | `python3 tools/check_native.py` | the native example on the simulator and the Android device: module events, a view's props and events |
-| `python3 tools/check_desktop.py` | a WKWebView window running the web build (needs an awake, unlocked display) |
-| `tests/agent/check.sh web\|ios\|android` | every `ui agent` op on `tests/agent`, through `ui serve` and the host's driver channel: targets, input, layout, state, logs, perf, screenshots, the clock (two screenshots a second apart are the same, `clock settle` finishes the animations), and a reload after an edit that keeps the count, the field and the timeout's result (with source positions, `tree`'s file and line too); web needs emcc and Chrome (`UI_CHROME`) |
+| `python3 tools/check_desktop.py` | the WKWebView host's window running the web build (needs an awake, unlocked display) |
+| `tests/agent/check.sh web\|macos\|ios\|android` | every `ui agent` op on `tests/agent`, through `ui serve` and the host's driver channel: targets, input, layout, state, logs, perf, screenshots, the clock (two screenshots a second apart are the same, `clock settle` finishes the animations), and a reload after an edit that keeps the count, the field and the timeout's result (with source positions, `tree`'s file and line too); web needs emcc and Chrome (`UI_CHROME`) |
 | `ui test HOST` in `tests/conformance` | the conformance scene's UI tests (below) |
-| `tools/ci_host.sh web\|ios\|android` | what CI runs on a host: the two above and the speed budgets |
+| `tools/ci_host.sh web\|macos\|ios\|android` | what CI runs on a host: the two above and the speed budgets (on macOS also a universal, signed release) |
 
 They drive `tests/harness/app.esk`, which holds every scene a host can be asked for: the
 counter (0), the TODO list (1), a probe (2), the conformance scene (3), the tasks app (4)
@@ -159,41 +159,46 @@ python3 tools/conformance.py           # every available host: ui test, then the
 python3 tools/conformance.py ios web   # only these
 ```
 
-iOS, Android and the web pass.
+iOS, Android, the web and the macOS AppKit host pass (macOS has the UI tests; the host's own
+run of the scene is not written yet, so `conformance.py macos` runs the UI tests only).
 
 ## Agents
 
 `ui agent` drives a running dev build with the same ops on every host, and a test made of
 them needs no sleeps: what an op causes has rendered when it answers, and time moves only
 with `clock`. See [Agents](agents.md). `tests/agent/check.sh` passes on the web (headless
-Chrome), the iPhone simulator (iOS 27) and the Android emulator (API 35). `ui test` runs
+Chrome), macOS (the AppKit host, macOS 27), the iPhone simulator (iOS 27) and the Android
+emulator (API 35). `ui test` runs
 files of the same ops with expectations ([UI tests](#ui-tests)).
 
 ## Screenshots
 
 `python3 tools/screenshots.py` takes the README's screenshots of `examples/tasks` on the
-web, iOS, Android and macOS into `screenshots/`, with the PNG metadata removed.
+web, iOS, Android and macOS into `screenshots/`, with the PNG metadata removed;
+`python3 tools/screenshots.py macos` takes only the hosts named. The macOS one is the AppKit
+host's window content, 430 by 880 points, through `ui agent macos`.
 
 ## CI
 
 `.github/workflows/ci.yml` runs `tools/ci.sh` on Linux and macOS with the released `eskiuc`
 (and `tools/gen_api.py --check` on Linux), builds and packages the Windows host, and runs the
-host checks, `tools/ci_host.sh HOST`, in three jobs:
+host checks, `tools/ci_host.sh HOST`, in four jobs:
 
 | Job | Runner | Host | Takes |
 |---|---|---|---|
 | `host-web` | ubuntu-24.04 | headless Chrome (the runner's), emscripten from `setup-emsdk` (cached) | about 1.5 min |
 | `host-ios` | macos-15 | the first available iPhone simulator, booted by the job; Yoga's objects cached | about 10 min (the first build, then cached) |
+| `host-macos` | macos-15 | the AppKit host's window on the runner's display; Yoga's objects cached | MACOS_TIME |
 | `host-android` | ubuntu-24.04 with KVM | the emulator, API 35 x86_64 `google_apis` (`android-emulator-runner`, its snapshot cached), NDK 28.2 | about 3.5 min |
 
 Each runs `tests/agent/check.sh`, `ui test` on `tests/conformance`, and the speed budgets of
 its host (below), which run the UI tests of `examples/counter` and `tests/bench`. On Android
 the tool builds for the device's ABI, x86_64 on the emulator (`UI_ANDROID_ABI` picks one); a
 build on Linux takes the NDK's Linux toolchain. A failed job uploads the logs of `ui serve`
-and `ui agent`, and the screenshots of the failed tests. The local-only checks
+and `ui agent` (and the macOS app's `app.log`), and the screenshots of the failed tests. The local-only checks
 (`check_ios.py`, `check_android.py`, `check_native.py`, `check_desktop.py`, the host runs of
 `conformance.py`) stay for what CI does not cover: the native example's module and view, a
-physical device, the macOS window.
+physical device, the WKWebView window.
 
 ## Speed budgets
 

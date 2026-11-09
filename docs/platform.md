@@ -78,8 +78,9 @@ its media query and no screen reader.
 
 ## The platform and the language
 
-`ui_platform()` is `PlatformIos`, `PlatformAndroid` or `PlatformWeb` (macOS runs the web
-host), known when the app is compiled; `ui_platform_name()` spells it. `ui_locale()` is the
+`ui_platform()` is `PlatformIos`, `PlatformAndroid`, `PlatformWeb` or `PlatformDesktop` (macOS's
+AppKit host; its WKWebView host, Linux and Windows run the web host, so they are web), known
+when the app is compiled; `ui_platform_name()` spells it. `ui_locale()` is the
 user's language as a BCP 47 tag (`"es-MX"`), and `ui_is_rtl()` says whether it is written
 right to left. Layout does not mirror for a right-to-left language yet.
 

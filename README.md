@@ -106,7 +106,7 @@ runs `tests/ui/*.uitest` on every host.
 | Web | the DOM, wasm through emscripten | Node with a recording DOM, Chromium, WKWebView |
 | iOS | UIKit + Yoga | iPhone simulator, iOS 27 |
 | Android | `android.view` + Yoga | arm64 emulator, API 35 |
-| macOS | the web renderer in WKWebView | macOS 27 |
+| macOS | AppKit + Yoga (or the web renderer in WKWebView) | macOS 27 |
 | Linux | the web renderer in WebKitGTK | GTK 3, WebKit2GTK |
 | Windows | the web renderer in WebView2 | Edge WebView2 |
 
@@ -124,7 +124,7 @@ Every host draws the same conformance scene and matches its frames within one po
   <img src="screenshots/tasks-web.png" alt="Eskiu Tasks in a browser: a header with today's date, a progress card, filters, a field to add a task and a list of tasks with colored tags" width="360">
 </p>
 
-| iOS (UIKit) | Android (android.view) | macOS (WKWebView) |
+| iOS (UIKit) | Android (android.view) | macOS (AppKit) |
 |---|---|---|
 | ![Eskiu Tasks on the iOS simulator](screenshots/tasks-ios.png) | ![Eskiu Tasks on the Android emulator](screenshots/tasks-android.png) | ![Eskiu Tasks in a macOS window](screenshots/tasks-macos.png) |
 
