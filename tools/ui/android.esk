@@ -6,8 +6,36 @@
 string android_sdk() {
     string sdk = env_get("ANDROID_HOME");
     if (sdk != null && sdk[0] != 0) { return sdk; }
+#ifdef __APPLE__
     return join(env_get("HOME"), "Library/Android/sdk");
+#else
+    return join(env_get("HOME"), "Android/Sdk");
+#endif
 }
+
+// The ABI the app is built for: UI_ANDROID_ABI (arm64-v8a or x86_64), else the attached
+// device's (an x86_64 emulator), else arm64-v8a.
+string android_abi_name;
+
+string android_abi() {
+    if (android_abi_name != null) { return android_abi_name; }
+    android_abi_name = "arm64-v8a";
+    string chosen = env_get("UI_ANDROID_ABI");
+    if (chosen != null && chosen[0] != 0) {
+        if (strcmp(chosen, "x86_64") != 0 && strcmp(chosen, "arm64-v8a") != 0) { fail("ui: UI_ANDROID_ABI is arm64-v8a or x86_64"); }
+        android_abi_name = chosen;
+        return android_abi_name;
+    }
+    Cmd ask;
+    ask.add(adb()); ask.add("shell"); ask.add("getprop"); ask.add("ro.product.cpu.abi");
+    String abi;
+    if (ask.output(&abi) && String_eq_cstr(&abi, "x86_64") == 1) { android_abi_name = "x86_64"; }
+    ask.free();
+    String_free(&abi);
+    return android_abi_name;
+}
+
+bool android_x86() { return strcmp(android_abi(), "x86_64") == 0; }
 
 // The last entry (by name) of a directory: the newest NDK, build tools, platform.
 string newest(string dir, string prefix) {
@@ -47,6 +75,8 @@ string android_keystore() {
 
 string build_android(Project* p) {
     string out = p.out("android");
+    // An x86_64 build (an emulator on Linux) beside the arm64 one, so each keeps its stamps.
+    if (android_x86()) { out = join(out, "x86_64"); fs_mkdir_p(out); }
     // Maven dependencies (ui.toml [android] dependencies) need Gradle: AARs bring resources and
     // manifests to merge; Kotlin needs its compiler, which the Android Gradle plugin brings.
     // UI_GRADLE=1 takes that path without them. Its builds are not reload builds.
@@ -71,14 +101,22 @@ string build_android(Project* p) {
         fail("ui: no Android SDK with an NDK, build tools and a platform (ANDROID_HOME, ANDROID_NDK_HOME)");
     }
     string jar = join(platform, "android.jar");
-    string clang = join(ndk, "toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang++");
+#ifdef __APPLE__
+    string prebuilt = "toolchains/llvm/prebuilt/darwin-x86_64/bin";
+#else
+    string prebuilt = "toolchains/llvm/prebuilt/linux-x86_64/bin";
+#endif
+    string triple = android_x86() ? "x86_64-linux-android24" : "aarch64-linux-android24";
+    String clang_name;
+    String_appendf(&clang_name, "%s-clang++", triple);
+    string clang = join(join(ndk, prebuilt), clang_name.data);
     List<string> compiler;
     compiler.push(clang); compiler.push("-fPIC"); compiler.push("-O2");
     List<String> objects;
-    yoga_objects(&compiler, join(eskiu_home(), "cache/yoga-android-arm64"), &objects);
+    yoga_objects(&compiler, join(eskiu_home(), android_x86() ? "cache/yoga-android-x86_64" : "cache/yoga-android-arm64"), &objects);
     List<String> archives;
     defer fs_list_free(&archives);
-    p.native_archives("android-arm64", &archives);
+    p.native_archives(android_x86() ? "android-x86_64" : "android-arm64", &archives);
     // The host, the native code and the Java classes are built again only when they changed.
     string host = join(out, dev ? "host-dev.o" : "host.o");
     string header = join(p.ui.data, "hosts/android/ui_native.h");
@@ -127,11 +165,11 @@ string build_android(Project* p) {
     }
     string app = join(out, "app.o");
     Cmd esk;
-    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add("aarch64-linux-android24"); esk.add(app_opt());
+    esk.add(eskiuc()); esk.add(p.entry()); esk.add("--target"); esk.add(triple); esk.add(app_opt());
     esk.add("-o"); esk.add(app);
     esk.must(null);
     esk.free();
-    string libs = join(out, "lib/arm64-v8a");
+    string libs = join(join(out, "lib"), android_abi());
     fs_mkdir_p(libs);
     // The host's library: with the app's code in it, or (a reload build) without, linked again
     // only when its parts changed, and then the app's code in a library of its own that finds
@@ -267,7 +305,9 @@ string build_android(Project* p) {
     aapt.free();
     Cmd add;
     add.add(join(tools, "aapt")); add.add("add"); add.add("unsigned.apk"); add.add("classes.dex");
-    add.add("lib/arm64-v8a/libeskiu_ui.so");
+    String library_entry;
+    String_appendf(&library_entry, "lib/%s/libeskiu_ui.so", android_abi());
+    add.add(library_entry.data);
     add.must(out);
     add.free();
     string aligned = join(out, "aligned.apk");
@@ -406,7 +446,11 @@ string android_meta_data(Project* p) {
     return out.data == null ? "" : out.data;
 }
 
-string adb() { return join(android_sdk(), "platform-tools/adb"); }
+// The SDK's adb, else the one on the PATH.
+string adb() {
+    string inside = join(android_sdk(), "platform-tools/adb");
+    return fs_exists(inside) == 1 ? inside : "adb";
+}
 
 // A device, starting the first emulator when none is attached.
 void android_device() {
