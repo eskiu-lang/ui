@@ -3,6 +3,50 @@
 
 // ---- new ----
 
+// The AGENTS.md of a new app ({{name}} is its name).
+const string kNewAgents = "# AGENTS.md\n"
+"\n"
+"{{name}} is an app on the Eskiu `ui` package: `src/main.esk` mounts the root component, the\n"
+"views are calls (`Column`, `Text`, `Button`) and the state is signals. The `ui` docs:\n"
+"https://github.com/eskiu-lang/ui/tree/main/docs (agents.md is the page for this file).\n"
+"\n"
+"## Run\n"
+"\n"
+"```bash\n"
+"ui serve            # the web: builds, serves and rebuilds on each change (ios, android too)\n"
+"ui run web          # one build (web, macos, linux, windows, ios, android)\n"
+"```\n"
+"\n"
+"## Drive and see\n"
+"\n"
+"`ui agent HOST OP...` drives the running dev build (it starts `ui serve HOST` and, for the\n"
+"web, a headless Chrome when they are not running) and refuses a build older than the\n"
+"sources. HOST is web, ios or android; `--json` prints one JSON object per op.\n"
+"\n"
+"```bash\n"
+"ui agent web tree                       # the elements, with ids, test ids, text, props\n"
+"ui agent web layout                     # each element's frame in points\n"
+"ui agent web \"screenshot out.png\"       # the window's pixels\n"
+"ui agent web \"tap add\" \"type title Milk\" \"scroll list 300\" back\n"
+"ui agent web state logs perf            # signals and routes, output and errors, frame times\n"
+"ui agent web \"clock +500\" \"clock settle\" # the app's clock: it moves only when told\n"
+"ui agent web --stop                     # stop what ui agent started\n"
+"```\n"
+"\n"
+"Give what a test or an agent targets a test id, `Style{test_id: \"add\"}` (it is not the\n"
+"accessibility label). An ID is a test id, else an accessible name (a label, a button's\n"
+"text), or `#12` for the element with id 12.\n"
+"\n"
+"## Test\n"
+"\n"
+"A test is ops and checks on their `--json` answers, with no sleeps: an op answers once what\n"
+"it caused has rendered, and timers and animations wait for `clock`.\n"
+"\n"
+"```bash\n"
+"ui agent web --stop\n"
+"ui agent web --json \"tap add\" tree | grep -q '\"text\":\"Pressed 1 times\"'\n"
+"```\n";
+
 void create(string name, string ui_path) {
     Cmd make;
     make.add(eskiuc()); make.add("new"); make.add(name);
@@ -24,7 +68,7 @@ void create(string name, string ui_path) {
 "        defer String_free(&label);\n"
 "        String_format(&label, \"Pressed %%d times\", count.get());\n"
 "        TextWith(Style{font_size: 16, color: rgb(107, 114, 128)}, label.data);\n"
-"        ButtonWith(Style{background: rgb(79, 70, 229), color: rgb(255, 255, 255), radius: 12, padding: 12,\n"
+"        ButtonWith(Style{test_id: \"add\", background: rgb(79, 70, 229), color: rgb(255, 255, 255), radius: 12, padding: 12,\n"
 "                         font_size: 16, font_weight: 600}, \"Press me\") { count.set(count.get() + 1); }\n"
 "    }\n"
 "}\n"
@@ -34,6 +78,12 @@ void create(string name, string ui_path) {
 "void ui_app_stop() {}\n", name);
     fs_write_text(join(name, "src/main.esk"), main.data);
     fs_mkdir_p(join(name, "assets"));
+    // AGENTS.md: how a coding agent runs, drives and tests the app.
+    String agents;
+    defer String_free(&agents);
+    String_appendf(&agents, "%s", kNewAgents);
+    String_replace_all(&agents, "{{name}}", name);
+    fs_write_text(join(name, "AGENTS.md"), agents.data);
     Cmd add;
     add.add(eskiuc()); add.add("add"); add.add("ui");
     if (ui_path != null) { add.add("--path"); add.add(ui_path); }
