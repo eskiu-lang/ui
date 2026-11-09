@@ -19,7 +19,7 @@ node id (`u32`):
 | 6 | remove | nothing |
 | 7 | listen | nothing: the node now has a handler |
 | 8 | unlisten | nothing |
-| 9 | string prop | prop `u8` (1 label, 2 placeholder, 3 image source, 4 native view type, 5 font file), length `u32`, the bytes, a NUL |
+| 9 | string prop | prop `u8` (1 label, 2 placeholder, 3 image source, 4 native view type, 5 font file, 6 grid columns, 7 grid rows: a track list such as `80 1fr auto`), length `u32`, the bytes, a NUL |
 | 10 | command | the id is a request id, not a node: command `u8` (1 alert: title, message, then the buttons; 2 open a URL; 3 the web's history: `push` route, `replace` route, `back`, `reset` routes...; 4 hide the keyboard; 5 share: text, URL; 6 copy: text; 7 paste, answered by `ui_dispatch_answer`; 8 haptic: its kind; 9 announce: text; 10 fetch: URL, method, headers, body, timeout, whether there is a body, answered by `ui_dispatch_fetch`; 11 splash: `1` hold it, `0` hide it; 12 asset updates, the web only ([updates](updates.md)): `fetch` URL, hash, path, answered by `ui_dispatch_answer` with `""` or why not; `ready` version, then `PATH HASH` per file; `apply`), count `u8`, then that many strings, each a length `u32`, the bytes and a NUL |
 | 11 | named prop | a native view's prop: the name (length `u32`, bytes, NUL), then the value (the same) |
 
@@ -83,6 +83,12 @@ it into `Mutation` records for tests and tools.
 | | | 50 | gradient end color (RGBA, 0: none), from the background color |
 | | | 51 | gradient angle (degrees, as CSS; 180 top to bottom) |
 | | | 52 | backdrop blur radius (points, 0: none) |
+| | | 53, 54 | grid column (the start line, from 1; 0: auto), its span (0 or 1: one track) |
+| | | 55, 56 | grid row, its span (the same) |
+
+A node with grid columns or rows (string props 6 and 7) lays its children out as a CSS grid.
+The web sets CSS grid; the native hosts run `hosts/grid.h` over Yoga, which makes each item an
+absolute child sized and placed by the grid's tracks.
 
 A text input's value is its text (op 3). Sizes are points.
 

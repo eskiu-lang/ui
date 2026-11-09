@@ -38,6 +38,9 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}) 
 | `pixelated` | false | An `Image` scales without smoothing, each pixel a sharp square, for pixel art (CSS `image-rendering: pixelated`). |
 | `blur` | 0 | Shows what is behind the element blurred, as frosted glass, with `background` as a tint over it: iOS's system materials (the nearest to the radius, in points), CSS `backdrop-filter` on the web. Android cannot blur behind a view and paints a translucent material instead. |
 | `font` | null | Draws the text in a font file from `assets/` (`"fonts/VT323.ttf"`, TrueType or OpenType), loaded once; one file per weight, so `font_weight` does not apply. A file that does not load leaves the system font. |
+| `grid_columns`, `grid_rows` | null | Track lists that make the element a grid: points, `fr` fractions and `auto`, as `"80 1fr auto"`. See [grid](#grid). |
+| `grid_column`, `grid_row` | 0 | The line a grid child starts on, from 1; 0 places it in the next free cell. |
+| `grid_column_span`, `grid_row_span` | 0 | How many tracks a grid child covers; 0 or 1 is one. |
 | `easing` | `EaseInOut` | The transition's curve: `EaseInOut`, `EaseOut`, `EaseIn`, `EaseLinear`, `EaseSpring`. |
 
 A field left at its default is not sent to the host, and changing one sends only that
@@ -76,6 +79,39 @@ Row(Style{height: 160, radius: 16, background: kit.primary}) {
     Row(Style{absolute: true, top: 12, right: 12, padding: 6, radius: 10, background: rgb(255, 255, 255)}) { Text("New"); }
 }
 ```
+
+## Grid
+
+An element with `grid_columns` or `grid_rows` lays its children out as a CSS grid instead of a
+flex column or row. Each list is tracks separated by spaces:
+
+- a number is a size in points;
+- `Nfr` is N shares of the space the other tracks and the gaps leave;
+- `auto` fits the largest item in the track, and with no `fr` track the auto ones also share
+  the space left.
+
+`gap` separates columns and rows alike. A child goes in the next free cell, row by row,
+skipping cells taken; `grid_column` and `grid_row` (lines from 1) fix where it starts, and
+`grid_column_span` and `grid_row_span` widen it. Rows past `grid_rows` are `auto`. A child
+with no `width` or `height` stretches to its cell; one with a size keeps it, at the cell's top
+left. An `absolute` child stays out of the grid.
+
+```eskiu
+Column(Style{grid_columns: "80 1fr", gap: 12}) {
+    Text("Name");
+    Text("Ada Lovelace");
+    Text("Role");
+    Text("Engineer");
+    Row(Style{grid_column_span: 2, height: 1, background: kit.line}) {}
+}
+```
+
+The web sets CSS grid. Yoga has no grid, so the native hosts share one implementation of
+this subset (`hosts/grid.h`): each item becomes an absolute child of the grid's Yoga node,
+sized and placed from the tracks, and the frames are Chrome's within a point. A grid takes its
+width from its parent (stretched, `grow` or `width`) and its height from its rows unless
+`height` is set; the subset leaves out `repeat()`, `minmax()`, named lines and areas, dense
+placement, and an `fr` track growing past its share to fit its content.
 
 ## Motion
 
