@@ -199,6 +199,8 @@ def signature(lines, i):
     head = head.rstrip(";").rstrip()
     head = re.sub(r"\s+", " ", head).replace("( ", "(").replace(" )", ")")
     head = re.sub(r"^export\s+", "", head)
+    # UI_LOC: the call's position, a parameter only in a UI_SRCLOC build (src/core/state.esk)
+    head = re.sub(r"\s*\bUI_LOC(_ONLY)?\b", "", head)
     # skip the body
     depth = 0
     k = i
