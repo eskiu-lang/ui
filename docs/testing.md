@@ -211,7 +211,9 @@ Each host job measures its host and fails when a number is worse than its budget
 the number: `python3 tools/budgets.py HOST` (`model` for the recording renderer, in the web
 job). The budgets are in `tools/budgets.toml`, each a baseline a CI runner measured and a
 tolerance: generous for timings, since shared runners are noisy (+50%, +100% on the
-emulator and the few-millisecond ones), narrow for sizes (+2%). The job summary has the table, and
+emulator and the few-millisecond ones), narrow for sizes (+2%). A timing over its limit is
+measured again, up to twice, and the best run counts, so a regression fails every run while a
+slow moment of the runner does not fail the job. The job summary has the table, and
 `build/budgets-HOST.json` the numbers.
 
 | Budget | Measured as |

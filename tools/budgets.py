@@ -164,6 +164,19 @@ def write_baselines(found):
     BUDGETS.write_text(text)
 
 
+def over_budget(found):
+    """The keys of timings that are over their limit (sizes never vary between runs)."""
+    budgets = load()
+    keys = []
+    for key, value in found.items():
+        budget = budgets.get(key)
+        if budget is None or budget.get("baseline", 0) == 0 or "bytes" in key:
+            continue
+        if value > budget["baseline"] * (1 + budget["tolerance"]):
+            keys.append(key)
+    return keys
+
+
 def check(found):
     budgets = load()
     rows, failed = [], False
@@ -197,6 +210,17 @@ def main():
         raise SystemExit(__doc__)
     host = args[0]
     found = measure(host)
+    # Shared runners are noisy: a timing over its limit is measured again, up to twice, and
+    # the best of the runs counts. A real regression is over on every run.
+    for attempt in range(2):
+        slow = over_budget(found)
+        if not slow or "--update" in sys.argv:
+            break
+        print(f"over budget, measuring again ({attempt + 2} of 3): {', '.join(sorted(slow))}")
+        again = measure(host)
+        for key in slow:
+            if key in again:
+                found[key] = min(found[key], again[key])
     BUILD.mkdir(exist_ok=True)
     (BUILD / f"budgets-{host}.json").write_text(json.dumps(found, indent=2) + "\n")
     if "--update" in sys.argv:
