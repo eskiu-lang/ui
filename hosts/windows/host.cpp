@@ -142,6 +142,8 @@ struct Node {
     HWND nativeView = nullptr;
     struct UiViewEmitter *emitter = nullptr;
     int reportedX = INT32_MIN, reportedY = 0, reportedW = 0, reportedH = 0, reportedWX = 0, reportedWY = 0;
+    // Where its window is, in pixels, so an unchanged frame moves nothing.
+    RECT placed = {INT32_MIN, 0, 0, 0};
     bool pressed = false;
     bool settingText = false;
 };
@@ -528,8 +530,15 @@ static void buffered(HWND hwnd, HDC hdc, F paint) {
 
 // ---- measuring ----
 
+// A memory DC for measuring, made once.
+static HDC measureDC() {
+    static HDC hdc;
+    if (!hdc) hdc = CreateCompatibleDC(nullptr);
+    return hdc;
+}
+
 static SIZE measureText(HFONT font, const std::wstring &text, int limit, bool wrap) {
-    HDC hdc = GetDC(nullptr);
+    HDC hdc = measureDC();
     HGDIOBJ old = SelectObject(hdc, font);
     RECT r = {0, 0, wrap && limit > 0 ? limit : 0x3fffffff, 0};
     std::wstring shown = text.empty() ? L" " : text;
@@ -537,18 +546,19 @@ static SIZE measureText(HFONT font, const std::wstring &text, int limit, bool wr
     DrawTextW(hdc, shown.c_str(), (int)shown.size(), &r, flags);
     if (text.empty()) r.right = 0;
     SelectObject(hdc, old);
-    ReleaseDC(nullptr, hdc);
     return {r.right - r.left, r.bottom - r.top};
 }
 
 static int lineHeight(HFONT font) {
-    HDC hdc = GetDC(nullptr);
+    static std::map<HFONT, int> heights;
+    auto found = heights.find(font);
+    if (found != heights.end()) return found->second;
+    HDC hdc = measureDC();
     HGDIOBJ old = SelectObject(hdc, font);
     TEXTMETRICW metrics;
     GetTextMetricsW(hdc, &metrics);
     SelectObject(hdc, old);
-    ReleaseDC(nullptr, hdc);
-    return metrics.tmHeight;
+    return heights[font] = metrics.tmHeight;
 }
 
 // The field's inner insets in points when the app does not style it.
@@ -738,6 +748,9 @@ static void placeWindow(Node *node) {
     if (!node->hwnd || node->kind == 12) return;
     int x = px(node->x + node->shownX + node->slideX), y = px(node->y + node->shownY);
     int w = std::max(0, px(node->x + node->w) - px(node->x)), h = std::max(0, px(node->y + node->h) - px(node->y));
+    RECT want = {x, y, w, h};
+    if (EqualRect(&want, &node->placed)) return;
+    node->placed = want;
     SetWindowPos(node->hwnd, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
@@ -1448,7 +1461,7 @@ static void applyFont(Node *node) {
 
 static void insertWindow(Node *node, HWND parent, Node *next) {
     if (!node->hwnd) return;
-    if (GetParent(node->hwnd) != parent) SetParent(node->hwnd, parent);
+    if (GetParent(node->hwnd) != parent) { SetParent(node->hwnd, parent); node->placed.left = INT32_MIN; }
     // Later siblings draw over earlier ones: the top of Windows' z-order is the last child.
     HWND after = next && next->hwnd && GetParent(next->hwnd) == parent ? next->hwnd : HWND_TOP;
     SetWindowPos(node->hwnd, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
