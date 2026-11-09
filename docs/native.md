@@ -17,6 +17,10 @@ examples/native/
   native/ios/slider.m         the slider: UISlider
   native/android/clock.c      the clock over a thread
   native/android/Slider.java  the slider: SeekBar
+  native/macos/clock.m        the clock over an NSTimer
+  native/macos/slider.m       the slider: NSSlider
+  native/linux/clock.c        the clock over a GLib timeout
+  native/linux/slider.c       the slider: GtkScale
 ```
 
 ## The Eskiu side
@@ -94,8 +98,8 @@ export function setup(ui) {
 }
 ```
 
-macOS's AppKit host takes `native/macos` (below); its WKWebView host, Linux and Windows run the
-web host, so they use the web's native code.
+macOS's AppKit host takes `native/macos` and Linux's GTK host `native/linux` (below); their
+webview hosts (`--webview`) and Windows run the web host, so they use the web's native code.
 
 Arguments reach a `.js` extern as JavaScript numbers: an integer or a float as itself, a
 `string` as a pointer into the app's memory, read with `UTF8ToString(pointer)`. Send text
@@ -202,6 +206,31 @@ from is the window's sheet. ui.toml's `[macos] frameworks` adds system framework
 built for macOS yet. A package without `native/macos` still builds: its externs must then be
 defined somewhere else, or the app run with `--webview`, which takes `native/web`.
 
+## Linux
+
+The GTK 4 host takes C and C++ over GTK, with the same shape as macOS's:
+
+| File | What it is |
+|---|---|
+| `native/linux/*.c`, `*.cpp` | C and C++ (C++17), compiled with GTK 4's flags and `ui_native.h` (in `hosts/linux/`) on the include path, linked into the program. |
+
+```c
+void ui_native_emit(const char *channel, const char *payload);   // any thread
+typedef struct UiViewEmitter UiViewEmitter;   // owned by the view
+void ui_view_emit(UiViewEmitter *emitter, const char *name, const char *payload);   // any thread
+void ui_register_view(const char *type, GtkWidget *(*create)(UiViewEmitter *emitter),
+                      void (*set)(GtkWidget *view, const char *name, const char *value));
+GtkWindow *ui_native_window(void);   // to present dialogs from
+#define UI_NATIVE_SETUP(name) ...   // a function that runs before the app starts
+```
+
+`examples/native/native/linux/` is the macOS example's over GLib and GTK: the clock is a
+`g_timeout_add`, the slider a `GtkScale` whose `value-changed` handler gets the emitter as its
+data (and is blocked while the app sets the value, so only the user's moves are events).
+`[native.NAME]` archives for `linux-x86_64` and `linux-arm64` are linked in. A package without
+`native/linux` still builds: its externs must then be defined somewhere else, or the app run
+with `--webview`, which takes `native/web`.
+
 ## Android
 
 | File | What it is |
@@ -242,8 +271,8 @@ native code started) and `ui_activity()`.
 
 ## Threads
 
-The core runs on the UI thread. `ui_native_emit` and `UiActivity.emit` may be called from
-any thread: they post the event to the UI thread. A view's `emit` is meant for the UI
+The core runs on the UI thread. `ui_native_emit`, `ui_view_emit` (Linux) and
+`UiActivity.emit` may be called from any thread: they post the event to the UI thread. A view's `emit` is meant for the UI
 thread, where views live; called from another thread, it is posted there too. On the web
 there is one thread.
 
@@ -291,6 +320,10 @@ frameworks = ["CoreLocation"]    # system frameworks to link
 [macos.plist]
 NSLocationUsageDescription = "Shows tasks near you"
 
+[linux]
+renderer = "web"                 # the WebKitGTK host instead of GTK 4 (as --webview)
+window = "430x880"               # the window's size in points (default 900x700)
+
 [android]
 permissions = ["android.permission.ACCESS_FINE_LOCATION"]
 dependencies = ["com.google.android.material:material:1.12.0"]
@@ -315,7 +348,7 @@ keep it out of `assets/`, which is copied into the app as it is). Draw it to the
 platform cuts its own shape. From it the build makes:
 
 - **macOS**: an `AppIcon.icns` bundle icon generated from the 1024 × 1024 source (using `iconutil`).
-- **Linux**: an `icon.png` application and window icon.
+- **Linux**: an `icon.png` beside the program, the window's icon.
 - **Windows**: an `icon.ico` multi-resolution icon (16, 32, 48, 256) built directly into the output folder.
 - **iOS**: an asset catalog compiled with `actool` into the bundle (Xcode's tools; one
   1024 image, from which iOS makes every size), over white, since the App Store takes no
@@ -386,8 +419,9 @@ mounted.
 
 If a package in `eskiu.lock` also declares prebuilt native archives in its `eskiu.toml`
 (`[native.NAME]` for `ios-arm64`, `ios-arm64-simulator`, `ios-x86_64-simulator`,
-`android-arm64`, `macos-arm64` or `macos-x86_64`, as [`eskiu-lang/gpu`](https://github.com/eskiu-lang/gpu)
-does for `wgpu_native`), `ui build ios`, `ui build android` and `ui build macos` download the archive into
+`android-arm64`, `macos-arm64`, `macos-x86_64`, `linux-x86_64` or `linux-arm64`, as
+[`eskiu-lang/gpu`](https://github.com/eskiu-lang/gpu) does for `wgpu_native`), `ui build ios`,
+`ui build android`, `ui build macos` and `ui build linux` download the archive into
 `~/.eskiu/native/` when missing and link its `libNAME.a` into the app bundle automatically.
 
 ## Hooks in a package

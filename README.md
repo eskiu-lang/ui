@@ -109,7 +109,7 @@ runs `tests/ui/*.uitest` on every host.
 | iOS | UIKit + Yoga | iPhone simulator, iOS 27 |
 | Android | `android.view` + Yoga | arm64 emulator, API 35 |
 | macOS | AppKit + Yoga (or the web renderer in WKWebView) | macOS 27 |
-| Linux | the web renderer in WebKitGTK | GTK 3, WebKit2GTK |
+| Linux | GTK 4 + Yoga (or the web renderer in WebKitGTK) | Ubuntu 24.04, GTK 4.14 |
 | Windows | the web renderer in WebView2 | Edge WebView2 |
 
 Every host draws the same conformance scene and matches its frames within one point.

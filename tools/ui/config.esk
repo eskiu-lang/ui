@@ -41,6 +41,10 @@
 //   [macos.plist]
 //   NSCameraUsageDescription = "Scan codes"   Info.plist entries
 //
+//   [linux]
+//   renderer = "web"                     the WebKitGTK host instead of GTK 4 (as --webview)
+//   window = "430x880"                   the window's size in points (default 900x700)
+//
 //   [android]
 //   permissions = ["android.permission.CAMERA"]
 //   dependencies = ["com.google.android.material:material:1.12.0"]

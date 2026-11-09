@@ -9,50 +9,50 @@ shim: the app, its components and its state are the same Eskiu code everywhere.
 | iOS | `hosts/ios/host.mm`: UIKit, Objective-C++ | Yoga 3.2.1 |
 | Android | `hosts/android/`: `UiActivity.java` over `android.view`, `host.cpp` the JNI shim | Yoga 3.2.1 |
 | macOS | `hosts/macos/host.mm`: AppKit, Objective-C++ (`hosts/macos/webview.m`: the web host in a `WKWebView` window, with `--webview`) | Yoga 3.2.1 |
-| Linux | `hosts/linux/host.c`: the web host in a GTK / WebKitGTK window | the web's |
+| Linux | `hosts/linux/host.cpp`: GTK 4, C++ (`hosts/linux/webview.c`: the web host in a WebKitGTK window, with `--webview`) | Yoga 3.2.1 |
 | Windows | `hosts/windows/host.cpp`: the web host in a Win32 / WebView2 window | the web's |
 
 ## Elements per host
 
-| Kind | Web | iOS | Android | macOS |
-|---|---|---|---|---|
-| column, row | `div` (flex) | `UIView` | a `ViewGroup` that places its children from Yoga | a flipped, layer-backed `NSView` |
-| text | `span` | `UILabel` | `TextView` | `NSTextField` (a wrapping label) |
-| button | `button` | `UIButton` (system) | `Button` | `NSButton` (a push button; borderless, painted by its layer, when the app gives it a background or a border) |
-| text input | `input type=text` | `UITextField` | `EditText` | `NSTextField` (bezeled; borderless with the app's border, background and padding) |
-| scroll | `div` with `overflow: auto` | `UIScrollView` | `ScrollView` | `NSScrollView` (overlay scrollers) around a flipped document view |
-| image | `img` | `UIImageView` | `ImageView` | `NSImageView` (fit or cover) |
-| pressable | `div role=button` | `UIControl` with the button trait | a clickable view group | an `NSView` with the button role (`accessibilityPerformPress`) |
-| switch | `input type=checkbox role=switch` | `UISwitch` | `Switch` | `NSSwitch` |
-| slider | `input type=range` | `UISlider` | `SeekBar` (its progress counts from the minimum) | `NSSlider` |
-| activity indicator | a CSS spinner, `role=progressbar` | `UIActivityIndicatorView` | `ProgressBar` | `NSProgressIndicator` (spinning) |
-| refresh control | a pull at the top of the scroll | `UIRefreshControl` | a pull at the top of the scroll and a `ProgressBar` (the framework has no refresh view) | nothing (no pull on a desktop; `refreshing` is kept) |
-| modal | `div role=dialog` over the page | a view over the window | a view over the window | a sheet (`beginSheet`), as big as its content; an `Overlay` is a view over the window |
-| alert | `dialog` | `UIAlertController` | `AlertDialog` | `NSAlert` as a sheet |
-| status bar | nothing | the view controller's status bar | `WindowInsetsController` | nothing |
-| screen | a `div`, `display: none` under the top | a `UIView`, hidden under the top; slides in and out | a view group, gone under the top; slides in and out | an `NSView`, hidden under the top; slides in and out |
-| native view | a `div` holding the factory's element | a `UIView` holding the factory's view | a `FrameLayout` holding the factory's view | an `NSView` holding the factory's view |
+| Kind | Web | iOS | Android | macOS | Linux |
+|---|---|---|---|---|---|
+| column, row | `div` (flex) | `UIView` | a `ViewGroup` that places its children from Yoga | a flipped, layer-backed `NSView` | a `UiBox`: a `GtkWidget` that places its children at Yoga's frames and paints the app's background, border, radius and shadow |
+| text | `span` | `UILabel` | `TextView` | `NSTextField` (a wrapping label) | `GtkLabel` (wrapping) |
+| button | `button` | `UIButton` (system) | `Button` | `NSButton` (a push button; borderless, painted by its layer, when the app gives it a background or a border) | `GtkButton` (the theme's; with no frame of its own, the CSS class `ui-styled`, and painted by its box, when the app gives it a background or a border) |
+| text input | `input type=text` | `UITextField` | `EditText` | `NSTextField` (bezeled; borderless with the app's border, background and padding) | `GtkEntry` (the theme's; frameless, inside the app's padding, when styled) |
+| scroll | `div` with `overflow: auto` | `UIScrollView` | `ScrollView` | `NSScrollView` (overlay scrollers) around a flipped document view | `GtkScrolledWindow` (overlay scrollbars) around a box sized to the content |
+| image | `img` | `UIImageView` | `ImageView` | `NSImageView` (fit or cover) | the box draws the `GdkTexture` (fit or cover, smoothed or pixelated) |
+| pressable | `div role=button` | `UIControl` with the button trait | a clickable view group | an `NSView` with the button role (`accessibilityPerformPress`) | a box with the button role and a `GtkGestureClick` |
+| switch | `input type=checkbox role=switch` | `UISwitch` | `Switch` | `NSSwitch` | `GtkSwitch` (at its own size) |
+| slider | `input type=range` | `UISlider` | `SeekBar` (its progress counts from the minimum) | `NSSlider` | `GtkScale` |
+| activity indicator | a CSS spinner, `role=progressbar` | `UIActivityIndicatorView` | `ProgressBar` | `NSProgressIndicator` (spinning) | `GtkSpinner` |
+| refresh control | a pull at the top of the scroll | `UIRefreshControl` | a pull at the top of the scroll and a `ProgressBar` (the framework has no refresh view) | nothing (no pull on a desktop; `refreshing` is kept) | nothing, as on macOS |
+| modal | `div role=dialog` over the page | a view over the window | a view over the window | a sheet (`beginSheet`), as big as its content; an `Overlay` is a view over the window | a box over the window's content, dimmed, with the dialog role (as on iOS and Android) |
+| alert | `dialog` | `UIAlertController` | `AlertDialog` | `NSAlert` as a sheet | `GtkAlertDialog` |
+| status bar | nothing | the view controller's status bar | `WindowInsetsController` | nothing | nothing |
+| screen | a `div`, `display: none` under the top | a `UIView`, hidden under the top; slides in and out | a view group, gone under the top; slides in and out | an `NSView`, hidden under the top; slides in and out | a box, hidden under the top; slides in and out |
+| native view | a `div` holding the factory's element | a `UIView` holding the factory's view | a `FrameLayout` holding the factory's view | an `NSView` holding the factory's view | a box holding the factory's widget |
 
-Labels become `aria-label` (an image's `alt`), `accessibilityLabel` (UIKit and AppKit) and
-`contentDescription`.
+Labels become `aria-label` (an image's `alt`), `accessibilityLabel` (UIKit and AppKit),
+`contentDescription` and GTK's accessible label (AT-SPI).
 
 ## Services per host
 
-| Service | Web | iOS | Android | macOS |
-|---|---|---|---|---|
-| frames | `requestAnimationFrame` | `CADisplayLink` | `Choreographer` | `dispatch_async` to the main queue (one frame per turn of the run loop) |
-| timers | `setTimeout`, `setInterval` | `NSTimer` on the main run loop | `Handler.postDelayed` | `NSTimer` on the main run loop |
-| transitions | CSS transitions | `UIView` animations (springs too) | `ViewPropertyAnimator`, `ValueAnimator` for colors | Core Animation on the view's layer (`CABasicAnimation`, `CASpringAnimation`) |
-| drags | pointer events, captured once past 6 px | `UIPanGestureRecognizer` | a touch listener, intercepted from a pressable inside past the slop | `NSPanGestureRecognizer` |
-| hover | `mouseenter`, `mouseleave` | `UIHoverGestureRecognizer` | `setOnHoverListener` | an `NSTrackingArea` |
-| network | `fetch` | `NSURLSession` | `HttpURLConnection` on a thread | `NSURLSession` |
-| storage | `localStorage` | Application Support | `getFilesDir()` | Application Support/BUNDLE_ID |
-| clipboard | `navigator.clipboard` (or the page's copy) | `UIPasteboard` | `ClipboardManager` | `NSPasteboard` |
-| share | `navigator.share` (or a copy) | `UIActivityViewController` | `ACTION_SEND` chooser | `NSSharingServicePicker` |
-| haptics | `navigator.vibrate` | feedback generators | `performHapticFeedback` | `NSHapticFeedbackManager` (a trackpad's) |
-| announcements | a live region | `UIAccessibilityAnnouncementNotification` | `announceForAccessibility` | `NSAccessibilityAnnouncementRequestedNotification` |
-| appearance | `prefers-color-scheme`, `prefers-reduced-motion`, `navigator.language` | trait collection, `UIAccessibility`, `NSLocale` | configuration, `AccessibilityManager`, animator scale | `NSApp.effectiveAppearance` (dark mode), `NSWorkspace` accessibility options, `NSLocale` |
-| asset updates ([updates](updates.md)) | Cache Storage and a service worker | Application Support | `getFilesDir()` | Application Support/BUNDLE_ID |
+| Service | Web | iOS | Android | macOS | Linux |
+|---|---|---|---|---|---|
+| frames | `requestAnimationFrame` | `CADisplayLink` | `Choreographer` | `dispatch_async` to the main queue (one frame per turn of the run loop) | an idle on GLib's main loop (one frame per turn); `use_frame` from the window's frame clock |
+| timers | `setTimeout`, `setInterval` | `NSTimer` on the main run loop | `Handler.postDelayed` | `NSTimer` on the main run loop | `g_timeout_add` |
+| transitions | CSS transitions | `UIView` animations (springs too) | `ViewPropertyAnimator`, `ValueAnimator` for colors | Core Animation on the view's layer (`CABasicAnimation`, `CASpringAnimation`) | the host's own, the web's curves, on its clock (opacity, colors, transforms, slides) |
+| drags | pointer events, captured once past 6 px | `UIPanGestureRecognizer` | a touch listener, intercepted from a pressable inside past the slop | `NSPanGestureRecognizer` | `GtkGestureDrag`, claimed once past 6 points |
+| hover | `mouseenter`, `mouseleave` | `UIHoverGestureRecognizer` | `setOnHoverListener` | an `NSTrackingArea` | `GtkEventControllerMotion` |
+| network | `fetch` | `NSURLSession` | `HttpURLConnection` on a thread | `NSURLSession` | libcurl on a thread, loaded when first used (`dlopen`, no link-time dependency) |
+| storage | `localStorage` | Application Support | `getFilesDir()` | Application Support/BUNDLE_ID | `$XDG_DATA_HOME/ID` (`~/.local/share/ID`) |
+| clipboard | `navigator.clipboard` (or the page's copy) | `UIPasteboard` | `ClipboardManager` | `NSPasteboard` | `GdkClipboard` |
+| share | `navigator.share` (or a copy) | `UIActivityViewController` | `ACTION_SEND` chooser | `NSSharingServicePicker` | a copy (a Linux desktop has no share sheet) |
+| haptics | `navigator.vibrate` | feedback generators | `performHapticFeedback` | `NSHapticFeedbackManager` (a trackpad's) | nothing |
+| announcements | a live region | `UIAccessibilityAnnouncementNotification` | `announceForAccessibility` | `NSAccessibilityAnnouncementRequestedNotification` | `gtk_accessible_announce` (GTK 4.14) |
+| appearance | `prefers-color-scheme`, `prefers-reduced-motion`, `navigator.language` | trait collection, `UIAccessibility`, `NSLocale` | configuration, `AccessibilityManager`, animator scale | `NSApp.effectiveAppearance` (dark mode), `NSWorkspace` accessibility options, `NSLocale` | `GtkSettings` (a dark theme or color scheme, `gtk-enable-animations`), the locale's language |
+| asset updates ([updates](updates.md)) | Cache Storage and a service worker | Application Support | `getFilesDir()` | Application Support/BUNDLE_ID | `$XDG_DATA_HOME/ID` |
 
 Each host also has a registry of native view types and a way for native code to post
 events from any thread: [native code](native.md).
@@ -152,6 +152,11 @@ the new module before `ui_start`.
   it. `ui serve macos` starts the app in the background, its output in
   `build/ui/macos/app.log`, and starts it again only when the host, the native code or the
   Info.plist changed.
+- **Linux.** As on macOS: the app's code is a shared library the executable (linked with
+  `-rdynamic`, so the library finds the host's and the native code's functions) loads with
+  `dlopen`; the host polls `build/ui/linux/reload/current` (`UI_RELOAD_FILE`) every 50 ms and
+  writes its pid next to it. `ui serve linux` starts the app in the background, its output in
+  `build/ui/linux/app.log`, and starts it again only when the host or the native code changed.
 - **Android.** The app's code is a library linked against `libeskiu_ui.so`. The tool pushes it
   and, in one `adb shell`, checks the app is installed, copies it into the app's files with
   `run-as` (the debug APK allows it), names it in `files/ui-reload` and sends the activity an
@@ -205,12 +210,49 @@ Reload). `ui serve macos --webview` reloads the page after each build, as on the
 
 ## Linux
 
-`ui build linux` builds the web host and a native GTK 3 application using WebKitGTK
-(`hosts/linux/host.c`). It connects to `webkit2gtk-4.1` (or `webkit2gtk-4.0`) via
-`pkg-config`. The app in `web/` beside the executable is served as `app://localhost/` (a path
-with no extension is a route and gets the page), so the page's base, its module imports and
-its routes work as on a server. The window takes the document's title and supports snapshot
-testing; a release build has no inspector.
+`ui build linux` compiles the app for this machine, compiles Yoga, `hosts/linux/host.cpp` and
+`native/linux` with the C++ compiler (`CXX`, else `c++`) and GTK 4's flags from `pkg-config`,
+and makes `build/ui/linux/NAME`, with the assets in `assets/` and `icon.png` beside it. It needs
+GTK 4.14 or later (Ubuntu 24.04, Debian 13, Fedora 40). The host is GTK 4, as the macOS host is
+AppKit: each element is a GTK widget (the table above), laid out by Yoga, so the frames are the
+other hosts' to the point. Its parts:
+
+- **The window.** 900 by 700 points of app under a menu bar (ui.toml `[linux] window =
+  "430x880"`, or `UI_WINDOW=WxH`), resizable down to 320 by 240; its size is the app's window and
+  the insets are zero. Its title is the app's name, its icon `icon.png`.
+- **The menu bar.** File (Close Window, Quit), Edit (Cut, Copy, Paste, Select All, for the field
+  with the focus) and View (Back, Full Screen), a `GMenu` on the window's actions, with Ctrl+W,
+  Ctrl+Q and F11.
+- **Back.** Escape, Alt+Left and a mouse's back button are the platform's back
+  (`ui_report_back`): the newest modal closes, else a `use_back` handler or the router goes back.
+- **Dark mode.** GTK's settings (a dark theme, `gtk-application-prefer-dark-theme`, and on GTK
+  4.20 the interface's color scheme) go to the app with each change; a text with no color of
+  its own takes the theme's, which follows it. No libadwaita.
+- **Accessibility.** GTK's accessible roles over AT-SPI: a label, a button, a pressable a box
+  with the button role, an entry, a switch, a slider, an image, a spinner, a modal a dialog,
+  a labeled column or row a group with its label.
+- **Styled controls.** A button or a field the app gives a background, a border or a radius
+  loses the theme's frame (the CSS class `ui-styled`) and its box paints what the app asked
+  (the kit's buttons and fields look as on the other hosts); a plain one is the theme's.
+- **Text.** 16 points unless the app says otherwise, in the system's sans-serif font (the
+  frames of text and controls depend on the font, as on every host; the conformance tests
+  check those that do not). A font file from `assets/` is added to fontconfig.
+- **What is not native yet.** A RefreshControl has no pull (a desktop has none), a backdrop
+  blur paints the window's color at 65% (GTK cannot blur what is under a widget) and a share
+  copies the text. A screenshot (`ui agent`) is the window's content without an alert.
+
+ui.toml's `[linux]` table: `renderer` (`"web"` for the WebKitGTK host) and `window`. A
+release (`ui release linux`) is a `.tar.gz` of the program, its assets and its icon.
+
+### The WebKitGTK host
+
+`ui build linux --webview` (also `run`, `serve` and `release`), or ui.toml `[linux] renderer =
+"web"` for an app that relies on the web host, builds the web host and a GTK 3 program whose
+window is a WebKitGTK view (`hosts/linux/webview.c`, `webkit2gtk-4.1` or `4.0` through
+`pkg-config`). The app in `web/` beside the executable is served as `app://localhost/` (a path
+with no extension is a route and gets the page), so the page's base, its module imports and its
+routes work as on a server. The window takes the document's title; a release build has no
+inspector. `ui serve linux --webview` reloads the page after each build, as on the web.
 
 ## Windows
 
@@ -231,14 +273,14 @@ answers what it can; each host carries the rest: the platform's input (a click, 
 edit, a scroll), each view's frame, its output and memory, and its animations on the
 driver's clock.
 
-| | Web | iOS | Android | macOS |
-|---|---|---|---|---|
-| channel | the dev server: `/__ui/agent`, `hosts/web/driver.mjs` | TCP on 127.0.0.1:8766 in the app, `hosts/driver.h` | the abstract socket `eskiu-ui-agent`, `adb forward`, `hosts/driver.h` | TCP on 127.0.0.1:8768 in the app, `hosts/driver.h` |
-| tap, type, scroll | `click()`, `input` event, `scrollTop` | `sendActionsForControlEvents`, `setContentOffset` | `performClick`, `setText`, `scrollBy` | a control's action, `accessibilityPerformPress`, the field editor's text and `NSControlTextDidChangeNotification`, the clip view's `scrollToPoint:` |
-| animations on the clock | `document.getAnimations()` paused and seeked; a field's caret hidden | the window's layer at `speed` 0, `timeOffset` the driver's time | the animator duration scale at 0; a field's cursor hidden | the window content's layer at `speed` 0, `timeOffset` the driver's time |
-| screenshot (by `ui agent`) | the headless browser's DevTools | `simctl io screenshot` | `adb exec-out screencap` | the host draws its content view into a bitmap (`cacheDisplayInRect:`), in sRGB |
-| memory (`perf`) | the wasm heap | the process's footprint | the native and Java heaps | the process's footprint |
-| start (`perf`'s cold start) | `performance.timeOrigin` | the process's start time (`sysctl`) | the process's start time (`/proc/self/stat`) | the process's start time (`sysctl`) |
+| | Web | iOS | Android | macOS | Linux |
+|---|---|---|---|---|---|
+| channel | the dev server: `/__ui/agent`, `hosts/web/driver.mjs` | TCP on 127.0.0.1:8766 in the app, `hosts/driver.h` | the abstract socket `eskiu-ui-agent`, `adb forward`, `hosts/driver.h` | TCP on 127.0.0.1:8768 in the app, `hosts/driver.h` | TCP on 127.0.0.1:8769 in the app, `hosts/driver.h` |
+| tap, type, scroll | `click()`, `input` event, `scrollTop` | `sendActionsForControlEvents`, `setContentOffset` | `performClick`, `setText`, `scrollBy` | a control's action, `accessibilityPerformPress`, the field editor's text and `NSControlTextDidChangeNotification`, the clip view's `scrollToPoint:` | a control's signal (`clicked`, a switch's `active`), `gtk_editable_set_text`, the scroll's `GtkAdjustment` |
+| animations on the clock | `document.getAnimations()` paused and seeked; a field's caret hidden | the window's layer at `speed` 0, `timeOffset` the driver's time | the animator duration scale at 0; a field's cursor hidden | the window content's layer at `speed` 0, `timeOffset` the driver's time | the host's transitions on the driver's time; GTK's animations and the caret's blinking off |
+| screenshot (by `ui agent`) | the headless browser's DevTools | `simctl io screenshot` | `adb exec-out screencap` | the host draws its content view into a bitmap (`cacheDisplayInRect:`), in sRGB | the host snapshots its content (`gtk_widget_snapshot_child`) and renders it with the window's GSK renderer |
+| memory (`perf`) | the wasm heap | the process's footprint | the native and Java heaps | the process's footprint | the process's resident set |
+| start (`perf`'s cold start) | `performance.timeOrigin` | the process's start time (`sysctl`) | the process's start time (`/proc/self/stat`) | the process's start time (`sysctl`) | the process's start time (`/proc/self/stat`) |
 
 The host compiles its side only with `UI_TEST` (the ui tool passes it for a dev build), and
 the core's only with the `UI_TEST` the ui tool defines in the entry file: a release has

@@ -105,7 +105,8 @@ the assets you edit are what you see; `[updates] dev = true` keeps them, to try 
 | Android | the app's files directory, `ui-updates/HASH.EXT` | the same |
 | Web | Cache Storage (`eskiu-ui-updates`), served by the service worker `ui-sw.js` | Ed25519 in Eskiu (the wasm module); each file's SHA-256 by WebCrypto |
 | macOS (AppKit) | Application Support/BUNDLE_ID, `ui-updates/HASH.EXT` (the iOS path; not yet run there) | as iOS |
-| Linux, Windows, macOS `--webview` | not yet: these run the web build from the app's own files, where a service worker does not run | |
+| Linux (GTK) | `$XDG_DATA_HOME/ID`, `ui-updates/HASH.EXT` (the iOS path; not yet run there) | as iOS |
+| Linux and macOS `--webview`, Windows | not yet: these run the web build from the app's own files, where a service worker does not run | |
 
 The bundle in use and the waiting one are kept as their manifests in the app's saved data
 (`ui.update.active`, `ui.update.ready`); files no bundle needs are removed at the next check.

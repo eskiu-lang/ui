@@ -16,7 +16,7 @@ What each platform needs:
 |---|---|
 | `web` | emscripten (`emcc`) |
 | `macos` | Xcode's command-line tools |
-| `linux` | `gcc` or `clang`, `pkg-config`, `libwebkit2gtk-4.1-dev` (or `4.0`) |
+| `linux` | `g++` or `clang++`, `pkg-config` and GTK 4.14 or later (`libgtk-4-dev`); `--webview`: `libwebkit2gtk-4.1-dev` (or `4.0`) |
 | `windows` | MSVC (`cl`) or MinGW-w64 (`g++`, or `x86_64-w64-mingw32-g++` from macOS or Linux); the WebView2 SDK is fetched for you |
 | `ios` | Xcode, with an iPhone simulator |
 | `android` | the Android SDK with an NDK, build tools and a platform (`ANDROID_HOME`, `ANDROID_NDK_HOME`), and an emulator or a device |
@@ -31,7 +31,7 @@ ui new myapp          # a project that depends on github.com/eskiu-lang/ui
 cd myapp
 ui run web            # serves build/ui/web and opens the browser (UI_PORT to change the port)
 ui run macos          # an AppKit window (--webview: the web build in a WKWebView)
-ui run linux          # a WebKitGTK window
+ui run linux          # a GTK 4 window (--webview: the web build in WebKitGTK)
 ui run windows        # a WebView2 window
 ui run ios            # the simulator; boots the first iPhone when none is running
 ui run android        # a device, or the first emulator it finds
@@ -45,7 +45,7 @@ builds without running.
 ```bash
 ui serve              # the web: builds, serves, and reloads the page after each change
 ui serve macos        # the same in the macOS window, its code reloaded in place
-ui serve linux        # the same in the Linux window
+ui serve linux        # the same in the Linux window, its code reloaded in place
 ui serve windows      # the same in the Windows window
 ui serve ios          # each change installs and launches the app on the simulator again
 ui serve android      # the same on the device or emulator
@@ -54,9 +54,9 @@ ui serve android      # the same on the device or emulator
 `ui serve` watches what a build reads: `src/`, `native/`, `assets/` and `ui.toml` of the
 app and of every package it depends on, and `eskiu.toml` and `eskiu.lock`. After a change it
 builds again, with the app's code at `-O0` and the host, the native code and Yoga reused when
-they did not change. On the web and in the macOS window, the page reloads once the build is
-done; on the simulator and on Android the running app starts again on the new code in the same
-process, without being installed and launched again (a change to the host, the native code or
+they did not change. On the web and in the webview windows (`--webview`), the page reloads once
+the build is done; in the macOS and Linux windows, on the simulator and on Android the running
+app starts again on the new code in the same process, without being installed and launched again (a change to the host, the native code or
 the assets installs it again). Either way the app comes back where it was: the routes of its
 Navigator, and each signal whose scope, place and type did not change, keep their values
 ([State](state.md#a-reload-under-ui-serve)); the saved data is kept too. A failed build shows
