@@ -1,0 +1,51 @@
+// The app tests/agent/check.sh drives with `ui agent`: a counter, a field, a long list, a
+// timeout, an animated value, a transition and a modal, each with a test_id.
+import <string>;
+import <ui>;
+
+void Number(string test_id, string label, int value) {
+    String text;
+    defer String_free(&text);
+    String_format(&text, "%s%d", label, value);
+    TextWith(Style{test_id: test_id}, text.data);
+}
+
+void App() {
+    Column(Style{grow: 1, padding: 16, gap: 8}) {
+        *Signal<int> count = use_signal<int>(0);
+        *StringState title = use_string("");
+        *Signal<bool> later = use_signal<bool>(false);
+        *Signal<bool> done = use_signal<bool>(false);
+        *Signal<int> goal = use_signal<int>(0);
+        *Signal<bool> open = use_signal<bool>(false);
+        Number("count", "Count: ", count.get());
+        ButtonWith(Style{test_id: "add"}, "Add") { count.set(count.get() + 1); }
+        TextInput(Input{value: title.get(), placeholder: "Title", style: Style{test_id: "title"}},
+            void(string text) { title.set(text); });
+        String echo;
+        defer String_free(&echo);
+        String_format(&echo, "Title: %s", title.get());
+        TextWith(Style{test_id: "echo"}, echo.data);
+        // A timeout of one second: it fires only when the clock gets there.
+        ButtonWith(Style{test_id: "later"}, "Later") { later.set(true); }
+        if (later.get()) {
+            Scope("Later", Key{}) { use_timeout(1000) { done.set(true); } }
+        }
+        TextWith(Style{test_id: "done"}, done.get() ? "Done" : "Waiting");
+        // A value animated over 500 ms, and a box whose opacity has a 300 ms transition.
+        ButtonWith(Style{test_id: "move"}, "Move") { goal.set(goal.get() == 0 ? 100 : 0); }
+        Number("moved", "Moved: ", use_animated(goal.get(), 500, EaseLinear));
+        Column(Style{test_id: "fade", width: 40, height: 20, background: rgb(79, 70, 229),
+                     opacity: goal.get() == 0 ? 100 : 20, transition_ms: 300}) {}
+        ButtonWith(Style{test_id: "open"}, "Open") { open.set(true); }
+        Modal(open.get(), void() { open.set(false); }) {
+            Column(Style{padding: 24, background: rgb(255, 255, 255)}) { TextWith(Style{test_id: "sheet"}, "A modal"); }
+        }
+        Scroll(Style{test_id: "list", grow: 1}) {
+            for (i in 0..60) { Number("", "Row ", i); }
+        }
+    }
+}
+
+void ui_app_start(int which) { ui_mount(void() { App(); }); }
+void ui_app_stop() {}
