@@ -14,6 +14,13 @@ int main(int argc, string* argv) {
     fs_read_text("src/main.esk", &text);
     if (String_contains(&text, "BROKEN") == 1) {
         println("error: src/main.esk:1:1: broken");
+        if (String_contains(&text, "MORE") == 1) {
+            println("src/main.esk:2:5: warning: format '%s' expects a string, but argument 2 has type 'int' [-Wformat]");
+            println("error: src/main.esk:3:9: undefined variable 'cuont' (did you mean 'count'?)");
+            println("note: src/main.esk:1:6: declared here");
+            println("  and a line of its own");
+            println("Parse failed!");
+        }
         return 1;
     }
     if (out != null) { fs_write_text(out, "export default async () => ({});\n"); }

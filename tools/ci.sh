@@ -83,6 +83,23 @@ sed -i.bak '/BROKEN/d' build/newapp/src/main.esk
 wait_for 2 '"version": 3, "error": ""'
 kill "$(cat build/serve.pid)"
 echo "PASS ui serve"
+# --json: the compiler's text diagnostics converted to JSON lines (a compiler without
+# --diagnostics=json, as the stand-in is), and the result as the last line.
+cp build/newapp/src/main.esk build/main.esk.orig
+printf 'abc BROKEN MORE\n    printf("%%s", 1);\n        cuont;\n' > build/newapp/src/main.esk
+(cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build web --json) > build/json.txt 2> build/json.err && { echo "FAIL --json: a broken build passed"; exit 1; }
+for pattern in '^{"severity":"error","id":"broken","message":"broken","file":"src/main.esk","line":1,"col":1,"end_line":1,"end_col":4,"hints":\[\],"notes":\[\]}$' \
+    '^{"severity":"warning","id":"format-expects-string","message":"format .%s. expects a string, but argument 2 has type .int.","file":"src/main.esk","line":2,"col":5,"end_line":2,"end_col":11,"option":"-Wformat","hints":\[\],"notes":\[\]}$' \
+    '"id":"undefined-variable".*"end_col":14,"hints":\["did you mean .count.?"\],"notes":\[{"message":"declared here","file":"src/main.esk","line":1,"col":6},{"message":"  and a line of its own"}\]}$' \
+    '^{"ok": false, "error": "ui: the compile failed"}$'; do
+    grep -q -- "$pattern" build/json.txt || { cat build/json.txt build/json.err; echo "FAIL --json: no $pattern"; exit 1; }
+done
+grep -q "Parse failed" build/json.txt && { echo "FAIL --json: a summary line"; exit 1; }
+test "$(wc -l < build/json.txt)" -eq 4 || { cat build/json.txt; echo "FAIL --json: lines"; exit 1; }
+cp build/main.esk.orig build/newapp/src/main.esk
+(cd build/newapp && ESKIUC="$PWD/../../tests/fake_eskiuc.sh" ../ui build web --json) > build/json.txt 2> build/json.err || { cat build/json.txt build/json.err; exit 1; }
+grep -q '^{"ok": true, "built": ".*build/ui/web"}$' build/json.txt || { cat build/json.txt; echo "FAIL --json: no result"; exit 1; }
+echo "PASS ui build --json"
 # The icon and the version from ui.toml: the web build writes the icons, the manifest and
 # the links to them; an icon that is not square stops the build and says why.
 printf '[app]\nicon = "icon.png"\nversion = "2.0.0"\n' > build/newapp/ui.toml
