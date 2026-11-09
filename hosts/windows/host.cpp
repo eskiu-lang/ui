@@ -35,6 +35,7 @@ using std::min;
 #include <gdiplus.h>
 #include <yoga/Yoga.h>
 #include "../commit.h"
+#include "../grid.h"
 #include "ui_native.h"
 #include <chrono>
 #include <cmath>
@@ -1543,7 +1544,7 @@ static void freeNode(Node *node) {
     if (gesture.longPress == node) gesture.longPress = nullptr;
     for (size_t i = 0; i < slidingIn.size(); i++) if (slidingIn[i] == node) { slidingIn.erase(slidingIn.begin() + (long)i); break; }
     delete node->emitter;
-    YGNodeFree(node->yoga);
+    ui_grid_free(node->yoga);
     delete node;
 }
 
@@ -1575,6 +1576,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         abort();
     }
     Node *node = found->second;
+    // The grid (hosts/grid.h) keeps the props it reads.
+    if (op == 2 && node->yoga) ui_grid_prop(node->yoga, kind, before);
+    if (op == 9 && node->yoga) ui_grid_tracks(node->yoga, kind, text);
     if (op == 2) {
         // Props: the code in kind, the value in before.
         int v = before;
@@ -1829,14 +1833,14 @@ static void relayout() {
     RECT client;
     GetClientRect(rootWindow, &client);
     double width = client.right / scale, height = client.bottom / scale;
-    YGNodeCalculateLayout(rootYoga, (float)width, (float)height, YGDirectionLTR);
+    ui_grid_calculate(rootYoga, (float)width, (float)height, YGDirectionLTR);
     place(rootYoga);
     for (Node *modal : modals) {
         modal->x = modal->y = 0;
         modal->w = width;
         modal->h = height;
         if (modal->hwnd) SetWindowPos(modal->hwnd, nullptr, 0, 0, client.right, client.bottom, SWP_NOZORDER | SWP_NOACTIVATE);
-        YGNodeCalculateLayout(modal->yoga, (float)width, (float)height, YGDirectionLTR);
+        ui_grid_calculate(modal->yoga, (float)width, (float)height, YGDirectionLTR);
         place(modal->yoga);
     }
     RedrawWindow(mainWindow, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_ERASE);
@@ -2112,7 +2116,7 @@ static void restartCore(const std::string &path) {
     for (Node *node : all) {
         if (node->hwnd) DestroyWindow(node->hwnd);
     }
-    for (Node *node : all) { delete node->emitter; YGNodeFree(node->yoga); delete node; }
+    for (Node *node : all) { delete node->emitter; ui_grid_free(node->yoga); delete node; }
     windowNodes.clear();
     for (HWND hwnd : std::set<HWND>(leavingWindows)) DestroyWindow(hwnd);
     leavingWindows.clear();

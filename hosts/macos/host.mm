@@ -5,6 +5,7 @@
 #import <CoreText/CoreText.h>
 #include <yoga/Yoga.h>
 #include "../commit.h"
+#include "../grid.h"
 #include "ui_native.h"
 #include <chrono>
 #include <cmath>
@@ -945,6 +946,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
     }
     UiHostNode *node = nodes[@(id)];
     if (!node) { if (op == 6) return; fprintf(stderr, "ui host: op %d on unknown node %d\n", op, id); abort(); }
+    // The grid (hosts/grid.h) keeps the props it reads.
+    if (op == 2 && node.yoga) ui_grid_prop(node.yoga, kind, before);
+    if (op == 9 && node.yoga) ui_grid_tracks(node.yoga, kind, text);
     if (op == 2) {
         // Props: the code in kind, the value in before.
         if (kind == 1) YGNodeStyleSetGap(node.yoga, YGGutterAll, before);
@@ -1096,7 +1100,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             [NSNotificationCenter.defaultCenter removeObserver:events name:NSViewBoundsDidChangeNotification
                                                         object:((NSScrollView *)node.view).contentView];
         }
-        YGNodeFree(node.yoga);
+        ui_grid_free(node.yoga);
         [nodes removeObjectForKey:@(id)];
     } else if (op == 7 || op == 8) {
         node.listening = op == 7;
@@ -1206,7 +1210,7 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
 // the box its children take.
 static void layoutSheet(UiHostNode *modal) {
     NSSize window = contentView.bounds.size;
-    YGNodeCalculateLayout(modal.yoga, window.width, window.height, YGDirectionLTR);
+    ui_grid_calculate(modal.yoga, window.width, window.height, YGDirectionLTR);
     CGFloat right = 0, bottom = 0;
     for (size_t i = 0; i < YGNodeGetChildCount(modal.yoga); ++i) {
         YGNodeRef child = YGNodeGetChild(modal.yoga, i);
@@ -1215,20 +1219,20 @@ static void layoutSheet(UiHostNode *modal) {
     }
     float pad = YGNodeLayoutGetPadding(modal.yoga, YGEdgeRight);
     NSSize size = NSMakeSize(std::max<CGFloat>(1, std::ceil(right + pad)), std::max<CGFloat>(1, std::ceil(bottom + pad)));
-    YGNodeCalculateLayout(modal.yoga, size.width, size.height, YGDirectionLTR);
+    ui_grid_calculate(modal.yoga, size.width, size.height, YGDirectionLTR);
     if (!NSEqualSizes(modal.sheet.contentView.bounds.size, size)) [modal.sheet setContentSize:size];
     modal.view.frame = NSMakeRect(0, 0, size.width, size.height);
     place(modal.yoga);
 }
 
 static void relayout(void) {
-    YGNodeCalculateLayout(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
+    ui_grid_calculate(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
     place(rootYoga);
     for (UiHostNode *modal in modals) {
         if (modal.sheet) { layoutSheet(modal); continue; }
         NSRect screen = contentView.bounds;
         modal.view.frame = screen;
-        YGNodeCalculateLayout(modal.yoga, screen.size.width, screen.size.height, YGDirectionLTR);
+        ui_grid_calculate(modal.yoga, screen.size.width, screen.size.height, YGDirectionLTR);
         place(modal.yoga);
     }
 }
@@ -1310,7 +1314,7 @@ static void restartCore(NSString *path) {
     for (UiHostNode *modal in modals.copy) closeModal(modal);
     for (UiHostNode *node in nodes.allValues) {
         [node.view removeFromSuperview];
-        YGNodeFree(node.yoga);
+        ui_grid_free(node.yoga);
     }
     [nodes removeAllObjects];
     [viewNodes removeAllObjects];

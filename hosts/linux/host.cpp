@@ -9,6 +9,7 @@
 #include <gtk/gtk.h>
 #include <yoga/Yoga.h>
 #include "../commit.h"
+#include "../grid.h"
 #include "ui_native.h"
 #include <algorithm>
 #include <cmath>
@@ -821,13 +822,13 @@ static void reportWindows(void) {
 static int stageWidth = 900, stageHeight = 700;
 
 static void relayout(void) {
-    YGNodeCalculateLayout(root->yoga, stageWidth, stageHeight, YGDirectionLTR);
+    ui_grid_calculate(root->yoga, stageWidth, stageHeight, YGDirectionLTR);
     root->w = stageWidth; root->h = stageHeight;
     place(root->yoga);
     for (Node *modal : modals) {
         modal->x = modal->y = 0;
         modal->w = stageWidth; modal->h = stageHeight;
-        YGNodeCalculateLayout(modal->yoga, stageWidth, stageHeight, YGDirectionLTR);
+        ui_grid_calculate(modal->yoga, stageWidth, stageHeight, YGDirectionLTR);
         place(modal->yoga);
         if (modal->box) gtk_widget_queue_allocate(modal->box);
     }
@@ -1301,6 +1302,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
     }
     Node *node = found->second;
     if (!node->box && op != 6) return;
+    // The grid (hosts/grid.h) keeps the props it reads.
+    if (op == 2 && node->yoga) ui_grid_prop(node->yoga, kind, before);
+    if (op == 9 && node->yoga) ui_grid_tracks(node->yoga, kind, text);
     if (op == 2) applyProp(node, kind, before);
     else if (op == 9) {
         std::string value = text ? text : "";
@@ -1350,7 +1354,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         if (node->yoga) {
             YGNodeRef parentYoga = YGNodeGetParent(node->yoga);
             if (parentYoga) YGNodeRemoveChild(parentYoga, node->yoga);
-            YGNodeFree(node->yoga);
+            ui_grid_free(node->yoga);
             node->yoga = nullptr;
         }
         if (node->kind == 12) closeModal(node);
@@ -1830,7 +1834,7 @@ static void restartCore(const std::string &path) {
     modals.clear();
     for (auto &entry : nodes) {
         Node *node = entry.second;
-        if (node->yoga) YGNodeFree(node->yoga);
+        if (node->yoga) ui_grid_free(node->yoga);
         node->yoga = nullptr;
         node->removed = true;
         if (node->box && gtk_widget_get_parent(node->box)) gtk_widget_unparent(node->box);

@@ -2,6 +2,7 @@
 #include <cstring>
 #include <yoga/Yoga.h>
 #include "../commit.h"
+#include "../grid.h"
 #include "ui_native.h"
 #include <string>
 #include <algorithm>
@@ -130,6 +131,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         generations[id] = generation;
     } else if (nodes.count(id)) {
         YGNodeRef node = nodes.at(id);
+        // The grid (hosts/grid.h) keeps the props it reads.
+        if (op == 2) ui_grid_prop(node, kind, before);
+        if (op == 9) ui_grid_tracks(node, kind, text);
         // Props: the code in kind (1 gap, 2 padding), the value in before.
         if (op == 2) {
             if (kind == 1) YGNodeStyleSetGap(node, YGGutterAll, before);
@@ -176,7 +180,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             YGNodeInsertChild(owner, node, index);
         } else if (op == 6) {
             if (YGNodeGetParent(node)) YGNodeRemoveChild(YGNodeGetParent(node), node);
-            YGNodeFree(node); nodes.erase(id); scrolls.erase(id); generations.erase(id); layouts.erase(id);
+            ui_grid_free(node); nodes.erase(id); scrolls.erase(id); generations.erase(id); layouts.erase(id);
             modals.erase(std::remove(modals.begin(), modals.end(), id), modals.end());
         }
     }
@@ -201,7 +205,7 @@ static void ui_host_command(int request, int command, int count, const char **st
 static void layoutModals() {
     float width = env->CallFloatMethod(activity, screenWidthMethod), height = env->CallFloatMethod(activity, screenHeightMethod);
     checked();
-    for (int id : modals) { YGNodeCalculateLayout(nodes.at(id), width, height, YGDirectionLTR); place(nodes.at(id)); }
+    for (int id : modals) { ui_grid_calculate(nodes.at(id), width, height, YGDirectionLTR); place(nodes.at(id)); }
 }
 static void ui_host_named(int id, const char *name, const char *value) {
     jstring n = env->NewStringUTF(name), v = env->NewStringUTF(value);
@@ -214,7 +218,7 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
     ui_host_ready();
 }
 extern "C" void ui_host_ready() {
-    YGNodeCalculateLayout(root, env->CallFloatMethod(activity, widthMethod), env->CallFloatMethod(activity, heightMethod), YGDirectionLTR);
+    ui_grid_calculate(root, env->CallFloatMethod(activity, widthMethod), env->CallFloatMethod(activity, heightMethod), YGDirectionLTR);
     checked(); place(root);
     layoutModals();
     env->CallVoidMethod(activity, committedMethod); checked();
@@ -373,7 +377,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeWindow(JNIE
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeTick(JNIEnv *current, jobject) { env = current; ui_tick(); }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeLayout(JNIEnv *current, jobject, jfloat width, jfloat height) {
-    env = current; YGNodeCalculateLayout(root, width, height, YGDirectionLTR); place(root); layoutModals();
+    env = current; ui_grid_calculate(root, width, height, YGDirectionLTR); place(root); layoutModals();
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeRefresh(JNIEnv *current, jobject, jint id, jint generation) {
     env = current; ui_dispatch_refresh(id, generation);
@@ -391,7 +395,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeLink(JNIEnv
     env->ReleaseStringUTFChars(url, chars);
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeStop(JNIEnv *current, jobject) {
-    env = current; ui_stop(); YGNodeFree(root); env->DeleteGlobalRef(activity); activity = nullptr;
+    env = current; ui_stop(); ui_grid_free(root); env->DeleteGlobalRef(activity); activity = nullptr;
 }
 
 #if defined(UI_RELOAD) && defined(UI_TEST)
@@ -416,7 +420,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeKeepState(J
 extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_UiActivity_nativeReload(JNIEnv *current, jobject, jstring path) {
 #ifdef UI_RELOAD
     env = current;
-    for (auto &entry : nodes) YGNodeFree(entry.second);
+    for (auto &entry : nodes) ui_grid_free(entry.second);
     nodes.clear(); scrolls.clear(); modals.clear(); generations.clear(); layouts.clear();
     const char *chars = env->GetStringUTFChars(path, nullptr);
     bool loaded = loadCore(chars);

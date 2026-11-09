@@ -4,6 +4,7 @@
 #import <CoreText/CoreText.h>
 #include <yoga/Yoga.h>
 #include "../commit.h"
+#include "../grid.h"
 #include "ui_native.h"
 #include <chrono>
 #include <cmath>
@@ -712,6 +713,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
     }
     UiHostNode *node = nodes[@(id)];
     if (!node) { if (op == 6) return; fprintf(stderr, "ui host: op %d on unknown node %d\n", op, id); abort(); }
+    // The grid (hosts/grid.h) keeps the props it reads.
+    if (op == 2 && node.yoga) ui_grid_prop(node.yoga, kind, before);
+    if (op == 9 && node.yoga) ui_grid_tracks(node.yoga, kind, text);
     if (op == 2) {
         // Props: the code in kind (1 gap, 2 padding, 3 focused), the value in before.
         if (kind == 1) YGNodeStyleSetGap(node.yoga, YGGutterAll, before);
@@ -898,7 +902,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         YGNodeRef parentYoga = YGNodeGetParent(node.yoga);
         if (parentYoga) YGNodeRemoveChild(parentYoga, node.yoga);
         if (!removeScreen(node) && !insideLeaving(node.view)) [node.view removeFromSuperview];
-        YGNodeFree(node.yoga);
+        ui_grid_free(node.yoga);
         [modals removeObject:node];
         [nodes removeObjectForKey:@(id)];
     } else if (op == 7 || op == 8) {
@@ -1059,12 +1063,12 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
 }
 
 static void relayout(void) {
-    YGNodeCalculateLayout(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
+    ui_grid_calculate(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
     place(rootYoga, rootView);
     for (UiHostNode *modal in modals) {
         CGRect screen = rootView.superview.bounds;
         modal.view.frame = screen;
-        YGNodeCalculateLayout(modal.yoga, screen.size.width, screen.size.height, YGDirectionLTR);
+        ui_grid_calculate(modal.yoga, screen.size.width, screen.size.height, YGDirectionLTR);
         place(modal.yoga, modal.view);
     }
 }
@@ -1112,7 +1116,7 @@ static void runTodoTest(void) {
                 printf("iOS todo: %s label=%d added=%d image=%d\n", pass ? "PASS" : "FAIL", ok, added, image);
                 fflush(stdout);
                 ui_stop();
-                YGNodeFree(rootYoga);
+                ui_grid_free(rootYoga);
                 exit(pass ? 0 : 1);
             });
         });
@@ -1448,7 +1452,7 @@ static void restartCore(NSString *path) {
     swipeTop = swipeBelow = nil;
     for (UiHostNode *node in nodes.allValues) {
         [node.view removeFromSuperview];
-        YGNodeFree(node.yoga);
+        ui_grid_free(node.yoga);
     }
     [nodes removeAllObjects];
     [modals removeAllObjects];
@@ -1667,7 +1671,7 @@ static std::string driverCarry(const std::string &d) {
                    frameTimes.empty() ? 0 : frameTimes[frameTimes.size() * 95 / 100]);
             fflush(stdout);
             ui_stop();
-            if (!found) { YGNodeFree(rootYoga); exit(1); }
+            if (!found) { ui_grid_free(rootYoga); exit(1); }
             runTodoTest();
             };
             for (int i = 0; i < 100; ++i) [button sendActionsForControlEvents:UIControlEventTouchUpInside];

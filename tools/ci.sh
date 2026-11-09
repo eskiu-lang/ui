@@ -7,6 +7,11 @@ mkdir -p build
 cc -c tests/heap.c -o build/heap.o
 eskiuc tests/model/main.esk -O2 --link-arg build/heap.o -o build/model
 build/model
+# The native hosts' grid (hosts/grid.h) over Yoga, the source the ui tool fetches.
+YOGA="$HOME/.eskiu/cache/yoga-3.2.1"
+[ -d "$YOGA/yoga" ] || git clone -q --depth 1 --branch v3.2.1 https://github.com/react/yoga.git "$YOGA"
+c++ -std=c++20 -O1 -I "$YOGA" tests/grid/grid.cpp $(find "$YOGA/yoga" -name '*.cpp') -o build/grid
+build/grid
 eskiuc tests/ed25519.esk -o build/ed25519
 build/ed25519
 eskiuc tests/updates.esk -o build/updates
