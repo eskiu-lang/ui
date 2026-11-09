@@ -37,6 +37,12 @@ refused() {
     done
     echo "PASS $HOST: $request (refused)"
 }
+# Android's status bar (clock, signal, battery) moves on its own: its demo mode holds it.
+if [ "$HOST" = android ]; then
+    adb shell settings put global sysui_demo_allowed 1 > /dev/null 2>&1 || true
+    adb shell am broadcast -a com.android.systemui.demo -e command enter > /dev/null 2>&1 || true
+    adb shell am broadcast -a com.android.systemui.demo -e command clock -e hhmm 0941 > /dev/null 2>&1 || true
+fi
 # Starts ui serve and the app afresh, and takes the clock.
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
 "$UI" agent "$HOST" state > "$OUT/start.txt" 2>&1 || { cat "$OUT/start.txt"; fail "attach"; }
@@ -83,4 +89,5 @@ op logs '"core":\['
 op perf '"frames":[1-9]' '"memory_bytes":[1-9]'
 op "clock real" '"clock":"real"'
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
+[ "$HOST" = android ] && adb shell am broadcast -a com.android.systemui.demo -e command exit > /dev/null 2>&1
 echo "PASS $HOST: every op"
