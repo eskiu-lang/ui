@@ -23,6 +23,12 @@ function fontFamily(file) {
   return `${family}, system-ui, sans-serif`;
 }
 
+// The font files given so far, each with the family it was loaded as (for a prerendered page's
+// @font-face rules).
+export function fontFaces() {
+  return [...fontFamilies].map(([file, family]) => ({file, family}));
+}
+
 // Strings into the wasm heap for a call, freed after it. ccall's 'string' copies them onto the
 // wasm stack, 64 KiB, which a fetch's body or a long paste overflows.
 export function withStrings(app, strings, call) {
@@ -88,12 +94,31 @@ function cssColor(value) {
   return `rgba(${v >>> 24}, ${(v >>> 16) & 255}, ${(v >>> 8) & 255}, ${(v & 255) / 255})`;
 }
 
+// A commit's fingerprint: FNV-1a over its mutations, as hex. The prerendered page
+// (hosts/web/prerender.mjs) carries its first commit's, and the host adopts the page's nodes
+// only when its own first commit has the same.
+export function fingerprint(mutations) {
+  let hash = 0x811c9dc5;
+  for (const m of mutations) {
+    const line = `${m.op},${m.id},${m.generation},${m.kind},${m.parent},${m.before},${m.name ?? ''},${m.text ?? ''}\n`;
+    for (let i = 0; i < line.length; i++) hash = Math.imul(hash ^ line.charCodeAt(i), 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
 // A deliberately small synchronous renderer shared by the demos and browser tests.
 // dispatch(id, generation, kind, text, value, extra), with the kinds of uiDispatch.
 // `views` maps a NativeView type to its factory: create(emit) returns {element, set(name,
 // value), dispose()} (set and dispose optional); emit(name, payload) sends the view's events.
+// A root holding a prerendered first frame (data-ui-prerender, its fingerprint) is adopted by
+// the first commit when that commit's fingerprint is the same: each node takes the element
+// with its id instead of a new one. Otherwise the prerendered content is dropped first.
+// `host.prerender` says which ('adopted', 'replaced', or null with none), and so does the
+// root's data-ui-prerender afterwards.
 export function createHost(root, dispatch, views = {}) {
   const nodes = new Map();
+  // The prerendered elements by node id while the first commit adopts them.
+  let adopting = null;
   // A native view's instance by node id.
   const natives = new Map();
   // The nodes whose frame the app listens to (ui_on_layout), with the frame last reported.
@@ -285,7 +310,12 @@ export function createHost(root, dispatch, views = {}) {
     throw new Error(`unknown parent ${id}`);
   }
   function create(m) {
-    const node = document.createElement(TAGS[m.kind] ?? 'div');
+    let node = adopting?.get(m.id);
+    if (node && node.tagName === (TAGS[m.kind] ?? 'div').toUpperCase() && node.dataset.kind === String(m.kind)) {
+      // What the renderer added inside an element, not a node of its own (a refresh
+      // indicator), is made again by the props that follow.
+      for (const child of [...node.children]) if (!child.dataset.uiId) child.remove();
+    } else node = document.createElement(TAGS[m.kind] ?? 'div');
     node.dataset.uiId = m.id;
     node.dataset.generation = m.generation;
     node.dataset.kind = m.kind;
@@ -540,12 +570,30 @@ export function createHost(root, dispatch, views = {}) {
     live.textContent = '';
     setTimeout(() => { live.textContent = text; }, 50);
   }
-  return {
+  // The first commit: adopt the prerendered nodes when it is the commit they were made from,
+  // else drop them.
+  function adopt() {
+    const expected = root.dataset?.uiPrerender;
+    if (!expected || expected === 'adopted' || expected === 'replaced') return;
+    if (fingerprint(pending) === expected) {
+      adopting = new Map();
+      for (const element of root.querySelectorAll('[data-ui-id]')) adopting.set(Number(element.dataset.uiId), element);
+      self.prerender = 'adopted';
+    } else {
+      root.replaceChildren();
+      self.prerender = 'replaced';
+    }
+    root.dataset.uiPrerender = self.prerender;
+    delete root.dataset.uiRoute;
+  }
+  const self = {
     nodes,
     command,
     route,
+    prerender: null,
     apply(mutation) { pending.push(mutation); },
     commit() {
+      if (rootId === undefined && nodes.size === 0) adopt();
       for (const m of pending) {
         if (m.op === 1) {
           if (nodes.has(m.id)) throw new Error(`duplicate node ${m.id}`);
@@ -558,16 +606,19 @@ export function createHost(root, dispatch, views = {}) {
         if (!node) throw new Error(`unknown node ${m.id}`);
         if (m.op === 2) prop(node, m.kind, m.before);
         else if (m.op === 3 && kindOf(node) === 5) { if (node.value !== m.text) node.value = m.text; }
-        else if (m.op === 3) node.textContent = m.text;
+        else if (m.op === 3) { if (node.textContent !== m.text) node.textContent = m.text; }
         else if (m.op === 9 && m.kind === 4) mountNative(node, m.text);
         else if (m.op === 11) natives.get(m.id)?.set?.(m.name, m.text);
         else if (m.op === 9 && m.kind === 5) node.style.fontFamily = m.text ? fontFamily(m.text) : '';
         else if (m.op === 9) {
           // String props: 1 label (an image's alt text), 2 placeholder, 3 image source.
           const name = m.kind === 1 ? (kindOf(node) === 7 ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';
-          if (m.text) node.setAttribute(name, m.text); else node.removeAttribute(name);
+          if (!m.text) node.removeAttribute(name);
+          else if (node.getAttribute?.(name) !== m.text) node.setAttribute(name, m.text);
         } else if (m.op === 4 || m.op === 5) {
-          parentNode(m.parent).insertBefore(node, m.before ? nodes.get(m.before) : null);
+          const parent = parentNode(m.parent), before = m.before ? nodes.get(m.before) : null;
+          // An adopted node is in its place already: moving it would reset its state.
+          if (node.parentNode !== parent || node.nextSibling !== before) parent.insertBefore(node, before);
         } else if (m.op === 6) {
           natives.get(m.id)?.dispose?.(); natives.delete(m.id); layouts.delete(m.id);
           node.remove(); nodes.delete(m.id);
@@ -582,10 +633,12 @@ export function createHost(root, dispatch, views = {}) {
         else throw new Error(`unknown operation ${m.op}`);
       }
       pending.length = 0;
+      adopting = null;
       if (layouts.size) reportLayouts();
       if (!splashHeld) hideSplash();
     }
   };
+  return self;
 }
 
 // The page's splash (ui.toml [splash], #ui-splash) until the app's first commit, or until
