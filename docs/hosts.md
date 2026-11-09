@@ -138,6 +138,26 @@ has no console, takes the document's title, reloads on F5 and Ctrl+R and closes 
 and a failure to start WebView2 says so in a message box. A release build turns the
 developer tools off. Running it needs the WebView2 Runtime, which Windows 10 and 11 carry.
 
+## The driver
+
+A dev build (`ui serve`) has the driver `ui agent` talks to ([agents](agents.md)). The core
+answers what it can; each host carries the rest: the platform's input (a click, a field's
+edit, a scroll), each view's frame, its output and memory, and its animations on the
+driver's clock.
+
+| | Web | iOS | Android |
+|---|---|---|---|
+| channel | the dev server: `/__ui/agent`, `hosts/web/driver.mjs` | TCP on 127.0.0.1:8766 in the app, `hosts/driver.h` | the abstract socket `eskiu-ui-agent`, `adb forward`, `hosts/driver.h` |
+| tap, type, scroll | `click()`, `input` event, `scrollTop` | `sendActionsForControlEvents`, `setContentOffset` | `performClick`, `setText`, `scrollBy` |
+| animations on the clock | `document.getAnimations()` paused and seeked; a field's caret hidden | the window's layer at `speed` 0, `timeOffset` the driver's time | the animator duration scale at 0; a field's cursor hidden |
+| screenshot (by `ui agent`) | the headless browser's DevTools | `simctl io screenshot` | `adb exec-out screencap` |
+| memory (`perf`) | the wasm heap | the process's footprint | the native and Java heaps |
+
+The host compiles its side only with `UI_TEST` (the ui tool passes it for a dev build), and
+the core's only with the `UI_TEST` the ui tool defines in the entry file: a release has
+neither. The Android activity keeps its small `driver*` methods in every build; nothing calls
+them without the native side.
+
 ## Writing a host
 
 A host needs to:
@@ -153,3 +173,5 @@ A host needs to:
    ([protocol](protocol.md)), on the UI thread.
 4. Lay the tree out with Yoga (or the platform's flexbox) using the props.
 5. Pass the conformance scene ([testing](testing.md)).
+6. In a dev build, carry the driver's directives ([agents](agents.md#the-protocol)) and pass
+   `tests/agent/check.sh`.

@@ -145,5 +145,8 @@ each tick comes back as `ui_dispatch_timer(token)`. For `use_frame` it asks for 
 clock: `ui_host_frames(1)` starts it and `ui_host_frames(0)` stops it, and each frame comes
 back as `ui_dispatch_frame(time)`.
 
+In a dev build the hosts also carry the driver's requests (`ui agent`): see
+[agents](agents.md#the-protocol).
+
 A refused edit or toggle is answered: the core renders the input's scope again and, if the
 app kept the old value, sends it back, so what the view shows stays what the app rendered.

@@ -19,6 +19,7 @@ python3 tools/check.py # everything below, with an eskiu checkout
 
 `tools/ci.sh` runs the model tests, `tests/tags.esk` (hooks are matched by type),
 `tests/constants.esk` (the app's constants as the ui tool compiles them in),
+the compiled-out check (a release object has no symbol of the driver, a `UI_TEST` one has them),
 `tests/rejections.esk` (each misuse stops with its message: a render loop, a changed hook,
 a duplicate key, a memo cycle, the root's fallback throwing, a misplaced RefreshControl, the
 scope path in a message), the headless counter, and builds the
@@ -34,7 +35,11 @@ scope path in a message), the headless counter, and builds the
   must be reported) and built by the self-hosted compiler;
 - runs `tests/benchmark.esk` (10,000 rows mounted, reversed, updated and unmounted).
 
-A new element or behavior gets a model test in the file for its area.
+A new element or behavior gets a model test in the file for its area. The model tests are
+built with `UI_TEST`, so they include the driver; `driver.esk` checks test ids (kept in the
+tree, never sent to the host, found before the accessible name), the ops the core answers and
+the directives it gives the host, and the virtual clock (timers fire only when it moves,
+`clock settle` runs to idle, `use_frame` ticks on it).
 
 ## The hosts
 
@@ -45,6 +50,7 @@ A new element or behavior gets a model test in the file for its area.
 | `python3 tools/check_android.py` | a booted arm64 device or emulator (`ANDROID_SERIAL`), SDK 35, NDK 28.2 |
 | `python3 tools/check_native.py` | the native example on the simulator and the Android device: module events, a view's props and events |
 | `python3 tools/check_desktop.py` | a WKWebView window running the web build (needs an awake, unlocked display) |
+| `tests/agent/check.sh web\|ios\|android` | every `ui agent` op on `tests/agent`, through `ui serve` and the host's driver channel: targets, input, layout, state, logs, perf, screenshots, and the clock (two screenshots a second apart are the same, `clock settle` finishes the animations); web needs emcc and Chrome (`UI_CHROME`) |
 
 They drive `tests/harness/app.esk`, which holds every scene a host can be asked for: the
 counter (0), the TODO list (1), a probe (2), the conformance scene (3), the tasks app (4)
@@ -68,6 +74,13 @@ python3 tools/conformance.py ios web   # only these
 
 It compares what each host reports with the frames the scene must have, within one point.
 iOS, Android and the web pass.
+
+## Agents
+
+`ui agent` drives a running dev build with the same ops on every host, and a test made of
+them needs no sleeps: what an op causes has rendered when it answers, and time moves only
+with `clock`. See [Agents](agents.md). `tests/agent/check.sh` passes on the web (headless
+Chrome), the iPhone simulator (iOS 27) and the Android emulator (API 35).
 
 ## Screenshots
 

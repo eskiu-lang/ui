@@ -90,6 +90,12 @@ A component is a function; the elements it calls (`Column`, `Text`, `ButtonWith`
 view, and the block passed to a container is its content. See [State](state.md) for
 signals and [Components](components.md) for what there is.
 
+## Driving the app
+
+`ui agent web tree "tap add" "screenshot out.png"` drives the dev build `ui serve` runs (and
+starts it), on the web, the iOS simulator or Android: the elements, their frames, input, the
+app's state and logs, and a clock it owns, so a test has no sleeps. See [Agents](agents.md).
+
 ## Xcode and Android Studio
 
 ```bash

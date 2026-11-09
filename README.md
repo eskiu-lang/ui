@@ -79,7 +79,8 @@ ui release        # for the App Store and Google Play
 ```
 
 [Getting started](docs/getting-started.md) has what each platform needs and a project's
-layout; [Releasing](docs/releasing.md), what a release needs and makes.
+layout; [Releasing](docs/releasing.md), what a release needs and makes. `ui agent web tree
+"tap add"` drives the running app, for agents and tests: [Agents](docs/agents.md).
 
 ## Documentation
 
