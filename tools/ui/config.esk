@@ -25,6 +25,7 @@
 //   url = "https://cdn.example.com/tasks/"   where `ui publish`'s bundle is served
 //   public_key = "64 hex digits"         the key bundles are checked with (default: this machine's)
 //   include = ["screens", "logo.png"]    what of assets/ a bundle may replace (default: all)
+//   dev = true                           updates in `ui serve` builds too (default: left out)
 //
 //   [ios]
 //   frameworks = ["CoreLocation"]        system frameworks to link

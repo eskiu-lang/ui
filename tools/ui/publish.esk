@@ -149,10 +149,12 @@ string updates_base(Project* p) {
 }
 
 // The macros an app with [updates] is built with (src/apis/updates.esk), into the entry's
-// text. Builds under `ui serve` leave updates out, so the assets being edited are what shows.
+// text. Builds under `ui serve` leave updates out, so the assets being edited are what shows,
+// unless [updates] dev = true (to try the updates themselves).
 void updates_entry(Project* p, String* text) {
     string url = updates_url(p);
-    if (url == null || ui_test_build()) { return; }
+    string dev = p.config.string("updates.dev");
+    if (url == null || (ui_test_build() && (dev == null || strcmp(dev, "true") != 0))) { return; }
     String_append(text, "#define UI_UPDATES 1\n");
     String_appendf(text, "#define UI_UPDATE_URL %s\n", esk_literal(url));
     String_appendf(text, "#define UI_UPDATE_KEY %s\n", esk_literal(updates_public_key(p)));
