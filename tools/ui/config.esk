@@ -19,6 +19,12 @@
 //
 //   [web]
 //   base = "/tasks/"                     where the page is served from (default "/")
+//   prerender = false                    no prerendered first frame in index.html
+//
+//   [updates]
+//   url = "https://cdn.example.com/tasks/"   where `ui publish`'s bundle is served
+//   public_key = "64 hex digits"         the key bundles are checked with (default: this machine's)
+//   include = ["screens", "logo.png"]    what of assets/ a bundle may replace (default: all)
 //
 //   [ios]
 //   frameworks = ["CoreLocation"]        system frameworks to link
@@ -41,8 +47,8 @@
 //   [android.meta_data]
 //   "com.google.ar.core" = "optional"    <meta-data> in the manifest's <application>
 //
-// The values are strings and arrays of strings; a table's keys may also take an inline table
-// of them. The reader knows this subset of TOML and stops at anything else with its line.
+// The values are strings, true and false (kept as "true" and "false") and arrays of strings; a
+// table's keys may also take an inline table of them. The reader knows this subset of TOML and stops at anything else with its line.
 
 // One value: its full key ("ios.frameworks", "ios.spm.FirebaseAuth.url") and its strings.
 struct ConfigEntry { String key; List<String> values; }
@@ -112,6 +118,15 @@ void ConfigReader_value(ConfigReader* self, Config* config, string key) {
         String_from(&entry.key, key);
         String value;
         self.string(&value);
+        entry.values.push(value);
+        config.entries.push(entry);
+    } else if (strncmp(&self.text[self.at], "true", 4) == 0 || strncmp(&self.text[self.at], "false", 5) == 0) {
+        bool yes = c == 't';
+        self.at += yes ? 4 : 5;
+        ConfigEntry entry;
+        String_from(&entry.key, key);
+        String value;
+        String_from(&value, yes ? "true" : "false");
         entry.values.push(value);
         config.entries.push(entry);
     } else if (c == '[') {

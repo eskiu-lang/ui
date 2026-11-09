@@ -67,7 +67,35 @@ string build_web(Project* p) {
           "  (await import('./driver.mjs')).startDriver({app, host});\n" : "");
     fs_write_text(join(out, "index.html"), page.data);
     p.copy_assets(out);
+    web_prerender(p, out);
     return out;
+}
+
+// The page's first frame, rendered at build time by node (hosts/web/prerender.mjs) into
+// index.html, so the page shows it before the module loads. Left out with [web] prerender =
+// false, or with no node (EMSDK_NODE, else on the PATH): the page is then empty until then.
+void web_prerender(Project* p, string out) {
+    string setting = p.config.string("web.prerender");
+    if (setting != null && strcmp(setting, "false") == 0) { return; }
+    string node = env_get("EMSDK_NODE");
+    if (node == null || node[0] == 0 || fs_exists(node) != 1) { node = tool_path("node"); }
+    if (node[0] != '/' && strchr(node, '\\') == null) {
+        println_err("ui: no node found (EMSDK_NODE or on the PATH): the page has no prerendered first frame");
+        return;
+    }
+    string script = join(p.ui.data, "hosts/web/prerender.mjs");
+    Cmd cmd;
+    defer cmd.free();
+    cmd.add(node); cmd.add(script); cmd.add(out);
+    String said;
+    defer String_free(&said);
+    if (!cmd.output(&said)) {
+        String message;
+        String_appendf(&message, "ui: the first frame could not be prerendered, so the page starts empty; to see why: %s %s %s",
+            node, script, out);
+        println_err(message.data);
+        String_free(&message);
+    }
 }
 
 // native.mjs: imports each native/web/*.mjs and calls its setup(ui), where ui is
