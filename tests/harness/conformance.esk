@@ -9,9 +9,17 @@ String conformance_log;
 // The size the layout handler last logged.
 Frame conformance_frame;
 
+// Under `ui test` (tests/conformance): the log is shown in a Text with the test_id "log",
+// and the scene fetches nothing (the hosts' own runs serve the fetch).
+bool conformance_driven;
+
+// While the scene is mounted under `ui test`, a signal each entry bumps, so the log shows.
+*Signal<int> conformance_revision;
+
 void conformance_reset() {
     String_free(&conformance_log);
     conformance_frame = Frame{};
+    conformance_revision = null;
     ui_test_log = null;
 }
 
@@ -19,6 +27,7 @@ void conformance_note(string entry) {
     if (conformance_log.len > 0) { String_append(&conformance_log, ","); }
     String_append(&conformance_log, entry);
     ui_test_log = conformance_log.data;
+    if (conformance_revision != null) { conformance_revision.set(conformance_revision.get() + 1); }
 }
 
 void Conformance() {
@@ -34,6 +43,7 @@ void Conformance() {
             conformance_note(entry.data);
             // The network: tools/conformance.py serves "pong" on the host's port 8899, which the
             // Android emulator reaches as 10.0.2.2.
+            if (conformance_driven) { return; }
             string ping = ui_platform() == PlatformAndroid ? "http://10.0.2.2:8899/ping" : "http://127.0.0.1:8899/ping";
             ui_fetch(FetchRequest{url: ping}, void(FetchResult r) {
                 String answer;
@@ -130,6 +140,13 @@ void Conformance() {
                 conformance_note(entry.data);
             });
             Row(Style{width: 100, aspect_ratio: 2.0, label: "Ratio"}) {}
+        }
+        // Last, so the frames above are those of the hosts' own runs.
+        if (conformance_driven) {
+            conformance_revision = use_signal<int>(0);
+            // Read, so each entry renders the scene again.
+            if (conformance_revision.get() < 0) { return; }
+            TextWith(Style{test_id: "log"}, conformance_log.data == null ? "" : conformance_log.data);
         }
     }
 }

@@ -1,0 +1,11 @@
+// The conformance scene (tests/harness/conformance.esk) as an app of its own, which
+// `ui test` drives on each host with tests/ui/*.uitest.
+import "../../harness/conformance.esk";
+
+void ui_app_start(int which) {
+    conformance_reset();
+    conformance_driven = true;
+    ui_mount() { Conformance(); }
+}
+
+void ui_app_stop() { conformance_reset(); }

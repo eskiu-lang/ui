@@ -1,0 +1,22 @@
+# The handlers on every host: the layout report and a timer first, then taps, typing, a
+# press and a toggle, each answered once it rendered.
+clock +1
+expect log text "layout:100x50,timer,store:saved"
+tap Tap
+tap Tap
+type Field abc
+expect Field text abc
+tap Press
+tap Toggle
+expect Toggle prop on 1
+expect log text "layout:100x50,timer,store:saved,tap,tap,text:abc,press,switch:1"
+# A modal: opened, its 200 by 100 sheet laid out, closed from inside.
+tap "Open sheet"
+expect state modals 1
+expect Sheet frame _ _ 200 100
+tap Close
+expect state modals 0
+expect Sheet missing
+expect log text "layout:100x50,timer,store:saved,tap,tap,text:abc,press,switch:1,close"
+back
+expect state modals 0

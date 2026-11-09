@@ -1,0 +1,7 @@
+# A feed of 1000 rows of 40 points, of which only those near the viewport exist.
+expect "Row 0" exists
+expect "Row 50" missing
+scroll Feed 2000
+# Row 50 at the top of the feed's viewport, the first rows gone.
+expect "Row 50" frame 0 0 300 40 in Feed
+expect "Row 0" missing

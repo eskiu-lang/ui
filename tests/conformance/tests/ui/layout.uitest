@@ -1,0 +1,31 @@
+# The conformance scene's frames, the same on every host: points from the scene's top left
+# ("in Suite"), within one point. "_" is a size the platform measures (text, controls).
+expect Suite frame _ _ 320 _
+expect Boxes frame 10 10 300 50 in Suite
+expect Fixed frame 10 10 100 50 in Suite
+expect Grow frame 120 10 190 50 in Suite
+expect List frame 10 70 300 100 in Suite
+expect "Item 0" frame 10 70 300 40 in Suite
+expect "Item 1" frame 10 118 300 40 in Suite
+expect "Item 2" frame 10 166 300 40 in Suite
+expect Logo frame 10 180 48 48 in Suite
+expect Field frame 10 238 300 _ in Suite
+expect Tap frame 10 _ 300 _ in Suite
+expect Press frame 10 _ 100 40 in Suite
+expect Volume frame 10 _ 300 _ in Suite
+expect Busy frame 10 _ 24 24 in Suite
+expect Painted frame 10 _ 60 30 in Suite
+expect Title frame 10 _ _ _ in Suite
+expect Feed frame 10 _ 300 120 in Suite
+expect Stage frame 10 _ 300 60 in Suite
+# Out of the flow: pinned to the stage's top right; a ratio gives the height.
+expect Pinned frame 250 5 40 30 in Stage
+expect Ratio frame 0 0 100 50 in Stage
+# What the styled elements ask the host to draw.
+expect Painted prop background "#ff0000ff"
+expect Painted prop radius 8
+expect Painted prop border_width 2
+expect Painted prop opacity 50
+expect Title prop font_size 24
+expect Title prop font_weight 700
+expect Moved prop rotate 45
