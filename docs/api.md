@@ -1036,6 +1036,7 @@ struct UiDriver {
     int64 commit_bytes;
     int commit_max;
     int commit_last;
+    double first_commit;
     List<String> logs;
 }
 ```
