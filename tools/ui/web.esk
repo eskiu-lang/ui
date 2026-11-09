@@ -107,6 +107,11 @@ void write_web_native(Project* p, string out) {
     fs_write_text(join(out, "native.mjs"), text.data);
 }
 
+#ifndef _WIN32
+// fcntl(fd, F_SETFD, FD_CLOEXEC) marks a descriptor close-on-exec.
+extern int fcntl(int fd, int command, ...);
+#endif
+
 // A static file server for build/ui/web: one connection at a time is plenty for a page.
 string serve_root;
 
@@ -239,6 +244,11 @@ void serve(string root, int port) {
 void serve_listen() {
     serve_listener = net_tcp_listen((uint16)serve_port);
     if (serve_listener < 0) { fail("ui: cannot listen on the port (set UI_PORT to another one)"); }
+#ifndef _WIN32
+    // Not inherited by the builds it runs: a build still running when ui serve stops would
+    // keep the port, and the next ui serve could not listen.
+    fcntl(serve_listener, 2, 1);
+#endif
     for (i in 0..8) {
         thread_create(void() {
             while (true) {
