@@ -408,6 +408,10 @@ string ui_driver_prop_name(int code) {
     if (code == 50) { return "gradient"; }
     if (code == 51) { return "gradient_angle"; }
     if (code == 52) { return "blur"; }
+    if (code == 53) { return "grid_column"; }
+    if (code == 54) { return "grid_column_span"; }
+    if (code == 55) { return "grid_row"; }
+    if (code == 56) { return "grid_row_span"; }
     return null;
 }
 
@@ -459,7 +463,7 @@ void ui_driver_tree_node(*String out, *Node node) {
     defer String_free(&props);
     if (node.kind != 0 && node.gap != 8) { String_appendf(&props, "\"gap\": %d", node.gap); any = true; }
     if (node.padding != 0) { String_appendf(&props, "%s\"padding\": %d", any ? ", " : "", node.padding); any = true; }
-    for (code in 4..53) {
+    for (code in 4..57) {
         if (node == ui.root) { break; }
         int64 unset = 0;
         if (!ui_driver_prop_applies(node.kind, code, &unset)) { continue; }

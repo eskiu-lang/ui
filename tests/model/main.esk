@@ -42,6 +42,7 @@ int main() {
     text_input(); printf("PASS text input\n");
     labels(); printf("PASS labels\n");
     fonts(); printf("PASS fonts\n");
+    grids(); printf("PASS grids\n");
     sizes(); printf("PASS sizes\n");
     images(); printf("PASS images\n");
     environment(); printf("PASS environment\n");

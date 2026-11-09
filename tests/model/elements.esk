@@ -93,6 +93,32 @@ void fonts() {
     ui_shutdown(); balanced("fonts leak");
 }
 
+*Signal<int> grid_version;
+
+// A grid: its track lists as string props 6 and 7, an item's lines and spans as 53 to 56,
+// each sent once and again only when it changes (the hosts' track math is tests/grid).
+void grids() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        grid_version = use_signal<int>(0);
+        int v = grid_version.get();
+        Column(Style{grid_columns: "60 1fr auto", grid_rows: v < 2 ? "40" : null}) {
+            Row(Style{grid_column: 2, grid_column_span: v == 0 ? 2 : 3, grid_row_span: 2}) {}
+            Row(Style{}) {}
+        }
+    }
+    ui_frame();
+    check(count_prop(9, 6) == 1 && count_prop(9, 7) == 1, "a grid sends its tracks");
+    check(prop_value(2, 53) == 2 && prop_value(2, 54) == 2 && prop_value(2, 56) == 2 && count_prop(2, 55) == 0,
+          "an item sends its placement, nothing for auto");
+    grid_version.set(1); ui_frame();
+    check(count_prop(9, 6) == 0 && count_prop(2, 53) == 0 && prop_value(2, 54) == 3, "only the changed span is sent");
+    grid_version.set(2); ui_frame();
+    check(count_prop(9, 7) == 1 && count_prop(9, 6) == 0, "removed rows are sent as empty");
+    ui_shutdown(); balanced("grids leak");
+}
+
 *Signal<int> size_version;
 
 void sizes() {

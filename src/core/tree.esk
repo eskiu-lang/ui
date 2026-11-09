@@ -34,7 +34,7 @@ struct Node {
     int gap;
     int padding;
     // The value last sent for each int prop (by code), so only a change is sent again.
-    int64[53] props;
+    int64[57] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -89,6 +89,9 @@ struct Node {
     string placeholder;
     // Style.font, the font file.
     string font;
+    // Style.grid_columns and grid_rows, the track lists.
+    string grid_columns;
+    string grid_rows;
     // An image's source, or a native view's type.
     string source;
     // A native view: the named props last sent and its event handler.
@@ -392,6 +395,7 @@ void ui_unmount(*Node node) {
         ui_release_item(node.on_item);
         ui_release_cell(node.on_cell);
         free(node.text); free(node.label); free(node.placeholder); free(node.font); free(node.source);
+        free(node.grid_columns); free(node.grid_rows);
 #ifdef UI_TEST
         free(node.test_id);
 #endif
@@ -624,8 +628,14 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 50, style.gradient, -1);
     ui_prop(node, fresh, 51, style.gradient_angle, 180);
     ui_prop(node, fresh, 52, style.blur, 0);
+    ui_prop(node, fresh, 53, style.grid_column, 0);
+    ui_prop(node, fresh, 54, style.grid_column_span, 0);
+    ui_prop(node, fresh, 55, style.grid_row, 0);
+    ui_prop(node, fresh, 56, style.grid_row_span, 0);
     if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
     if (ui_update_string(&node.font, style.font)) { ui_emit_string_prop(node, 5, node.font); }
+    if (ui_update_string(&node.grid_columns, style.grid_columns)) { ui_emit_string_prop(node, 6, node.grid_columns); }
+    if (ui_update_string(&node.grid_rows, style.grid_rows)) { ui_emit_string_prop(node, 7, node.grid_rows); }
 #ifdef UI_TEST
     ui_update_string(&node.test_id, style.test_id);
 #endif

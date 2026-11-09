@@ -3049,7 +3049,7 @@ struct Node {
     string name;
     int gap;
     int padding;
-    int64[53] props;
+    int64[57] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -3092,6 +3092,8 @@ struct Node {
     string label;
     string placeholder;
     string font;
+    string grid_columns;
+    string grid_rows;
     string source;
     List<NativePair> native_props;
     fn(string, string)->void on_view;
@@ -3325,9 +3327,10 @@ A commit is one byte buffer, little-endian. Each record is an op byte and the no
   5 move     parent u32, before u32
   6 remove   (nothing)
   7 listen, 8 unlisten
-  9 string prop  prop u8 (1 label, 2 placeholder, 3 image source, 4 native view type),
+  9 string prop  prop u8 (1 label, 2 placeholder, 3 image source, 4 native view type,
 
 ```eskiu
+             5 font file, 6 grid columns, 7 grid rows),
              length u32, the bytes, a NUL
 ```
 
@@ -3359,7 +3362,9 @@ animates. 41 pan listener (1: the host reports drags on the node). 42 minimum wi
 43 maximum width, 44 minimum height, 45 maximum height (points; 0: no bound), 46 shadow
 (elevation in points), 47 cover (1: an image fills its box, cropped), 48 pixelated (1: an
 image scales without smoothing), 49 long press listener (1: the host reports a long press), 50 gradient end
-color (RGBA, 0: none; from the background), 51 gradient angle (degrees, as CSS; 180 down).
+color (RGBA, 0: none; from the background), 51 gradient angle (degrees, as CSS; 180 down),
+52 backdrop blur, 53 grid column, 54 grid column span, 55 grid row, 56 grid row span (lines
+from 1, 0: auto; spans 0 or 1: one track).
 An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal
@@ -5302,6 +5307,8 @@ struct Style {
     string font;
     int blur;
     string test_id;
+    string grid_columns; string grid_rows;
+    int grid_column; int grid_column_span; int grid_row; int grid_row_span;
 }
 ```
 
@@ -5332,6 +5339,11 @@ its background and children (iOS's materials, CSS backdrop-filter; Android, whic
 blur behind a view, paints a translucent material instead).
 `font` draws the text in a font file from the app's assets ("fonts/VT323.ttf"; TrueType or
 OpenType), one file per weight, so font_weight does not apply to it.
+`grid_columns` and `grid_rows` make the element a grid (CSS grid) instead of a flex column or
+row: each a track list of sizes in points, fractions of the space left ("1fr") and "auto"
+(the content's size), as "80 1fr auto"; `gap` separates the tracks. A child goes in the
+next free cell, row by row, unless `grid_column` or `grid_row` (lines from 1; 0: auto)
+places it; `grid_column_span` and `grid_row_span` (0 or 1: one track) widen it.
 `test_id` names the element for tests and the driver (`ui agent web tap add`): it is not the
 accessibility label and never reaches the screen or a screen reader; a release build ignores
 it.

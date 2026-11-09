@@ -35,6 +35,11 @@ Key key(int64 value) { return Key{true, value}; }
 // blur behind a view, paints a translucent material instead).
 // `font` draws the text in a font file from the app's assets ("fonts/VT323.ttf"; TrueType or
 // OpenType), one file per weight, so font_weight does not apply to it.
+// `grid_columns` and `grid_rows` make the element a grid (CSS grid) instead of a flex column or
+// row: each a track list of sizes in points, fractions of the space left ("1fr") and "auto"
+// (the content's size), as "80 1fr auto"; `gap` separates the tracks. A child goes in the
+// next free cell, row by row, unless `grid_column` or `grid_row` (lines from 1; 0: auto)
+// places it; `grid_column_span` and `grid_row_span` (0 or 1: one track) widen it.
 // `test_id` names the element for tests and the driver (`ui agent web tap add`): it is not the
 // accessibility label and never reaches the screen or a screen reader; a release build ignores
 // it.
@@ -56,6 +61,8 @@ struct Style {
     string font;
     int blur;
     string test_id;
+    string grid_columns; string grid_rows;
+    int grid_column; int grid_column_span; int grid_row; int grid_row_span;
 }
 
 // The curve of a transition or animation: ease in and out, ease out, ease in, linear, or a
