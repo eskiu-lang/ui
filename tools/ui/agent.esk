@@ -1,0 +1,816 @@
+// `ui agent HOST OP...`: drives the running dev build of the app (docs/agents.md). It
+// attaches to `ui serve HOST`, starting it when it is not running, refuses a build older than
+// the sources, and sends each op to the app's driver: through the dev server on the web, a
+// local socket on the iOS simulator, `adb forward` on Android.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+// The host being driven ("web", "ios", "android") and how its answers are printed.
+string agent_host;
+bool agent_json;
+
+// The web: the dev server's port, and the DevTools port of the browser `ui agent` starts.
+int agent_web_port;
+int agent_cdp_port;
+
+// The driver's port of the dev app on the simulator (and the local end of `adb forward`).
+int agent_native_port() {
+    string value = env_get("UI_AGENT_PORT");
+    if (value != null && value[0] != 0) { return atoi(value); }
+    return strcmp(agent_host, "android") == 0 ? 8767 : 8766;
+}
+
+void agent_fail(string message) {
+    print_err("ui agent: ");
+    println_err(message);
+    exit(1);
+}
+
+// build/ui/agent/, where the agent keeps its logs and the browser's profile.
+string agent_dir(Project* p) {
+    string dir = join(p.root.data, "build/ui/agent");
+    fs_mkdir_p(dir);
+    return dir;
+}
+
+bool agent_alive(int pid) {
+#ifdef _WIN32
+    return false;
+#else
+    return pid > 0 && kill(pid, 0) == 0;
+#endif
+}
+
+// The running `ui serve` for this host: its status file (serve.esk) parsed, or null when
+// none runs. The caller frees it.
+*JsonValue agent_serve_status(Project* p) {
+    String path;
+    defer String_free(&path);
+    String_appendf(&path, "%s/build/ui/serve-%s.json", p.root.data, agent_host);
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(path.data, &text) != 0) { return null; }
+    *JsonValue status = json_parse(text.data);
+    if (status == null) { return null; }
+    *JsonValue pid = JsonValue_get(status, "pid");
+    if (pid == null || !agent_alive((int)pid.num)) { JsonValue_free(status); return null; }
+    return status;
+}
+
+// A command started in the background, its output in `log`; its pid.
+int agent_spawn(string command, string log) {
+    String line;
+    defer String_free(&line);
+    String_appendf(&line, "(%s) > '%s' 2>&1 < /dev/null & echo $!", command, log);
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    if (sh(line.data, &result) != 0 || result.exit_code != 0) { return -1; }
+    return atoi(result.stdout.data == null ? "0" : result.stdout.data);
+}
+
+// `text` quoted for sh.
+string agent_quote(string text) {
+    String out;
+    String_append(&out, "'");
+    for (int i = 0; text[i] != 0; i++) {
+        if (text[i] == '\'') { String_append(&out, "'\\''"); } else { String_push(&out, text[i]); }
+    }
+    String_append(&out, "'");
+    return out.data;
+}
+
+// `ui serve HOST` running for this project, started in the background when it is not (no
+// browser or simulator window is opened for it).
+*JsonValue agent_serve(Project* p) {
+    *JsonValue status = agent_serve_status(p);
+    if (status != null) { return status; }
+    String log;
+    String_appendf(&log, "%s/serve-%s.log", agent_dir(p), agent_host);
+    String command;
+    String_appendf(&command, "env UI_NO_OPEN=1 %s serve %s", agent_quote(tool_path(serve_self)), agent_host);
+    String cd;
+    String_appendf(&cd, "cd %s && exec %s", agent_quote(p.root.data), command.data);
+    if (!agent_json) { printf("ui agent: starting ui serve %s (its output: %s)\n", agent_host, log.data); fflush(null); }
+    if (agent_spawn(cd.data, log.data) < 0) { agent_fail("could not start ui serve"); }
+    int64 until = time_monotonic_ms() + 30000;
+    while (time_monotonic_ms() < until) {
+        time_sleep_ms(200);
+        status = agent_serve_status(p);
+        if (status != null) { return status; }
+    }
+    String message;
+    String_appendf(&message, "ui serve %s did not start; see %s", agent_host, log.data);
+    agent_fail(message.data);
+    return null;
+}
+
+// ---- the web ----
+
+// The browser for the web: UI_CHROME, else Chrome for Testing, Chrome, Chromium or the
+// headless shell on this machine; null when there is none.
+string agent_chrome() {
+    string chosen = env_get("UI_CHROME");
+    if (chosen != null && chosen[0] != 0) { return chosen; }
+    List<string> candidates;
+    defer candidates.free();
+    candidates.push("/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing");
+    candidates.push("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+    candidates.push("/Applications/Chromium.app/Contents/MacOS/Chromium");
+    for (i in 0..candidates.size) { if (fs_exists(candidates.data[i]) == 1) { return candidates.data[i]; } }
+    List<string> names;
+    defer names.free();
+    names.push("google-chrome"); names.push("google-chrome-stable"); names.push("chromium"); names.push("chromium-browser");
+    names.push("chrome-headless-shell");
+    for (i in 0..names.size) {
+        string found = tool_path(names.data[i]);
+        if (found[0] == '/' && fs_exists(found) == 1) { return found; }
+    }
+    return null;
+}
+
+// GET (body null) or POST to the dev server; the answer's text, or null when it does not
+// answer. The caller frees it.
+string agent_http(string path, string body, int64 timeout_ms) {
+    String url;
+    defer String_free(&url);
+    String_appendf(&url, "http://127.0.0.1:%d%s", agent_web_port, path);
+    FetchOptions options;
+    FetchOptions_init(&options);
+    defer FetchOptions_free(&options);
+    options.timeout_ms = timeout_ms;
+    if (body != null) {
+        FetchOptions_method(&options, "POST");
+        FetchOptions_body_text(&options, body);
+    }
+    Response response;
+    defer Response_free(&response);
+    if (fetch_with(url.data, &options, &response) != 0 || response.status != 200) { return null; }
+    return ui_copy_text(Response_text(&response));
+}
+
+// A copy of `text` the caller frees.
+string ui_copy_text(string text) {
+    String out;
+    String_from(&out, text == null ? "" : text);
+    return out.data;
+}
+
+// The browser `ui agent` started for this project: its DevTools port when it is running,
+// else 0.
+int agent_browser_port(Project* p) {
+    String text;
+    defer String_free(&text);
+    if (fs_read_text(join(agent_dir(p), "browser.json"), &text) != 0) { return 0; }
+    *JsonValue state = json_parse(text.data);
+    if (state == null) { return 0; }
+    defer JsonValue_free(state);
+    *JsonValue pid = JsonValue_get(state, "pid");
+    *JsonValue port = JsonValue_get(state, "port");
+    if (pid == null || port == null || !agent_alive((int)pid.num)) { return 0; }
+    return (int)port.num;
+}
+
+// A headless browser on the app's page (#ui-agent, which the dev server prefers), started
+// when this project has none.
+void agent_browser(Project* p) {
+    agent_cdp_port = agent_browser_port(p);
+    if (agent_cdp_port != 0) { return; }
+    string chrome = agent_chrome();
+    if (chrome == null) {
+        if (!agent_json) { println("ui agent: no Chrome found (set UI_CHROME); driving whatever page of the app is open"); }
+        return;
+    }
+    string value = env_get("UI_AGENT_CDP_PORT");
+    agent_cdp_port = value != null && value[0] != 0 ? atoi(value) : 9333;
+    string size = env_get("UI_AGENT_WINDOW");
+    String window;
+    defer String_free(&window);
+    String_from(&window, size != null && size[0] != 0 ? size : "390,844");
+    String_replace_all(&window, "x", ",");
+    String command;
+    defer String_free(&command);
+    String_appendf(&command, "%s %s--remote-debugging-port=%d --user-data-dir=%s --window-size=%s --no-first-run "
+        "--no-default-browser-check --disable-background-timer-throttling --disable-renderer-backgrounding "
+        "http://127.0.0.1:%d/#ui-agent", agent_quote(chrome), strstr(chrome, "headless-shell") != null ? "" : "--headless=new ",
+        agent_cdp_port, agent_quote(join(agent_dir(p), "chrome")), window.data, agent_web_port);
+    int pid = agent_spawn(command.data, join(agent_dir(p), "browser.log"));
+    if (pid <= 0) { agent_fail("could not start the browser"); }
+    String state;
+    defer String_free(&state);
+    String_appendf(&state, "{\"pid\": %d, \"port\": %d}\n", pid, agent_cdp_port);
+    fs_write_text(join(agent_dir(p), "browser.json"), state.data);
+    if (!agent_json) { printf("ui agent: opened the app in a headless browser (%s)\n", chrome); fflush(null); }
+}
+
+// ---- the native hosts ----
+
+// The socket to the app's driver, or -1.
+int agent_socket;
+
+// Connects to the dev app on the simulator or the device (through adb forward); false when
+// it does not answer.
+bool agent_native_connect() {
+    if (agent_socket >= 0) { return true; }
+    if (strcmp(agent_host, "android") == 0) {
+        String forward;
+        defer String_free(&forward);
+        String_appendf(&forward, "adb forward tcp:%d localabstract:eskiu-ui-agent > /dev/null 2>&1", agent_native_port());
+        ProcessResult result;
+        sh(forward.data, &result);
+        ProcessResult_free(&result);
+    }
+    agent_socket = net_tcp_connect("127.0.0.1", (uint16)agent_native_port());
+    if (agent_socket < 0) { return false; }
+    net_set_timeouts(agent_socket, 60000, 10000);
+    return true;
+}
+
+void agent_native_close() {
+    if (agent_socket >= 0) { net_close(agent_socket); }
+    agent_socket = -1;
+}
+
+// One line to the app and the line it answers; null when the connection failed.
+string agent_native_request(string line) {
+    if (!agent_native_connect()) { return null; }
+    String out;
+    String_appendf(&out, "%s\n", line);
+    if (net_send_str(agent_socket, out.data) < 0) { agent_native_close(); return null; }
+    String answer;
+    char[4096] chunk;
+    while (true) {
+        int64 n = net_recv(agent_socket, &chunk[0], 4096);
+        if (n <= 0) { agent_native_close(); String_free(&answer); return null; }
+        bool end = false;
+        for (int64 i = 0; i < n; i++) {
+            if (chunk[i] == '\n') { end = true; break; }
+            String_push(&answer, chunk[i]);
+        }
+        if (end) { break; }
+    }
+    return answer.data == null ? ui_copy_text("") : answer.data;
+}
+
+// ---- requests ----
+
+// One request to the app; its answer parsed (null when nothing answered). The caller frees it.
+*JsonValue agent_request(string line) {
+    string text = null;
+    if (strcmp(agent_host, "web") == 0) { text = agent_http("/__ui/agent", line, 70000); }
+    else { text = agent_native_request(line); }
+    if (text == null) { return null; }
+    *JsonValue answer = json_parse(text);
+    free(text);
+    return answer;
+}
+
+// Whether the answer says ok.
+bool agent_ok(*JsonValue answer) {
+    *JsonValue ok = answer == null ? null : JsonValue_get(answer, "ok");
+    return ok != null && ok.kind == JBool && ok.boolean != 0;
+}
+
+string agent_member(*JsonValue v, string key) {
+    *JsonValue m = v == null ? null : JsonValue_get(v, key);
+    return m != null && m.kind == JString ? (m.str.data == null ? "" : m.str.data) : null;
+}
+
+double agent_number(*JsonValue v, string key) {
+    *JsonValue m = v == null ? null : JsonValue_get(v, key);
+    return m != null && m.kind == JNumber ? m.num : 0;
+}
+
+// The source hash the build would have now (as Project_entry writes UI_SOURCE).
+string agent_source(Project* p) {
+    String out;
+    String_appendf(&out, "%016llx", serve_signature(p));
+    return out.data;
+}
+
+// Attaches: `ui serve` running, the app answering hello and built from the current sources.
+// A build that is not up to date yet is waited for while `ui serve` builds it; a failed one
+// stops with its output.
+void agent_attach(Project* p, bool real_clock) {
+    *JsonValue status = agent_serve(p);
+    if (strcmp(agent_host, "web") == 0) {
+        agent_web_port = (int)agent_number(status, "port");
+        agent_browser(p);
+    }
+    JsonValue_free(status);
+    string hello = real_clock ? "{\"op\": \"hello\", \"clock\": \"real\"}" : "{\"op\": \"hello\", \"clock\": \"virtual\"}";
+    // A first build of a mobile app installs it, which can take a few minutes.
+    int64 until = time_monotonic_ms() + (strcmp(agent_host, "web") == 0 ? 120000 : 300000);
+    bool said = false;
+    while (true) {
+        string source = agent_source(p);
+        // While ui serve builds, the app may be about to restart on the new build.
+        *JsonValue before = agent_serve_status(p);
+        *JsonValue building_now = before == null ? null : JsonValue_get(before, "building");
+        bool wait = building_now != null && building_now.boolean != 0;
+        JsonValue_free(before);
+        if (wait && time_monotonic_ms() < until) { time_sleep_ms(200); continue; }
+        *JsonValue answer = agent_request(hello);
+        string built = agent_member(answer, "source");
+        bool fresh = agent_ok(answer) && built != null && strcmp(built, source) == 0;
+        JsonValue_free(answer);
+        if (fresh) { return; }
+        *JsonValue now = agent_serve_status(p);
+        if (now == null) { agent_fail("ui serve stopped; start it again (ui agent starts it when it is not running)"); }
+        *JsonValue building = JsonValue_get(now, "building");
+        string error = agent_member(now, "error");
+        string tried = agent_member(now, "source");
+        bool busy = building != null && building.boolean != 0;
+        // A failed build of these very sources: nothing will change until they do.
+        if (!busy && error != null && error[0] != 0 && tried != null && strcmp(tried, source) == 0) {
+            String message;
+            String_appendf(&message, "refusing to drive a build older than the sources: the last build failed:\n%s"
+                "Fix it and save; ui serve %s builds again (ui agent %s ... retries once it built).", error, agent_host, agent_host);
+            agent_fail(message.data);
+        }
+        JsonValue_free(now);
+        if (time_monotonic_ms() > until) {
+            String message;
+            if (built == null) {
+                String_appendf(&message, "the app does not answer: is it a dev build? ui serve %s makes one (see build/ui/agent/serve-%s.log)", agent_host, agent_host);
+            } else {
+                String_appendf(&message, "refusing to drive a build older than the sources (built from %s, the sources are %s): "
+                    "ui serve %s rebuilds on each change; wait for it or restart it", built, source, agent_host);
+            }
+            agent_fail(message.data);
+        }
+        if (!said && !agent_json) {
+            printf(built == null ? "ui agent: waiting for the app\n" : "ui agent: waiting for ui serve to rebuild and reload the app\n");
+            fflush(null);
+            said = true;
+        }
+        agent_native_close();
+        time_sleep_ms(300);
+    }
+}
+
+// ---- screenshots ----
+
+// A WebSocket text frame (masked, as a client must) with `text`.
+void agent_ws_send(int fd, string text) {
+    int64 n = (int64)strlen(text);
+    Bytes frame;
+    defer Bytes_free(&frame);
+    frame.push((uint8)0x81);
+    if (n < 126) { frame.push((uint8)(0x80 | n)); }
+    else if (n < 65536) { frame.push((uint8)(0x80 | 126)); frame.push((uint8)(n >> 8)); frame.push((uint8)(n & 255)); }
+    else {
+        frame.push((uint8)(0x80 | 127));
+        for (int s = 56; s >= 0; s -= 8) { frame.push((uint8)((n >> s) & 255)); }
+    }
+    // A zero mask leaves the payload as it is.
+    for (k in 0..4) { frame.push((uint8)0); }
+    Bytes_append_raw(&frame, (*uint8)text, n);
+    net_send(fd, frame.data, frame.len);
+}
+
+// Reads exactly `n` bytes into `out`; false when the connection ended.
+bool agent_read(int fd, Bytes* out, int64 n) {
+    char[8192] chunk;
+    while (n > 0) {
+        int64 want = n < 8192 ? n : 8192;
+        int64 got = net_recv(fd, &chunk[0], want);
+        if (got <= 0) { return false; }
+        Bytes_append_raw(out, (*uint8)&chunk[0], got);
+        n -= got;
+    }
+    return true;
+}
+
+// The next whole text message, into `out`; false when the connection ended.
+bool agent_ws_message(int fd, String* out) {
+    String_clear(out);
+    while (true) {
+        Bytes head;
+        if (!agent_read(fd, &head, 2)) { Bytes_free(&head); return false; }
+        bool fin = (head.data[0] & 0x80) != 0;
+        int64 n = (int64)(head.data[1] & 127);
+        Bytes_free(&head);
+        if (n >= 126) {
+            Bytes size;
+            if (!agent_read(fd, &size, n == 126 ? 2 : 8)) { Bytes_free(&size); return false; }
+            n = 0;
+            for (int64 i = 0; i < size.len; i++) { n = (n << 8) | (int64)size.data[i]; }
+            Bytes_free(&size);
+        }
+        Bytes payload;
+        if (!agent_read(fd, &payload, n)) { Bytes_free(&payload); return false; }
+        for (int64 i = 0; i < payload.len; i++) { String_push(out, (char)payload.data[i]); }
+        Bytes_free(&payload);
+        if (fin) { return true; }
+    }
+    return false;
+}
+
+// The web's screenshot: the browser's page through the DevTools protocol, into `file`.
+string agent_web_screenshot(Project* p, string file) {
+    if (agent_cdp_port == 0) { return "a screenshot on the web needs the browser ui agent starts (set UI_CHROME to one)"; }
+    String list_url;
+    defer String_free(&list_url);
+    String_appendf(&list_url, "http://127.0.0.1:%d/json/list", agent_cdp_port);
+    Response response;
+    defer Response_free(&response);
+    if (fetch(list_url.data, &response) != 0) { return "the browser's DevTools do not answer"; }
+    *JsonValue targets = json_parse(Response_text(&response));
+    if (targets == null) { return "the browser's DevTools answered something else"; }
+    defer JsonValue_free(targets);
+    string socket_url = null;
+    for (i in 0..JsonValue_len(targets)) {
+        *JsonValue target = JsonValue_at(targets, i);
+        string url = agent_member(target, "url");
+        string kind = agent_member(target, "type");
+        if (kind != null && strcmp(kind, "page") == 0 && url != null && strstr(url, "#ui-agent") != null) {
+            socket_url = agent_member(target, "webSocketDebuggerUrl");
+        }
+    }
+    if (socket_url == null) { return "the browser has no page of the app"; }
+    // ws://127.0.0.1:PORT/devtools/page/ID
+    string path = strstr(&socket_url[5], "/");
+    int fd = net_tcp_connect("127.0.0.1", (uint16)agent_cdp_port);
+    if (fd < 0) { return "could not connect to the browser's DevTools"; }
+    defer net_close(fd);
+    net_set_timeouts(fd, 20000, 10000);
+    String handshake;
+    defer String_free(&handshake);
+    String_appendf(&handshake, "GET %s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dWkgYWdlbnQgc2NyZWVuc2g=\r\nSec-WebSocket-Version: 13\r\n\r\n", path, agent_cdp_port);
+    net_send_str(fd, handshake.data);
+    String reply;
+    defer String_free(&reply);
+    char[1] one;
+    while (String_find(&reply, "\r\n\r\n", 0) < 0) {
+        if (net_recv(fd, &one[0], 1) <= 0) { return "the browser refused the DevTools connection"; }
+        String_push(&reply, one[0]);
+    }
+    if (String_find(&reply, " 101", 0) < 0) { return "the browser refused the DevTools connection"; }
+    agent_ws_send(fd, "{\"id\": 1, \"method\": \"Page.captureScreenshot\", \"params\": {\"format\": \"png\"}}");
+    String message;
+    defer String_free(&message);
+    while (agent_ws_message(fd, &message)) {
+        *JsonValue answer = json_parse(message.data);
+        if (answer == null) { continue; }
+        if ((int)agent_number(answer, "id") != 1) { JsonValue_free(answer); continue; }
+        *JsonValue result = JsonValue_get(answer, "result");
+        string data = agent_member(result, "data");
+        if (data == null) { JsonValue_free(answer); return "the browser did not take the screenshot"; }
+        int n = (int)strlen(data);
+        *uint8 png = alloc<uint8>(base64_decoded_len(n) + 4);
+        int size = base64_decode((*uint8)data, n, png);
+        JsonValue_free(answer);
+        if (size <= 0) { free(png); return "the screenshot was not base64"; }
+        int written = fs_write_all(file, png, size);
+        free(png);
+        return written == 1 ? null : "could not write the screenshot";
+    }
+    return "the browser closed the DevTools connection";
+}
+
+// The window's pixels into `file`: the browser's page, the simulator's screen, the device's.
+string agent_screenshot(Project* p, string file) {
+    if (strcmp(agent_host, "web") == 0) { return agent_web_screenshot(p, file); }
+    String command;
+    defer String_free(&command);
+    if (strcmp(agent_host, "ios") == 0) { String_appendf(&command, "xcrun simctl io booted screenshot %s > /dev/null 2>&1", agent_quote(file)); }
+    else { String_appendf(&command, "adb exec-out screencap -p > %s", agent_quote(file)); }
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    if (sh(command.data, &result) != 0 || result.exit_code != 0) { return "could not take the screenshot"; }
+    return null;
+}
+
+// A PNG's size from its header, into `w` and `h` (0 when it is not one).
+void agent_png_size(string file, *int w, *int h) {
+    *w = 0; *h = 0;
+    int64 size = 0;
+    *uint8 data = fs_read_all(file, &size);
+    if (data == null) { return; }
+    if (size >= 24) {
+        *w = ((int)data[16] << 24) | ((int)data[17] << 16) | ((int)data[18] << 8) | (int)data[19];
+        *h = ((int)data[20] << 24) | ((int)data[21] << 16) | ((int)data[22] << 8) | (int)data[23];
+    }
+    free(data);
+}
+
+// ---- printing ----
+
+// A node in a line: `Button #5 [add] "Increment"` with its label and key.
+void agent_node_line(*JsonValue node, String* out) {
+    String_appendf(out, "%s #%d", agent_member(node, "kind"), (int)agent_number(node, "id"));
+    string name = agent_member(node, "name");
+    if (name != null) { String_appendf(out, " (%s)", name); }
+    string test_id = agent_member(node, "test_id");
+    if (test_id != null) { String_appendf(out, " [%s]", test_id); }
+    string label = agent_member(node, "label");
+    if (label != null) { String_appendf(out, " label=\"%s\"", label); }
+    string text = agent_member(node, "text");
+    if (text != null) { String_appendf(out, " \"%s\"", text); }
+    if (JsonValue_get(node, "key") != null) { String_appendf(out, " key=%lld", (int64)agent_number(node, "key")); }
+}
+
+void agent_print_tree(*JsonValue node, int depth) {
+    String line;
+    defer String_free(&line);
+    for (i in 0..depth) { String_append(&line, "  "); }
+    agent_node_line(node, &line);
+    string placeholder = agent_member(node, "placeholder");
+    if (placeholder != null) { String_appendf(&line, " placeholder=\"%s\"", placeholder); }
+    *JsonValue props = JsonValue_get(node, "props");
+    if (props != null) {
+        String_append(&line, " {");
+        for (i in 0..JsonValue_len(props)) {
+            *JsonValue prop = JsonValue_at(props, i);
+            String value;
+            JsonValue_stringify(prop, &value);
+            String_appendf(&line, "%s%s: %s", i > 0 ? ", " : "", prop.key.data, value.data);
+            String_free(&value);
+        }
+        String_append(&line, "}");
+    }
+    println(line.data);
+    *JsonValue children = JsonValue_get(node, "children");
+    if (children == null) { return; }
+    for (i in 0..JsonValue_len(children)) { agent_print_tree(JsonValue_at(children, i), depth + 1); }
+}
+
+// Prints an op's answer for a person.
+void agent_print(string op, *JsonValue answer) {
+    String line;
+    defer String_free(&line);
+    if (strcmp(op, "tree") == 0) {
+        *JsonValue root = JsonValue_get(answer, "root");
+        *JsonValue children = root == null ? null : JsonValue_get(root, "children");
+        if (children != null) { for (i in 0..JsonValue_len(children)) { agent_print_tree(JsonValue_at(children, i), 0); } }
+        return;
+    }
+    if (strcmp(op, "layout") == 0) {
+        *JsonValue window = JsonValue_get(answer, "window");
+        printf("window %dx%d points, scale %d%%\n", (int)agent_number(window, "width"), (int)agent_number(window, "height"),
+            (int)agent_number(window, "scale"));
+        *JsonValue frames = JsonValue_get(answer, "frames");
+        for (i in 0..JsonValue_len(frames)) {
+            *JsonValue frame = JsonValue_at(frames, i);
+            String_clear(&line);
+            agent_node_line(frame, &line);
+            String_appendf(&line, "  x=%g y=%g w=%g h=%g", agent_number(frame, "x"), agent_number(frame, "y"),
+                agent_number(frame, "width"), agent_number(frame, "height"));
+            *JsonValue visible = JsonValue_get(frame, "visible");
+            if (visible != null && visible.boolean == 0) { String_append(&line, " hidden"); }
+            println(line.data);
+        }
+        return;
+    }
+    if (strcmp(op, "state") == 0) {
+        *JsonValue scopes = JsonValue_get(answer, "scopes");
+        for (i in 0..JsonValue_len(scopes)) {
+            *JsonValue scope = JsonValue_at(scopes, i);
+            String values;
+            JsonValue_stringify(JsonValue_get(scope, "signals"), &values);
+            printf("%s (#%d): %s\n", agent_member(scope, "path"), (int)agent_number(scope, "id"), values.data);
+            String_free(&values);
+        }
+        *JsonValue routes = JsonValue_get(answer, "routes");
+        if (JsonValue_len(routes) > 0) {
+            String_append(&line, "routes:");
+            for (i in 0..JsonValue_len(routes)) { String_appendf(&line, " %s%s", i > 0 ? "> " : "", JsonValue_at(routes, i).str.data); }
+            println(line.data);
+        }
+        printf("modals %d, timers %d, display frames %s, fetches %d, clock %s at %g ms\n", (int)agent_number(answer, "modals"),
+            (int)agent_number(answer, "timers"), JsonValue_get(answer, "frames").boolean != 0 ? "on" : "off",
+            (int)agent_number(answer, "fetches"), agent_member(answer, "clock"), agent_number(answer, "now"));
+        return;
+    }
+    if (strcmp(op, "tap") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+        string verb = strcmp(op, "tap") == 0 ? "tapped" : strcmp(op, "type") == 0 ? "typed into" : "scrolled";
+        printf("%s %s (%s #%d)", verb, agent_member(answer, "target"), agent_member(answer, "kind"), (int)agent_number(answer, "id"));
+        if (strcmp(op, "scroll") == 0) { printf(" to %g", agent_number(answer, "offset")); }
+        printf("\n");
+        return;
+    }
+    if (strcmp(op, "back") == 0) {
+        println(JsonValue_get(answer, "handled").boolean != 0 ? "back: handled" : "back: nothing to go back from");
+        return;
+    }
+    if (strcmp(op, "clock") == 0) {
+        printf("clock %s at %g ms", agent_member(answer, "clock"), agent_number(answer, "now"));
+        if (strcmp(agent_member(answer, "clock"), "virtual") == 0) {
+            printf(" (+%g, %d fired, %s%s)", agent_number(answer, "advanced"), (int)agent_number(answer, "fired"),
+                JsonValue_get(answer, "idle").boolean != 0 ? "idle" : "busy: ", agent_member(answer, "busy"));
+        }
+        printf("\n");
+        return;
+    }
+    if (strcmp(op, "logs") == 0) {
+        *JsonValue core = JsonValue_get(answer, "core");
+        *JsonValue host = JsonValue_get(answer, "host");
+        for (i in 0..JsonValue_len(host)) { println(JsonValue_at(host, i).str.data); }
+        for (i in 0..JsonValue_len(core)) { printf("ui %s\n", JsonValue_at(core, i).str.data); }
+        return;
+    }
+    if (strcmp(op, "perf") == 0) {
+        *JsonValue frame = JsonValue_get(answer, "frame_ms");
+        *JsonValue bytes = JsonValue_get(answer, "commit_bytes");
+        printf("frames %d (last %d measured): p50 %.2f ms, p95 %.2f ms, max %.2f ms\n", (int)agent_number(answer, "frames"),
+            (int)agent_number(frame, "measured"), agent_number(frame, "p50"), agent_number(frame, "p95"), agent_number(frame, "max"));
+        printf("commits: last %d B, max %d B, mean %d B; %d nodes; memory %.1f MB\n", (int)agent_number(bytes, "last"),
+            (int)agent_number(bytes, "max"), (int)agent_number(bytes, "mean"), (int)agent_number(answer, "nodes"),
+            agent_number(answer, "memory_bytes") / 1048576.0);
+        return;
+    }
+    String text;
+    JsonValue_stringify(answer, &text);
+    println(text.data);
+    String_free(&text);
+}
+
+// ---- the command ----
+
+// How many words an op takes after its name.
+int agent_arity(string op) {
+    if (strcmp(op, "tap") == 0 || strcmp(op, "screenshot") == 0 || strcmp(op, "clock") == 0) { return 1; }
+    if (strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) { return 2; }
+    return 0;
+}
+
+// One op: its words (the name first; the last word of `type` is the rest of the text).
+void agent_split(string text, List<String>* words, int limit) {
+    String word;
+    int i = 0;
+    while (text[i] == ' ') { i++; }
+    while (text[i] != 0) {
+        if (text[i] == ' ' && words.size < limit) {
+            if (word.len > 0) { words.push(word); word = String{}; }
+            while (text[i] == ' ') { i++; }
+            continue;
+        }
+        String_push(&word, text[i]);
+        i++;
+    }
+    if (word.len > 0) { words.push(word); }
+}
+
+// Runs one op; false when it failed (the reason printed).
+bool agent_op(Project* p, List<String>* words) {
+    string op = words.data[0].data;
+    String request;
+    defer String_free(&request);
+    String_append(&request, "{\"op\": ");
+    serve_json_string(&request, op);
+    int need = agent_arity(op);
+    if (words.size - 1 < need) {
+        String message;
+        String_appendf(&message, "%s takes %d argument%s (docs/agents.md)", op, need, need == 1 ? "" : "s");
+        println_err(message.data);
+        return false;
+    }
+    if (strcmp(op, "screenshot") == 0) {
+        // What is on screen once the app rendered the last request.
+        string error = agent_screenshot(p, words.data[1].data);
+        int w = 0;
+        int h = 0;
+        if (error == null) { agent_png_size(words.data[1].data, &w, &h); }
+        if (agent_json) {
+            String line;
+            if (error == null) {
+                String_append(&line, "{\"ok\":true,\"op\":\"screenshot\",\"file\":");
+                serve_json_string(&line, words.data[1].data);
+                String_appendf(&line, ",\"width\":%d,\"height\":%d}", w, h);
+            } else {
+                String_append(&line, "{\"ok\":false,\"op\":\"screenshot\",\"error\":");
+                serve_json_string(&line, error);
+                String_append(&line, "}");
+            }
+            println(line.data);
+            String_free(&line);
+        } else if (error == null) { printf("screenshot: %s (%dx%d pixels)\n", words.data[1].data, w, h); }
+        if (error != null) { print_err("ui agent: screenshot: "); println_err(error); }
+        return error == null;
+    }
+    if (strcmp(op, "tap") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+        String_append(&request, ", \"target\": ");
+        serve_json_string(&request, words.data[1].data);
+    }
+    if (strcmp(op, "type") == 0) {
+        String_append(&request, ", \"text\": ");
+        serve_json_string(&request, words.data[2].data);
+    }
+    if (strcmp(op, "scroll") == 0) { String_appendf(&request, ", \"dy\": %s", words.data[2].data); }
+    if (strcmp(op, "clock") == 0) {
+        string arg = words.data[1].data;
+        if (strcmp(arg, "settle") == 0) { String_append(&request, ", \"settle\": true"); }
+        else if (strcmp(arg, "real") == 0) { String_append(&request, ", \"real\": true"); }
+        else if (arg[0] == '+') { String_appendf(&request, ", \"ms\": %d", atoi(&arg[1])); }
+        else {
+            println_err("clock takes +MS, settle or real");
+            return false;
+        }
+    }
+    String_append(&request, "}");
+    *JsonValue answer = agent_request(request.data);
+    if (answer == null) {
+        if (agent_json) { printf("{\"ok\":false,\"op\":\"%s\",\"error\":\"the app did not answer\"}\n", op); }
+        print_err("ui agent: "); print_err(op); println_err(": the app did not answer");
+        return false;
+    }
+    defer JsonValue_free(answer);
+    bool ok = agent_ok(answer);
+    if (agent_json) {
+        String text;
+        JsonValue_stringify(answer, &text);
+        println(text.data);
+        String_free(&text);
+    } else if (ok) { agent_print(op, answer); }
+    if (!ok) {
+        print_err("ui agent: "); print_err(op); print_err(": "); println_err(agent_member(answer, "error"));
+    }
+    fflush(null);
+    return ok;
+}
+
+// Stops what `ui agent` started for this project: the browser and `ui serve HOST`.
+void agent_stop(Project* p) {
+    int port = agent_browser_port(p);
+    if (port != 0) {
+        String text;
+        fs_read_text(join(agent_dir(p), "browser.json"), &text);
+        *JsonValue state = json_parse(text.data);
+        int pid = (int)agent_number(state, "pid");
+#ifndef _WIN32
+        if (pid > 0) { kill(pid, 15); }
+#endif
+        JsonValue_free(state);
+        String_free(&text);
+        fs_remove_all(join(agent_dir(p), "browser.json"));
+        println("ui agent: stopped the browser");
+    }
+    *JsonValue status = agent_serve_status(p);
+    if (status != null) {
+        int pid = (int)agent_number(status, "pid");
+#ifndef _WIN32
+        if (pid > 0) { kill(pid, 15); }
+#endif
+        JsonValue_free(status);
+        printf("ui agent: stopped ui serve %s\n", agent_host);
+    }
+}
+
+void agent_usage() {
+    println_err("usage: ui agent web|ios|android [--json] [--real-clock] OP...\n"
+                "       ui agent web|ios|android --stop\n"
+                "ops: tree, layout, state, logs, perf, back, \"tap ID\", \"type ID TEXT\", \"scroll ID DY\",\n"
+                "     \"screenshot FILE\", \"clock +MS\", \"clock settle\", \"clock real\" (docs/agents.md)");
+    exit(2);
+}
+
+void agent_command(Project* p, int argc, string* argv) {
+    if (argc < 3) { agent_usage(); }
+    agent_host = argv[2];
+    if (strcmp(agent_host, "web") != 0 && strcmp(agent_host, "ios") != 0 && strcmp(agent_host, "android") != 0) { agent_usage(); }
+    agent_socket = -1;
+    bool real_clock = false;
+    bool stop = false;
+    List<string> args;
+    defer args.free();
+    for (int i = 3; i < argc; i++) {
+        if (strcmp(argv[i], "--json") == 0) { agent_json = true; }
+        else if (strcmp(argv[i], "--real-clock") == 0) { real_clock = true; }
+        else if (strcmp(argv[i], "--stop") == 0) { stop = true; }
+        else { args.push(argv[i]); }
+    }
+    if (stop) { agent_stop(p); return; }
+    if (args.size == 0) { agent_usage(); }
+    // The ops: an argument with spaces is one op with its words; a bare op name takes the
+    // arguments after it that it needs.
+    List<List<String>> ops;
+    int at = 0;
+    while (at < args.size) {
+        List<String> words;
+        string arg = args.data[at++];
+        if (strchr(arg, ' ') != null) {
+            List<String> first;
+            agent_split(arg, &first, 1);
+            agent_split(arg, &words, agent_arity(first.data[0].data));
+            fs_list_free(&first);
+        } else {
+            String name;
+            String_from(&name, arg);
+            words.push(name);
+            int need = agent_arity(arg);
+            for (k in 0..need) {
+                if (at >= args.size) { break; }
+                String word;
+                String_from(&word, args.data[at++]);
+                words.push(word);
+            }
+        }
+        if (words.size == 0) { continue; }
+        ops.push(words);
+    }
+    agent_attach(p, real_clock);
+    for (i in 0..ops.size) {
+        if (!agent_op(p, &ops.data[i])) { exit(1); }
+    }
+    agent_native_close();
+}
