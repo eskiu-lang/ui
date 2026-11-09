@@ -59,8 +59,11 @@ string ui_update_ready() {
 
 // Why the last check did not install a bundle ("" when it did, or found nothing newer): a
 // failed download, a signature or a hash that does not match. The check runs again at the
-// next start.
-string ui_update_error() { return ui_updater.error.data == null ? "" : ui_updater.error.data; }
+// next start. Reading it subscribes, as ui_update_ready.
+string ui_update_error() {
+    if (ui_updater.changed != null) { ui_updater.changed.get(); }
+    return ui_updater.error.data == null ? "" : ui_updater.error.data;
+}
 
 // Frees a bundle's files (internal).
 void ui_update_free(UiUpdateBundle* bundle) {
@@ -307,6 +310,7 @@ void ui_update_finish(string error) {
         ui_update_report(error);
         ui_update_free(&ui_updater.incoming);
         String_clear(&ui_updater.incoming_text);
+        ui_updater.changed.set(ui_updater.changed.value + 1);
         return;
     }
     ui_storage_set("ui.update.ready", ui_updater.incoming_text.data);
