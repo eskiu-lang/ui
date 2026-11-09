@@ -6,6 +6,7 @@
 //   elements/        what apps build with: layout, text, input, media, lists, overlays,
 //                    the platform, native modules and views, navigation, timers, display frames, gestures, animated values
 //   state/strings    owned strings (use_string)
+//   core/driver      what `ui agent` asks (UI_TEST builds only) and the clock it owns
 //   apis/            the system: environment (platform, dark mode, accessibility, language),
 //                    actions (keyboard, share, clipboard, haptics, announcements), storage, network
 //
@@ -46,3 +47,10 @@ import "apis/environment.esk";
 import "apis/actions.esk";
 import "apis/storage.esk";
 import "apis/network.esk";
+// The driver `ui agent` talks to, in dev and test builds only (the ui tool defines UI_TEST
+// for `ui serve` builds).
+#ifdef UI_TEST
+import <json>;
+import <time>;
+import "core/driver.esk";
+#endif

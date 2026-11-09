@@ -85,6 +85,9 @@ void ui_report_error(UiError error) {
     String message;
     String_appendf(&message, "ui: error in %s: %s\n  in %s", ui_where_name(error.where), error.text, error.path);
     println_err(message.data);
+#ifdef UI_TEST
+    ui_driver_log("error", &message.data[4]);
+#endif
     String_free(&message);
 }
 

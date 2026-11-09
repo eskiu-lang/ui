@@ -338,6 +338,9 @@ void ui_renders_from(List<*Node>* run, *int at, *RenderSave save) {
 // The host's side, once per display frame: renders what changed, parents first, and sends
 // the commit to `apply`. False when there was nothing to do.
 bool ui_frame() {
+#ifdef UI_TEST
+    double started = ui_driver_clock_ms();
+#endif
     ui_require_consistent();
     ui_require(!ui.in_flight, "frame while commit in flight");
     // Validate observed memos even when their consumers have not been scheduled yet.
@@ -410,7 +413,13 @@ bool ui_frame() {
     }
     ui.sequence++;
     ui.in_flight = true;
+#ifdef UI_TEST
+    int bytes = ui.commit.len;
+#endif
     ui.apply(ui.commit.data, ui.commit.len);
+#ifdef UI_TEST
+    ui_driver_note_frame(ui_driver_clock_ms() - started, bytes);
+#endif
     return true;
 }
 
@@ -637,5 +646,8 @@ void ui_shutdown() {
     ui.finalizers.free(); ui.events.free();
     ui.pass_unmounted.free();
     if (ui.has_on_error) { ui_release_fallback(ui.on_error); }
+#ifdef UI_TEST
+    ui_driver_shutdown();
+#endif
     ui = null;
 }

@@ -234,6 +234,34 @@ void ui_stop() {
     ui_app_stop();
 }
 
+#ifdef UI_TEST
+#ifndef UI_SOURCE
+#define UI_SOURCE ""
+#endif
+// The driver (src/core/driver.esk), for the hosts' driver channel in a dev build: the answer
+// to one JSON request, or a directive {"host": ...} the host carries out and then passes its
+// result to ui_driver_done. The text is valid until the next call.
+string ui_driver(string request) {
+    if (!app_active) { return "{\"ok\": false, \"error\": \"the app is not running\"}"; }
+    string answer = ui_driver_request(request, UI_SOURCE);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+    return answer;
+}
+
+// The host carried out the driver's directive: `result` is what it reports ("error: ..."
+// when it could not). The answer to the request.
+string ui_driver_done(string result) {
+    if (!app_active) { return "{\"ok\": false, \"error\": \"the app is not running\"}"; }
+    string answer = ui_driver_finish(result);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+    return answer;
+}
+
+// The driver's clock in ms, where a host starts the animations a commit begins while the
+// driver owns the clock.
+double ui_driver_time() { return app_active ? ui_driver_now() : 0; }
+#endif
+
 void ui_start(int which) {
     if (app_active) { ui_stop(); }
     app_active = true;

@@ -41,7 +41,12 @@ struct Observer {
 
 // A hook's state in its scope: the hook kind and its type's tag, the data, how to free it,
 // and its observer if any. ui_slot gives one to a package's own hooks.
-struct Slot { int kind; *void tag; *void data; fn()->void dispose; *Observer observer; }
+struct Slot { int kind; *void tag; *void data; fn()->void dispose; *Observer observer;
+#ifdef UI_TEST
+    // A signal's value type for the driver's `state` (ui_driver_value_type).
+    int vtype;
+#endif
+}
 
 
 // Removes reader `at` of a source in O(1), fixing the moved entry's index (internal).
@@ -251,6 +256,9 @@ struct Signal<T> { T value; Source source; }
         signal.value = initial;
         slot.data = signal;
         slot.dispose = void() { ui_detach_source(&signal.source); free(signal); };
+#ifdef UI_TEST
+        slot.vtype = ui_driver_value_type<T>();
+#endif
     }
     return (*Signal<T>)slot.data;
 }

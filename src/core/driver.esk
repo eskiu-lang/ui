@@ -1,0 +1,896 @@
+// The driver: what `ui agent` asks a dev or test build (UI_TEST) and the clock it owns.
+// Part of <ui> (src/ui.esk imports it only when UI_TEST is defined, which the ui tool does
+// for `ui serve` builds; a release build has none of it).
+//
+// A request is one JSON object with an "op" (docs/agents.md lists them). ui_driver_request
+// answers it with one JSON object, from the core where it can (tree, state, logs, perf,
+// the clock, back). An op only the host can do (layout, input, its animations, its memory)
+// is answered with a directive for the host instead, {"host": OP, ...}; the host does it
+// and hands its result to ui_driver_finish, which answers the request.
+//
+// The virtual clock: once a request takes it ({"op": "hello", "clock": "virtual"}), the
+// core's timers and use_frame ticks no longer go to the host's clock. They run on the
+// driver's time, which moves only when a "clock" request advances it, so nothing moves
+// between two requests.
+
+// A timer armed on the virtual clock: its token, when it fires next (ms) and its period.
+struct UiDriverTimer { int token; double due; int ms; bool repeat; }
+
+// The driver's state (one per process; reset when the runtime shuts down).
+struct UiDriver {
+    // The virtual clock: whether it is on, its time in ms since it was taken, its timers,
+    // whether display frames run and when the next one is.
+    bool virtual;
+    double now;
+    List<UiDriverTimer> timers;
+    bool frames;
+    double next_frame;
+    // Until when a host transition started by the last commits runs (virtual ms).
+    double animating_until;
+    // The host's clock, kept while the driver owns it.
+    fn(int, int, bool)->void host_start;
+    fn(int)->void host_stop;
+    bool had_timer_host;
+    fn(bool)->void host_frames;
+    bool had_frame_host;
+    // The request waiting for the host: its op, the node it targets and what it asked.
+    String pending;
+    String target;
+    int node;
+    double advanced;
+    int fired;
+    bool idle;
+    String busy;
+    // The answer handed back to the host (valid until the next request).
+    String out;
+    // Measurements: each frame's time (ms, the last 600), how many, and the commits' sizes.
+    List<double> frame_ms;
+    int frame_count;
+    int64 commit_bytes;
+    int commit_max;
+    int commit_last;
+    // The core's errors and warnings, the last 500.
+    List<String> logs;
+}
+
+UiDriver ui_drv;
+
+// The time between two display frames on the virtual clock (60 per second), in ms.
+const double kDriverFrame = 16.666666666666668;
+
+// How far `clock settle` goes looking for idle, in virtual ms.
+const double kDriverSettle = 60000.0;
+
+// A per-type address (as the hooks' tags), to tell a signal's type at run time.
+*void ui_driver_tag<T>() { static int value; return &value; }
+
+// A signal's value type, by T: 1 int, 2 int64, 3 bool, 4 double, 5 float, 6 string, 7 uint8,
+// 8 char, 9 int16, 10 uint, 11 uint64, 0 any other (shown by its size).
+int ui_driver_value_type<T>() {
+    *void t = ui_driver_tag<T>();
+    if (t == ui_driver_tag<int>()) { return 1; }
+    if (t == ui_driver_tag<int64>()) { return 2; }
+    if (t == ui_driver_tag<bool>()) { return 3; }
+    if (t == ui_driver_tag<double>()) { return 4; }
+    if (t == ui_driver_tag<float>()) { return 5; }
+    if (t == ui_driver_tag<string>()) { return 6; }
+    if (t == ui_driver_tag<uint8>()) { return 7; }
+    if (t == ui_driver_tag<char>()) { return 8; }
+    if (t == ui_driver_tag<int16>()) { return 9; }
+    if (t == ui_driver_tag<uint>()) { return 10; }
+    if (t == ui_driver_tag<uint64>()) { return 11; }
+    return 0;
+}
+
+// A monotonic clock in ms, for the frame times `perf` reports.
+double ui_driver_clock_ms() {
+    let ts: timespec;
+    clock_gettime(CLOCK_MONO, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
+}
+
+// The driver's time in ms (0 when the clock was taken), for the hosts' animations.
+double ui_driver_now() { return ui_drv.now; }
+
+// Whether the driver owns the clock.
+bool ui_driver_virtual() { return ui_drv.virtual; }
+
+// Notes a core error or warning for `logs` (internal).
+void ui_driver_log(string level, string text) {
+    String line;
+    String_appendf(&line, "%s: %s", level, text);
+    if (ui_drv.logs.size >= 500) {
+        String_free(&ui_drv.logs.data[0]);
+        ui_drv.logs.remove(0);
+    }
+    ui_drv.logs.push(line);
+}
+
+// Notes a frame's time and its commit's size for `perf` (internal).
+void ui_driver_note_frame(double ms, int bytes) {
+    if (ui_drv.frame_ms.size >= 600) { ui_drv.frame_ms.remove(0); }
+    ui_drv.frame_ms.push(ms);
+    ui_drv.frame_count++;
+    ui_drv.commit_bytes += bytes;
+    ui_drv.commit_last = bytes;
+    if (bytes > ui_drv.commit_max) { ui_drv.commit_max = bytes; }
+}
+
+// A prop sent to the host: a change animated by the node's transition, or a screen shown
+// or hidden (which slides), keeps the host busy for a while on the virtual clock (internal).
+void ui_driver_note_prop(*Node node, int prop) {
+    double until = ui_drv.now;
+    bool animated = prop == 8 || prop == 9 || prop == 13 || prop == 15 || (prop >= 35 && prop <= 38);
+    if (animated && node.props[39] > 0) { until = ui_drv.now + (double)node.props[39]; }
+    if (prop == 23) { until = ui_drv.now + 350.0; }
+    if (until > ui_drv.animating_until) { ui_drv.animating_until = until; }
+}
+
+// Arms a timer on the virtual clock (internal).
+void ui_driver_arm(int token, int ms, bool repeat) {
+    ui_driver_disarm(token);
+    ui_drv.timers.push(UiDriverTimer{token, ui_drv.now + (double)ms, ms, repeat});
+}
+
+// Disarms a timer on the virtual clock (internal).
+void ui_driver_disarm(int token) {
+    for (int i = ui_drv.timers.size - 1; i >= 0; i--) {
+        if (ui_drv.timers.data[i].token == token) { ui_drv.timers.remove(i); }
+    }
+}
+
+// Starts or stops display frames on the virtual clock (internal).
+void ui_driver_frames(bool on) {
+    if (on && !ui_drv.frames) { ui_drv.next_frame = ui_drv.now + kDriverFrame; }
+    ui_drv.frames = on;
+}
+
+// Takes the clock from the host: armed timers and display frames move to the virtual clock,
+// at time 0 (internal).
+void ui_driver_take_clock() {
+    if (ui_drv.virtual) { return; }
+    ui_drv.virtual = true;
+    ui_drv.now = 0;
+    ui_drv.animating_until = 0;
+    ui_drv.had_timer_host = ui.has_timer_host;
+    ui_drv.had_frame_host = ui.has_frame_host;
+    if (ui.has_timer_host) {
+        ui_drv.host_start = ui.timer_start;
+        ui_drv.host_stop = ui.timer_stop;
+        for (i in 0..ui.timers.size) {
+            if (ui.timers.data[i].armed) { ui_drv.host_stop(ui.timers.data[i].token); }
+        }
+        if (ui.frame_timer != 0) { ui_drv.host_stop(ui.frame_timer); ui.frame_timer = 0; }
+    }
+    if (ui.has_frame_host) {
+        ui_drv.host_frames = ui.frame_request;
+        if (ui.frames_on) { ui_drv.host_frames(false); }
+    }
+    ui.timer_start = void(int token, int ms, bool repeat) { ui_driver_arm(token, ms, repeat); };
+    ui.timer_stop = void(int token) { ui_driver_disarm(token); };
+    ui.has_timer_host = true;
+    ui.frame_request = void(bool on) { ui_driver_frames(on); };
+    ui.has_frame_host = true;
+    for (i in 0..ui.timers.size) {
+        *UiTimer timer = ui.timers.data[i];
+        if (timer.armed) { ui_driver_arm(timer.token, timer.ms, timer.repeat); }
+    }
+    if (ui.frames_on) { ui_driver_frames(true); }
+}
+
+// Gives the clock back to the host: armed timers start again on its clock, from their whole
+// period (internal).
+void ui_driver_release_clock() {
+    if (!ui_drv.virtual) { return; }
+    ui_drv.virtual = false;
+    ui_drv.timers.size = 0;
+    bool frames = ui_drv.frames;
+    ui_drv.frames = false;
+    ui_release_timer_start(ui.timer_start);
+    ui_release_int(ui.timer_stop);
+    ui_release_bool(ui.frame_request);
+    ui.has_timer_host = ui_drv.had_timer_host;
+    ui.has_frame_host = ui_drv.had_frame_host;
+    if (ui_drv.had_timer_host) { ui.timer_start = ui_drv.host_start; ui.timer_stop = ui_drv.host_stop; }
+    if (ui_drv.had_frame_host) { ui.frame_request = ui_drv.host_frames; }
+    ui_drv.had_timer_host = false;
+    ui_drv.had_frame_host = false;
+    for (i in 0..ui.timers.size) {
+        *UiTimer timer = ui.timers.data[i];
+        if (timer.armed && ui.has_timer_host) { ui.timer_start(timer.token, timer.ms, timer.repeat); }
+    }
+    if (frames) {
+        ui.frames_on = false;
+        ui_frames_switch(true);
+    }
+}
+
+// Renders what is scheduled until nothing is (each commit is applied at once by the bridge
+// and the model tests' renderer) (internal).
+void ui_driver_flush() {
+    int guard = 0;
+    while (ui_needs_frame() && guard < 1000) { ui_frame(); guard++; }
+}
+
+// The next thing due on the virtual clock: the index of the earliest timer, -1 for a
+// display frame, -2 for nothing (internal).
+int ui_driver_next(*double when) {
+    int best = -2;
+    double at = 0;
+    for (i in 0..ui_drv.timers.size) {
+        if (best == -2 || ui_drv.timers.data[i].due < at) { best = i; at = ui_drv.timers.data[i].due; }
+    }
+    if (ui_drv.frames && (best == -2 || ui_drv.next_frame < at)) { best = -1; at = ui_drv.next_frame; }
+    *when = at;
+    return best;
+}
+
+// Runs what is due next, at its time; false when nothing is due by `until` (internal).
+bool ui_driver_step(double until) {
+    double when = 0;
+    int next = ui_driver_next(&when);
+    if (next == -2 || when > until) { return false; }
+    if (when > ui_drv.now) { ui_drv.now = when; }
+    ui_drv.fired++;
+    if (next == -1) {
+        ui_drv.next_frame = when + kDriverFrame;
+        ui_event_frame(when / 1000.0);
+    } else {
+        UiDriverTimer timer = ui_drv.timers.data[next];
+        if (timer.repeat) { ui_drv.timers.data[next].due = when + (double)(timer.ms > 0 ? timer.ms : 1); }
+        else { ui_drv.timers.remove(next); }
+        ui_event_timer(timer.token);
+    }
+    ui_driver_flush();
+    return true;
+}
+
+// Moves the virtual clock forward `ms`, running each timer and frame due on the way at its
+// own time, with the renders they cause; how many ran.
+int ui_driver_advance(double ms) {
+    ui_driver_take_clock();
+    ui_drv.fired = 0;
+    double until = ui_drv.now + (ms < 0 ? 0 : ms);
+    ui_driver_flush();
+    while (ui_driver_step(until)) {}
+    ui_drv.now = until;
+    ui_driver_flush();
+    return ui_drv.fired;
+}
+
+// Whether nothing would happen without input: no timeout pending (intervals repeat
+// forever and do not count), no display frames, no render, no host transition running.
+// What is still busy goes to ui_drv.busy (internal).
+bool ui_driver_is_idle() {
+    String_clear(&ui_drv.busy);
+    bool timeout = false;
+    for (i in 0..ui_drv.timers.size) { if (!ui_drv.timers.data[i].repeat) { timeout = true; } }
+    if (timeout) { String_append(&ui_drv.busy, "a timeout "); }
+    if (ui_drv.frames) { String_append(&ui_drv.busy, "use_frame "); }
+    if (ui_needs_frame()) { String_append(&ui_drv.busy, "a render "); }
+    if (ui_drv.animating_until > ui_drv.now) { String_append(&ui_drv.busy, "a transition "); }
+    String_trim(&ui_drv.busy);
+    return ui_drv.busy.len == 0;
+}
+
+// Runs the virtual clock until idle (ui_driver_is_idle), at most kDriverSettle ms; true when
+// it got there.
+bool ui_driver_settle() {
+    ui_driver_take_clock();
+    ui_drv.fired = 0;
+    double limit = ui_drv.now + kDriverSettle;
+    ui_driver_flush();
+    while (!ui_driver_is_idle()) {
+        if (ui_driver_step(limit)) { continue; }
+        // Only a transition is left: its end.
+        if (ui_drv.animating_until > ui_drv.now && ui_drv.animating_until <= limit
+            && !ui_drv.frames && !ui_needs_frame()) {
+            bool timeout = false;
+            for (i in 0..ui_drv.timers.size) { if (!ui_drv.timers.data[i].repeat) { timeout = true; } }
+            if (!timeout) { ui_drv.now = ui_drv.animating_until; continue; }
+        }
+        break;
+    }
+    ui_drv.idle = ui_driver_is_idle();
+    return ui_drv.idle;
+}
+
+// Frees the driver's state with the runtime (internal).
+void ui_driver_shutdown() {
+    if (ui_drv.had_timer_host) { ui_release_timer_start(ui_drv.host_start); ui_release_int(ui_drv.host_stop); }
+    if (ui_drv.had_frame_host) { ui_release_bool(ui_drv.host_frames); }
+    ui_drv.had_timer_host = false;
+    ui_drv.had_frame_host = false;
+    ui_drv.virtual = false;
+    ui_drv.frames = false;
+    ui_drv.now = 0;
+    ui_drv.animating_until = 0;
+    ui_drv.timers.free();
+    String_free(&ui_drv.pending); String_free(&ui_drv.target); String_free(&ui_drv.busy);
+    String_free(&ui_drv.out);
+    ui_drv.frame_ms.free();
+    ui_drv.frame_count = 0; ui_drv.commit_bytes = 0; ui_drv.commit_max = 0; ui_drv.commit_last = 0;
+    for (i in 0..ui_drv.logs.size) { String_free(&ui_drv.logs.data[i]); }
+    ui_drv.logs.free();
+}
+
+// ---- answers ----
+
+// `text` as a JSON string, appended to `out` (null as "").
+void ui_json_string(*String out, string text) {
+    String_append(out, "\"");
+    if (text != null) {
+        for (int64 i = 0; text[i] != 0; i++) {
+            uint8 c = (uint8)text[i];
+            if (c == '"') { String_append(out, "\\\""); }
+            else if (c == '\\') { String_append(out, "\\\\"); }
+            else if (c == '\n') { String_append(out, "\\n"); }
+            else if (c == '\r') { String_append(out, "\\r"); }
+            else if (c == '\t') { String_append(out, "\\t"); }
+            else if (c < 32) { String_appendf(out, "\\u%04x", (int)c); }
+            else { String_push(out, (char)c); }
+        }
+    }
+    String_append(out, "\"");
+}
+
+// A number in JSON: whole numbers without a fraction (internal).
+void ui_json_number(*String out, double value) {
+    if (value == (double)(int64)value) { String_appendf(out, "%lld", (int64)value); }
+    else { String_appendf(out, "%.3f", value); }
+}
+
+// An int prop's name in `tree` (internal).
+string ui_driver_prop_name(int code) {
+    if (code == 4) { return "width"; }
+    if (code == 5) { return "height"; }
+    if (code == 6) { return "grow"; }
+    if (code == 7) { return "wrap"; }
+    if (code == 8) { return "background"; }
+    if (code == 9) { return "color"; }
+    if (code == 10) { return "font_size"; }
+    if (code == 11) { return "font_weight"; }
+    if (code == 12) { return "border_width"; }
+    if (code == 13) { return "border_color"; }
+    if (code == 14) { return "radius"; }
+    if (code == 15) { return "opacity"; }
+    if (code == 16) { return "align"; }
+    if (code == 17) { return "justify"; }
+    if (code == 18) { return "on"; }
+    if (code == 19) { return "spinning"; }
+    if (code == 22) { return "refreshing"; }
+    if (code == 23) { return "active"; }
+    if (code == 24) { return "absolute"; }
+    if (code == 25) { return "left"; }
+    if (code == 26) { return "top"; }
+    if (code == 27) { return "right"; }
+    if (code == 28) { return "bottom"; }
+    if (code == 29) { return "aspect_ratio"; }
+    if (code == 30) { return "on_layout"; }
+    if (code == 31) { return "on_hover"; }
+    if (code == 32) { return "value"; }
+    if (code == 33) { return "min"; }
+    if (code == 34) { return "max"; }
+    if (code == 35) { return "translate_x"; }
+    if (code == 36) { return "translate_y"; }
+    if (code == 37) { return "scale"; }
+    if (code == 38) { return "rotate"; }
+    if (code == 39) { return "transition_ms"; }
+    if (code == 40) { return "easing"; }
+    if (code == 41) { return "on_pan"; }
+    if (code == 42) { return "min_width"; }
+    if (code == 43) { return "max_width"; }
+    if (code == 44) { return "min_height"; }
+    if (code == 45) { return "max_height"; }
+    if (code == 46) { return "shadow"; }
+    if (code == 47) { return "cover"; }
+    if (code == 48) { return "pixelated"; }
+    if (code == 49) { return "on_long_press"; }
+    if (code == 50) { return "gradient"; }
+    if (code == 51) { return "gradient_angle"; }
+    if (code == 52) { return "blur"; }
+    return null;
+}
+
+// Whether int prop `code` belongs to elements of `kind`, and its value when not set
+// (internal).
+bool ui_driver_prop_applies(int kind, int code, *int64 unset) {
+    *unset = 0;
+    if (code == 18) { *unset = -1; return kind == 9; }
+    if (code == 19) { *unset = -1; return kind == 10; }
+    if (code == 22) { return kind == 6; }
+    if (code == 23) { *unset = -1; return kind == 14; }
+    if (code >= 32 && code <= 34) { *unset = kUnset; return kind == 15; }
+    if (code == 8 || code == 9 || code == 13 || code == 50) { *unset = -1; }
+    if (code == 15 || code == 37) { *unset = 100; }
+    if (code == 51) { *unset = 180; }
+    if (code >= 25 && code <= 28) { *unset = kUnset; }
+    return ui_driver_prop_name(code) != null;
+}
+
+// A node's identity in an answer: "id", "kind", and its test_id, label, text, key and
+// component name when it has them (internal).
+void ui_driver_identity(*String out, *Node node) {
+    String_appendf(out, "\"id\": %d, \"kind\": ", node.id);
+    ui_json_string(out, ui_kind_name(node.kind));
+    if (node.test_id != null) { String_append(out, ", \"test_id\": "); ui_json_string(out, node.test_id); }
+    if (node.label != null) { String_append(out, ", \"label\": "); ui_json_string(out, node.label); }
+    if (node.text != null) { String_append(out, ", \"text\": "); ui_json_string(out, node.text); }
+    if (node.key.set) { String_appendf(out, ", \"key\": %lld", node.key.value); }
+    if (node.name != null) { String_append(out, ", \"name\": "); ui_json_string(out, node.name); }
+}
+
+// A node and its children for `tree` (internal).
+void ui_driver_tree_node(*String out, *Node node) {
+    String_append(out, "{");
+    ui_driver_identity(out, node);
+    if (node.placeholder != null) { String_append(out, ", \"placeholder\": "); ui_json_string(out, node.placeholder); }
+    if (node.source != null) { String_append(out, ", \"source\": "); ui_json_string(out, node.source); }
+    if (node.kind == 5 && node.focused == 1) { String_append(out, ", \"focused\": true"); }
+    bool any = false;
+    String props;
+    defer String_free(&props);
+    if (node.kind != 0 && node.gap != 8) { String_appendf(&props, "\"gap\": %d", node.gap); any = true; }
+    if (node.padding != 0) { String_appendf(&props, "%s\"padding\": %d", any ? ", " : "", node.padding); any = true; }
+    for (code in 4..53) {
+        if (node == ui.root) { break; }
+        int64 unset = 0;
+        if (!ui_driver_prop_applies(node.kind, code, &unset)) { continue; }
+        int64 value = node.props[code];
+        if (value == unset) { continue; }
+        String_appendf(&props, "%s\"%s\": ", any ? ", " : "", ui_driver_prop_name(code));
+        if (code == 8 || code == 9 || code == 13 || code == 50) { String_appendf(&props, "\"#%08llx\"", value & 0xffffffff); }
+        else { String_appendf(&props, "%lld", value); }
+        any = true;
+    }
+    if (any) { String_appendf(out, ", \"props\": {%s}", props.data); }
+    if (node.children.size > 0) {
+        String_append(out, ", \"children\": [");
+        for (i in 0..node.children.size) {
+            if (i > 0) { String_append(out, ", "); }
+            ui_driver_tree_node(out, node.children.data[i]);
+        }
+        String_append(out, "]");
+    }
+    String_append(out, "}");
+}
+
+// A node's accessible name: its label, else a text's or button's own text (internal).
+string ui_driver_name(*Node node) {
+    if (node.label != null) { return node.label; }
+    if (node.kind == 3 || node.kind == 4) { return node.text; }
+    return null;
+}
+
+// Collects the nodes whose test_id (by_name false) or accessible name (true) is `target`
+// (internal).
+void ui_driver_collect(*Node node, string target, bool by_name, List<*Node>* found) {
+    string value = by_name ? ui_driver_name(node) : node.test_id;
+    if (node != ui.root && value != null && strcmp(value, target) == 0) { found.push(node); }
+    for (i in 0..node.children.size) { ui_driver_collect(node.children.data[i], target, by_name, found); }
+}
+
+// The node `target` names: "#N" is node N; otherwise the element whose test_id is `target`,
+// else the one whose accessible name is. Null with the reason in `error` when none or more
+// than one match (internal).
+*Node ui_driver_find(string target, *String error) {
+    if (target == null || target[0] == 0) { String_append(error, "no element named (give a test_id, a label or #id)"); return null; }
+    if (target[0] == '#') {
+        int id = atoi(&target[1]);
+        *Node node = id > 0 && id < ui.by_id.size ? ui.by_id.data[id] : null;
+        if (node == null) { String_appendf(error, "no element #%d", id); }
+        return node;
+    }
+    List<*Node> found;
+    defer found.free();
+    ui_driver_collect(ui.root, target, false, &found);
+    if (found.size == 0) { ui_driver_collect(ui.root, target, true, &found); }
+    if (found.size == 1) { return found.data[0]; }
+    if (found.size == 0) {
+        String_appendf(error, "no element with test_id or accessible name '%s'", target);
+        return null;
+    }
+    String_appendf(error, "%d elements match '%s':", found.size, target);
+    for (i in 0..found.size) {
+        if (i == 3) { String_append(error, " ..."); break; }
+        String_appendf(error, " #%d %s in ", found.data[i].id, ui_kind_name(found.data[i].kind));
+        ui_node_path(found.data[i], error);
+        String_append(error, ";");
+    }
+    String_append(error, " give one a test_id, or use #id");
+    return null;
+}
+
+// What a tap reaches from `node`: itself when it takes presses (a button, a pressable, a
+// field, a switch, a modal), else the nearest that does above it (internal).
+*Node ui_driver_tappable(*Node node) {
+    for (*Node at = node; at != null && at != ui.root; at = at.parent) {
+        int k = at.kind;
+        if (k == 4 || k == 5 || k == 8 || k == 9 || k == 12) { return at; }
+    }
+    return null;
+}
+
+// The nearest scroll at or above `node` (internal).
+*Node ui_driver_scrollable(*Node node) {
+    for (*Node at = node; at != null && at != ui.root; at = at.parent) { if (at.kind == 6) { return at; } }
+    return null;
+}
+
+// A signal's value for `state` (internal).
+void ui_driver_value(*String out, Slot slot) {
+    if (slot.kind == 3) {
+        *StringState state = (*StringState)slot.data;
+        ui_json_string(out, state.signal.value.text);
+        return;
+    }
+    *void at = slot.data;
+    int t = slot.vtype;
+    if (t == 1) { String_appendf(out, "%d", *(*int)at); }
+    else if (t == 2) { String_appendf(out, "%lld", *(*int64)at); }
+    else if (t == 3) { String_append(out, *(*bool)at ? "true" : "false"); }
+    else if (t == 4) { ui_json_number(out, *(*double)at); }
+    else if (t == 5) { ui_json_number(out, (double)*(*float)at); }
+    else if (t == 6) { string text = *(*string)at; if (text == null) { String_append(out, "null"); } else { ui_json_string(out, text); } }
+    else if (t == 7) { String_appendf(out, "%d", (int)*(*uint8)at); }
+    else if (t == 8) { String_appendf(out, "%d", (int)*(*char)at); }
+    else if (t == 9) { String_appendf(out, "%d", (int)*(*int16)at); }
+    else if (t == 10) { String_appendf(out, "%u", *(*uint)at); }
+    else if (t == 11) { String_appendf(out, "%llu", *(*uint64)at); }
+    else { String_append(out, "\"(a value of another type)\""); }
+}
+
+// The scopes holding signals, for `state` (internal).
+void ui_driver_state_node(*String out, *Node node, *bool first) {
+    bool has = false;
+    for (i in 0..node.slots.size) { if (node.slots.data[i].kind == 0 || node.slots.data[i].kind == 3) { has = true; } }
+    if (has) {
+        String_append(out, *first ? "" : ", ");
+        *first = false;
+        String_append(out, "{");
+        ui_driver_identity(out, node);
+        String_append(out, ", \"path\": ");
+        String path;
+        ui_node_path(node, &path);
+        ui_json_string(out, path.data);
+        String_free(&path);
+        String_append(out, ", \"signals\": [");
+        bool comma = false;
+        for (i in 0..node.slots.size) {
+            Slot slot = node.slots.data[i];
+            if (slot.kind != 0 && slot.kind != 3) { continue; }
+            if (comma) { String_append(out, ", "); }
+            comma = true;
+            ui_driver_value(out, slot);
+        }
+        String_append(out, "]}");
+    }
+    for (i in 0..node.children.size) { ui_driver_state_node(out, node.children.data[i], first); }
+}
+
+// Starts an answer: {"ok": true, "op": OP (internal).
+void ui_driver_begin(string op) {
+    String_clear(&ui_drv.out);
+    String_append(&ui_drv.out, "{\"ok\": true, \"op\": ");
+    ui_json_string(&ui_drv.out, op);
+}
+
+// An answer that the request failed with `error`.
+string ui_driver_error(string op, string error) {
+    String_clear(&ui_drv.out);
+    String_append(&ui_drv.out, "{\"ok\": false, \"op\": ");
+    ui_json_string(&ui_drv.out, op == null ? "" : op);
+    String_append(&ui_drv.out, ", \"error\": ");
+    ui_json_string(&ui_drv.out, error);
+    String_append(&ui_drv.out, "}");
+    return ui_drv.out.data;
+}
+
+// A directive for the host: {"host": OP, "node": N (its kind and the rest follow), and the
+// request waits for ui_driver_finish (internal).
+void ui_driver_directive(string op, *Node node) {
+    String_clear(&ui_drv.pending); String_append(&ui_drv.pending, op);
+    ui_drv.node = node == null ? 0 : node.id;
+    String_clear(&ui_drv.out);
+    String_append(&ui_drv.out, "{\"host\": ");
+    ui_json_string(&ui_drv.out, op);
+    if (node != null) { String_appendf(&ui_drv.out, ", \"node\": %d, \"kind\": %d", node.id, node.kind); }
+}
+
+// The clock directive: the hosts move their own animations to the driver's time.
+string ui_driver_clock_directive(string op, bool settle) {
+    ui_driver_directive(op, null);
+    String_append(&ui_drv.out, ", \"now\": ");
+    ui_json_number(&ui_drv.out, ui_drv.now);
+    String_appendf(&ui_drv.out, ", \"virtual\": %s, \"settle\": %s}", ui_drv.virtual ? "true" : "false", settle ? "true" : "false");
+    return ui_drv.out.data;
+}
+
+// A member of a request: its text (null when missing or not a string), number or flag
+// (internal).
+string ui_driver_text(*JsonValue request, string key) {
+    *JsonValue v = JsonValue_get(request, key);
+    return v != null && v.kind == JString ? (v.str.data == null ? "" : v.str.data) : null;
+}
+
+// A request's number member, or `otherwise` (internal).
+double ui_driver_number(*JsonValue request, string key, double otherwise) {
+    *JsonValue v = JsonValue_get(request, key);
+    return v != null && v.kind == JNumber ? v.num : otherwise;
+}
+
+// Whether a request's member is true (internal).
+bool ui_driver_flag(*JsonValue request, string key) {
+    *JsonValue v = JsonValue_get(request, key);
+    return v != null && v.kind == JBool && v.boolean != 0;
+}
+
+// The answer to a request (a JSON object), or a directive for the host ({"host": ...}),
+// which the host carries out before calling ui_driver_finish. The text is the driver's,
+// valid until the next request. `source` is what the build was made from (UI_SOURCE).
+string ui_driver_request(string line, string source) {
+    String_clear(&ui_drv.pending);
+    *JsonValue request = json_parse(line);
+    if (request == null || request.kind != JObject) {
+        JsonValue_free(request);
+        return ui_driver_error(null, "a request is one JSON object with an \"op\"");
+    }
+    string answer = ui_driver_answer(request, source);
+    JsonValue_free(request);
+    return answer;
+}
+
+// Answers a parsed request (internal).
+string ui_driver_answer(*JsonValue request, string source) {
+    string op = ui_driver_text(request, "op");
+    if (op == null) { return ui_driver_error(null, "a request needs an \"op\""); }
+    if (ui == null) { return ui_driver_error(op, "the app is not running"); }
+    ui_driver_flush();
+    if (strcmp(op, "hello") == 0) {
+        string clock = ui_driver_text(request, "clock");
+        if (clock != null && strcmp(clock, "real") == 0) { ui_driver_release_clock(); }
+        else if (clock == null || strcmp(clock, "virtual") == 0) { ui_driver_take_clock(); }
+        String_clear(&ui_drv.target); String_append(&ui_drv.target, source == null ? "" : source);
+        return ui_driver_clock_directive("hello", false);
+    }
+    if (strcmp(op, "tree") == 0) {
+        ui_driver_begin(op);
+        String_append(&ui_drv.out, ", \"root\": ");
+        ui_driver_tree_node(&ui_drv.out, ui.root);
+        String_append(&ui_drv.out, "}");
+        return ui_drv.out.data;
+    }
+    if (strcmp(op, "state") == 0) {
+        ui_driver_begin(op);
+        String_append(&ui_drv.out, ", \"scopes\": [");
+        bool first = true;
+        ui_driver_state_node(&ui_drv.out, ui.root, &first);
+        String_append(&ui_drv.out, "], \"routes\": [");
+        if (ui.router != null) {
+            for (i in 0..ui.router.stack.size) {
+                if (i > 0) { String_append(&ui_drv.out, ", "); }
+                ui_json_string(&ui_drv.out, ui.router.stack.data[i].data);
+            }
+        }
+        int armed = 0;
+        for (i in 0..ui.timers.size) { if (ui.timers.data[i].armed) { armed++; } }
+        String_appendf(&ui_drv.out, "], \"modals\": %d, \"timers\": %d, \"frames\": %s, \"fetches\": %d, \"clock\": \"%s\", \"now\": ",
+            ui.modals.size, armed, ui.frames_on ? "true" : "false", ui.fetches.size, ui_drv.virtual ? "virtual" : "real");
+        ui_json_number(&ui_drv.out, ui_drv.now);
+        String_append(&ui_drv.out, "}");
+        return ui_drv.out.data;
+    }
+    if (strcmp(op, "back") == 0) {
+        bool handled = ui_back();
+        ui_driver_flush();
+        ui_driver_begin(op);
+        String_appendf(&ui_drv.out, ", \"handled\": %s}", handled ? "true" : "false");
+        return ui_drv.out.data;
+    }
+    if (strcmp(op, "clock") == 0) {
+        if (ui_driver_flag(request, "real")) {
+            ui_driver_release_clock();
+            ui_drv.advanced = 0;
+            return ui_driver_clock_directive("clock", false);
+        }
+        double before = ui_drv.virtual ? ui_drv.now : 0;
+        bool settle = ui_driver_flag(request, "settle");
+        if (settle) { ui_driver_settle(); }
+        else {
+            double ms = ui_driver_number(request, "ms", -1);
+            if (ms < 0) { return ui_driver_error(op, "clock takes +MS (a number of milliseconds) or settle"); }
+            ui_driver_advance(ms);
+            ui_drv.idle = ui_driver_is_idle();
+        }
+        ui_drv.advanced = ui_drv.now - before;
+        return ui_driver_clock_directive("clock", settle);
+    }
+    if (strcmp(op, "logs") == 0 || strcmp(op, "perf") == 0 || strcmp(op, "layout") == 0) {
+        ui_driver_directive(op, null);
+        String_append(&ui_drv.out, "}");
+        return ui_drv.out.data;
+    }
+    if (strcmp(op, "tap") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+        string target = ui_driver_text(request, "target");
+        String error;
+        defer String_free(&error);
+        *Node node = ui_driver_find(target, &error);
+        if (node == null) { return ui_driver_error(op, error.data); }
+        *Node reached = node;
+        if (strcmp(op, "tap") == 0) { reached = ui_driver_tappable(node); }
+        else if (strcmp(op, "scroll") == 0) { reached = ui_driver_scrollable(node); }
+        else if (node.kind != 5) { reached = null; }
+        if (reached == null) {
+            String_appendf(&error, "'%s' is a %s (#%d), which %s", target, ui_kind_name(node.kind), node.id,
+                strcmp(op, "tap") == 0 ? "takes no press and is inside nothing that does"
+                : strcmp(op, "scroll") == 0 ? "is not a scroll or inside one" : "is not a TextInput");
+            return ui_driver_error(op, error.data);
+        }
+        String_clear(&ui_drv.target); String_append(&ui_drv.target, target);
+        ui_driver_directive(op, reached);
+        if (strcmp(op, "type") == 0) {
+            string text = ui_driver_text(request, "text");
+            String_append(&ui_drv.out, ", \"text\": ");
+            ui_json_string(&ui_drv.out, text == null ? "" : text);
+        }
+        if (strcmp(op, "scroll") == 0) {
+            String_append(&ui_drv.out, ", \"dy\": ");
+            ui_json_number(&ui_drv.out, ui_driver_number(request, "dy", 0));
+        }
+        String_append(&ui_drv.out, "}");
+        return ui_drv.out.data;
+    }
+    String message;
+    String_appendf(&message, "unknown op '%s'", op);
+    string answer = ui_driver_error(op, message.data);
+    String_free(&message);
+    return answer;
+}
+
+// Reads a number from `text` at `*at`, moving past it and the blanks after it (internal).
+double ui_driver_read(string text, *int at) {
+    int i = *at;
+    double sign = 1;
+    if (text[i] == '-') { sign = -1; i++; }
+    double value = 0;
+    while (text[i] >= '0' && text[i] <= '9') { value = value * 10 + (double)(text[i] - '0'); i++; }
+    if (text[i] == '.') {
+        i++;
+        double scale = 0.1;
+        while (text[i] >= '0' && text[i] <= '9') { value += scale * (double)(text[i] - '0'); scale /= 10; i++; }
+    }
+    while (text[i] == ' ' || text[i] == '\t') { i++; }
+    *at = i;
+    return sign * value;
+}
+
+// The layout answer from the host's lines "ID X Y WIDTH HEIGHT VISIBLE" (points from the
+// window's top left), in tree order (internal).
+void ui_driver_layout_node(*String out, *Node node, List<double>* rows, *bool first) {
+    for (int r = 0; r + 5 < rows.size; r += 6) {
+        if ((int)rows.data[r] != node.id || node == ui.root) { continue; }
+        String_append(out, *first ? "" : ", ");
+        *first = false;
+        String_append(out, "{");
+        ui_driver_identity(out, node);
+        String_append(out, ", \"x\": "); ui_json_number(out, rows.data[r + 1]);
+        String_append(out, ", \"y\": "); ui_json_number(out, rows.data[r + 2]);
+        String_append(out, ", \"width\": "); ui_json_number(out, rows.data[r + 3]);
+        String_append(out, ", \"height\": "); ui_json_number(out, rows.data[r + 4]);
+        String_appendf(out, ", \"visible\": %s}", rows.data[r + 5] != 0 ? "true" : "false");
+        break;
+    }
+    for (i in 0..node.children.size) { ui_driver_layout_node(out, node.children.data[i], rows, first); }
+}
+
+// The host carried out the directive: `result` is what it reports ("error: ..." when it
+// could not). Renders what the host's input scheduled and answers the request.
+string ui_driver_finish(string result) {
+    string op = ui_drv.pending.data;
+    if (op == null || op[0] == 0) { return ui_driver_error(null, "no request is waiting for the host"); }
+    String op_text;
+    String_from(&op_text, op);
+    defer String_free(&op_text);
+    op = op_text.data;
+    String_clear(&ui_drv.pending);
+    if (result == null) { result = ""; }
+    if (strncmp(result, "error: ", 7) == 0) { return ui_driver_error(op, &result[7]); }
+    if (ui == null) { return ui_driver_error(op, "the app stopped"); }
+    ui_driver_flush();
+    ui_driver_begin(op);
+    if (strcmp(op, "hello") == 0 || strcmp(op, "clock") == 0) {
+        String_appendf(&ui_drv.out, ", \"clock\": \"%s\", \"now\": ", ui_drv.virtual ? "virtual" : "real");
+        ui_json_number(&ui_drv.out, ui_drv.now);
+        if (strcmp(op, "hello") == 0) {
+            String_append(&ui_drv.out, ", \"source\": ");
+            ui_json_string(&ui_drv.out, ui_drv.target.data == null ? "" : ui_drv.target.data);
+            String_append(&ui_drv.out, ", \"platform\": ");
+            ui_json_string(&ui_drv.out, ui_platform_name());
+        } else {
+            String_append(&ui_drv.out, ", \"advanced\": ");
+            ui_json_number(&ui_drv.out, ui_drv.advanced);
+            String_appendf(&ui_drv.out, ", \"fired\": %d, \"idle\": %s, \"busy\": ", ui_drv.fired,
+                ui_driver_is_idle() ? "true" : "false");
+            ui_json_string(&ui_drv.out, ui_drv.busy.data == null ? "" : ui_drv.busy.data);
+        }
+    } else if (strcmp(op, "tap") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+        String_append(&ui_drv.out, ", \"target\": ");
+        ui_json_string(&ui_drv.out, ui_drv.target.data);
+        *Node node = ui_drv.node > 0 && ui_drv.node < ui.by_id.size ? ui.by_id.data[ui_drv.node] : null;
+        String_appendf(&ui_drv.out, ", \"id\": %d", ui_drv.node);
+        if (node != null) {
+            String_append(&ui_drv.out, ", \"kind\": ");
+            ui_json_string(&ui_drv.out, ui_kind_name(node.kind));
+        }
+        if (strcmp(op, "scroll") == 0) {
+            int at = 0;
+            String_append(&ui_drv.out, ", \"offset\": ");
+            ui_json_number(&ui_drv.out, ui_driver_read(result, &at));
+        }
+    } else if (strcmp(op, "layout") == 0) {
+        List<double> rows;
+        defer rows.free();
+        int at = 0;
+        while (result[at] != 0) {
+            while (result[at] == '\n' || result[at] == ' ') { at++; }
+            if (result[at] == 0) { break; }
+            for (k in 0..6) { rows.push(ui_driver_read(result, &at)); }
+            while (result[at] != 0 && result[at] != '\n') { at++; }
+        }
+        String_appendf(&ui_drv.out, ", \"window\": {\"width\": %d, \"height\": %d, \"scale\": %d}, \"frames\": [",
+            ui.window.width, ui.window.height, ui.window.scale);
+        bool first = true;
+        ui_driver_layout_node(&ui_drv.out, ui.root, &rows, &first);
+        String_append(&ui_drv.out, "]");
+    } else if (strcmp(op, "logs") == 0) {
+        String_append(&ui_drv.out, ", \"core\": [");
+        for (i in 0..ui_drv.logs.size) {
+            if (i > 0) { String_append(&ui_drv.out, ", "); }
+            ui_json_string(&ui_drv.out, ui_drv.logs.data[i].data);
+        }
+        String_append(&ui_drv.out, "], \"host\": [");
+        int at = 0;
+        bool first = true;
+        String line;
+        defer String_free(&line);
+        while (true) {
+            char c = result[at];
+            if (c == '\n' || c == 0) {
+                if (line.len > 0) {
+                    if (!first) { String_append(&ui_drv.out, ", "); }
+                    first = false;
+                    ui_json_string(&ui_drv.out, line.data);
+                }
+                String_clear(&line);
+                if (c == 0) { break; }
+            } else { String_push(&line, c); }
+            at++;
+        }
+        String_append(&ui_drv.out, "]");
+    } else if (strcmp(op, "perf") == 0) {
+        List<double> sorted;
+        defer sorted.free();
+        for (i in 0..ui_drv.frame_ms.size) { sorted.push(ui_drv.frame_ms.data[i]); }
+        for (i in 1..sorted.size) {
+            double v = sorted.data[i];
+            int j = i - 1;
+            while (j >= 0 && sorted.data[j] > v) { sorted.data[j + 1] = sorted.data[j]; j--; }
+            sorted.data[j + 1] = v;
+        }
+        double p50 = sorted.size > 0 ? sorted.data[sorted.size / 2] : 0;
+        double p95 = sorted.size > 0 ? sorted.data[sorted.size * 95 / 100] : 0;
+        double worst = sorted.size > 0 ? sorted.data[sorted.size - 1] : 0;
+        int live = 0;
+        for (i in 0..ui.by_id.size) { if (ui.by_id.data[i] != null) { live++; } }
+        String_appendf(&ui_drv.out, ", \"frames\": %d, \"frame_ms\": {\"p50\": %.3f, \"p95\": %.3f, \"max\": %.3f, \"measured\": %d}",
+            ui_drv.frame_count, p50, p95, worst, sorted.size);
+        String_appendf(&ui_drv.out, ", \"commit_bytes\": {\"last\": %d, \"max\": %d, \"mean\": %lld}, \"nodes\": %d",
+            ui_drv.commit_last, ui_drv.commit_max,
+            ui_drv.frame_count > 0 ? ui_drv.commit_bytes / ui_drv.frame_count : 0, live);
+        int at = 0;
+        String_append(&ui_drv.out, ", \"memory_bytes\": ");
+        ui_json_number(&ui_drv.out, ui_driver_read(result, &at));
+    }
+    String_append(&ui_drv.out, "}");
+    return ui_drv.out.data;
+}
