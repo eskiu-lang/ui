@@ -84,24 +84,27 @@ int ui_driver_value_type<T>() {
     return 0;
 }
 
-// A monotonic clock in ms, for the frame times `perf` reports.
 #ifdef _WIN32
+// Windows' performance counter (it has no clock_gettime).
 extern int QueryPerformanceCounter(*int64 count);
+// The counter's ticks per second.
 extern int QueryPerformanceFrequency(*int64 frequency);
+#endif
+
+// A monotonic clock in ms, for the frame times `perf` reports.
 double ui_driver_clock_ms() {
+#ifdef _WIN32
     let count: int64 = 0;
     let frequency: int64 = 1;
     QueryPerformanceFrequency(&frequency);
     QueryPerformanceCounter(&count);
     return (double)count * 1000.0 / (double)frequency;
-}
 #else
-double ui_driver_clock_ms() {
     let ts: timespec;
     clock_gettime(CLOCK_MONO, &ts);
     return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
-}
 #endif
+}
 
 // The driver's time in ms (0 when the clock was taken), for the hosts' animations.
 double ui_driver_now() { return ui_drv.now; }
