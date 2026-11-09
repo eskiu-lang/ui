@@ -57,7 +57,7 @@ the directives it gives the host, and the virtual clock (timers fire only when i
 
 `ui test` runs an app's UI tests on each host through the driver `ui agent` uses
 ([Agents](agents.md)). A test is a text file, `tests/ui/NAME.uitest` in the app, and the same
-file runs unchanged on the web, macOS, the iOS simulator and Android:
+file runs unchanged on the web, macOS, Windows, the iOS simulator and Android:
 
 ```bash
 ui test                    # every test on every host available here
@@ -67,7 +67,7 @@ ui test web --update       # record the screenshots again
 ```
 
 With no host it runs on each one this machine has: the web needs emcc and Chrome
-(`UI_CHROME`), macOS a Mac (the window needs a display), iOS a simulator, Android a device or a running emulator (`adb devices`); the
+(`UI_CHROME`), macOS a Mac (the window needs a display), Windows a Windows machine with MinGW-w64's C++ compiler, iOS a simulator, Android a device or a running emulator (`adb devices`); the
 others are reported as skipped. Each file starts the app afresh (a new process, a new page on
 the web) through `ui serve HOST`, which `ui test` starts when it is not running and stops
 after, and takes the driver's clock, so a test never sleeps: what an op causes has rendered
@@ -132,11 +132,11 @@ them.
 | `python3 tools/check_android.py` | a booted arm64 device or emulator (`ANDROID_SERIAL`), SDK 35, NDK 28.2 |
 | `python3 tools/check_native.py` | the native example on the simulator and the Android device: module events, a view's props and events |
 | `python3 tools/check_desktop.py` | the WKWebView host's window running the web build (needs an awake, unlocked display) |
-| `tests/agent/check.sh web\|macos\|linux\|ios\|android` | every `ui agent` op on `tests/agent`, through `ui serve` and the host's driver channel: targets, input, layout, state, logs, perf, screenshots, the clock (two screenshots a second apart are the same, `clock settle` finishes the animations), and a reload after an edit that keeps the count, the field and the timeout's result (with source positions, `tree`'s file and line too); web needs emcc and Chrome (`UI_CHROME`) |
+| `tests/agent/check.sh web\|macos\|linux\|windows\|ios\|android` | every `ui agent` op on `tests/agent`, through `ui serve` and the host's driver channel: targets, input, layout, state, logs, perf, screenshots, the clock (two screenshots a second apart are the same, `clock settle` finishes the animations), and a reload after an edit that keeps the count, the field and the timeout's result (with source positions, `tree`'s file and line too); web needs emcc and Chrome (`UI_CHROME`) |
 | `ui test HOST` in `tests/conformance` | the conformance scene's UI tests (below) |
 | `python3 tests/web/prerender.py [--measure N]` | the prerendered first frame in headless Chrome: content before the module runs (the module blocked), the elements adopted (none made again, a press counts), a different first commit replacing the markup, another route starting empty; with `--measure`, the first contentful paint with and without it |
 | `python3 tests/web/updates.py` | asset updates in headless Chrome against a local update server (`tests/web/updates-app`): a bundle downloaded and used at the next load, a changed file and an added one served by the service worker, a file that does not match its hash and a changed signature refused |
-| `tools/ci_host.sh web\|macos\|linux\|ios\|android` | what CI runs on a host: the agent check, the conformance tests and the speed budgets (on macOS also a universal, signed release; on Linux a release without the driver; on the web the two Chrome tests above) |
+| `tools/ci_host.sh web\|macos\|linux\|windows\|ios\|android` | what CI runs on a host: the agent check, the conformance tests and the speed budgets (on macOS also a universal, signed release; on Linux a release without the driver; on the web the two Chrome tests above) |
 
 They drive `tests/harness/app.esk`, which holds every scene a host can be asked for: the
 counter (0), the TODO list (1), a probe (2), the conformance scene (3), the tasks app (4)
@@ -164,9 +164,9 @@ python3 tools/conformance.py           # every available host: ui test, then the
 python3 tools/conformance.py ios web   # only these
 ```
 
-iOS, Android, the web, the macOS AppKit host and the Linux GTK host pass (macOS and Linux have
-the UI tests; their own runs of the scene are not written yet, so `conformance.py macos` and
-`conformance.py linux` run the UI tests only). On Linux every frame the tests check matches
+iOS, Android, the web, the macOS AppKit host, the Linux GTK host and the Win32 host pass (macOS,
+Linux and Windows have the UI tests; their own runs of the scene are not written yet, so `conformance.py macos` and
+`conformance.py linux` run the UI tests only, and Windows runs them through `ui test windows`). On Linux every frame the tests check matches
 within the point with no exception: the text and the controls are measured by GTK in the
 system's font, and the frames that depend on them are the `_` sizes of the tests, as on the
 other hosts.
@@ -177,7 +177,7 @@ other hosts.
 them needs no sleeps: what an op causes has rendered when it answers, and time moves only
 with `clock`. See [Agents](agents.md). `tests/agent/check.sh` passes on the web (headless
 Chrome), macOS (the AppKit host, macOS 27), Linux (the GTK host, GTK 4.14 on Ubuntu 24.04
-under Xvfb), the iPhone simulator (iOS 27) and the Android emulator (API 35). `ui test` runs
+under Xvfb), Windows (the Win32 host, Windows Server 2025), the iPhone simulator (iOS 27) and the Android emulator (API 35). `ui test` runs
 files of the same ops with expectations ([UI tests](#ui-tests)).
 
 ## Screenshots
@@ -191,7 +191,7 @@ host's window content, 430 by 880 points, through `ui agent macos`.
 
 `.github/workflows/ci.yml` runs `tools/ci.sh` on Linux and macOS with the released `eskiuc`
 (and `tools/gen_api.py --check` on Linux), builds and packages the Windows host, and runs the
-host checks, `tools/ci_host.sh HOST`, in five jobs:
+host checks, `tools/ci_host.sh HOST`, in six jobs:
 
 | Job | Runner | Host | Takes |
 |---|---|---|---|
@@ -199,13 +199,14 @@ host checks, `tools/ci_host.sh HOST`, in five jobs:
 | `host-ios` | macos-15 | the first available iPhone simulator, booted by the job; Yoga's objects cached | about 10 min (the first build, then cached) |
 | `host-macos` | macos-15 | the AppKit host's window on the runner's display; Yoga's objects cached | about 1.5 min, a universal release of the conformance app included |
 | `host-linux` | ubuntu-24.04 | the GTK host's window on Xvfb (`xvfb-run`, a session bus from `dbus-run-session`), GTK 4.14 from apt; Yoga's objects cached | about 1 min (16 s of it installing GTK), a release of the conformance app included |
+| `host-windows` | windows-latest | the Win32 host's window on the runner's desktop, through Git Bash; llvm-mingw (pinned, checked by its SHA-256), Yoga's objects cached | about 2 min |
 | `host-android` | ubuntu-24.04 with KVM | the emulator, API 35 x86_64 `google_apis` (`android-emulator-runner`, its snapshot cached), NDK 28.2 | about 3.5 min |
 
 Each runs `tests/agent/check.sh`, `ui test` on `tests/conformance`, and the speed budgets of
 its host (below), which run the UI tests of `examples/counter` and `tests/bench`. On Android
 the tool builds for the device's ABI, x86_64 on the emulator (`UI_ANDROID_ABI` picks one); a
 build on Linux takes the NDK's Linux toolchain. A failed job uploads the logs of `ui serve`
-and `ui agent` (and the macOS and Linux apps' `app.log`), and the screenshots of the failed tests. The local-only checks
+and `ui agent` (and the macOS, Linux and Windows apps' `app.log`), and the screenshots of the failed tests. The local-only checks
 (`check_ios.py`, `check_android.py`, `check_native.py`, `check_desktop.py`, the host runs of
 `conformance.py`) stay for what CI does not cover: the native example's module and view, a
 physical device, the WKWebView window.
@@ -244,6 +245,9 @@ AppKit host's; Linux on ubuntu-24.04 under Xvfb, the GTK host's):
 | frame p95 (300 rows) | 8.0 ms | 20.6 ms | 55.3 ms | 18.0 ms | 6.0 ms |
 | `app.wasm`, counter / kit gallery | 107,015 / 172,356 bytes | | | | |
 | first contentful paint, "Slow 4G" | 204 ms (1,664 ms without the prerendered frame) | | | | |
+
+The Win32 host on the windows-latest runner (Windows Server 2025): cold start 21.2 ms, edit to
+change 0.89 s, frame p95 24.8 ms.
 
 The recording renderer on the Linux runner: a frame over 1000 rows 1.9 ms, mounting 10,000
 rows 38 ms, reversing them 27.6 ms.

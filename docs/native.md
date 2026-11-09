@@ -98,8 +98,9 @@ export function setup(ui) {
 }
 ```
 
-macOS's AppKit host takes `native/macos` and Linux's GTK host `native/linux` (below); their
-webview hosts (`--webview`) and Windows run the web host, so they use the web's native code.
+macOS's AppKit host takes `native/macos`, Linux's GTK host `native/linux` and the Win32 host
+`native/windows` (below); their webview hosts (`--webview`) run the web host, so they use the
+web's native code.
 
 Arguments reach a `.js` extern as JavaScript numbers: an integer or a float as itself, a
 `string` as a pointer into the app's memory, read with `UTF8ToString(pointer)`. Send text
@@ -231,6 +232,34 @@ data (and is blocked while the app sets the value, so only the user's moves are 
 `native/linux` still builds: its externs must then be defined somewhere else, or the app run
 with `--webview`, which takes `native/web`.
 
+## Windows
+
+The Win32 host takes C and C++ over Win32, with the same API as the other desktop hosts:
+
+| File | What it is |
+|---|---|
+| `native/windows/*.c`, `*.cpp` | C and C++, compiled by the host's MinGW-w64 compiler with `ui_native.h` (in `hosts/windows/`) on the include path, and linked into the executable. |
+
+```c
+void ui_native_emit(const char *channel, const char *payload);   // any thread
+typedef HWND (*UiViewCreate)(HWND parent, UiViewEmitter *emitter);
+typedef void (*UiViewSet)(HWND view, const char *name, const char *value);
+void ui_register_view(const char *type, UiViewCreate create, UiViewSet set);
+void ui_view_emit(UiViewEmitter *emitter, const char *name, const char *payload);   // any thread
+HWND ui_native_window(void);   // the owner of dialogs (a file dialog, a picker)
+#define UI_NATIVE_SETUP(name) ...   // a function that runs before the app starts
+```
+
+`create` makes a child window of `parent`, which the host sizes to the `NativeView`'s box. A
+control's notifications to its parent (`WM_COMMAND`, `WM_NOTIFY`, `WM_HSCROLL`,
+`WM_VSCROLL`) come back to the control as `UI_REFLECT` plus the message, as ATL reflects them:
+subclass it (`SetWindowSubclass`) to take them, as `examples/native/native/windows/slider.c`
+does with a trackbar. The host links comctl32, GDI+, WinHTTP and the other system libraries it
+uses; `[native.NAME]` archives for `windows-x86_64` are linked in. Under `ui serve` the native
+code is in the executable, which the app's DLL imports from. A package without
+`native/windows` still builds when its externs are defined somewhere else, or the app runs
+with `--webview`, which takes `native/web`.
+
 ## Android
 
 | File | What it is |
@@ -322,6 +351,10 @@ NSLocationUsageDescription = "Shows tasks near you"
 
 [linux]
 renderer = "web"                 # the WebKitGTK host instead of GTK 4 (as --webview)
+window = "430x880"               # the window's size in points (default 900x700)
+
+[windows]
+renderer = "web"                 # the WebView2 host instead of Win32 (as --webview)
 window = "430x880"               # the window's size in points (default 900x700)
 
 [android]
@@ -419,9 +452,10 @@ mounted.
 
 If a package in `eskiu.lock` also declares prebuilt native archives in its `eskiu.toml`
 (`[native.NAME]` for `ios-arm64`, `ios-arm64-simulator`, `ios-x86_64-simulator`,
-`android-arm64`, `macos-arm64`, `macos-x86_64`, `linux-x86_64` or `linux-arm64`, as
-[`eskiu-lang/gpu`](https://github.com/eskiu-lang/gpu) does for `wgpu_native`), `ui build ios`,
-`ui build android`, `ui build macos` and `ui build linux` download the archive into
+`android-arm64`, `macos-arm64`, `macos-x86_64`, `linux-x86_64`, `linux-arm64` or
+`windows-x86_64`, as [`eskiu-lang/gpu`](https://github.com/eskiu-lang/gpu) does for
+`wgpu_native`), `ui build ios`, `ui build android`, `ui build macos`, `ui build linux` and
+`ui build windows` download the archive into
 `~/.eskiu/native/` when missing and link its `libNAME.a` into the app bundle automatically.
 
 ## Hooks in a package

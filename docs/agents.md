@@ -1,7 +1,7 @@
 # Agents
 
 `ui agent` lets a program (a coding agent, a test script) build, drive, see and test an app
-on the web, macOS, Linux, the iOS simulator and Android with one small set of operations. It talks to the
+on the web, macOS, Linux, Windows, the iOS simulator and Android with one small set of operations. It talks to the
 app's dev build, the one `ui serve` makes, through a driver the core has in those builds
 only.
 
@@ -35,6 +35,11 @@ running, with no browser or simulator window. Its output goes to
   points (`UI_AGENT_WINDOW=WxH`), its output in `build/ui/linux/app.log` too. It needs a
   display (an X11 or Wayland session; CI runs it on Xvfb). One dev app at a time takes the
   driver's port, as on macOS.
+- **windows.** The Win32 host in a window on this Windows machine, started in the background
+  without taking the focus (`UI_AGENT_WINDOW=WxH`, 900 by 700 points by default); its output
+  goes to `build/ui/windows/app.log` too. It needs a desktop session (CI's Windows runners have
+  one) and MinGW-w64's C++ compiler. `ui agent` runs in a POSIX shell or in `cmd`; Git Bash's
+  paths (`/c/...`) are not Windows paths, so give files as `C:/...` (`cygpath -m`).
 - **ios.** The simulator that is booted, or the first iPhone, booted for it.
 - **android.** The device or emulator `adb` sees (`ANDROID_SERIAL` picks one). The app is
   built for its ABI: arm64-v8a, or x86_64 on an x86_64 emulator (`UI_ANDROID_ABI` sets it).
@@ -129,7 +134,8 @@ screenshot: shot.png (390x844 pixels)
 ```
 
 The browser's page through its DevTools, `xcrun simctl io booted screenshot` on iOS,
-`adb exec-out screencap -p` on Android. On macOS the host draws its window's content into the
+`adb exec-out screencap -p` on Android. On Windows the host writes its window's client area as
+the compositor has it (`PrintWindow` with `PW_RENDERFULLCONTENT`). On macOS the host draws its window's content into the
 file itself (AppKit's `cacheDisplayInRect:`, converted to sRGB), with no window frame and no
 screen recording permission; it shows each view as the model has it (a transition in flight
 shows its end), and a sheet is not in it. On Linux the host draws its window's content the
@@ -150,8 +156,9 @@ The input is the platform's: `click()` and an `input` event on the web,
 `scrollBy` on Android, and on macOS a control's action (`accessibilityPerformPress` for a
 pressable), the field editor's text with `NSControlTextDidChangeNotification`, and the clip
 view's `scrollToPoint:`; on Linux a control's GTK signal (a button's `clicked`, a switch's
-`active`), `gtk_editable_set_text` on a field and the scroll's adjustment. Each op answers once
-what it caused has rendered.
+`active`), `gtk_editable_set_text` on a field and the scroll's adjustment; on Windows a button's
+`BM_CLICK`, the `EDIT`'s text (its `EN_CHANGE`) and the scroll window's document moved. Each op
+answers once what it caused has rendered.
 
 ### back
 
@@ -202,12 +209,13 @@ cold start: 2839 ms to the first commit
 ```
 
 A frame's time is the core's render and the host's apply of its commit. The memory is the
-wasm heap on the web, the process's footprint on iOS and macOS, its resident set on Linux,
+wasm heap on the web, the process's footprint on iOS and macOS, its resident set on Linux, its private
+bytes on Windows,
 the native and Java heaps on Android.
 The cold start (`startup_ms` with `--json`) is from the process's start (the page's
 navigation on the web) to the first commit applied: the core notes the wall clock at its
 first commit, the host reports when the process started (the kernel's start time of the
-process on iOS, macOS, Linux and Android, `performance.timeOrigin` on the web). It is the process's: after
+process on iOS, macOS, Linux, Windows and Android, `performance.timeOrigin` on the web). It is the process's: after
 a reload under `ui serve`, which starts the core again in the same process, it includes the
 time before the reload. The speed budgets track it ([testing](testing.md#speed-budgets)).
 
@@ -225,7 +233,8 @@ From then on nothing moves between two ops:
   window's layer, and on macOS the window content's layer, has `speed` 0 and its `timeOffset`
   is the driver's time; the Linux host runs its own transitions and slides on a clock that
   is the driver's time, and turns GTK's animations off (`gtk-enable-animations`: a switch's
-  slide, the spinner) with the caret's blinking (`gtk-cursor-blink`); on Android the
+  slide, the spinner) with the caret's blinking (`gtk-cursor-blink`); on Windows the host's transitions, screen
+  slides and spinner run on the driver's time; on Android the
   animators' duration scale is 0, so the host's transitions and slides end in the frame that
   starts them. A text field's blinking caret is hidden on the web and Android (iOS stops it
   with the layer).
@@ -319,7 +328,8 @@ ui agent web --stop
 ```
 
 No sleeps either way: what a tap causes has rendered when it answers, and time moves only
-with `clock`. CI runs both on headless Chrome, the macOS host, the Linux host (on Xvfb), the iOS
+with `clock`. CI runs both on headless Chrome, the macOS host, the Linux host (on Xvfb), the
+Windows host, the iOS
 simulator and the Android emulator
 ([CI](testing.md#ci)).
 
@@ -346,6 +356,7 @@ VISIBLE`), `logs` (its lines), `perf` (the memory in bytes) and `hello`/`clock` 
 | iOS simulator | TCP on 127.0.0.1:8766 (`UI_AGENT_PORT`) in the app, one request per line (`hosts/driver.h`) |
 | macOS | TCP on 127.0.0.1:8768 (`UI_AGENT_PORT`) in the app, the same; the host also answers `{"op": "screenshot", "file": PATH}` itself |
 | Linux | TCP on 127.0.0.1:8769 (`UI_AGENT_PORT`) in the app, the same; the host also answers `{"op": "screenshot", "file": PATH}` itself |
+| Windows | TCP on 127.0.0.1:8770 (`UI_AGENT_PORT`) in the app (`hosts/driver.h` over Winsock); the host also answers `{"op": "screenshot", "file": PATH}` itself |
 | Android | the abstract socket `eskiu-ui-agent` in the app, reached by `adb forward tcp:8767 localabstract:eskiu-ui-agent` (`UI_AGENT_PORT` for another local port) |
 
 Compiled out: `tools/ci.sh` checks that a release object has no symbol of the driver. The

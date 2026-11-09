@@ -10,7 +10,7 @@ shim: the app, its components and its state are the same Eskiu code everywhere.
 | Android | `hosts/android/`: `UiActivity.java` over `android.view`, `host.cpp` the JNI shim | Yoga 3.2.1 |
 | macOS | `hosts/macos/host.mm`: AppKit, Objective-C++ (`hosts/macos/webview.m`: the web host in a `WKWebView` window, with `--webview`) | Yoga 3.2.1 |
 | Linux | `hosts/linux/host.cpp`: GTK 4, C++ (`hosts/linux/webview.c`: the web host in a WebKitGTK window, with `--webview`) | Yoga 3.2.1 |
-| Windows | `hosts/windows/host.cpp`: the web host in a Win32 / WebView2 window | the web's |
+| Windows | `hosts/windows/host.cpp`: Win32 windows and common controls, C++ (`hosts/windows/webview.cpp`: the web host in a WebView2 window, with `--webview`) | Yoga 3.2.1 |
 
 ## Elements per host
 
@@ -157,6 +157,11 @@ the new module before `ui_start`.
   `dlopen`; the host polls `build/ui/linux/reload/current` (`UI_RELOAD_FILE`) every 50 ms and
   writes its pid next to it. `ui serve linux` starts the app in the background, its output in
   `build/ui/linux/app.log`, and starts it again only when the host or the native code changed.
+- **Windows.** The app's code is a DLL that imports the host's and the native code's functions
+  from the executable (linked with `--export-all-symbols`, whose import library the DLL links
+  against). A loaded DLL stays locked, so each build names a new one; the host polls
+  `build/ui/windows/reload/current` every 50 ms and writes its pid next to it, and the tool ends
+  the app before it links the executable again.
 - **Android.** The app's code is a library linked against `libeskiu_ui.so`. The tool pushes it
   and, in one `adb shell`, checks the app is installed, copies it into the app's files with
   `run-as` (the debug APK allows it), names it in `files/ui-reload` and sends the activity an
@@ -256,11 +261,62 @@ inspector. `ui serve linux --webview` reloads the page after each build, as on t
 
 ## Windows
 
-`ui build windows` builds the web host and a native Win32 application using Microsoft
-Edge WebView2 (`hosts/windows/host.cpp`), with MSVC (`cl.exe`, from a Developer prompt) or
-MinGW-w64 (`g++` on Windows, `x86_64-w64-mingw32-g++` from macOS or Linux); `CXX` picks
-another. The tool fetches the WebView2 SDK's NuGet package once (checked by its SHA-256) for
-its header, and puts its `WebView2Loader.dll` next to the executable. The app in `web/` is
+`ui build windows` compiles the app for `x86_64-w64-windows-gnu`, compiles Yoga,
+`hosts/windows/host.cpp` and `native/windows` with MinGW-w64's C++ compiler (llvm-mingw's
+`clang++` or `g++` on Windows, `x86_64-w64-mingw32-clang++` or `-g++` from macOS or Linux; `CXX`
+picks one), and links `build/ui/windows/NAME.exe` with its manifest (common controls 6,
+per-monitor DPI awareness v2) and the C++ runtime inside, `assets/` and `icon.ico` beside it.
+The host is Win32, as the macOS host is AppKit: each element is a child window, laid out by
+Yoga in points (DIPs; pixels are points times the window's DPI over 96), so the frames are the
+other hosts' to the point.
+
+| Kind | Windows |
+|---|---|
+| column, row, pressable, screen | a child window the host paints (background, gradient, border, radius with GDI+) |
+| text | a `STATIC`, in Segoe UI at the app's size (16 points by default), measured with `DrawText` |
+| button | a `BUTTON` (a push button in the system's font; owner drawn in the app's font and colors when it styles it) |
+| text input | an `EDIT` in a frame the host paints (the system's look, or the app's border, background and padding) |
+| scroll | a window with a vertical scroll bar around a document window; the wheel and the bar scroll it |
+| image | a window drawing the picture with GDI+ (fit or cover, smooth or pixelated); files from `assets/`, http(s) on a thread |
+| switch | an owner-drawn `BUTTON`: a Windows 11 toggle in the accent color, its MSAA role a check button |
+| slider | a trackbar (`msctls_trackbar32`) |
+| activity indicator | a turning arc the host draws, its role a progress bar |
+| modal | a window over the content, with a picture of what is under it dimmed (an `Overlay` too) |
+| alert | a task dialog (`TaskDialogIndirect`) with the app's buttons |
+| native view | a window holding the factory's child window |
+
+- **The window.** 900 by 700 points of client area (ui.toml `[windows] window = "430x880"`, or
+  `UI_WINDOW=WxH`), resizable down to 320 by 240; its size is the app's window, the insets are
+  zero, and a move to a monitor of another DPI lays it out again. Its title is the app's name.
+- **Menus.** File (About, Exit), Edit (Undo, Cut, Copy, Paste, Select All with their
+  shortcuts, for the field with the focus) and View (Back, Alt+Left).
+- **Back.** Escape, Alt+Left and a mouse's back button are the platform's back
+  (`ui_report_back`): the newest modal closes, else a `use_back` handler or the router goes back.
+- **Dark mode.** The system's app mode (`AppsUseLightTheme`) goes to the app with each change; the
+  title bar (`DWMWA_USE_IMMERSIVE_DARK_MODE`), the menus, the buttons, fields and scroll bars
+  follow it, and a text with no color of its own takes the window's text color.
+- **Accessibility.** The standard controls carry their own MSAA and UI Automation roles; the
+  host gives the others theirs with dynamic annotation (`IAccPropServices`): a pressable is a
+  push button, a switch a check button with its state, an image a graphic, a spinner a
+  progress bar, a modal a dialog, a labeled column or row a grouping, each with its label.
+- **Services.** Frames and timers are window messages and `SetTimer`; transitions (opacity,
+  translation, background color) and the screens' slides are the host's, on its clock; drags,
+  long presses and hover come from the mouse (captured past 6 px); the network is WinHTTP on a
+  thread; storage is `%APPDATA%\NAME`; the clipboard is the system's, and a share copies to it.
+- **What is not native yet.** A transform's scale and rotation, a shadow and a backdrop blur
+  are kept but not drawn; a vertical scroll bar takes its width from the scroll's content when
+  it shows; an announcement is a name change event, which screen readers may not speak; a
+  RefreshControl has no pull. MSVC does not build this host (the app's object is MinGW's).
+
+ui.toml's `[windows]` table: `renderer` (`"web"` for the WebView2 host) and `window`.
+
+### The WebView2 host
+
+`ui build windows --webview` (also `run`, `serve` and `release`), or ui.toml `[windows]
+renderer = "web"`, builds the web host and a Win32 application using Microsoft Edge WebView2
+(`hosts/windows/webview.cpp`), with MSVC (`cl.exe`, from a Developer prompt) or MinGW-w64; `CXX`
+picks another. The tool fetches the WebView2 SDK's NuGet package once (checked by its SHA-256)
+for its header, and puts its `WebView2Loader.dll` next to the executable. The app in `web/` is
 served as `https://app.assets/`; WebView2 keeps its data in `%LOCALAPPDATA%\NAME`. The window
 has no console, takes the document's title, reloads on F5 and Ctrl+R and closes on Ctrl+W,
 and a failure to start WebView2 says so in a message box. A release build turns the
@@ -281,6 +337,14 @@ driver's clock.
 | screenshot (by `ui agent`) | the headless browser's DevTools | `simctl io screenshot` | `adb exec-out screencap` | the host draws its content view into a bitmap (`cacheDisplayInRect:`), in sRGB | the host snapshots its content (`gtk_widget_snapshot_child`) and renders it with the window's GSK renderer |
 | memory (`perf`) | the wasm heap | the process's footprint | the native and Java heaps | the process's footprint | the process's resident set |
 | start (`perf`'s cold start) | `performance.timeOrigin` | the process's start time (`sysctl`) | the process's start time (`/proc/self/stat`) | the process's start time (`sysctl`) | the process's start time (`/proc/self/stat`) |
+
+On Windows the channel is TCP on 127.0.0.1:8770 in the app (`hosts/driver.h` over Winsock);
+tap is a button's `BM_CLICK` (a switch's too), a pressable's or a modal's press, a field's focus;
+type sets the `EDIT`'s text, which sends its `EN_CHANGE`; scroll moves the scroll window's
+document and bar. On the driver's clock the host's transitions, slides and spinner take the
+driver's time. A screenshot is the window's client area as the compositor has it
+(`PrintWindow` with `PW_RENDERFULLCONTENT`), the memory `perf` reports the process's private
+bytes, and the cold start counts from the process's creation time (`GetProcessTimes`).
 
 The host compiles its side only with `UI_TEST` (the ui tool passes it for a dev build), and
 the core's only with the `UI_TEST` the ui tool defines in the entry file: a release has

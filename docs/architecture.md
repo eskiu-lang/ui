@@ -8,7 +8,7 @@
  elements       <ui>: Column, Text, TextInput, FlatList, Modal, NativeView...
  core           the tree, reactivity, frames and commits, the wire format
  ── commit (bytes) ──▶                     ◀── events (calls) ──
- hosts          web (DOM), iOS (UIKit + Yoga), Android (android.view + Yoga), macOS (AppKit + Yoga, or WKWebView), Linux (GTK 4 + Yoga, or WebKitGTK), Windows (WebView2)
+ hosts          web (DOM), iOS (UIKit + Yoga), Android (android.view + Yoga), macOS (AppKit + Yoga, or WKWebView), Linux (GTK 4 + Yoga, or WebKitGTK), Windows (Win32 + Yoga, or WebView2)
  tool           tools/ui: new, build, run, serve; compiles the app and links it into each host
 ```
 
@@ -71,7 +71,7 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `hosts/commit.h` | A C decoder of commits, shared by the native hosts |
 | `hosts/core.h` | The core's entry points for the native hosts: linked, or loaded from the app's library in a reload build |
 | `hosts/driver.h` | The native hosts' driver channel in a dev build: the socket, the UI thread hop, the app's output ([agents](agents.md)) |
-| `hosts/ios/ui_native.h`, `hosts/android/ui_native.h`, `hosts/macos/ui_native.h`, `hosts/linux/ui_native.h` | The C API native code includes ([native code](native.md)) |
+| `hosts/ios/ui_native.h`, `hosts/android/ui_native.h`, `hosts/macos/ui_native.h`, `hosts/linux/ui_native.h`, `hosts/windows/ui_native.h` | The C API native code includes ([native code](native.md)) |
 | `hosts/web/prerender.mjs`, `hosts/web/ui-sw.js` | The web's first frame rendered at build time ([hosts](hosts.md#the-first-frame)), and the service worker of asset updates |
 | `hosts/web/`, `hosts/ios/`, `hosts/android/`, `hosts/macos/`, `hosts/linux/`, `hosts/windows/` | The hosts |
 | `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `publish` (`ui publish`, the keys), `web`, `macos`, `linux`, `windows`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload), `agent` (`ui agent`, the driver's client), `uitest` (`ui test`), `diagnostics` (`--json`, the compiler's probe) |

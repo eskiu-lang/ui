@@ -110,7 +110,7 @@ runs `tests/ui/*.uitest` on every host.
 | Android | `android.view` + Yoga | arm64 emulator, API 35 |
 | macOS | AppKit + Yoga (or the web renderer in WKWebView) | macOS 27 |
 | Linux | GTK 4 + Yoga (or the web renderer in WebKitGTK) | Ubuntu 24.04, GTK 4.14 |
-| Windows | the web renderer in WebView2 | Edge WebView2 |
+| Windows | Win32 + Yoga (or the web renderer in WebView2) | Windows Server 2025 (CI) |
 
 Every host draws the same conformance scene and matches its frames within one point.
 
