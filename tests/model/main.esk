@@ -19,6 +19,7 @@ import "navigation.esk";
 import "errors.esk";
 import "apps.esk";
 import "driver.esk";
+import "reload.esk";
 
 int main() {
     independent(); printf("PASS independent\n");
@@ -78,6 +79,7 @@ int main() {
     navigation(); printf("PASS navigation\n");
     errors(); printf("PASS error recovery\n");
     driver(); printf("PASS driver\n");
+    reload_keeps_state(); printf("PASS reload keeps state\n");
     leak_gate(); printf("PASS leak gates\n");
     return 0;
 }

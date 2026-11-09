@@ -92,6 +92,17 @@ op back '"handled":false'
 op logs '"core":\['
 op perf '"frames":[1-9]' '"memory_bytes":[1-9]'
 op "clock real" '"clock":"real"'
+# A reload keeps the state: an edit under ui serve, and the app on the new build has the
+# count and the title it had (src/core/reload.esk).
+cp src/main.esk "$OUT/main.esk.orig"
+restore() { cp "$OUT/main.esk.orig" src/main.esk; }
+sed 's/"Title: %s"/"Edited: %s"/' "$OUT/main.esk.orig" > src/main.esk
+"$UI" agent "$HOST" --json tree > "$OUT/last.json" 2> "$OUT/last.err" || { restore; cat "$OUT/last.json" "$OUT/last.err"; fail "reload"; }
+restore
+for pattern in '"text":"Edited: Milk bread"' '"text":"Count: 2"' '"text":"Done"'; do
+    grep -q -- "$pattern" "$OUT/last.json" || { cat "$OUT/last.json"; fail "reload: no $pattern"; }
+done
+echo "PASS $HOST: a reload keeps the state"
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
 [ "$HOST" = ios ] && { xcrun simctl status_bar booted clear > /dev/null 2>&1 || true; }
 [ "$HOST" = android ] && adb shell am broadcast -a com.android.systemui.demo -e command exit > /dev/null 2>&1

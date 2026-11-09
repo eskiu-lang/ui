@@ -1,0 +1,124 @@
+// A reload under `ui serve` (src/core/reload.esk): the old core's snapshot, the new core
+// restoring the routes and the signals whose scope, place and type are the same.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+*Router rl_router;
+
+// Which version of the app runs: 0 the first, 1 the edited one.
+int rl_version;
+
+// The signals of the running app, read back by the checks.
+*Signal<int> rl_count;
+*StringState rl_title;
+*Signal<double> rl_ratio;
+*Signal<bool> rl_flag;
+*Signal<int> rl_moved;
+*Signal<int> rl_late;
+*Signal<int> rl_input;
+
+void rl_screen(string route) {
+    Scope("Screen", Key{}) {
+        *Signal<int> visits = use_signal<int>(0);
+        visits.get();
+        Text(route);
+    }
+}
+
+void rl_app() {
+    Column(Style{}) {
+        rl_count = use_signal<int>(0);
+        rl_title = use_string("");
+        rl_ratio = use_signal<double>(0.5);
+        // Edited: the third signal is a bool now, so its saved int is dropped.
+        if (rl_version == 0) { use_signal<int>(7).get(); } else { rl_flag = use_signal<bool>(false); }
+        // Not saved: a pointer.
+        use_signal<*Router>(rl_router);
+        Text("App");
+        if (rl_version == 0) {
+            // Removed in the edit: its state goes.
+            Scope("Gone", Key{}) { use_signal<int>(0).set(41); }
+            // A keyed signal, moved to another scope by the edit.
+            Scope("Before", Key{}) { rl_moved = use_signal_keyed<int>("moved", 0); }
+        } else {
+            Scope("After", Key{}) { rl_moved = use_signal_keyed<int>("moved", 0); }
+            // A new scope, at a place no saved scope had: nothing to restore.
+            Scope("New", Key{}) { rl_late = use_signal<int>(5); }
+        }
+        Navigator(rl_router, void(string route) { rl_screen(route); });
+    }
+}
+
+// The first version runs, its state is set and saved; the second starts from the snapshot.
+void reload_keeps_state() {
+    rl_version = 0;
+    rl_router = router_new("/");
+    Ui first;
+    ui_init(&first, record);
+    ui_mount() { rl_app(); }
+    ui_frame();
+    rl_count.set(3);
+    rl_title.set("Milk\tand\nbread\\");
+    rl_ratio.set(0.25);
+    rl_moved.set(9);
+    rl_router.push("/places/2");
+    ui_frame();
+    String saved;
+    defer String_free(&saved);
+    String_from(&saved, ui_reload_snapshot());
+    check(strstr(saved.data, "ui-reload 1\nroute\t/\nroute\t/places/2\n") == saved.data, "the routes, root first");
+    check(strstr(saved.data, "signal\tColumn[0]\t0\tint\t3\n") != null, "an int by its scope and place");
+    check(strstr(saved.data, "signal\tColumn[0]\t1\ttext\tMilk\\tand\\nbread\\\\\n") != null, "a use_string, escaped");
+    check(strstr(saved.data, "signal\tColumn[0]\t2\tdouble\t0.25\n") != null, "a double");
+    check(strstr(saved.data, "signal\tColumn[0]\t4\t") == null, "a pointer is not saved");
+    check(strstr(saved.data, "keyed\tmoved\tint\t9\n") != null, "a keyed signal by its key");
+    check(strstr(saved.data, "Gone[1]\t0\tint\t41") != null, "a scope's signal");
+    ui_shutdown();
+    Router_free(rl_router);
+    balanced("reload snapshot leak");
+
+    // The edited app on a new runtime, as the new core after a reload.
+    rl_version = 1;
+    rl_router = router_new("/");
+    Ui second;
+    ui_init(&second, record);
+    ui_reload_load(saved.data);
+    ui_mount() { rl_app(); }
+    ui_frame();
+    check(rl_count.value == 3, "an int kept");
+    check(strcmp(rl_title.get(), "Milk\tand\nbread\\") == 0, "a use_string kept");
+    check(rl_ratio.value == 0.25, "a double kept");
+    check(!rl_flag.value, "a changed type starts fresh");
+    check(rl_moved.value == 9, "a keyed signal kept where it moved");
+    check(rl_late.value == 5, "a new scope starts fresh");
+    int unused = 0;
+    for (i in 0..ui_rl.signals.size) {
+        *UiSavedSignal entry = &ui_rl.signals.data[i];
+        if (!entry.used) {
+            unused++;
+            check(String_eq_cstr(&entry.path, "Column[0] > Gone[1]") == 1, "only the removed scope's state is left");
+        }
+    }
+    check(unused == 1, "a removed scope's state is dropped");
+    check(rl_router.stack.size == 2 && strcmp(rl_router.stack.data[1].data, "/places/2") == 0, "the routes kept");
+    check(nav_text_shown("/places/2"), "the top route's screen shows");
+    // After the first input, a scope that mounts is new.
+    rl_count.set(4);
+    ui_frame();
+    ui_reload_load(saved.data);
+    ui_event(0, 0);
+    check(!ui_rl.active, "an input ends the restore");
+    ui_shutdown();
+    Router_free(rl_router);
+    balanced("reload restore leak");
+
+    // A snapshot that is not one is ignored.
+    Ui third;
+    ui_init(&third, record);
+    ui_reload_load("something else");
+    check(!ui_rl.active, "not a snapshot");
+    ui_mount() { rl_input = use_signal<int>(1); }
+    ui_frame();
+    check(rl_input.value == 1, "the initial value");
+    ui_shutdown();
+    balanced("reload ignore leak");
+}
