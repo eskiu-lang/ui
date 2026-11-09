@@ -188,7 +188,7 @@ host checks, `tools/ci_host.sh HOST`, in four jobs:
 |---|---|---|---|
 | `host-web` | ubuntu-24.04 | headless Chrome (the runner's), emscripten from `setup-emsdk` (cached) | about 1.5 min |
 | `host-ios` | macos-15 | the first available iPhone simulator, booted by the job; Yoga's objects cached | about 10 min (the first build, then cached) |
-| `host-macos` | macos-15 | the AppKit host's window on the runner's display; Yoga's objects cached | MACOS_TIME |
+| `host-macos` | macos-15 | the AppKit host's window on the runner's display; Yoga's objects cached | about 1.5 min, a universal release of the conformance app included |
 | `host-android` | ubuntu-24.04 with KVM | the emulator, API 35 x86_64 `google_apis` (`android-emulator-runner`, its snapshot cached), NDK 28.2 | about 3.5 min |
 
 Each runs `tests/agent/check.sh`, `ui test` on `tests/conformance`, and the speed budgets of
@@ -221,14 +221,15 @@ The timings are of `ui serve`'s dev builds (`-O0`), as an app is developed. Afte
 that moves a number on purpose, take the new number from the job summary into
 `tools/budgets.toml` (`python3 tools/budgets.py HOST --update` writes what a run measured).
 
-The baselines, measured on the runners on 2026-11-09:
+The baselines, measured on the runners on 2026-11-09 (macOS on the macos-15 runner, cold start the
+AppKit host's):
 
-| Budget | Web (Chrome, Linux) | iOS simulator | Android emulator |
-|---|---|---|---|
-| cold start | 33.5 ms | 714 ms | 615 ms |
-| edit to change | 1.53 s | 1.61 s | 1.04 s |
-| frame p95 (300 rows) | 8.0 ms | 20.6 ms | 55.3 ms |
-| `app.wasm`, counter / kit gallery | 107,015 / 172,356 bytes | | |
+| Budget | Web (Chrome, Linux) | iOS simulator | Android emulator | macOS (AppKit) |
+|---|---|---|---|---|
+| cold start | 33.5 ms | 714 ms | 615 ms | 199 ms |
+| edit to change | 1.53 s | 1.61 s | 1.04 s | 1.01 s |
+| frame p95 (300 rows) | 8.0 ms | 20.6 ms | 55.3 ms | 18.0 ms |
+| `app.wasm`, counter / kit gallery | 107,015 / 172,356 bytes | | | |
 
 The recording renderer on the Linux runner: a frame over 1000 rows 1.9 ms, mounting 10,000
 rows 38 ms, reversing them 27.6 ms.
