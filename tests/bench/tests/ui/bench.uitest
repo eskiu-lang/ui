@@ -1,0 +1,4 @@
+# 100 frames that each render and commit 300 rows; `perf` after it gives the frame time
+# that tools/budgets.toml tracks.
+repeat 100 tap next
+expect state Column[0].0 100

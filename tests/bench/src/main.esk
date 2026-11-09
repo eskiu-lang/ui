@@ -1,0 +1,27 @@
+// The benchmark scene for the frame-time budget (tools/budgets.toml): 300 rows that each
+// read one signal, so every press of Next renders and commits all of them.
+import <string>;
+import <ui>;
+
+void BenchRow(int i, int tick) {
+    String text;
+    defer String_free(&text);
+    String_format(&text, "Row %d: %d", i, tick + i);
+    Row(Style{key: key(i), height: 24, gap: 8, align: AlignCenter}) {
+        TextWith(Style{grow: 1}, text.data);
+        Column(Style{width: 16, height: 16, radius: 8, background: (tick + i) % 2 == 0 ? rgb(79, 70, 229) : rgb(229, 231, 235)}) {}
+    }
+}
+
+void App() {
+    Column(Style{grow: 1, padding: 8}) {
+        *Signal<int> tick = use_signal<int>(0);
+        ButtonWith(Style{test_id: "next"}, "Next") { tick.set(tick.get() + 1); }
+        Scroll(Style{grow: 1}) {
+            for (i in 0..300) { BenchRow(i, tick.get()); }
+        }
+    }
+}
+
+void ui_app_start(int which) { ui_mount(void() { App(); }); }
+void ui_app_stop() {}

@@ -1,0 +1,6 @@
+# The counter starts at zero and counts each press: `ui test` runs this on each host.
+expect count text "Count: 0"
+tap Increment
+tap Increment
+expect count text "Count: 2"
+expect state Column[0].0 2

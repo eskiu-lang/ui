@@ -14,7 +14,11 @@ void Counter() {
     Column(Style{padding: 16}) {
         *Signal<int> count = use_signal<int>(0);
         Text("Eskiu counter");
-        NumberText("Count: ", count.get());
+        // A test_id: what tests/ui/counter.uitest finds it by.
+        String label;
+        defer String_free(&label);
+        String_format(&label, "Count: %d", count.get());
+        TextWith(Style{test_id: "count"}, label.data);
         Button("Increment") { count.set(count.get() + 1); }
     }
 }
