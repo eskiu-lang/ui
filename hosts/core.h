@@ -35,6 +35,15 @@
     X(void, ui_report_data_dir, (const char *path)) \
     X(void, ui_dispatch_fetch, (int request, int status, const char *body, const char *headers)) \
     X(void, ui_dispatch_view, (int id, int generation, const char *name, const char *payload))
+// The driver's entry points (hosts/driver.h), in a dev build only.
+#ifdef UI_TEST
+#define UI_CORE_TEST(X) \
+    X(const char *, ui_driver, (const char *request)) \
+    X(const char *, ui_driver_done, (const char *result)) \
+    X(double, ui_driver_time, (void))
+#else
+#define UI_CORE_TEST(X)
+#endif
 #ifdef UI_RELOAD
 // Where a failed load is reported (stderr, Android's log).
 static void ui_core_error(const char *message);
@@ -42,15 +51,18 @@ static void ui_core_error(const char *message);
 #include <cstdio>
 #define UI_CORE_POINTER(ret, name, params) static ret (*name) params;
 UI_CORE(UI_CORE_POINTER)
+UI_CORE_TEST(UI_CORE_POINTER)
 // The app's library at `path`, its entry points into the pointers; false if it does not load.
 static bool loadCore(const char *path) {
     void *core = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!core) { ui_core_error(dlerror()); return false; }
 #define UI_CORE_LOOKUP(ret, name, params) name = (ret (*) params)dlsym(core, #name);
     UI_CORE(UI_CORE_LOOKUP)
+    UI_CORE_TEST(UI_CORE_LOOKUP)
     return true;
 }
 #else
 #define UI_CORE_EXTERN(ret, name, params) extern "C" ret name params;
 UI_CORE(UI_CORE_EXTERN)
+UI_CORE_TEST(UI_CORE_EXTERN)
 #endif
