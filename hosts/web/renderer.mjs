@@ -342,6 +342,13 @@ export function createHost(root, dispatch, views = {}) {
     if (m.kind === 12) { node.className = 'ui-modal'; node.setAttribute('role', 'dialog'); node.setAttribute('aria-modal', 'true'); modals.push(node); }
     nodes.set(m.id, node);
   }
+  // String props 6 and 7: a container with grid columns or rows is a CSS grid. Track sizes
+  // in points are CSS pixels.
+  function gridTracks(node, which, text) {
+    const tracks = (text || '').trim().split(/\s+/).filter(Boolean).map(t => /^\d+(\.\d+)?$/.test(t) ? `${t}px` : t).join(' ');
+    if (which === 6) node.style.gridTemplateColumns = tracks; else node.style.gridTemplateRows = tracks;
+    if (CONTAINERS.has(kindOf(node))) node.style.display = node.style.gridTemplateColumns || node.style.gridTemplateRows ? 'grid' : 'flex';
+  }
   // Int props: the code in kind, the value in before. Leaf views keep their platform
   // control padding and gap.
   function prop(node, code, value) {
@@ -364,6 +371,15 @@ export function createHost(root, dispatch, views = {}) {
         s.backgroundColor = !value && node.uiBlur ? 'color-mix(in srgb, Canvas 65%, transparent)' : cssColor(value);
         node.uiFrom = value; paintGradient(node, s); break;
       case 50: node.uiTo = value; paintGradient(node, s); break;
+      case 53: case 54: case 55: case 56: {
+        // A grid item's lines (from 1, 0: auto) and spans.
+        const at = node.uiGrid || (node.uiGrid = [0, 0, 0, 0]);
+        at[code - 53] = value;
+        const line = (start, span) => start || span > 1 ? `${start || 'auto'} / span ${Math.max(1, span)}` : '';
+        s.gridColumn = line(at[0], at[1]);
+        s.gridRow = line(at[2], at[3]);
+        break;
+      }
       case 52: {
         // Frosted glass: the backdrop blurred, under the page's own color where the element has
         // no background.
@@ -654,6 +670,7 @@ export function createHost(root, dispatch, views = {}) {
         else if (m.op === 9 && m.kind === 4) mountNative(node, m.text);
         else if (m.op === 11) natives.get(m.id)?.set?.(m.name, m.text);
         else if (m.op === 9 && m.kind === 5) node.style.fontFamily = m.text ? fontFamily(m.text) : '';
+        else if (m.op === 9 && (m.kind === 6 || m.kind === 7)) gridTracks(node, m.kind, m.text);
         else if (m.op === 9) {
           // String props: 1 label (an image's alt text), 2 placeholder, 3 image source.
           const name = m.kind === 1 ? (kindOf(node) === 7 ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';
