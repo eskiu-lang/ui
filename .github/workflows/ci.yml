@@ -128,6 +128,21 @@ jobs:
           key: yoga-windows-${{ hashFiles('tools/ui/yoga.esk') }}
       - name: Host checks and budgets
         run: tools/ci_host.sh windows
+      - name: Screenshots (temporary)
+        if: always()
+        env:
+          UI_AGENT_WINDOW: 430x880
+        run: |
+          mkdir -p build/shots
+          for app in tasks kit-gallery todo; do
+            (cd examples/$app && ../../build/ui.exe agent windows "clock settle" "screenshot $(cygpath -m "$PWD/../../build/shots/$app.png")"; ../../build/ui.exe agent windows --stop) || true
+          done
+          (cd examples/kit-gallery && ../../build/ui.exe agent windows "scroll #2 900" "clock settle" "screenshot $(cygpath -m "$PWD/../../build/shots/kit-2.png")"; ../../build/ui.exe agent windows --stop) || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-windows-shots
+          path: build/shots
       - name: Logs
         if: failure()
         uses: actions/upload-artifact@v4
