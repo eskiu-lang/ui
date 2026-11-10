@@ -1,0 +1,222 @@
+// <ui/webapp> (src/webapp.esk) against a host stand-in (tests/webapp_host.c) that records
+// what the module asks of it: commands and their answers (JSON, strings, bytes, errors, later
+// from another thread), events both ways, the URL schemes (the front end and its routes, a
+// program's handler, files with ranges, paths that leave the root, preflights), the
+// built-in dialog and window commands and the close of a window the page intercepts.
+//
+//   cc -c tests/webapp_host.c -o build/webapp_host.o
+//   eskiuc tests/webapp.esk --link-arg build/webapp_host.o -o build/webapp && build/webapp
+#define UI_APP_NAME "Tester"
+#define UI_WEBAPP_CLIENT "export const ok = 1;"
+import <threading>;
+import "../src/webapp.esk";
+
+extern string uiw_test_log();
+extern void uiw_test_clear();
+extern string uiw_test_dialog_paths;
+extern int uiw_test_dialog_choice;
+
+int failures;
+
+void check(bool ok, string what) {
+    if (!ok) { printf("FAIL %s\n", what); failures++; }
+}
+
+// Whether the log has `text`, and it shown when not.
+bool logged(string text) {
+    if (strstr(uiw_test_log(), text) != null) { return true; }
+    printf("--- log without %s:\n%s---\n", text, uiw_test_log());
+    return false;
+}
+
+// The page's invoke of `command` with `args` (JSON) as call `id`.
+void invoke(int id, string command, string args) {
+    String message;
+    String_appendf(&message, "{\"kind\":\"invoke\",\"id\":%d,\"cmd\":\"%s\",\"args\":%s}", id, command, args);
+    uiw_test_clear();
+    uiw_on_message(1, message.data);
+    String_free(&message);
+}
+
+// A request to scheme://localhost/PATH with `range` ("" for none).
+void request(string scheme, string path, string method, string range) {
+    String url;
+    String_appendf(&url, "%s://localhost/%s", scheme, path);
+    uiw_test_clear();
+    uiw_on_request(1, 7, scheme, url.data, method, range);
+    String_free(&url);
+}
+
+WebappReply later_reply;
+String heard;
+int closes_asked;
+
+int main() {
+    webapp_command("greet", void(*WebappCall call) {
+        String text;
+        String_appendf(&text, "Hello, \"%s\" %lld %s", call.string("name"), call.int("n", -1), call.bool("loud", false) ? "!" : ".");
+        call.resolve_string(text.data);
+        String_free(&text);
+    });
+    webapp_command("sum", void(*WebappCall call) {
+        *JsonValue values = call.arg("values");
+        double total = 0;
+        for (i in 0..JsonValue_len(values)) { total = total + JsonValue_as_double(JsonValue_at(values, i)); }
+        String json;
+        String_appendf(&json, "{\"total\":%g}", total);
+        call.resolve(json.data);
+        String_free(&json);
+    });
+    webapp_command("fail", void(*WebappCall call) { call.reject("it \"broke\""); });
+    webapp_command("silent", void(*WebappCall call) {});
+    webapp_command("bad", void(*WebappCall call) { call.resolve("{not json"); });
+    webapp_command("later", void(*WebappCall call) { later_reply = call.later(); });
+    webapp_command("bytes", void(*WebappCall call) {
+        int64 length = 0;
+        *uint8 data = call.bytes("data", &length);
+        call.resolve_bytes(data, length);
+        free(data);
+    });
+    webapp_listen("ping", void(WebappEvent event) {
+        String_clear(&heard);
+        String_appendf(&heard, "%d %s %s", event.window, event.event, event.payload);
+    });
+    webapp_protocol("rtp", void(*WebappRequest request) {
+        if (strcmp(request.path, "maps/a b.json") == 0) { request.text("{\"map\":1}", "application/json"); }
+    });
+    webapp_protocol_dir("asset", "tests/webapp/frontend");
+    webapp_on_close(bool(int window) { closes_asked++; return window != 3; });
+    check(logged("init Tester") && logged("scheme app") && logged("scheme rtp") && logged("scheme asset"), "init and schemes");
+
+    // Windows: the front end's root, a path of it, a URL.
+    uiw_test_clear();
+    int first = webapp_window(WebappWindow{title: "Main", width: 800, height: 600});
+    check(first == 1 && logged("window Main app://localhost/ 800 600") && logged("flags 5"), "a window on the front end");
+    webapp_window(WebappWindow{url: "/settings", fixed_size: true, fullscreen: true});
+    check(logged("window  app://localhost/settings 1024 768") && logged("flags 6"), "a path of the front end");
+
+    // Commands: strings and arguments, JSON, errors, no answer, a bad answer, unknown.
+    invoke(4, "greet", "{\"name\":\"Ada\",\"n\":3,\"loud\":true}");
+    check(logged("eval window.__ESKIU__&&window.__ESKIU__.receive({\"kind\":\"reply\",\"id\":4,\"ok\":true,\"value\":\"Hello, \\\"Ada\\\" 3 !\"}) @1"), "a string answer");
+    invoke(5, "sum", "{\"values\":[1,2,3.5]}");
+    check(logged("\"id\":5,\"ok\":true,\"value\":{\"total\":6.5}"), "a JSON answer");
+    invoke(6, "fail", "{}");
+    check(logged("\"id\":6,\"ok\":false,\"error\":\"it \\\"broke\\\"\""), "an error");
+    invoke(7, "silent", "{}");
+    check(logged("\"id\":7,\"ok\":false,\"error\":\"the command silent did not answer\""), "no answer");
+    invoke(8, "bad", "{}");
+    check(logged("\"id\":8,\"ok\":false,\"error\":\"the command's answer is not JSON\""), "a bad answer");
+    invoke(9, "nothing", "{}");
+    check(logged("\"id\":9,\"ok\":false,\"error\":\"no command nothing\""), "an unknown command");
+    uiw_test_clear();
+    uiw_on_message(1, "not json at all");
+    check(strlen(uiw_test_log()) == 0, "a message that is not JSON is dropped");
+
+    // An answer later, from another thread.
+    invoke(10, "later", "{}");
+    check(strstr(uiw_test_log(), "\"id\":10") == null, "a later answer waits");
+    uiw_test_clear();
+    *void thread = thread_create(void() { later_reply.resolve("[1,2]"); });
+    thread_join(thread);
+    check(logged("\"id\":10,\"ok\":true,\"value\":[1,2]"), "a later answer from a thread");
+
+    // Bytes both ways: {"$bytes": base64} in, a token the page fetches out, served once.
+    invoke(11, "bytes", "{\"data\":{\"$bytes\":\"AAEC/w==\"}}");
+    check(logged("\"id\":11,\"ok\":true,\"bytes\":\"1\""), "a bytes answer");
+    request("app", "__eskiu/bytes/1", "GET", "");
+    check(logged("respond 200") && logged("Content-Length: 4") && logged("Content-Type: application/octet-stream"), "the bytes served");
+    request("app", "__eskiu/bytes/1", "GET", "");
+    check(logged("respond 404"), "the bytes served once");
+
+    // Events: the page's to the program's listeners, the program's to one window or all.
+    uiw_on_message(2, "{\"kind\":\"emit\",\"event\":\"ping\",\"payload\":{\"n\":1}}");
+    check(String_eq_cstr(&heard, "2 ping {\"n\":1}") == 1, "an event from the page");
+    uiw_test_clear();
+    webapp_emit(0, "tick", "{\"at\":5}");
+    check(logged("receive({\"kind\":\"event\",\"event\":\"tick\",\"window\":0,\"payload\":{\"at\":5}}) @0"), "an event to every page");
+
+    // The front end: a file, the root, a route, a file that is not there, a path out of it,
+    // the client module.
+    request("app", "", "GET", "");
+    check(logged("respond 200") && logged("text/html") && logged("file tests/webapp/frontend/index.html 0+"), "the root page");
+    request("app", "places/kyoto", "GET", "");
+    check(logged("file tests/webapp/frontend/index.html"), "a route gets the page");
+    request("app", "missing.png", "GET", "");
+    check(logged("respond 404"), "a missing file");
+    request("app", "../secret.txt", "GET", "");
+    check(logged("respond 403"), "a path out of the front end");
+    request("app", "a/%2e%2e/%2e%2e/secret", "GET", "");
+    check(logged("respond 403"), "an encoded path out of the front end");
+    request("app", "@eskiu/webapp.js", "GET", "");
+    check(logged("body export const ok = 1;") && logged("text/javascript"), "the client module");
+
+    // Ranges: a part, an open one, a suffix, past the end, several (the whole file).
+    request("asset", "assets/digits.bin", "GET", "bytes=2-5");
+    check(logged("respond 206") && logged("Content-Range: bytes 2-5/10") && logged("Content-Length: 4") && logged("+4"), "a range");
+    request("asset", "assets/digits.bin", "GET", "bytes=7-");
+    check(logged("respond 206") && logged("Content-Range: bytes 7-9/10") && logged(" 7+3"), "an open range");
+    request("asset", "assets/digits.bin", "GET", "bytes=-3");
+    check(logged("Content-Range: bytes 7-9/10"), "a suffix range");
+    request("asset", "assets/digits.bin", "GET", "bytes=10-");
+    check(logged("respond 416") && logged("Content-Range: bytes */10"), "a range past the end");
+    request("asset", "assets/digits.bin", "GET", "bytes=0-1,4-5");
+    check(logged("respond 200") && logged("Content-Length: 10") && logged("Accept-Ranges: bytes"), "several ranges get the whole file");
+    request("asset", "assets/digits.bin", "HEAD", "");
+    check(logged("respond 200") && logged("Content-Length: 10") && logged(" 0+0"), "a HEAD request");
+    int64 start = 0;
+    int64 length = 0;
+    check(webapp_range("bytes=0-", 20000000, &start, &length) == 1 && length == WEBAPP_RANGE_CHUNK, "an open range of a big file is a chunk");
+
+    // A program's scheme: its handler (the path decoded), nothing answered, a preflight.
+    request("rtp", "maps/a%20b.json?v=2", "GET", "");
+    check(logged("respond 200") && logged("body {\"map\":1}") && logged("Access-Control-Allow-Origin: *"), "a scheme's handler");
+    request("rtp", "maps/none.json", "GET", "");
+    check(logged("respond 404"), "a scheme's handler that does not answer");
+    request("rtp", "maps/a.json", "OPTIONS", "");
+    check(logged("respond 204") && logged("Access-Control-Allow-Methods"), "a preflight");
+
+    // The mime types and path rules.
+    check(strcmp(webapp_mime("a/b.WASM"), "application/wasm") == 0 && strcmp(webapp_mime("x.ogg"), "audio/ogg") == 0
+        && strcmp(webapp_mime("dir.v2/file"), "application/octet-stream") == 0, "mime types");
+    check(webapp_safe_path("a/b..c/d") && !webapp_safe_path("a/../b") && !webapp_safe_path("..") && !webapp_safe_path("a\\b"), "safe paths");
+
+    // Dialogs: the page's options as the host takes them, its answers as JSON.
+    uiw_test_dialog_paths = "/tmp/a.png\n/tmp/b.png\n";
+    invoke(20, "ui:dialog", "{\"type\":\"open\",\"title\":\"Pick\",\"multiple\":true,\"filters\":[{\"name\":\"Images\",\"extensions\":[\"png\",\"jpg\"]}]}");
+    check(logged("dialog Pick|") && logged("filters Images\tpng,jpg") && logged("\"value\":[\"/tmp/a.png\",\"/tmp/b.png\"]"), "an open dialog");
+    uiw_test_dialog_paths = null;
+    invoke(21, "ui:dialog", "{\"type\":\"save\",\"defaultPath\":\"out.csv\"}");
+    check(logged("dialog |out.csv") && logged("\"id\":21,\"ok\":true,\"value\":null"), "a cancelled save dialog");
+    uiw_test_dialog_choice = 1;
+    invoke(22, "ui:dialog", "{\"type\":\"confirm\",\"title\":\"Delete\",\"message\":\"Sure?\",\"kind\":\"warning\"}");
+    check(logged("message Delete|Sure? 1 1") && logged("\"id\":22,\"ok\":true,\"value\":true"), "a confirm");
+    invoke(23, "ui:dialog", "{\"type\":\"message\",\"message\":\"Done\"}");
+    check(logged("message |Done 0 0") && logged("\"id\":23,\"ok\":true,\"value\":null"), "a message");
+
+    // The window from the page.
+    invoke(30, "ui:window", "{\"op\":\"setTitle\",\"title\":\"New\"}");
+    check(logged("title New 1") && logged("\"id\":30,\"ok\":true"), "setTitle");
+    invoke(31, "ui:window", "{\"op\":\"setFullscreen\",\"on\":true}");
+    check(logged("fullscreen 1 1"), "setFullscreen");
+    invoke(32, "ui:window", "{\"op\":\"isFullscreen\"}");
+    check(logged("\"id\":32,\"ok\":true,\"value\":true"), "isFullscreen");
+    invoke(33, "ui:window", "{\"op\":\"spin\"}");
+    check(logged("\"ok\":false,\"error\":\"ui:window: no op spin\""), "an unknown window op");
+
+    // Closing: the program's handler decides, unless the page intercepts the close.
+    check(uiw_on_close(1) == 1 && closes_asked == 1, "the close handler allows");
+    check(uiw_on_close(3) == 0, "the close handler refuses");
+    invoke(34, "ui:window", "{\"op\":\"interceptClose\",\"on\":true}");
+    uiw_test_clear();
+    check(uiw_on_close(1) == 0 && logged("\"event\":\"ui:close-requested\",\"window\":1") && closes_asked == 2, "the page intercepts the close");
+    invoke(35, "ui:window", "{\"op\":\"destroy\"}");
+    check(logged("close 1"), "the page closes its window");
+    uiw_on_closed(1);
+    check(uiw_on_close(1) == 1, "a closed window no longer intercepts");
+    invoke(36, "ui:quit", "{\"code\":3}");
+    check(logged("quit 3"), "quit");
+
+    if (failures > 0) { printf("%d failed\n", failures); return 1; }
+    println("PASS webapp");
+    return 0;
+}
