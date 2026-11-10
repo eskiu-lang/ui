@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Web App</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Web App</h1>
+    <p>A page in the platform's webview, its backend an Eskiu program.</p>
+  </header>
+  <main>
+    <section>
+      <h2>Commands</h2>
+      <div class="row">
+        <input id="name" value="Ada" aria-label="Name">
+        <button id="greet">Greet</button>
+        <button id="info">System info</button>
+        <button id="count">Count on a thread</button>
+        <button id="bytes">Bytes</button>
+      </div>
+    </section>
+    <section>
+      <h2>Events</h2>
+      <div class="row">
+        <button id="ping">Ping</button>
+        <label><input type="checkbox" id="unsaved"> Unsaved work (asks before closing)</label>
+      </div>
+    </section>
+    <section>
+      <h2>Dialogs</h2>
+      <div class="row">
+        <button id="open">Open files</button>
+        <button id="folder">Open a folder</button>
+        <button id="save">Save as</button>
+        <button id="message">Message</button>
+        <button id="ask">Ask</button>
+      </div>
+    </section>
+    <section>
+      <h2>Schemes</h2>
+      <div class="row">
+        <button id="demo">Fetch demo://</button>
+        <audio id="tone" controls></audio>
+      </div>
+    </section>
+    <section>
+      <h2>Window</h2>
+      <div class="row">
+        <button id="title">Set the title</button>
+        <button id="fullscreen">Full screen</button>
+        <button id="close">Close</button>
+      </div>
+    </section>
+    <pre id="log" aria-live="polite"></pre>
+  </main>
+</body>
+</html>

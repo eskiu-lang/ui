@@ -1,0 +1,8 @@
+[app]
+name = "Web App"
+
+# The front end the program serves: a directory with index.html (a bundler's output, such as
+# Vite's dist/). `ui run macos --dev` loads dev_url instead.
+[webapp]
+frontend = "web"
+dev_url = "http://localhost:5173"

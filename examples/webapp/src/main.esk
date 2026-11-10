@@ -1,0 +1,184 @@
+// A web app (<ui/webapp>): this program is the backend of the page in web/, shown in the
+// platform's webview. It has commands the page invokes (strings, JSON, errors, bytes, an
+// answer from another thread with progress events), answers the page's events, serves the
+// scheme demo:// and local files through asset:// (with ranges, for the page's <audio>),
+// and asks before its window closes while the page says it has unsaved work.
+//
+//   ui run macos          # or linux, windows
+//   ui run macos --dev    # the page from ui.toml's dev_url (a dev server) instead of web/
+//
+// WEBAPP_SELFTEST=1 opens the page's self-test, which checks each of these and ends the
+// program with its result (tools/ci.sh runs it on macOS).
+import <io>;
+import <string>;
+import <list>;
+import <fs>;
+import <env>;
+import <time>;
+import <process>;
+import <json>;
+import <ui/webapp>;
+
+bool unsaved;
+int main_window;
+
+void put16(*uint8 at, int value) { at[0] = (uint8)(value & 255); at[1] = (uint8)((value >> 8) & 255); }
+void put32(*uint8 at, int64 value) { for (k in 0..4) { at[k] = (uint8)((value >> (8 * k)) & 255); } }
+
+// A second of a 440 Hz tone as a WAV file (8 kHz, 8 bits), for the page's <audio> through
+// asset://.
+void write_tone(string path) {
+    int rate = 8000;
+    int64 size = 44 + (int64)rate;
+    *uint8 data = alloc<uint8>(size);
+    memcpy(data, "RIFF", 4); put32(&data[4], size - 8); memcpy(&data[8], "WAVEfmt ", 8);
+    put32(&data[16], 16); put16(&data[20], 1); put16(&data[22], 1); put32(&data[24], rate); put32(&data[28], rate);
+    put16(&data[32], 1); put16(&data[34], 8); memcpy(&data[36], "data", 4); put32(&data[40], rate);
+    for (i in 0..rate) {
+        int period = rate / 440;
+        data[44 + i] = (uint8)(i % period < period / 2 ? 168 : 88);
+    }
+    fs_write_all(path, data, size);
+    free(data);
+}
+
+int main() {
+    webapp_command("greet", void(*WebappCall call) {
+        string name = call.string("name");
+        if (name == null || name[0] == 0) { call.reject("greet: no name"); return; }
+        String text;
+        String_appendf(&text, "Hello, %s, from Eskiu", name);
+        call.resolve_string(text.data);
+        String_free(&text);
+    });
+
+    webapp_command("system_info", void(*WebappCall call) {
+        String cwd;
+        fs_cwd(&cwd);
+        Json json;
+        Json_init(&json);
+        Json_obj_begin(&json);
+        Json_key(&json, "pid"); Json_int(&json, (int64)process_pid());
+        Json_key(&json, "cwd"); Json_str(&json, cwd.data);
+        Json_key(&json, "time"); Json_int(&json, time_now_ms());
+        Json_key(&json, "window"); Json_int(&json, (int64)call.window);
+        Json_obj_end(&json);
+        call.resolve(Json_cstr(&json));
+        Json_free(&json);
+        String_free(&cwd);
+    });
+
+    // The names in a folder, folders first marked with a "/".
+    webapp_command("list_dir", void(*WebappCall call) {
+        string path = call.string("path");
+        List<String> names;
+        if (path == null || fs_list_dir(path, &names) != 0) { call.reject("list_dir: not a folder"); return; }
+        Json json;
+        Json_init(&json);
+        Json_arr_begin(&json);
+        for (i in 0..names.size) {
+            String full;
+            String_appendf(&full, "%s/%s", path, names.data[i].data);
+            if (fs_is_dir(full.data) == 1) { String_append(&names.data[i], "/"); }
+            Json_str(&json, names.data[i].data);
+            String_free(&full);
+        }
+        Json_arr_end(&json);
+        call.resolve(Json_cstr(&json));
+        Json_free(&json);
+        fs_list_free(&names);
+    });
+
+    webapp_command("read_text", void(*WebappCall call) {
+        String text;
+        string path = call.string("path");
+        if (path == null || fs_read_text(path, &text) != 0) { call.reject("read_text: no such file"); return; }
+        call.resolve_string(text.data);
+        String_free(&text);
+    });
+
+    // Counts to n on a thread, a "progress" event for each step, then answers n.
+    webapp_command("slow_count", void(*WebappCall call) {
+        int n = (int)call.int("n", 3);
+        WebappReply reply = call.later();
+        thread_create(void() {
+            for (i in 1..n + 1) {
+                time_sleep_ms(30);
+                String payload;
+                String_appendf(&payload, "{\"step\":%d,\"of\":%d}", i, n);
+                webapp_emit(reply.window, "progress", payload.data);
+                String_free(&payload);
+            }
+            String done;
+            String_appendf(&done, "%d", n);
+            reply.resolve(done.data);
+            String_free(&done);
+        });
+    });
+
+    // Bytes out (a Uint8Array in the page) and in.
+    webapp_command("pattern_bytes", void(*WebappCall call) {
+        int n = (int)call.int("n", 16);
+        *uint8 data = alloc<uint8>(n > 0 ? n : 1);
+        for (i in 0..n) { data[i] = (uint8)(i & 255); }
+        call.resolve_bytes(data, n);
+        free(data);
+    });
+    webapp_command("echo_bytes", void(*WebappCall call) {
+        int64 length = 0;
+        *uint8 data = call.bytes("data", &length);
+        if (data == null) { call.reject("echo_bytes: no data"); return; }
+        call.resolve_bytes(data, length);
+        free(data);
+    });
+
+    webapp_command("set_unsaved", void(*WebappCall call) {
+        unsaved = call.bool("on", false);
+        call.resolve(null);
+    });
+
+    // The self-test's result: printed, and the program ends with it.
+    webapp_command("selftest_done", void(*WebappCall call) {
+        bool ok = call.bool("ok", false);
+        string report = call.string("report");
+        printf("%s\n%s\n", report == null ? "" : report, ok ? "PASS webapp sample" : "FAIL webapp sample");
+        fflush(null);
+        call.resolve(null);
+        webapp_quit(ok ? 0 : 1);
+    });
+
+    // The page's "ping" is answered with "pong" to that window.
+    webapp_listen("ping", void(WebappEvent event) {
+        webapp_emit(event.window, "pong", event.payload);
+    });
+
+    // demo://localhost/PATH answers from the program; local files go through asset://.
+    webapp_protocol("demo", void(*WebappRequest request) {
+        if (strcmp(request.path, "hello.txt") == 0) {
+            String text;
+            String_appendf(&text, "Hello from demo://, query \"%s\"", request.query);
+            request.text(text.data, null);
+            String_free(&text);
+        }
+    });
+    webapp_protocol_dir("asset", "/");
+
+    String tone;
+    fs_temp_base(&tone);
+    String_appendf(&tone, "/eskiu-webapp-tone-%d.wav", process_pid());
+    write_tone(tone.data);
+    webapp_command("tone_path", void(*WebappCall call) { call.resolve_string(tone.data); });
+
+    webapp_on_close(bool(int window) {
+        if (!unsaved) { return true; }
+        return webapp_confirm(window, "Unsaved changes", "Close the window and lose them?", WEBAPP_WARNING, "Close", "Keep");
+    });
+
+    string selftest = env_get("WEBAPP_SELFTEST");
+    bool testing = selftest != null && strcmp(selftest, "1") == 0;
+    main_window = webapp_window(WebappWindow{width: 960, height: 720, min_width: 480, min_height: 360,
+        url: testing ? "/?selftest=1" : null});
+    int code = webapp_run();
+    fs_remove(tone.data);
+    return code;
+}
