@@ -72,7 +72,7 @@ passes the block as the call's last argument, `Column(Style{padding: 16}, void()
 ## Start an app
 
 ```bash
-git clone https://github.com/eskiu-lang/ui && eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
+curl -fsSL https://eskiu-lang.org/install.sh | sh -s -- --with-ui   # eskiuc and the ui tool
 ui new myapp && cd myapp
 ui run web        # or macos, linux, windows, ios, android
 ui serve          # builds again and reloads on each change, keeping the app's state

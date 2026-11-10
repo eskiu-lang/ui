@@ -2,13 +2,24 @@
 
 ## Install the tool
 
-The `ui` tool is part of this package, written in Eskiu. ui 0.2 needs Eskiu 0.14 or newer
-(its error boundaries use `catch (_)`):
+The `ui` tool is part of this package, written in Eskiu, and each release ships it built for
+macOS (Apple silicon and Intel), Linux (x86-64 and arm64) and Windows. The installer puts it
+next to `eskiuc`:
+
+```bash
+curl -fsSL https://eskiu-lang.org/install.sh | sh -s -- --with-ui
+# Windows: $env:ESKIU_WITH_UI = 1; irm https://eskiu-lang.org/install.ps1 | iex
+```
+
+Or build it from the repository (any directory on the PATH):
 
 ```bash
 git clone https://github.com/eskiu-lang/ui
-eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui      # any directory on the PATH
+eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
 ```
+
+ui 0.4 needs Eskiu 0.14.1 or newer, and 0.15 for source lines in `ui agent tree` and in
+runtime errors.
 
 What each platform needs:
 

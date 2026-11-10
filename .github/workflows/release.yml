@@ -1,0 +1,84 @@
+# Builds the ui tool for each platform and attaches it to the release of the tag:
+# ui-<platform>.tar.gz (bin/ui) and ui-windows-x86_64.zip (bin\ui.exe), with SHA256SUMS,
+# the layout eskiu-lang.org/install.sh --with-ui unpacks next to eskiuc. Run it again by
+# hand for a tag that is already released (Actions > Release > Run workflow).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach to (for example v0.4.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15, plat: macos-arm64, eskiuc: eskiuc-macos-arm64.tar.gz }
+          - { os: macos-13, plat: macos-x86_64, eskiuc: eskiuc-macos-x86_64.tar.gz }
+          - { os: ubuntu-24.04, plat: linux-x86_64, eskiuc: eskiuc-linux-x86_64.tar.gz }
+          - { os: ubuntu-24.04-arm, plat: linux-arm64, eskiuc: eskiuc-linux-arm64.tar.gz }
+          - { os: windows-2022, plat: windows-x86_64, eskiuc: eskiuc-windows-x86_64.zip }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - name: Install Eskiu
+        run: |
+          mkdir -p "$HOME/.eskiu"
+          url="https://github.com/eskiu-lang/eskiu/releases/latest/download/${{ matrix.eskiuc }}"
+          if [ "${{ matrix.plat }}" = windows-x86_64 ]; then
+            curl -fsSL -o eskiuc.zip "$url" && unzip -q eskiuc.zip -d "$HOME/.eskiu"
+            cygpath -w "$HOME/.eskiu/bin" >> "$GITHUB_PATH"
+          else
+            curl -fsSL "$url" | tar -xz -C "$HOME/.eskiu"
+            echo "$HOME/.eskiu/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Build the ui tool
+        run: |
+          mkdir -p out/bin
+          exe=ui; [ "${{ matrix.plat }}" = windows-x86_64 ] && exe=ui.exe
+          eskiuc tools/ui/main.esk -O2 -o "out/bin/$exe"
+          ("out/bin/$exe" help 2>&1 || true) | grep -q "usage: ui new"
+          cd out
+          if [ "${{ matrix.plat }}" = windows-x86_64 ]; then
+            7z a -tzip "../ui-${{ matrix.plat }}.zip" bin > /dev/null
+          else
+            tar -czf "../ui-${{ matrix.plat }}.tar.gz" bin
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-${{ matrix.plat }}
+          path: ui-${{ matrix.plat }}.*
+
+  attach:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          cd dist
+          sha256sum ui-* > SHA256SUMS
+          cat SHA256SUMS
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 \
+            || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "$TAG" --notes "See CHANGELOG.md."
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber ui-* SHA256SUMS
