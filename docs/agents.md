@@ -333,6 +333,29 @@ Windows host, the iOS
 simulator and the Android emulator
 ([CI](testing.md#ci)).
 
+## Agents in a container or without a computer
+
+`ghcr.io/eskiu-lang/agent` is a Linux image with everything above: `eskiuc`, the `ui` tool,
+emscripten and a headless Chrome (run it with `UI_CHROME_ARGS=--no-sandbox` when it runs as
+root). It is rebuilt after each release of the ui tool, tagged `latest` and
+`eskiu-<version>`:
+
+```bash
+docker run --rm -it ghcr.io/eskiu-lang/agent sh -c 'cd /tmp && ui new hello && cd hello && ui agent web --json tree'
+```
+
+On a machine of its own, an agent installs the same tools with
+`curl -fsSL https://eskiu-lang.org/install.sh | sh -s -- --with-ui`.
+
+An agent with no computer uses the Eskiu MCP server, `https://eskiu-mcp-9450.orvex.cloud/mcp`,
+which runs code on a worker built from that image:
+
+| Tool | What it does |
+|---|---|
+| `eskiu_run` | Compiles and runs one `.esk` file; exit code, stdout, stderr, and the errors as JSON diagnostics |
+| `eskiu_ui_render` | Builds `src/main.esk` for the web, applies `ui agent` ops in order, returns each answer, the tree and a screenshot |
+| `eskiu_ui_test` | Runs a `.uitest` file against `src/main.esk`; PASSED or FAILED with each step's result |
+
 ## The protocol
 
 The driver is part of the core in a dev or test build (the ui tool defines `UI_TEST` in the
