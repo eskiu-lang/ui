@@ -23,7 +23,8 @@ jobs:
       matrix:
         include:
           - { os: macos-15, plat: macos-arm64, eskiuc: eskiuc-macos-arm64.tar.gz }
-          - { os: macos-13, plat: macos-x86_64, eskiuc: eskiuc-macos-x86_64.tar.gz }
+          # Intel Macs: cross-compiled on Apple silicon (Intel runners rarely start).
+          - { os: macos-15, plat: macos-x86_64, eskiuc: eskiuc-macos-arm64.tar.gz, cross: x86_64-apple-macosx11.0 }
           - { os: ubuntu-24.04, plat: linux-x86_64, eskiuc: eskiuc-linux-x86_64.tar.gz }
           - { os: ubuntu-24.04-arm, plat: linux-arm64, eskiuc: eskiuc-linux-arm64.tar.gz }
           - { os: windows-2022, plat: windows-x86_64, eskiuc: eskiuc-windows-x86_64.zip }
@@ -50,8 +51,15 @@ jobs:
         run: |
           mkdir -p out/bin
           exe=ui; [ "${{ matrix.plat }}" = windows-x86_64 ] && exe=ui.exe
-          eskiuc tools/ui/main.esk -O2 -o "out/bin/$exe"
-          ("out/bin/$exe" help 2>&1 || true) | grep -q "usage: ui new"
+          if [ -n "${{ matrix.cross }}" ]; then
+            # eskiuc links for the host's architecture, so the object is linked here.
+            eskiuc tools/ui/main.esk -O2 --target "${{ matrix.cross }}" -c -o ui.o
+            cc -arch x86_64 -mmacosx-version-min=11.0 ui.o -o "out/bin/$exe"
+            file "out/bin/$exe" | grep -q x86_64
+          else
+            eskiuc tools/ui/main.esk -O2 -o "out/bin/$exe"
+            ("out/bin/$exe" help 2>&1 || true) | grep -q "usage: ui new"
+          fi
           cd out
           if [ "${{ matrix.plat }}" = windows-x86_64 ]; then
             7z a -tzip "../ui-${{ matrix.plat }}.zip" bin > /dev/null
