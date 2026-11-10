@@ -373,7 +373,22 @@ bool windows_alive(int pid) {
     CloseHandle(process);
     return ok != 0 && code == (uint32)259;
 #else
-    return pid > 0 && kill(pid, 0) == 0;
+    if (pid <= 0 || kill(pid, 0) != 0) { return false; }
+#ifdef __linux__
+    // A zombie (ended, not reaped: a container whose PID 1 reaps nothing) answers kill(pid,
+    // 0) but is gone. /proc/PID/stat has its state after the command's closing parenthesis.
+    String stat;
+    defer String_free(&stat);
+    String path;
+    defer String_free(&path);
+    String_appendf(&path, "/proc/%d/stat", pid);
+    if (fs_read_text(path.data, &stat) == 0 && stat.data != null) {
+        int64 close = -1;
+        for (i in 0..stat.len) { if (stat.data[i] == ')') { close = i; } }
+        if (close >= 0 && close + 2 < stat.len && stat.data[close + 1] == ' ' && stat.data[close + 2] == 'Z') { return false; }
+    }
+#endif
+    return true;
 #endif
 }
 
