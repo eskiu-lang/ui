@@ -7,7 +7,7 @@
 //
 // Inside a project, the ui package is the one eskiu.lock names; its hosts (hosts/) are built
 // around the app. Yoga, for the native hosts, is fetched and compiled once into
-// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), xcode (Swift packages), new, serve, agent (`ui agent`, the driver's client), uitest (`ui test`), diagnostics (--json), publish (`ui publish`, with src/apis/ed25519.esk).
+// $ESKIU_HOME/cache. Its parts: common, config (ui.toml), project, web, macos, yoga, ios, android, gradle (Maven dependencies), xcode (Swift packages), new, serve, agent (`ui agent`, the driver's client), uitest (`ui test`), diagnostics (--json), publish (`ui publish`, with src/apis/ed25519.esk), webapp (web apps: a program serving a web front end in the desktop's webview).
 import <io>;
 import <string>;
 import <list>;
@@ -38,6 +38,7 @@ import "web.esk";
 import "macos.esk";
 import "linux.esk";
 import "windows.esk";
+import "webapp.esk";
 import "yoga.esk";
 import "ios.esk";
 import "android.esk";
@@ -52,7 +53,7 @@ import "agent.esk";
 import "uitest.esk";
 
 void usage() {
-    println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android [--json] [--webview]\n       ui run web|macos|linux|windows|ios|android [--webview]\n"
+    println_err("usage: ui new NAME [--ui PATH]\n       ui build web|macos|linux|windows|ios|android [--json] [--webview]\n       ui run web|macos|linux|windows|ios|android [--webview] [--dev]\n"
                 "       ui serve [web|macos|linux|windows|ios|android] [--json] [--webview]\n       ui agent web|macos|linux|windows|ios|android [--json] OP...\n       ui test [web|macos|linux|windows|ios|android ...] [--json] [FILE ...]\n       ui open ios|android\n       ui release [web|macos|linux|windows|ios|android] [--upload]\n       ui publish");
     exit(2);
 }
@@ -90,6 +91,8 @@ int main(int argc, string* argv) {
         for (int i = 2; i < argc; i++) {
             if (strcmp(argv[i], "--json") == 0 && strcmp(argv[1], "release") != 0) { ui_json = true; }
             // macOS: the WKWebView host instead of AppKit (the builds `ui serve` runs inherit it).
+            // A web app ([webapp] in ui.toml): the window loads [webapp] dev_url.
+            else if (strcmp(argv[i], "--dev") == 0) { webapp_dev_url = true; }
             else if (strcmp(argv[i], "--webview") == 0) { env_set("UI_MACOS_RENDERER", "web"); env_set("UI_LINUX_RENDERER", "web"); env_set("UI_WINDOWS_RENDERER", "web"); }
             else { argv[kept++] = argv[i]; }
         }
@@ -157,6 +160,13 @@ int main(int argc, string* argv) {
         string target_name = argc >= 3 ? argv[2] : "web";
         String target;
         String_from(&target, target_name);
+        // A web app: the program and its front end in the platform's webview (tools/ui/webapp.esk).
+        if (webapp_project(&p) && (strcmp(target_name, "macos") == 0 || strcmp(target_name, "linux") == 0 || strcmp(target_name, "windows") == 0)) {
+            if (run) { run_webapp(&p, target_name); return 0; }
+            string made = build_webapp(&p, target_name);
+            if (ui_json) { json_result("built", made); } else { printf("Built %s\n", made); }
+            return 0;
+        }
         if (String_eq_cstr(&target, "web") == 1) {
         string out = build_web(&p);
         if (ui_json) { json_result("built", out); } else { printf("Built %s\n", out); }

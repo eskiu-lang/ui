@@ -1,0 +1,272 @@
+// Web apps (<ui/webapp>, docs/webapp.md): a project whose ui.toml has [webapp] frontend is a
+// program with a main of its own that serves that front end in the platform's webview. This
+// builds it for macOS (hosts/macos/webapp.m), Linux (hosts/linux/webapp.c) and Windows
+// (hosts/windows/webapp.cpp) and runs it.
+// Part of the ui tool (tools/ui/main.esk imports every part).
+
+bool webapp_project(Project* p) { return p.config.string("webapp.frontend") != null; }
+
+// `ui run TARGET --dev`: the window loads ui.toml's [webapp] dev_url (a dev server's).
+bool webapp_dev_url;
+
+// The entry file: the app's name, the page's bridge and the client module (js/webapp) as the
+// macros src/webapp.esk reads, a release's UI_RELEASE, then the program.
+string webapp_entry(Project* p) {
+    string build = join(p.root.data, "build/ui");
+    fs_mkdir_p(build);
+    String text;
+    defer String_free(&text);
+    String_append(&text, "// Made by ui: the web app's constants and the program.\n");
+    String_appendf(&text, "#define UI_APP_NAME %s\n", esk_literal(p.display.data));
+    String_appendf(&text, "#define UI_APP_ID %s\n", esk_literal(p.id.data));
+    if (ui_release) { String_append(&text, "#define UI_RELEASE 1\n"); }
+    String bridge;
+    defer String_free(&bridge);
+    String client;
+    defer String_free(&client);
+    if (fs_read_text(join(p.ui.data, "js/webapp/bridge.js"), &bridge) != 0 || fs_read_text(join(p.ui.data, "js/webapp/index.js"), &client) != 0) {
+        fail("ui: the ui package has no js/webapp/bridge.js and index.js");
+    }
+    String_appendf(&text, "#define UI_WEBAPP_BRIDGE %s\n", esk_literal(bridge.data));
+    String_appendf(&text, "#define UI_WEBAPP_CLIENT %s\n", esk_literal(client.data));
+    String_appendf(&text, "import \"%s\";\n", import_path(build, join(p.root.data, "src/main.esk")));
+    string entry = join(build, "webapp-entry.esk");
+    String before;
+    defer String_free(&before);
+    if (fs_read_text(entry, &before) != 0 || String_eq_cstr(&before, text.data) != 1) { fs_write_text(entry, text.data); }
+    return entry;
+}
+
+// The front end, built first by ui.toml's [webapp] before_build when it has one (a bundler's
+// command, run by the shell in the project's root): its directory.
+string webapp_frontend(Project* p) {
+    string command = p.config.string("webapp.before_build");
+    if (command != null && command[0] != 0) {
+        Cmd cmd;
+#ifdef _WIN32
+        cmd.add("cmd"); cmd.add("/c");
+#else
+        cmd.add("sh"); cmd.add("-c");
+#endif
+        cmd.add(command);
+        cmd.must(p.root.data);
+        cmd.free();
+    }
+    string dir = join(p.root.data, p.config.string("webapp.frontend"));
+    if (fs_is_file(join(dir, "index.html")) != 1) {
+        String message;
+        String_appendf(&message, "ui: the front end (ui.toml [webapp] frontend) has no index.html: %s", dir);
+        fail(message.data);
+    }
+    return dir;
+}
+
+// The program compiled for `target` (null: this machine) into `object`.
+void webapp_compile(Project* p, string target, string object) {
+    Cmd esk;
+    esk.add(eskiuc()); esk.add(webapp_entry(p));
+    if (target != null) { esk.add("--target"); esk.add(target); }
+    esk.add(ui_release ? "-O2" : app_opt());
+    esk.add("-c"); esk.add("-o"); esk.add(object);
+    compile_app(&esk);
+    esk.free();
+}
+
+// build/ui/macos/NAME.app: the program and the host for this Mac (both architectures in a
+// release), the front end in Resources/frontend.
+string build_webapp_macos(Project* p) {
+    string frontend = webapp_frontend(p);
+    string out = p.out("macos");
+    String sdk;
+    String clang;
+    macos_toolchain(p, &sdk, &clang);
+    List<string> archs;
+    defer archs.free();
+    if (ui_release) { archs.push("arm64"); archs.push("x86_64"); } else { archs.push(macos_arch()); }
+    String app_name;
+    String_appendf(&app_name, "%s.app", p.name.data);
+    string bundle = join(out, app_name.data);
+    string contents = join(bundle, "Contents");
+    string resources = join(contents, "Resources");
+    fs_mkdir_p(join(contents, "MacOS"));
+    fs_mkdir_p(resources);
+    string executable = join(join(contents, "MacOS"), p.name.data);
+    List<String> made;
+    defer fs_list_free(&made);
+    for (a in 0..archs.size) {
+        string arch = archs.data[a];
+        String target;
+        String_appendf(&target, "%s-apple-macos11.0", arch);
+        String object;
+        String_appendf(&object, "%s/webapp-%s%s.o", out, arch, ui_release ? "-release" : "");
+        webapp_compile(p, target.data, object.data);
+        String host;
+        String_appendf(&host, "%s/webapp-host-%s%s.o", out, arch, ui_release ? "-release" : "");
+        List<string> sources;
+        sources.push(join(p.ui.data, "hosts/macos/webapp.m"));
+        if (stale(host.data, &sources)) {
+            Cmd cc;
+            cc.add(clang.data); cc.add("-target"); cc.add(target.data); cc.add("-isysroot"); cc.add(sdk.data);
+            cc.add("-fobjc-arc"); cc.add("-O2"); cc.add("-c"); cc.add(sources.data[0]); cc.add("-o"); cc.add(host.data);
+            cc.must(null);
+            cc.free();
+            built(host.data, &sources);
+        }
+        sources.free();
+        String linked;
+        String_appendf(&linked, "%s/webapp-%s", out, arch);
+        Cmd link;
+        link.add(clang.data); link.add("-target"); link.add(target.data); link.add("-isysroot"); link.add(sdk.data);
+        link.add(object.data); link.add(host.data);
+        link.add("-framework"); link.add("Cocoa"); link.add("-framework"); link.add("WebKit");
+        link.add("-framework"); link.add("UniformTypeIdentifiers");
+        List<string> frameworks;
+        p.config.all("macos.frameworks", &frameworks);
+        for (i in 0..frameworks.size) { link.add("-framework"); link.add(frameworks.data[i]); }
+        frameworks.free();
+        link.add("-o"); link.add(linked.data);
+        link.must(null);
+        link.free();
+        made.push(linked);
+    }
+    if (made.size == 1) { fs_copy(made.data[0].data, executable); }
+    else {
+        Cmd lipo;
+        lipo.add("lipo"); lipo.add("-create");
+        for (i in 0..made.size) { lipo.add(made.data[i].data); }
+        lipo.add("-output"); lipo.add(executable);
+        lipo.must(null);
+        lipo.free();
+    }
+    macos_bundle(p, contents, resources, true);
+    replace_dir(frontend, join(resources, "frontend"));
+    p.copy_assets(resources);
+    Cmd sign;
+    sign.add("codesign"); sign.add("--force"); sign.add("--sign"); sign.add("-"); sign.add(bundle);
+    sign.must(null);
+    sign.free();
+    return bundle;
+}
+
+// build/ui/linux/NAME with frontend/ beside it: the program and the WebKitGTK host.
+string build_webapp_linux(Project* p) {
+    string frontend = webapp_frontend(p);
+    string out = p.out("linux");
+    string pkg = "webkit2gtk-4.1";
+    Cmd check;
+    check.add("pkg-config"); check.add("--exists"); check.add(pkg);
+    if (check.run(null) != 0) { pkg = "webkit2gtk-4.0"; }
+    check.free();
+    String flags;
+    defer String_free(&flags);
+    Cmd pc;
+    pc.add("pkg-config"); pc.add("--cflags"); pc.add("--libs"); pc.add(pkg);
+    if (!pc.output(&flags)) {
+        fail("ui build linux: pkg-config webkit2gtk-4.1 or webkit2gtk-4.0 not found. Install libwebkit2gtk-4.1-dev (Debian, Ubuntu) or webkit2gtk4.1-devel (Fedora).");
+    }
+    pc.free();
+    string object = join(out, ui_release ? "webapp-release.o" : "webapp.o");
+    webapp_compile(p, null, object);
+    List<String> parts;
+    defer fs_list_free(&parts);
+    String_split(&flags, ' ', &parts);
+    // The host is C; the link is C++'s, for a program that throws.
+    string host = join(out, ui_release ? "webapp-host-release.o" : "webapp-host.o");
+    Cmd cc;
+    string compiler = env_get("CC");
+    cc.add(compiler != null && compiler[0] != 0 ? compiler : "cc");
+    cc.add("-O2");
+    if (ui_release) { cc.add("-DUI_RELEASE"); }
+    for (i in 0..parts.size) { if (String_starts_with(&parts.data[i], "-I") == 1 || String_starts_with(&parts.data[i], "-D") == 1 || String_starts_with(&parts.data[i], "-pthread") == 1) { cc.add(parts.data[i].data); } }
+    cc.add("-c"); cc.add(join(p.ui.data, "hosts/linux/webapp.c")); cc.add("-o"); cc.add(host);
+    cc.must(null);
+    cc.free();
+    string binary = join(out, p.name.data);
+    Cmd link;
+    link.add(linux_cxx()); link.add(object); link.add(host);
+    for (i in 0..parts.size) { if (parts.data[i].len > 0 && String_starts_with(&parts.data[i], "-I") != 1) { link.add(parts.data[i].data); } }
+    link.add("-lpthread"); link.add("-lm"); link.add("-o"); link.add(binary);
+    link.must(null);
+    link.free();
+    replace_dir(frontend, join(out, "frontend"));
+    fs_mkdir_p(join(out, "assets"));
+    p.copy_assets(join(out, "assets"));
+    return binary;
+}
+
+// build/ui/windows/NAME.exe with frontend/ and WebView2Loader.dll beside it: the program and
+// the WebView2 host, with MinGW-w64 (the program's object is MinGW's), from Windows, macOS or
+// Linux.
+string build_webapp_windows(Project* p) {
+    string frontend = webapp_frontend(p);
+    string out = p.out("windows");
+    string sdk = webview2_sdk();
+    string cxx = windows_native_cxx();
+    string object = join(out, ui_release ? "webapp-release.o" : "webapp.o");
+    webapp_compile(p, "x86_64-w64-windows-gnu", object);
+    // The manifest: the DPI awareness and common controls 6, as the Win32 host's.
+    string resource = join(out, "webapp-res.o");
+    List<string> res_sources;
+    defer res_sources.free();
+    res_sources.push(join(p.ui.data, "hosts/windows/host.rc")); res_sources.push(join(p.ui.data, "hosts/windows/host.manifest"));
+    if (stale(resource, &res_sources)) {
+        Cmd rc;
+        rc.add(windows_windres(cxx)); rc.add("-I"); rc.add(join(p.ui.data, "hosts/windows"));
+        rc.add("-i"); rc.add(res_sources.data[0]); rc.add("-o"); rc.add(resource);
+        rc.must(null);
+        rc.free();
+        built(resource, &res_sources);
+    }
+    String exe_name;
+    defer String_free(&exe_name);
+    String_appendf(&exe_name, "%s.exe", p.name.data);
+    string binary = join(out, exe_name.data);
+    Cmd cc;
+    cc.add(cxx); cc.add("-std=c++17"); cc.add("-O2");
+    if (ui_release) { cc.add("-DUI_RELEASE"); cc.add("-mwindows"); }
+    cc.add("-I"); cc.add(join(sdk, "build/native/include"));
+    cc.add(join(p.ui.data, "hosts/windows/webapp.cpp")); cc.add(object); cc.add(resource);
+    cc.add("-static");
+    windows_libs(&cc);
+    cc.add("-lcomdlg32"); cc.add("-o"); cc.add(binary);
+    cc.must(null);
+    cc.free();
+    fs_copy(join(sdk, "build/native/x64/WebView2Loader.dll"), join(out, "WebView2Loader.dll"));
+    replace_dir(frontend, join(out, "frontend"));
+    fs_mkdir_p(join(out, "assets"));
+    p.copy_assets(join(out, "assets"));
+    windows_icon(p, out);
+    return binary;
+}
+
+string build_webapp(Project* p, string target) {
+    if (strcmp(target, "macos") == 0) { return build_webapp_macos(p); }
+    if (strcmp(target, "linux") == 0) { return build_webapp_linux(p); }
+    if (strcmp(target, "windows") == 0) { return build_webapp_windows(p); }
+    fail("ui: a web app ([webapp] in ui.toml) builds for macos, linux and windows");
+    return null;
+}
+
+// `ui run TARGET` of a web app: builds it and runs it here, with [webapp] dev_url as its page
+// under --dev; its exit code is the tool's.
+void run_webapp(Project* p, string target) {
+    string made = build_webapp(p, target);
+    if (!ui_json) { printf("Built %s\n", made); }
+    string program = made;
+    if (strcmp(target, "macos") == 0) {
+        String inside;
+        String_appendf(&inside, "%s/Contents/MacOS/%s", made, p.name.data);
+        program = inside.data;
+    }
+    if (webapp_dev_url) {
+        string url = p.config.string("webapp.dev_url");
+        if (url == null) { fail("ui run --dev: ui.toml's [webapp] has no dev_url"); }
+        env_set("UI_WEBAPP_URL", url);
+        printf("Loading %s (start the dev server first)\n", url);
+    }
+    Cmd app;
+    app.add(program);
+    int code = app.run(null);
+    app.free();
+    exit(code);
+}
