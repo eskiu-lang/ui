@@ -1,0 +1,14 @@
+{
+  "name": "@eskiu/webapp",
+  "version": "0.1.0",
+  "description": "The page's side of an Eskiu web app (<ui/webapp>): commands, events, dialogs, the window and the program's URL schemes",
+  "type": "module",
+  "main": "index.js",
+  "module": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.js" }
+  },
+  "files": ["index.js", "index.d.ts", "bridge.js"],
+  "license": "MIT"
+}
