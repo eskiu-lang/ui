@@ -16,6 +16,11 @@ eskiuc tests/ed25519.esk -o build/ed25519
 build/ed25519
 eskiuc tests/updates.esk -o build/updates
 build/updates 2> build/updates.err || { cat build/updates.err; exit 1; }
+# <ui/webapp> against a host stand-in, and the page's side (js/webapp) in Node.
+cc -c tests/webapp_host.c -o build/webapp_host.o
+eskiuc tests/webapp.esk --link-arg build/webapp_host.o -o build/webapp
+build/webapp
+node tests/webapp.mjs
 eskiuc tests/tags.esk -o build/tags
 build/tags
 eskiuc tests/constants.esk -o build/constants
@@ -80,6 +85,11 @@ if [ "$(uname)" = "Darwin" ]; then
     test -f build/newapp/build/ui/release/newapp-0.1.0-macos.zip || { cat build/release-macos.txt; echo "FAIL release macos: no zip"; exit 1; }
     find build/newapp/build/ui/macos -name "*.zip" | grep -q . && { echo "FAIL release macos: a zip inside the bundle"; exit 1; }
     echo "PASS ui release macos --webview"
+    # A web app ([webapp] in ui.toml): the program and the WKWebView host in a bundle with
+    # its front end (tools/ci_host.sh macos runs its self-test in a window).
+    (cd examples/webapp && ../../build/ui build macos) > build/webapp-macos.txt 2>&1 || { cat build/webapp-macos.txt; exit 1; }
+    test -f examples/webapp/build/ui/macos/webapp.app/Contents/Resources/frontend/index.html || { echo "FAIL webapp macos: no front end"; exit 1; }
+    echo "PASS ui build macos (web app)"
 fi
 if [ "$(uname)" = "Linux" ] && pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
     # The WebKitGTK host (--webview), around the stand-in compiler's web build; the GTK 4 host
@@ -88,6 +98,9 @@ if [ "$(uname)" = "Linux" ] && pkg-config --exists webkit2gtk-4.1 2>/dev/null; t
     test -f build/newapp/build/ui/linux/newapp || { echo "FAIL linux: no binary"; exit 1; }
     test -f build/newapp/build/ui/linux/web/index.html || { echo "FAIL linux: no bundled web"; exit 1; }
     echo "PASS ui build linux --webview"
+    (cd examples/webapp && ../../build/ui build linux) > build/webapp-linux.txt 2>&1 || { cat build/webapp-linux.txt; exit 1; }
+    test -f examples/webapp/build/ui/linux/frontend/index.html || { echo "FAIL webapp linux: no front end"; exit 1; }
+    echo "PASS ui build linux (web app)"
 fi
 # ui.toml is read before building: a malformed one stops with its line.
 printf '[app]\nname = "New app"\n\n[ios]\nframeworks = ["CoreLocation", 3]\n' > build/newapp/ui.toml

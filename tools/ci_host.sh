@@ -41,6 +41,16 @@ if [ "$HOST" = macos ]; then
     codesign --verify tests/conformance/build/ui/macos/conformance.app || { echo "FAIL release macos: not signed"; exit 1; }
     echo "release macos: $(( $(date +%s) - started )) s"
 fi
+# A web app's self-test in a window: commands, events, bytes, its schemes with ranges and
+# media, the window (examples/webapp, docs/webapp.md). Linux needs WebKitGTK.
+if [ "$HOST" = macos ] || { [ "$HOST" = linux ] && pkg-config --exists webkit2gtk-4.1 2>/dev/null; }; then
+    started=$(date +%s)
+    (cd examples/webapp && ../../build/ui build "$HOST" > ../../build/webapp-build.txt 2>&1) || { cat build/webapp-build.txt; exit 1; }
+    if [ "$HOST" = macos ]; then program=examples/webapp/build/ui/macos/webapp.app/Contents/MacOS/webapp; else program=examples/webapp/build/ui/linux/webapp; fi
+    WEBAPP_SELFTEST=1 "$program" > build/webapp-selftest.txt 2>&1 || { cat build/webapp-selftest.txt; exit 1; }
+    grep -q "PASS webapp sample" build/webapp-selftest.txt || { cat build/webapp-selftest.txt; exit 1; }
+    echo "webapp self-test: $(( $(date +%s) - started )) s"
+fi
 # Linux: what GTK said about the host's use of it in the last runs (shown, not failed on).
 if [ "$HOST" = linux ]; then
     cat tests/*/build/ui/linux/app.log examples/*/build/ui/linux/app.log 2>/dev/null | grep -E "Gtk-|Gdk-|Gsk-|GLib-" | sort | uniq -c | sort -rn | head -20 || true

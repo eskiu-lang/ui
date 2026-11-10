@@ -63,6 +63,13 @@ jobs:
           done
           test -f build/newapp/build/ui/release/newapp-0.1.0-windows.zip || { echo "FAIL: no zip"; exit 1; }
           echo "PASS ui release windows"
+      - name: A web app builds with the WebView2 host
+        run: |
+          (cd examples/webapp && ../../build/ui.exe build windows)
+          for f in webapp.exe WebView2Loader.dll frontend/index.html; do
+            test -f "examples/webapp/build/ui/windows/$f" || { echo "FAIL: no $f"; exit 1; }
+          done
+          echo "PASS ui build windows (web app)"
 
   # The host checks (docs/testing.md): every `ui agent` op, the ui tests and the speed
   # budgets on a headless Chrome, the macOS AppKit host, the Linux GTK host, the Win32 host,
