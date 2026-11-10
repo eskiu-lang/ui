@@ -62,6 +62,10 @@ void Counter() {
   dependencies from `ui.toml`. See [native code](docs/native.md).
 - **Fast start and fresh assets.** The web page is prerendered at build time, and `ui publish`
   sends signed asset updates to installed apps ([updates](docs/updates.md)).
+- **Web apps.** `<ui/webapp>` makes an Eskiu program the backend of a web front end (a React
+  bundle) in WKWebView, WebView2 or WebKitGTK, as Tauri does: commands, events, URL schemes
+  with ranges, native dialogs and windows, and `@eskiu/webapp` for the page
+  ([web apps](docs/webapp.md)).
 - **A kit.** `<ui/kit>` adds cards, badges, buttons, fields, checkboxes, tabs, bars,
   accordions, menus, selects, tooltips, toasts and date and color pickers, in a light and a
   dark theme, built from the same elements.
@@ -97,6 +101,7 @@ runs `tests/ui/*.uitest` on every host.
 | [The platform](docs/platform.md) | Dark mode, accessibility, system actions, the network, back, links, alerts, modals |
 | [Navigation](docs/navigation.md) | Screens and pages, back, links, the browser's history |
 | [Native code](docs/native.md) | Modules and views per platform, `ui.toml`, Gradle and Swift packages |
+| [Web apps](docs/webapp.md) | `<ui/webapp>`: a program as the backend of a web front end in the desktop's webview |
 | [Protocol](docs/protocol.md), [Hosts](docs/hosts.md) | For writing a host |
 | [Testing](docs/testing.md) | Tests, `ui test`, host checks in CI, conformance, speed budgets |
 | [API reference](docs/api.md) | Every public function and type of `<ui>` and `<ui/kit>`, with its documentation |

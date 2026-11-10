@@ -14,6 +14,7 @@ windows on macOS, Linux and Windows.
 | [The platform](platform.md) | Insets, light and dark, accessibility, the language, the window, the status bar, back, links, system actions (share, clipboard, haptics), the network, alerts, modals |
 | [Navigation](navigation.md) | Screens and pages: routers, navigators, back, links, the browser's history |
 | [Native code](native.md) | Modules and views per platform, `ui.toml`, Gradle and Swift packages |
+| [Web apps](webapp.md) | `<ui/webapp>`: an Eskiu program as the backend of a web front end (a React bundle) in WKWebView, WebView2 or WebKitGTK, with commands, events, URL schemes, dialogs and windows, and `@eskiu/webapp` for the page |
 | [Protocol](protocol.md) | The commit format a renderer reads, events back, commits and ids |
 | [Hosts](hosts.md) | How each platform draws the tree: web, iOS, Android, macOS, Linux, Windows |
 | [Testing](testing.md) | The model tests, the host checks, the conformance suite, CI |

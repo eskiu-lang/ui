@@ -322,6 +322,14 @@ has no console, takes the document's title, reloads on F5 and Ctrl+R and closes 
 and a failure to start WebView2 says so in a message box. A release build turns the
 developer tools off. Running it needs the WebView2 Runtime, which Windows 10 and 11 carry.
 
+## Web apps
+
+A project with `[webapp]` in `ui.toml` is not a `<ui>` app: its program has a main of its own
+and serves a web front end in the platform's webview (`hosts/macos/webapp.m`,
+`hosts/linux/webapp.c`, `hosts/windows/webapp.cpp`). Those hosts carry the page's messages,
+the program's URL schemes, dialogs and windows, and nothing of the commit protocol. See
+[web apps](webapp.md).
+
 ## The driver
 
 A dev build (`ui serve`) has the driver `ui agent` talks to ([agents](agents.md)). The core

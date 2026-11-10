@@ -30,6 +30,10 @@ scope path in a message), the headless counter, and builds the
 its text diagnostics, a warning with an option, a hint and notes, become the JSON lines
 `eskiuc --diagnostics=json` would write), and `ui publish` (a signed manifest, a key made
 outside the project, the build's update macros, a key that is not `ui.toml`'s refused).
+It also runs `tests/webapp.esk` (`<ui/webapp>` against a host stand-in, `tests/webapp_host.c`)
+and `tests/webapp.mjs` (the page's side in Node), and builds `examples/webapp` on macOS and,
+with WebKitGTK, on Linux; `tools/ci_host.sh macos` and `linux` run its self-test in a window
+([web apps](webapp.md#testing)).
 
 `tools/check.py` also:
 

@@ -66,6 +66,7 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `src/elements/` | `layout` (containers, `ui_on_layout`, `ui_on_hover`, `ui_on_long_press`), `text`, `input` (fields, switches, sliders), `media`, `lists`, `overlay` (`Modal`, `Overlay`, `Alert`), `system`, `native`, `navigation`, `timers`, `gestures`, `animated` |
 | `src/apis/` | `environment` (platform, appearance, accessibility, language), `actions` (keyboard, share, clipboard, haptics, announcements), `storage`, `network` (`ui_fetch`), and in a build with `[updates]` only, `updates` (asset bundles, [updates](updates.md)) and `ed25519` (signatures and SHA-512, which the ui tool uses too) |
 | `src/state/strings.esk` | `use_string` |
+| `src/webapp.esk` | `<ui/webapp>`: a program as the backend of a web front end ([web apps](webapp.md)); it does not import `<ui>` |
 | `src/kit.esk`, `src/kit/` | `<ui/kit>`: `theme` (light and dark), `display`, `buttons`, `forms`, `navigation`, `disclosure`, `swipe`, `overlays` (popovers, menus, tooltips, toasts), `pickers` (calendar, date, color) |
 | `hosts/bridge.esk` | What every host calls (`ui_start`, `ui_dispatch_*`, `ui_report_*`, `ui_tick`, `ui_stop`) and the app's two entry points |
 | `hosts/commit.h` | A C decoder of commits, shared by the native hosts |
@@ -74,8 +75,10 @@ next element's block. Strings passed to elements are copied. See [state](state.m
 | `hosts/ios/ui_native.h`, `hosts/android/ui_native.h`, `hosts/macos/ui_native.h`, `hosts/linux/ui_native.h`, `hosts/windows/ui_native.h` | The C API native code includes ([native code](native.md)) |
 | `hosts/web/prerender.mjs`, `hosts/web/ui-sw.js` | The web's first frame rendered at build time ([hosts](hosts.md#the-first-frame)), and the service worker of asset updates |
 | `hosts/web/`, `hosts/ios/`, `hosts/android/`, `hosts/macos/`, `hosts/linux/`, `hosts/windows/` | The hosts |
-| `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `publish` (`ui publish`, the keys), `web`, `macos`, `linux`, `windows`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload), `agent` (`ui agent`, the driver's client), `uitest` (`ui test`), `diagnostics` (`--json`, the compiler's probe) |
-| `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery`, `native`, `navigation` |
+| `hosts/macos/webapp.m`, `hosts/linux/webapp.c`, `hosts/windows/webapp.cpp` | The web apps' hosts: windows with the platform's webview, its message channel, the program's URL schemes and dialogs |
+| `js/webapp/` | `@eskiu/webapp`: the page's side of a web app (`bridge.js`, which every web app host runs in the page, and `index.js`, the module) |
+| `tools/ui/` | The `ui` command: `project` (the lock, the packages), `config` (`ui.toml`), `publish` (`ui publish`, the keys), `web`, `macos`, `linux`, `windows`, `yoga`, `ios`, `xcode`, `android`, `gradle`, `new`, `serve` (watch, build in a child, reload), `agent` (`ui agent`, the driver's client), `uitest` (`ui test`), `diagnostics` (`--json`, the compiler's probe), `webapp` (web apps for macOS, Linux and Windows) |
+| `examples/` | Projects: `counter`, `todo`, `tasks`, `kit-gallery`, `native`, `navigation`, `webapp` |
 | `tests/` | The model tests, the host harness and the conformance scene ([testing](testing.md)) |
 
 The parts of `<ui>` are not modules of their own: `src/ui.esk` imports them in an order
