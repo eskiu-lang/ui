@@ -1,7 +1,8 @@
 # ghcr.io/eskiu-lang/agent: a machine ready for a coding agent to build, run, drive and test
 # Eskiu programs and ui apps. It holds eskiuc and the ui tool (from their releases),
 # emscripten for web builds, Google Chrome for `ui agent web` and `ui test web`, and a C
-# compiler for native builds.
+# compiler for native builds. Sans-serif and emoji fonts make Chrome's screenshots look as
+# they do on a desktop, and tini reaps the processes `ui agent --stop` ends.
 #
 #   docker run --rm -it ghcr.io/eskiu-lang/agent
 #   ui new myapp && cd myapp && ui agent web --json tree
@@ -15,7 +16,7 @@ ARG INSTALL_SH=https://eskiu-lang.org/install.sh
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git xz-utils python3 clang lld \
-      make pkg-config unzip \
+      make pkg-config unzip fonts-dejavu-core fonts-liberation fonts-noto-core fonts-noto-color-emoji tini \
  && curl -fsSL -o /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
  && apt-get install -y --no-install-recommends /tmp/chrome.deb \
  && rm -rf /tmp/chrome.deb /var/lib/apt/lists/*
@@ -33,4 +34,5 @@ ENV EMSDK=/opt/emsdk \
     UI_CHROME_ARGS=--no-sandbox
 
 WORKDIR /work
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["bash"]
