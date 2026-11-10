@@ -352,9 +352,12 @@ which runs code on a worker built from that image:
 
 | Tool | What it does |
 |---|---|
-| `eskiu_run` | Compiles and runs one `.esk` file; exit code, stdout, stderr, and the errors as JSON diagnostics |
+| `eskiu_run` | Compiles and runs a program; exit code, stdout, stderr, and the errors as JSON diagnostics |
 | `eskiu_ui_render` | Builds `src/main.esk` for the web, applies `ui agent` ops in order, returns each answer, the tree and a screenshot |
 | `eskiu_ui_test` | Runs a `.uitest` file against `src/main.esk`; PASSED or FAILED with each step's result |
+
+Each takes the main file as `code` and the other source files it imports as `files`, by
+path relative to it (`{"counter.esk": "..."}`).
 
 ## The protocol
 
