@@ -1,0 +1,987 @@
+// <ui/webapp>: an Eskiu program as the backend of a web front end (a React bundle, or any
+// page) in the platform's webview: WKWebView on macOS, WebView2 on Windows, WebKitGTK on
+// Linux. The page runs the program's commands and gets their answers (invoke), each side
+// sends the other events, the program serves files through URL schemes of its own, and it
+// opens the system's dialogs. The page's side is js/webapp (@eskiu/webapp).
+//
+//   import <ui/webapp>;
+//
+//   int main() {
+//       webapp_command("greet", void(*WebappCall call) {
+//           String text;
+//           String_appendf(&text, "Hello, %s", call.string("name"));
+//           call.resolve_string(text.data);
+//           String_free(&text);
+//       });
+//       webapp_window(WebappWindow{title: "Hello", width: 900, height: 600});
+//       return webapp_run();
+//   }
+//
+// Everything here runs on the main thread, but for WebappReply, webapp_emit and
+// webapp_quit, which any thread may call. docs/webapp.md has the whole API.
+import <io>;
+import <string>;
+import <list>;
+import <mem>;
+import <fs>;
+import <env>;
+import <url>;
+import <json>;
+import <base64>;
+import <threading>;
+
+// What the ui tool's build puts in the entry file: the app's name, the page's bridge
+// (js/webapp/bridge.js) and the client module (js/webapp/index.js), served as
+// app://localhost/@eskiu/webapp.js.
+#ifndef UI_APP_NAME
+#define UI_APP_NAME "app"
+#endif
+#ifndef UI_WEBAPP_BRIDGE
+#define UI_WEBAPP_BRIDGE ""
+#endif
+#ifndef UI_WEBAPP_CLIENT
+#define UI_WEBAPP_CLIENT ""
+#endif
+
+// ---- The host (hosts/macos/webapp.m, hosts/linux/webapp.c, hosts/windows/webapp.cpp) ----
+
+// Starts the platform's application; `bridge` runs in every page before its scripts.
+extern void uiw_init(string app_name, string bridge);
+// "macos", "windows" or "linux".
+extern string uiw_platform();
+// The directory of the app's resources (the bundle's Resources, else the executable's), from
+// malloc.
+extern string uiw_resource_dir();
+// A URL scheme the program answers (uiw_on_request), for the windows opened after it.
+extern void uiw_scheme(string name);
+// A window loading `url`: its id, or 0. flags: 1 resizable, 2 full screen, 4 developer tools.
+extern int uiw_window_open(string title, string url, int width, int height, int min_width, int min_height, int flags);
+extern void uiw_window_title(int window, string title);
+extern void uiw_window_size(int window, int width, int height);
+extern void uiw_window_min_size(int window, int width, int height);
+extern void uiw_window_fullscreen(int window, int on);
+extern int uiw_window_is_fullscreen(int window);
+extern void uiw_window_focus(int window);
+extern void uiw_window_devtools(int window);
+// Closes the window without asking (uiw_on_closed follows).
+extern void uiw_window_close(int window);
+// Runs the platform's loop until uiw_quit or the last window closes; the exit code.
+extern int uiw_run();
+// Any thread.
+extern void uiw_quit(int code);
+// Runs `script` in the window's page, or in every page for window 0. Any thread.
+extern void uiw_eval(int window, string script);
+// Answers the request: `headers` one "Name: value" per line, then the body: `length` bytes of
+// `file` from `offset`, or of `data` (copied) when `file` is null.
+extern void uiw_respond(int64 request, int status, string headers, string file, int64 offset, int64 length, *uint8 data);
+// A file dialog (flags: 1 several, 2 folders, 4 save): the paths chosen, one per line, from
+// malloc, or null. `filters`: "Name\text,ext" per line.
+extern string uiw_dialog_file(int window, int flags, string title, string default_path, string filters);
+// A message (buttons 0: OK; 1: OK and Cancel) at `level` (WEBAPP_INFO...): 1 for OK.
+extern int uiw_dialog_message(int window, int buttons, int level, string title, string message, string ok, string cancel);
+
+// ---- Types ----
+
+// A message's level: information, a warning or an error (webapp_message, webapp_confirm).
+const int WEBAPP_INFO = 0;
+const int WEBAPP_WARNING = 1;
+const int WEBAPP_ERROR = 2;
+
+// A window: its title (none follows the page's), what it loads (a URL, a path of the front
+// end such as "/settings", or by default the front end's root), its size and smallest size
+// in points (1024 by 768 and none by default), whether it starts full screen and whether
+// its size is fixed. The developer tools are on in every build but a release, and in a
+// release too with `devtools`.
+struct WebappWindow {
+    string title;
+    string url;
+    int width;
+    int height;
+    int min_width;
+    int min_height;
+    bool fullscreen;
+    bool fixed_size;
+    bool devtools;
+}
+
+// A command the page ran: the window, the call's id, its name and its arguments (borrowed
+// for the handler's call). Answer it with resolve, resolve_string, resolve_bytes or reject,
+// in the call or later through `later()`.
+struct WebappCall {
+    int window;
+    int id;
+    string command;
+    *JsonValue args;
+    bool answered;
+    bool deferred;
+}
+
+// A call answered later, from any thread.
+struct WebappReply {
+    int window;
+    int id;
+}
+
+// An event from a page: its window, name and payload (JSON text and its tree, borrowed for
+// the handler's call).
+struct WebappEvent {
+    int window;
+    string event;
+    string payload;
+    *JsonValue value;
+}
+
+// A request to one of the program's schemes: the window, the full URL, the path (decoded,
+// without the leading "/"), the query, the method and the Range header ("" without one).
+// The handler answers it with file, bytes, text or status; unanswered, it is a 404.
+struct WebappRequest {
+    int window;
+    int64 id;
+    string scheme;
+    string url;
+    string path;
+    string query;
+    string method;
+    string range;
+    bool answered;
+}
+
+// File dialogs: a title, where they start, the filters ("Images\tpng,jpg" per line), and
+// whether they pick folders, several items, or a file to save.
+struct WebappDialog {
+    string title;
+    string default_path;
+    string filters;
+    bool directory;
+    bool multiple;
+    bool save;
+}
+
+// ---- State (internal) ----
+
+// A command the program registered (internal).
+struct WebappCommand { String name; fn(*WebappCall)->void handler; }
+// A listener of the page's events (internal).
+struct WebappListener { String event; fn(WebappEvent)->void handler; }
+// A scheme the program answers: a handler, or the files under a root (internal).
+struct WebappProtocol { String scheme; String root; bool files; fn(*WebappRequest)->void handler; }
+// A binary answer waiting for the page to fetch it (app://localhost/__eskiu/bytes/TOKEN).
+struct WebappBytes { int token; *uint8 data; int64 length; }
+
+// What the module keeps between calls (internal).
+struct WebappState {
+    bool started;
+    String platform;
+    String frontend;
+    List<WebappCommand> commands;
+    List<WebappListener> listeners;
+    List<WebappProtocol> protocols;
+    List<int> intercepting;
+    bool has_close_handler;
+    fn(int)->bool close_handler;
+    Mutex bytes_lock;
+    List<WebappBytes> bytes;
+    int next_bytes;
+}
+
+WebappState webapp;
+
+// The largest part of a file one answer to an open range ("bytes=N-") carries: a media
+// element asks again for the rest.
+const int64 WEBAPP_RANGE_CHUNK = 8388608;
+
+// Starts the platform's application once, before the first registration or window
+// (internal).
+void webapp_start() {
+    if (webapp.started) { return; }
+    webapp.started = true;
+    Mutex_init(&webapp.bytes_lock);
+    uiw_init(UI_APP_NAME, UI_WEBAPP_BRIDGE);
+    String_from(&webapp.platform, uiw_platform());
+    string resources = uiw_resource_dir();
+    if (resources != null) {
+        String_appendf(&webapp.frontend, "%s/frontend", resources);
+        free(resources);
+    }
+    uiw_scheme("app");
+}
+
+// ---- Registration ----
+
+// The page's `invoke(name, args)` runs `handler`.
+void webapp_command(string name, escaping fn(*WebappCall)->void handler) {
+    webapp_start();
+    WebappCommand command;
+    String_from(&command.name, name);
+    command.handler = handler;
+    webapp.commands.push(command);
+}
+
+// The page's `emit(event, payload)` runs `handler`.
+void webapp_listen(string event, escaping fn(WebappEvent)->void handler) {
+    webapp_start();
+    WebappListener listener;
+    String_from(&listener.event, event);
+    listener.handler = handler;
+    webapp.listeners.push(listener);
+}
+
+// The scheme `scheme` (scheme://localhost/..., https://scheme.localhost/... on Windows) is
+// answered by `handler`. Before the first window.
+void webapp_protocol(string scheme, escaping fn(*WebappRequest)->void handler) {
+    webapp_start();
+    WebappProtocol protocol;
+    String_from(&protocol.scheme, scheme);
+    protocol.handler = handler;
+    webapp.protocols.push(protocol);
+    uiw_scheme(scheme);
+}
+
+// The scheme `scheme` serves the files under `root` ("/" or "" for any absolute path, as
+// the page's convertFileSrc makes them), with ranges.
+void webapp_protocol_dir(string scheme, string root) {
+    webapp_protocol(scheme, void(*WebappRequest request) {});
+    WebappProtocol* protocol = &webapp.protocols.data[webapp.protocols.size - 1];
+    protocol.files = true;
+    String_from(&protocol.root, root == null ? "" : root);
+}
+
+// Asked before a window closes (by the user or the page's close()): false keeps it open.
+void webapp_on_close(escaping fn(int)->bool handler) {
+    webapp.close_handler = handler;
+    webapp.has_close_handler = true;
+}
+
+// ---- Windows ----
+
+// The URL a window starts at: `url`, a path of the front end, UI_WEBAPP_URL in a build that
+// is not a release (a dev server's), or the front end's root.
+void webapp_start_url(string url, String* out) {
+    String root;
+    defer String_free(&root);
+    webapp_scheme_url("app", "", &root);
+    if (url != null && url[0] == '/') { String_appendf(out, "%s%s", root.data, &url[1]); return; }
+    if (url != null && url[0] != 0) { String_append(out, url); return; }
+#ifndef UI_RELEASE
+    string dev = env_get("UI_WEBAPP_URL");
+    if (dev != null && dev[0] != 0) { String_append(out, dev); return; }
+#endif
+    String_append(out, root.data);
+}
+
+// A scheme's URL for `path`, as the platform's webview reaches it.
+void webapp_scheme_url(string scheme, string path, String* out) {
+    if (String_eq_cstr(&webapp.platform, "windows") == 1) { String_appendf(out, "https://%s.localhost/%s", scheme, path); }
+    else { String_appendf(out, "%s://localhost/%s", scheme, path); }
+}
+
+// Opens a window: its id (0 when the platform could not make one).
+int webapp_window(WebappWindow options) {
+    webapp_start();
+    String url;
+    defer String_free(&url);
+    webapp_start_url(options.url, &url);
+    int flags = options.fixed_size ? 0 : 1;
+    if (options.fullscreen) { flags = flags | 2; }
+#ifdef UI_RELEASE
+    if (options.devtools) { flags = flags | 4; }
+#else
+    flags = flags | 4;
+#endif
+    return uiw_window_open(options.title == null ? "" : options.title, url.data,
+        options.width > 0 ? options.width : 1024, options.height > 0 ? options.height : 768,
+        options.min_width, options.min_height, flags);
+}
+
+// The window's title (null or "": the app's name).
+void webapp_set_title(int window, string title) { uiw_window_title(window, title == null ? "" : title); }
+// The window's content size, in points.
+void webapp_set_size(int window, int width, int height) { uiw_window_size(window, width, height); }
+// The window's smallest content size, in points.
+void webapp_set_min_size(int window, int width, int height) { uiw_window_min_size(window, width, height); }
+// The window full screen, or out of it.
+void webapp_set_fullscreen(int window, bool on) { uiw_window_fullscreen(window, on ? 1 : 0); }
+// Whether the window is full screen.
+bool webapp_is_fullscreen(int window) { return uiw_window_is_fullscreen(window) != 0; }
+// Closes the window without asking.
+void webapp_close(int window) { uiw_window_close(window); }
+
+// Runs until webapp_quit or the last window closes: the exit code, for main to return.
+int webapp_run() {
+    webapp_start();
+    return uiw_run();
+}
+
+// Ends webapp_run with `code`. Any thread.
+void webapp_quit(int code) { uiw_quit(code); }
+
+// ---- JSON text (internal) ----
+
+// `text` as a JSON string into `out`; null as null (internal).
+void webapp_quote(String* out, string text) {
+    if (text == null) { String_append(out, "null"); return; }
+    _json_escape(out, text, strlen(text));
+}
+
+// A page's message: `window.__ESKIU__.receive(...)` around `json`.
+void webapp_send(int window, string json) {
+    String script;
+    defer String_free(&script);
+    String_appendf(&script, "window.__ESKIU__&&window.__ESKIU__.receive(%s)", json);
+    uiw_eval(window, script.data);
+}
+
+// ---- Answers ----
+
+// The answer `value` (JSON text; null is null) or the error `error`. Any thread.
+void webapp_answer(int window, int id, string value, string error) {
+    String message;
+    defer String_free(&message);
+    String_appendf(&message, "{\"kind\":\"reply\",\"id\":%d,", id);
+    if (error != null) {
+        String_append(&message, "\"ok\":false,\"error\":");
+        webapp_quote(&message, error);
+    } else {
+        String_append(&message, "\"ok\":true,\"value\":");
+        String_append(&message, value == null || value[0] == 0 ? "null" : value);
+    }
+    String_append(&message, "}");
+    webapp_send(window, message.data);
+}
+
+// A binary answer: kept until the page fetches it. Any thread.
+void webapp_answer_bytes(int window, int id, *uint8 data, int64 length) {
+    *uint8 copy = alloc<uint8>(length > 0 ? length : 1);
+    if (length > 0) { memcpy(copy, data, length); }
+    Mutex_lock(&webapp.bytes_lock);
+    int token = ++webapp.next_bytes;
+    webapp.bytes.push(WebappBytes{token, copy, length});
+    Mutex_unlock(&webapp.bytes_lock);
+    String message;
+    defer String_free(&message);
+    String_appendf(&message, "{\"kind\":\"reply\",\"id\":%d,\"ok\":true,\"bytes\":\"%d\"}", id, token);
+    webapp_send(window, message.data);
+}
+
+// Whether `json` is one JSON value, in a build that checks (any but a release).
+bool webapp_valid_json(string json) {
+#ifdef UI_RELEASE
+    return true;
+#else
+    if (json == null || json[0] == 0) { return true; }
+    JsonDoc doc = json_parse_doc(json);
+    bool ok = doc.root != null;
+    JsonDoc_free(&doc);
+    return ok;
+#endif
+}
+
+// The answer as JSON text (null for null). Any thread.
+void WebappReply_resolve(const WebappReply* self, string json) {
+    if (!webapp_valid_json(json)) { webapp_answer(self.window, self.id, null, "the command's answer is not JSON"); return; }
+    webapp_answer(self.window, self.id, json, null);
+}
+// The answer as a string. Any thread.
+void WebappReply_resolve_string(const WebappReply* self, string text) {
+    String json;
+    defer String_free(&json);
+    webapp_quote(&json, text);
+    webapp_answer(self.window, self.id, json.data, null);
+}
+// The answer as bytes (copied): a Uint8Array in the page. Any thread.
+void WebappReply_resolve_bytes(const WebappReply* self, *uint8 data, int64 length) { webapp_answer_bytes(self.window, self.id, data, length); }
+// The call fails with `message`. Any thread.
+void WebappReply_reject(const WebappReply* self, string message) { webapp_answer(self.window, self.id, null, message == null ? "error" : message); }
+
+// The answer as JSON text (null for null).
+void WebappCall_resolve(WebappCall* self, string json) {
+    self.answered = true;
+    WebappReply reply = WebappReply{self.window, self.id};
+    reply.resolve(json);
+}
+// The answer as a string.
+void WebappCall_resolve_string(WebappCall* self, string text) {
+    self.answered = true;
+    WebappReply reply = WebappReply{self.window, self.id};
+    reply.resolve_string(text);
+}
+// The answer as bytes: a Uint8Array in the page.
+void WebappCall_resolve_bytes(WebappCall* self, *uint8 data, int64 length) {
+    self.answered = true;
+    webapp_answer_bytes(self.window, self.id, data, length);
+}
+// The call fails with `message`: the page's promise rejects with it.
+void WebappCall_reject(WebappCall* self, string message) {
+    self.answered = true;
+    webapp_answer(self.window, self.id, null, message == null ? "error" : message);
+}
+// The call is answered later (from any thread) through the reply.
+WebappReply WebappCall_later(WebappCall* self) {
+    self.deferred = true;
+    return WebappReply{self.window, self.id};
+}
+
+// ---- Arguments ----
+
+// An argument as JSON (borrowed for the call), or null.
+*JsonValue WebappCall_arg(WebappCall* self, string key) {
+    if (self.args == null || self.args.kind != JObject) { return null; }
+    return JsonValue_get(self.args, key);
+}
+// A string argument (borrowed for the call), or null.
+string WebappCall_string(WebappCall* self, string key) {
+    *JsonValue v = WebappCall_arg(self, key);
+    return v == null || v.kind != JString ? null : JsonValue_as_cstr(v);
+}
+// A number argument as an integer, or `fallback`.
+int64 WebappCall_int(WebappCall* self, string key, int64 fallback) {
+    *JsonValue v = WebappCall_arg(self, key);
+    return v == null || v.kind != JNumber ? fallback : JsonValue_as_int(v);
+}
+// A number argument, or `fallback`.
+double WebappCall_number(WebappCall* self, string key, double fallback) {
+    *JsonValue v = WebappCall_arg(self, key);
+    return v == null || v.kind != JNumber ? fallback : JsonValue_as_double(v);
+}
+// A boolean argument, or `fallback`.
+bool WebappCall_bool(WebappCall* self, string key, bool fallback) {
+    *JsonValue v = WebappCall_arg(self, key);
+    return v == null || v.kind != JBool ? fallback : JsonValue_as_bool(v) != 0;
+}
+// A bytes argument (a Uint8Array or ArrayBuffer in the page): its bytes from malloc, the
+// caller frees them, and their count in `length`; null when there is none.
+*uint8 WebappCall_bytes(WebappCall* self, string key, *int64 length) {
+    *length = 0;
+    *JsonValue v = WebappCall_arg(self, key);
+    if (v != null && v.kind == JObject) { v = JsonValue_get(v, "$bytes"); }
+    if (v == null || v.kind != JString) { return null; }
+    string text = JsonValue_as_cstr(v);
+    int n = (int)strlen(text);
+    *uint8 out = alloc<uint8>(base64_decoded_len(n) + 1);
+    int got = base64_decode((*uint8)text, n, out);
+    if (got < 0) { free(out); return null; }
+    *length = got;
+    return out;
+}
+// The arguments as JSON text, into `out`.
+void WebappCall_args_json(WebappCall* self, String* out) {
+    if (self.args == null) { String_append(out, "null"); return; }
+    JsonValue_stringify(self.args, out);
+}
+
+// ---- Events ----
+
+// Sends the event `event` with the payload `json` (JSON text; null is null) to the page of
+// `window`, or to every page for 0. Any thread.
+void webapp_emit(int window, string event, string json) {
+    String message;
+    defer String_free(&message);
+    String_append(&message, "{\"kind\":\"event\",\"event\":");
+    webapp_quote(&message, event);
+    String_appendf(&message, ",\"window\":%d,\"payload\":%s}", window, json == null || json[0] == 0 ? "null" : json);
+    webapp_send(window, message.data);
+}
+
+// ---- Dialogs ----
+
+// A file dialog over `window` (0: none): the paths chosen into `paths`, and their count (0
+// when cancelled).
+int webapp_file_dialog(int window, WebappDialog dialog, List<String>* paths) {
+    int flags = (dialog.multiple ? 1 : 0) | (dialog.directory ? 2 : 0) | (dialog.save ? 4 : 0);
+    string chosen = uiw_dialog_file(window, flags, dialog.title == null ? "" : dialog.title,
+        dialog.default_path == null ? "" : dialog.default_path, dialog.filters == null ? "" : dialog.filters);
+    if (chosen == null) { return 0; }
+    String all;
+    String_from(&all, chosen);
+    free(chosen);
+    List<String> lines;
+    String_lines(&all, &lines);
+    String_free(&all);
+    int count = 0;
+    for (i in 0..lines.size) {
+        if (lines.data[i].len == 0) { String_free(&lines.data[i]); continue; }
+        paths.push(lines.data[i]);
+        count++;
+    }
+    lines.free();
+    return count;
+}
+
+// A message with an OK button.
+void webapp_message(int window, string title, string message, int level) {
+    uiw_dialog_message(window, 0, level, title == null ? "" : title, message == null ? "" : message, "OK", "Cancel");
+}
+
+// A question with OK and Cancel (or `ok` and `cancel`, when not null): true for OK.
+bool webapp_confirm(int window, string title, string message, int level, string ok, string cancel) {
+    return uiw_dialog_message(window, 1, level, title == null ? "" : title, message == null ? "" : message,
+        ok == null ? "OK" : ok, cancel == null ? "Cancel" : cancel) == 1;
+}
+
+// ---- Files over a scheme ----
+
+// The media type of a file by its extension (application/octet-stream when unknown).
+string webapp_mime(string path) {
+    int dot = -1;
+    for (int i = 0; path[i] != 0; i++) {
+        if (path[i] == '.') { dot = i; }
+        if (path[i] == '/') { dot = -1; }
+    }
+    if (dot < 0) { return "application/octet-stream"; }
+    String ext;
+    defer String_free(&ext);
+    String_from(&ext, &path[dot + 1]);
+    String_lower(&ext);
+    string e = ext.data;
+    if (strcmp(e, "html") == 0 || strcmp(e, "htm") == 0) { return "text/html; charset=utf-8"; }
+    if (strcmp(e, "js") == 0 || strcmp(e, "mjs") == 0) { return "text/javascript; charset=utf-8"; }
+    if (strcmp(e, "css") == 0) { return "text/css; charset=utf-8"; }
+    if (strcmp(e, "json") == 0 || strcmp(e, "map") == 0) { return "application/json"; }
+    if (strcmp(e, "webmanifest") == 0) { return "application/manifest+json"; }
+    if (strcmp(e, "wasm") == 0) { return "application/wasm"; }
+    if (strcmp(e, "txt") == 0 || strcmp(e, "csv") == 0) { return "text/plain; charset=utf-8"; }
+    if (strcmp(e, "xml") == 0) { return "application/xml"; }
+    if (strcmp(e, "png") == 0) { return "image/png"; }
+    if (strcmp(e, "jpg") == 0 || strcmp(e, "jpeg") == 0) { return "image/jpeg"; }
+    if (strcmp(e, "gif") == 0) { return "image/gif"; }
+    if (strcmp(e, "webp") == 0) { return "image/webp"; }
+    if (strcmp(e, "avif") == 0) { return "image/avif"; }
+    if (strcmp(e, "svg") == 0) { return "image/svg+xml"; }
+    if (strcmp(e, "ico") == 0) { return "image/x-icon"; }
+    if (strcmp(e, "bmp") == 0) { return "image/bmp"; }
+    if (strcmp(e, "woff") == 0) { return "font/woff"; }
+    if (strcmp(e, "woff2") == 0) { return "font/woff2"; }
+    if (strcmp(e, "ttf") == 0) { return "font/ttf"; }
+    if (strcmp(e, "otf") == 0) { return "font/otf"; }
+    if (strcmp(e, "mp3") == 0) { return "audio/mpeg"; }
+    if (strcmp(e, "ogg") == 0 || strcmp(e, "oga") == 0) { return "audio/ogg"; }
+    if (strcmp(e, "wav") == 0) { return "audio/wav"; }
+    if (strcmp(e, "flac") == 0) { return "audio/flac"; }
+    if (strcmp(e, "m4a") == 0) { return "audio/mp4"; }
+    if (strcmp(e, "mp4") == 0) { return "video/mp4"; }
+    if (strcmp(e, "webm") == 0) { return "video/webm"; }
+    if (strcmp(e, "glb") == 0) { return "model/gltf-binary"; }
+    if (strcmp(e, "gltf") == 0) { return "model/gltf+json"; }
+    if (strcmp(e, "pdf") == 0) { return "application/pdf"; }
+    return "application/octet-stream";
+}
+
+// The Range header `range` over `size` bytes: 0 without one (or one this does not take, such
+// as several ranges: the whole body answers it), 1 with its first byte and length in
+// `start` and `length`, -1 when it cannot be satisfied.
+int webapp_range(string range, int64 size, *int64 start, *int64 length) {
+    if (range == null || strncmp(range, "bytes=", 6) != 0) { return 0; }
+    string spec = &range[6];
+    for (int i = 0; spec[i] != 0; i++) { if (spec[i] == ',') { return 0; } }
+    int64 first = -1;
+    int64 last = -1;
+    int i = 0;
+    while (spec[i] == ' ') { i++; }
+    if (spec[i] >= '0' && spec[i] <= '9') {
+        first = 0;
+        while (spec[i] >= '0' && spec[i] <= '9') { first = first * 10 + (int64)(spec[i] - '0'); i++; }
+    }
+    if (spec[i] != '-') { return 0; }
+    i++;
+    if (spec[i] >= '0' && spec[i] <= '9') {
+        last = 0;
+        while (spec[i] >= '0' && spec[i] <= '9') { last = last * 10 + (int64)(spec[i] - '0'); i++; }
+    }
+    if (first < 0 && last < 0) { return 0; }
+    if (first < 0) {
+        // The last `last` bytes.
+        if (last == 0 || size == 0) { return -1; }
+        *start = last >= size ? 0 : size - last;
+        *length = size - *start;
+        return 1;
+    }
+    if (first >= size) { return -1; }
+    if (last < 0) {
+        last = size - 1;
+        if (last - first + 1 > WEBAPP_RANGE_CHUNK) { last = first + WEBAPP_RANGE_CHUNK - 1; }
+    }
+    if (last >= size) { last = size - 1; }
+    if (last < first) { return -1; }
+    *start = first;
+    *length = last - first + 1;
+    return 1;
+}
+
+// The headers every answer has: CORS open to the page (its origin is app:// or a dev
+// server's), no caching (a file may change between two reads).
+void webapp_common_headers(String* headers) {
+    String_append(headers, "Access-Control-Allow-Origin: *\nAccess-Control-Expose-Headers: Content-Range, Content-Length, Accept-Ranges\nCache-Control: no-store\n");
+}
+
+// Answers with `length` bytes of `file` (from offset 0) or of `data`, honoring the range.
+void webapp_respond_body(WebappRequest* self, string file, *uint8 data, int64 size, string mime) {
+    self.answered = true;
+    String headers;
+    defer String_free(&headers);
+    webapp_common_headers(&headers);
+    String_appendf(&headers, "Content-Type: %s\nAccept-Ranges: bytes\n", mime == null ? "application/octet-stream" : mime);
+    int64 start = 0;
+    int64 length = size;
+    int ranged = webapp_range(self.range, size, &start, &length);
+    if (ranged < 0) {
+        String_appendf(&headers, "Content-Range: bytes */%lld\nContent-Length: 0\n", size);
+        uiw_respond(self.id, 416, headers.data, null, 0, 0, null);
+        return;
+    }
+    int status = 200;
+    if (ranged == 1) {
+        status = 206;
+        String_appendf(&headers, "Content-Range: bytes %lld-%lld/%lld\n", start, start + length - 1, size);
+    } else {
+        start = 0;
+        length = size;
+    }
+    String_appendf(&headers, "Content-Length: %lld\n", length);
+    if (strcmp(self.method, "HEAD") == 0) { length = 0; }
+    if (file != null) { uiw_respond(self.id, status, headers.data, file, start, length, null); }
+    else { uiw_respond(self.id, status, headers.data, null, 0, length, data == null ? null : data + start); }
+}
+
+// Answers with the file at `path` (ranges too): false, and a 404, when it is not a file.
+bool WebappRequest_file(WebappRequest* self, string path) {
+    FileStat stat;
+    if (path == null || fs_stat(path, &stat) != 0 || fs_is_dir(path) == 1) {
+        WebappRequest_status(self, 404);
+        return false;
+    }
+    webapp_respond_body(self, path, null, stat.size, webapp_mime(path));
+    return true;
+}
+
+// Answers with `length` bytes of `data` (copied), of type `mime` (ranges too).
+void WebappRequest_bytes(WebappRequest* self, *uint8 data, int64 length, string mime) {
+    webapp_respond_body(self, null, data, length, mime);
+}
+
+// Answers with `text` of type `mime` (text/plain when null).
+void WebappRequest_text(WebappRequest* self, string text, string mime) {
+    webapp_respond_body(self, null, (*uint8)text, strlen(text), mime == null ? "text/plain; charset=utf-8" : mime);
+}
+
+// Answers with `status` and no body.
+void WebappRequest_status(WebappRequest* self, int status) {
+    self.answered = true;
+    String headers;
+    defer String_free(&headers);
+    webapp_common_headers(&headers);
+    String_append(&headers, "Content-Length: 0\n");
+    uiw_respond(self.id, status, headers.data, null, 0, 0, null);
+}
+
+// A path that stays inside its root: no "..", no "\" (a Windows separator), no NUL.
+bool webapp_safe_path(string path) {
+    int start = 0;
+    for (int i = 0; ; i++) {
+        char c = path[i];
+        if (c == '\\') { return false; }
+        if (c == '/' || c == 0) {
+            if (i - start == 2 && path[start] == '.' && path[start + 1] == '.') { return false; }
+            start = i + 1;
+        }
+        if (c == 0) { return true; }
+    }
+    return true;
+}
+
+// The file `path` under `root` ("" or "/" for an absolute path).
+void webapp_join(string root, string path, String* out) {
+    if (root == null || root[0] == 0 || strcmp(root, "/") == 0) {
+        // "C:/..." on Windows stays as it is; elsewhere the path is absolute.
+        bool drive = path[0] != 0 && path[1] == ':';
+        if (drive) { String_append(out, path); } else { String_appendf(out, "/%s", path); }
+        return;
+    }
+    int n = (int)strlen(root);
+    String_appendf(out, root[n - 1] == '/' ? "%s%s" : "%s/%s", root, path);
+}
+
+// The front end: its files, the client module, the binary answers waiting, and its root
+// page for a path with no extension (a route of the page's router).
+void webapp_frontend(WebappRequest* request) {
+    if (strncmp(request.path, "__eskiu/bytes/", 14) == 0) {
+        int token = atoi(&request.path[14]);
+        Mutex_lock(&webapp.bytes_lock);
+        WebappBytes found = WebappBytes{0, null, 0};
+        for (i in 0..webapp.bytes.size) {
+            if (webapp.bytes.data[i].token == token) { found = webapp.bytes.data[i]; webapp.bytes.remove(i); break; }
+        }
+        Mutex_unlock(&webapp.bytes_lock);
+        if (found.token == 0) { WebappRequest_status(request, 404); return; }
+        WebappRequest_bytes(request, found.data, found.length, "application/octet-stream");
+        free(found.data);
+        return;
+    }
+    if (strcmp(request.path, "@eskiu/webapp.js") == 0) {
+        WebappRequest_text(request, UI_WEBAPP_CLIENT, "text/javascript; charset=utf-8");
+        return;
+    }
+    if (!webapp_safe_path(request.path)) { WebappRequest_status(request, 403); return; }
+    String file;
+    defer String_free(&file);
+    String_appendf(&file, "%s/%s", webapp.frontend.data == null ? "." : webapp.frontend.data,
+        request.path[0] == 0 ? "index.html" : request.path);
+    if (fs_is_file(file.data) != 1) {
+        bool route = true;
+        for (int i = 0; request.path[i] != 0; i++) {
+            if (request.path[i] == '/') { route = true; }
+            else if (request.path[i] == '.') { route = false; }
+        }
+        if (route) {
+            String_clear(&file);
+            String_appendf(&file, "%s/index.html", webapp.frontend.data == null ? "." : webapp.frontend.data);
+        }
+    }
+    WebappRequest_file(request, file.data);
+}
+
+// ---- What the host calls (on the main thread) ----
+
+// A request to one of the schemes.
+void uiw_on_request(int window, int64 id, string scheme, string url, string method, string range) {
+    // The path: after the authority, up to the query or fragment, decoded.
+    int64 at = 0;
+    string marker = strstr(url, "://");
+    if (marker != null) { at = (int64)(marker - url) + 3; }
+    while (url[at] != 0 && url[at] != '/' && url[at] != '?' && url[at] != '#') { at++; }
+    if (url[at] == '/') { at++; }
+    int64 end = at;
+    while (url[end] != 0 && url[end] != '?' && url[end] != '#') { end++; }
+    String path;
+    defer String_free(&path);
+    String_from(&path, "");
+    url_decode_range(url, at, end, &path, 0);
+    String query;
+    defer String_free(&query);
+    String_from(&query, "");
+    if (url[end] == '?') {
+        int64 q = end + 1;
+        int64 stop = q;
+        while (url[stop] != 0 && url[stop] != '#') { stop++; }
+        String_append_bytes(&query, &url[q], stop - q);
+    }
+    WebappRequest request = WebappRequest{window, id, scheme, url, path.data, query.data,
+        method == null ? "GET" : method, range == null ? "" : range, false};
+    // A CORS preflight is allowed whatever it asks.
+    if (strcmp(request.method, "OPTIONS") == 0) {
+        request.answered = true;
+        String headers;
+        defer String_free(&headers);
+        webapp_common_headers(&headers);
+        String_append(&headers, "Access-Control-Allow-Methods: GET, HEAD, POST, PUT, OPTIONS\nAccess-Control-Allow-Headers: *\nContent-Length: 0\n");
+        uiw_respond(id, 204, headers.data, null, 0, 0, null);
+        return;
+    }
+    if (strcmp(scheme, "app") == 0) {
+        webapp_frontend(&request);
+    } else {
+        for (i in 0..webapp.protocols.size) {
+            WebappProtocol* protocol = &webapp.protocols.data[i];
+            if (String_eq_cstr(&protocol.scheme, scheme) != 1) { continue; }
+            if (protocol.files) {
+                if (!webapp_safe_path(request.path)) { WebappRequest_status(&request, 403); break; }
+                String file;
+                webapp_join(protocol.root.data, request.path, &file);
+                WebappRequest_file(&request, file.data);
+                String_free(&file);
+            } else {
+                protocol.handler(&request);
+            }
+            break;
+        }
+    }
+    if (!request.answered) { WebappRequest_status(&request, 404); }
+}
+
+// A message from a page: an invoke or an emit (bridge.js).
+void uiw_on_message(int window, string text) {
+    JsonDoc doc = json_parse_doc(text);
+    defer JsonDoc_free(&doc);
+    if (doc.root == null || doc.root.kind != JObject) { return; }
+    *JsonValue kind = JsonValue_get(doc.root, "kind");
+    if (kind == null || kind.kind != JString) { return; }
+    string what = JsonValue_as_cstr(kind);
+    if (strcmp(what, "invoke") == 0) {
+        *JsonValue id = JsonValue_get(doc.root, "id");
+        *JsonValue command = JsonValue_get(doc.root, "cmd");
+        if (id == null || command == null || command.kind != JString) { return; }
+        WebappCall call = WebappCall{window, (int)JsonValue_as_int(id), JsonValue_as_cstr(command),
+            JsonValue_get(doc.root, "args"), false, false};
+        webapp_dispatch(&call);
+        if (!call.answered && !call.deferred) {
+            String error;
+            String_appendf(&error, "the command %s did not answer", call.command);
+            WebappCall_reject(&call, error.data);
+            String_free(&error);
+        }
+    } else if (strcmp(what, "emit") == 0) {
+        *JsonValue event = JsonValue_get(doc.root, "event");
+        if (event == null || event.kind != JString) { return; }
+        *JsonValue payload = JsonValue_get(doc.root, "payload");
+        String json;
+        defer String_free(&json);
+        if (payload == null) { String_append(&json, "null"); } else { JsonValue_stringify(payload, &json); }
+        string name = JsonValue_as_cstr(event);
+        for (i in 0..webapp.listeners.size) {
+            if (String_eq_cstr(&webapp.listeners.data[i].event, name) != 1) { continue; }
+            webapp.listeners.data[i].handler(WebappEvent{window, name, json.data, payload});
+        }
+    }
+}
+
+// The command `call` names: a built-in one ("ui:...") or the program's.
+void webapp_dispatch(WebappCall* call) {
+    if (strncmp(call.command, "ui:", 3) == 0) { webapp_builtin(call); return; }
+    for (i in 0..webapp.commands.size) {
+        if (String_eq_cstr(&webapp.commands.data[i].name, call.command) == 1) {
+            webapp.commands.data[i].handler(call);
+            return;
+        }
+    }
+    String error;
+    defer String_free(&error);
+    String_appendf(&error, "no command %s", call.command);
+    WebappCall_reject(call, error.data);
+}
+
+// The window asks to close: 1 to close it. A page with onCloseRequested gets the event
+// "ui:close-requested" and decides (it calls destroy()).
+int uiw_on_close(int window) {
+    for (i in 0..webapp.intercepting.size) {
+        if (webapp.intercepting.data[i] == window) {
+            webapp_emit(window, "ui:close-requested", null);
+            return 0;
+        }
+    }
+    if (webapp.has_close_handler && !webapp.close_handler(window)) { return 0; }
+    return 1;
+}
+
+// The window closed.
+void uiw_on_closed(int window) {
+    for (i in 0..webapp.intercepting.size) {
+        if (webapp.intercepting.data[i] == window) { webapp.intercepting.remove(i); return; }
+    }
+}
+
+// ---- The built-in commands ----
+
+// The level a page's dialog `kind` names (internal).
+int webapp_level(string kind) {
+    if (kind == null) { return WEBAPP_INFO; }
+    if (strcmp(kind, "warning") == 0) { return WEBAPP_WARNING; }
+    if (strcmp(kind, "error") == 0) { return WEBAPP_ERROR; }
+    return WEBAPP_INFO;
+}
+
+// The page's dialog filters ([{name, extensions: [...]}]) as uiw_dialog_file takes them.
+void webapp_filters(*JsonValue filters, String* out) {
+    if (filters == null || filters.kind != JArray) { return; }
+    for (i in 0..JsonValue_len(filters)) {
+        *JsonValue filter = JsonValue_at(filters, i);
+        *JsonValue name = JsonValue_get(filter, "name");
+        *JsonValue extensions = JsonValue_get(filter, "extensions");
+        if (extensions == null || extensions.kind != JArray) { continue; }
+        String_appendf(out, "%s\t", name != null && name.kind == JString ? JsonValue_as_cstr(name) : "");
+        for (j in 0..JsonValue_len(extensions)) {
+            *JsonValue extension = JsonValue_at(extensions, j);
+            if (extension.kind != JString) { continue; }
+            if (j > 0) { String_append(out, ","); }
+            String_append(out, JsonValue_as_cstr(extension));
+        }
+        String_append(out, "\n");
+    }
+}
+
+// The commands the page's module has built in: ui:dialog, ui:window and ui:quit (internal).
+void webapp_builtin(WebappCall* call) {
+    if (strcmp(call.command, "ui:dialog") == 0) {
+        string type = call.string("type");
+        if (type == null) { call.reject("ui:dialog: no type"); return; }
+        string title = call.string("title");
+        if (strcmp(type, "message") == 0 || strcmp(type, "confirm") == 0) {
+            bool confirm = strcmp(type, "confirm") == 0;
+            string ok = call.string("okLabel");
+            string cancel = call.string("cancelLabel");
+            int chose = uiw_dialog_message(call.window, confirm ? 1 : 0, webapp_level(call.string("kind")),
+                title == null ? "" : title, call.string("message") == null ? "" : call.string("message"),
+                ok == null ? "OK" : ok, cancel == null ? "Cancel" : cancel);
+            call.resolve(confirm ? (chose == 1 ? "true" : "false") : "null");
+            return;
+        }
+        bool save = strcmp(type, "save") == 0;
+        bool multiple = !save && call.bool("multiple", false);
+        String filters;
+        defer String_free(&filters);
+        String_from(&filters, "");
+        webapp_filters(call.arg("filters"), &filters);
+        List<String> paths;
+        defer fs_list_free(&paths);
+        int count = webapp_file_dialog(call.window, WebappDialog{title, call.string("defaultPath"), filters.data,
+            !save && call.bool("directory", false), multiple, save}, &paths);
+        String json;
+        defer String_free(&json);
+        if (count == 0) { String_append(&json, "null"); }
+        else if (multiple) {
+            String_append(&json, "[");
+            for (i in 0..paths.size) {
+                if (i > 0) { String_append(&json, ","); }
+                webapp_quote(&json, paths.data[i].data);
+            }
+            String_append(&json, "]");
+        } else { webapp_quote(&json, paths.data[0].data); }
+        call.resolve(json.data);
+        return;
+    }
+    if (strcmp(call.command, "ui:window") == 0) {
+        string op = call.string("op");
+        int window = (int)call.int("window", (int64)call.window);
+        if (op == null) { call.reject("ui:window: no op"); return; }
+        if (strcmp(op, "setTitle") == 0) { webapp_set_title(window, call.string("title")); }
+        else if (strcmp(op, "setSize") == 0) { webapp_set_size(window, (int)call.int("width", 0), (int)call.int("height", 0)); }
+        else if (strcmp(op, "setMinSize") == 0) { webapp_set_min_size(window, (int)call.int("width", 0), (int)call.int("height", 0)); }
+        else if (strcmp(op, "setFullscreen") == 0) { webapp_set_fullscreen(window, call.bool("on", true)); }
+        else if (strcmp(op, "isFullscreen") == 0) { call.resolve(webapp_is_fullscreen(window) ? "true" : "false"); return; }
+        else if (strcmp(op, "focus") == 0) { uiw_window_focus(window); }
+        else if (strcmp(op, "devtools") == 0) { uiw_window_devtools(window); }
+        else if (strcmp(op, "destroy") == 0) { webapp_close(window); }
+        else if (strcmp(op, "close") == 0) {
+            // As the close button: the page answers first, then the window closes.
+            call.resolve(null);
+            if (uiw_on_close(window) == 1) { webapp_close(window); }
+            return;
+        } else if (strcmp(op, "interceptClose") == 0) {
+            bool on = call.bool("on", true);
+            bool found = false;
+            for (i in 0..webapp.intercepting.size) {
+                if (webapp.intercepting.data[i] == window) {
+                    found = true;
+                    if (!on) { webapp.intercepting.remove(i); }
+                    break;
+                }
+            }
+            if (on && !found) { webapp.intercepting.push(window); }
+        } else {
+            String error;
+            String_appendf(&error, "ui:window: no op %s", op);
+            call.reject(error.data);
+            String_free(&error);
+            return;
+        }
+        call.resolve(null);
+        return;
+    }
+    if (strcmp(call.command, "ui:quit") == 0) {
+        call.resolve(null);
+        webapp_quit((int)call.int("code", 0));
+        return;
+    }
+    String error;
+    defer String_free(&error);
+    String_appendf(&error, "no command %s", call.command);
+    call.reject(error.data);
+}
