@@ -231,7 +231,7 @@ jobs:
           # Without the manual pages' index and the recommended packages: a minute, not four.
           sudo rm -f /var/lib/man-db/auto-update
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends libgtk-4-dev xvfb xauth libgl1-mesa-dri > /dev/null
+          sudo apt-get install -y -qq --no-install-recommends libgtk-4-dev libwebkit2gtk-4.1-dev xvfb xauth libgl1-mesa-dri > /dev/null
       - name: Yoga, compiled once
         uses: actions/cache@v4
         with:
