@@ -288,7 +288,8 @@ void ui_run(*Node node) {
 #endif
     ui_require(ui.next_refresh == null, "RefreshControl must come right before a Scroll or FlatList");
     ui_require(ui.next_owned.size == 0, "ui_own must come right before an element");
-    ui_require(node.cursor == node.slots.size, "hook count decreased");
+    // fewer hooks than last time (a branch left): the ones past the last unmount
+    if (node.cursor < node.slots.size) { ui_discard_slots_from(node, node.cursor); }
     ui.builder = previous_builder;
     ui.tracking = previous_tracking;
     node.old_unkeyed.free();

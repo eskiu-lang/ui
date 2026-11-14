@@ -33,6 +33,7 @@ int main() {
     effect_order(); printf("PASS effect order\n");
     cleanup_lifetime(); printf("PASS cleanup state lifetime\n");
     mount_lifetime(); printf("PASS mount lifetime\n");
+    branch_hooks(); printf("PASS branch hooks\n");
     identity(); printf("PASS identity\n");
     large_lists(); printf("PASS large lists\n");
     conditional_siblings(); printf("PASS conditional siblings\n");

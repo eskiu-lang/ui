@@ -176,6 +176,57 @@ void mount_lifetime() {
     balanced("mount lifetime leak");
 }
 
+// A branch that shows one component or another (different hooks at the same slots), and one
+// that adds a hook: the hooks from the first that differs start afresh, the old ones
+// unmounted; the ones before it keep their state.
+int left_mounts;
+int left_unmounts;
+int right_mounts;
+int right_unmounts;
+*Signal<int> kept;
+
+void LeftView() {
+    use_mount(void() { left_mounts++; }, void() { left_unmounts++; });
+    *Signal<int> n = use_signal<int>(5);
+    Text(n.get() == 5 ? "left" : "?");
+}
+
+void RightView() {
+    *Signal<bool> flag = use_signal<bool>(true);
+    use_mount(void() { right_mounts++; }, void() { right_unmounts++; });
+    Text(flag.get() ? "right" : "?");
+}
+
+void branch_hooks() {
+    Ui runtime;
+    left_mounts = 0; left_unmounts = 0; right_mounts = 0; right_unmounts = 0;
+    ui_init(&runtime, record);
+    ui_mount() {
+        a = use_signal<int>(0);
+        kept = use_signal<int>(7);
+        Column(Style{}) {
+            if (a.get() % 2 == 0) LeftView();
+            else RightView();
+            if (a.get() >= 2) use_mount(void() {}, void() {});
+        }
+    }
+    ui_frame();
+    check(left_mounts == 1 && right_mounts == 0, "the first branch mounts");
+    kept.set(8);
+    a.set(1); ui_frame();
+    check(left_unmounts == 1 && right_mounts == 1, "switching unmounts the old hooks and mounts the new");
+    a.set(2); ui_frame();
+    check(right_unmounts == 1 && left_mounts == 2, "and back, with a hook more");
+    a.set(4); ui_frame();
+    check(left_mounts == 2 && left_unmounts == 1, "the same branch keeps its hooks");
+    a.set(1); ui_frame();
+    check(left_unmounts == 2 && right_mounts == 2, "a hook fewer");
+    check(kept.get() == 8, "hooks before the change keep their state");
+    ui_shutdown();
+    check(right_unmounts == 2, "shutdown unmounts what is left");
+    balanced("branch hooks leak");
+}
+
 void commit_lifetime() {
     Ui runtime;
     async_apply = true; observed = 0;

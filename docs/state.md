@@ -141,12 +141,25 @@ host without one gets frames from a 16 ms timer.
 
 Hooks (`use_signal`, `use_memo`, `use_effect`, `use_string`, `use_back`,
 `use_native_event`, `use_interval`, `use_timeout`, `use_frame`, `use_app_state`, `use_animated`, `use_animated_then`, `use_repeat`, `use_sequence`, `use_mount`) are matched by the order a block calls
-them in. A block must call the
-same hooks, of the same types, in the same order every time it renders. The core checks it:
-a block that calls a different hook, or the same hook with another type, at a slot stops
-the program with "hook kind/type changed at slot N", and one that calls more hooks after it
-mounted with "hook count increased". Put a hook in a conditional branch inside its own
-`Scope` instead.
+them in: the first hook a block calls is slot 0, the next slot 1, and so on, and a hook finds
+its state again at its slot on the next render.
+
+A branch may change the hooks: `if (ar) ArView(); else View();` with two components that use
+different hooks, or a hook only one branch calls. When a render reaches another hook at a
+slot (another kind, or the same kind from another place in the code), or calls fewer or more
+hooks than the last render, the hooks from that slot on start afresh: the old ones unmount
+(their cleanups run, their state is freed) and the new ones mount, as if one component left
+and another came. The hooks before that slot keep their state. A branch that should keep its
+own state while the other shows, or keep a hook's state when hooks before it change, goes in
+its own `Scope` (or keyed element), which has its slots to itself.
+
+## Blocks run again
+
+A block runs again whenever a signal it read changes, long after the call that wrote it:
+everything it captured must still be there then. Keep what a block reads in state that lives
+as long as the block (a signal, a model, a global or a cache) rather than in a list or string
+freed after the first render; text, labels and sources passed to elements are copied, but a
+block that indexes a freed list on its next run reads freed memory.
 
 ## Scopes and identity
 
@@ -169,10 +182,10 @@ of the same kind, so `if (saving) { Text("Saving"); }` does not disturb a `Colum
 it. Keys must be unique among siblings: a duplicate stops the program, or, with
 `ui.lenient` set, warns and treats the later child as unkeyed. Key 0 is a key.
 
-When the program stops, the message says where:
+When the program stops (a duplicate key, a hook outside a render), the message says where:
 
 ```
-ui: hook kind/type changed at slot 0: expected use_signal, found use_memo
+ui: duplicate key 3 at child 1
   in Column[0] > TodoRow[key 3]
 ```
 

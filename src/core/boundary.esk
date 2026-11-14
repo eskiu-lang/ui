@@ -264,11 +264,19 @@ void ui_settle(*Node node) {
 // Drop a node's hooks as an unmount does (cleanups after the commit, then the state), and let
 // the next run make new ones.
 void ui_discard_slots(*Node node) {
-    *List<Slot> slots = alloc<List<Slot>>(1);
-    *slots = node.slots;
-    node.slots = List<Slot>{};
+    ui_discard_slots_from(node, 0);
     node.cursor = 0;
     node.mounted = false;
+}
+
+// Drop a node's hooks from position `from` on, as ui_discard_slots drops them all: the ones
+// before it stay. A render that reaches another hook at a position (another component in a
+// branch: `if (ar) ArView() else View()`), or more or fewer hooks than the last one, starts
+// the hooks from there afresh, as if what was there unmounted and the new one mounted.
+void ui_discard_slots_from(*Node node, int from) {
+    *List<Slot> slots = alloc<List<Slot>>(1);
+    for (i in from..node.slots.size) slots.push(node.slots.data[i]);
+    node.slots.size = from;
     for (i in 0..slots.size) {
         Slot slot = slots.data[i];
         if (slot.observer != null) {

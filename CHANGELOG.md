@@ -4,7 +4,16 @@ All notable changes to ui are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.5.0] - 2026-11-10
+## [Unreleased]
+
+### Changed
+
+- A render that reaches another hook at a slot (a branch that shows another component), or
+  calls fewer or more hooks than the last one, no longer stops the program: the hooks from
+  that slot on unmount and the new ones mount, and the ones before keep their state
+  (`ui_discard_slots_from`; `docs/state.md`, "The hooks rule").
+
+## [0.5.0]
 
 ### Added
 

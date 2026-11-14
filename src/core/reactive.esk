@@ -226,23 +226,13 @@ string ui_hook_name(int kind) {
     *Node node = ui.builder;
     ui_require(node != null && ui.phase == 1, "hook outside render");
     int index = node.cursor++;
-    if (index == node.slots.size) {
-        ui_require(!node.mounted, "hook count increased");
-        node.slots.push(Slot{kind: kind, tag: tag});
+    // Another hook here than last time (a branch shows another component): the hooks from
+    // here on start afresh, the old ones unmounted (ui_discard_slots_from).
+    if (index < node.slots.size && (node.slots.data[index].kind != kind || node.slots.data[index].tag != tag)) {
+        ui_discard_slots_from(node, index);
     }
-    *Slot slot = &node.slots.data[index];
-    if (slot.kind != kind || slot.tag != tag) {
-        String message;
-        if (slot.kind != kind) {
-            String_appendf(&message, "hook kind/type changed at slot %d: expected %s, found %s",
-                index, ui_hook_name(slot.kind), ui_hook_name(kind));
-        } else {
-            String_appendf(&message, "hook kind/type changed at slot %d: %s with another type",
-                index, ui_hook_name(kind));
-        }
-        ui_fail(message.data);
-    }
-    return slot;
+    if (index == node.slots.size) node.slots.push(Slot{kind: kind, tag: tag});
+    return &node.slots.data[index];
 }
 
 // A reactive value: get() reads it and subscribes the reader, set() writes it.
