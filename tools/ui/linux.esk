@@ -111,6 +111,11 @@ string linux_executable(Project* p, string out, bool dev, string app) {
     host_sources.push(join(p.ui.data, "hosts/linux/host.cpp")); host_sources.push(header);
     host_sources.push(join(p.ui.data, "hosts/core.h")); host_sources.push(join(p.ui.data, "hosts/driver.h"));
     host_sources.push(join(p.ui.data, "hosts/commit.h")); host_sources.push(linux_app_header(p, out));
+    // the parts host.cpp #includes (hosts/linux/*.inc)
+    List<String> host_parts;
+    defer fs_list_free(&host_parts);
+    fs_glob(join(p.ui.data, "hosts/linux/*.inc"), &host_parts);
+    for (i in 0..host_parts.size) { host_sources.push(host_parts.data[i].data); }
     if (stale(host, &host_sources)) {
         Cmd cmd;
         cmd.add(cxx); cmd.add("-std=c++17"); cmd.add("-O2"); cmd.add("-fPIC"); cmd.add("-I"); cmd.add(yoga_source());

@@ -201,6 +201,11 @@ string windows_executable(Project* p, string out, bool dev, string cxx, string a
     host_sources.push(join(p.ui.data, "hosts/windows/host.cpp")); host_sources.push(header);
     host_sources.push(join(p.ui.data, "hosts/core.h")); host_sources.push(join(p.ui.data, "hosts/driver.h"));
     host_sources.push(join(p.ui.data, "hosts/commit.h"));
+    // the parts host.cpp #includes (hosts/windows/*.inc)
+    List<String> host_parts;
+    defer fs_list_free(&host_parts);
+    fs_glob(join(p.ui.data, "hosts/windows/*.inc"), &host_parts);
+    for (i in 0..host_parts.size) { host_sources.push(host_parts.data[i].data); }
     if (stale(host, &host_sources)) {
         Cmd cmd;
         for (i in 0..compiler.size) { cmd.add(compiler.data[i]); }

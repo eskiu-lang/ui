@@ -144,6 +144,11 @@ string build_ios(Project* p) {
     host_sources.push(join(p.ui.data, "hosts/core.h")); host_sources.push(join(p.ui.data, "hosts/driver.h"));
     bool test = ui_test_build();
     if (test && !dev) { host = join(out, "host-test.o"); }
+    // the parts host.mm #includes (hosts/ios/*.inc)
+    List<String> host_parts;
+    defer fs_list_free(&host_parts);
+    fs_glob(join(p.ui.data, "hosts/ios/*.inc"), &host_parts);
+    for (i in 0..host_parts.size) { host_sources.push(host_parts.data[i].data); }
     if (stale(host, &host_sources)) {
         Cmd cmd;
         for (i in 0..compiler.size) { cmd.add(compiler.data[i]); }
