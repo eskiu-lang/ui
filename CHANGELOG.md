@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that slot on unmount and the new ones mount, and the ones before keep their state
   (`ui_discard_slots_from`; `docs/state.md`, "The hooks rule").
 
-## [0.5.0]
+## [0.5.0] - 2026-11-10
 
 ### Added
 
