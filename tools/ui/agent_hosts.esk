@@ -1,0 +1,154 @@
+// agent_hosts.esk: the native hosts and the requests (part of agent.esk, which imports it in order after the ones before it)
+
+// ---- the native hosts ----
+
+// The socket to the app's driver, or -1.
+int agent_socket;
+
+// Connects to the dev app on the simulator or the device (through adb forward); false when
+// it does not answer.
+bool agent_native_connect() {
+    if (agent_socket >= 0) { return true; }
+    if (strcmp(agent_host, "android") == 0) {
+        String forward;
+        defer String_free(&forward);
+        String_appendf(&forward, "%s forward tcp:%d localabstract:eskiu-ui-agent > /dev/null 2>&1", agent_quote(adb()), agent_native_port());
+        ProcessResult result;
+        sh(forward.data, &result);
+        ProcessResult_free(&result);
+    }
+    agent_socket = net_tcp_connect("127.0.0.1", (uint16)agent_native_port());
+    if (agent_socket < 0) { return false; }
+    net_set_timeouts(agent_socket, 60000, 10000);
+    return true;
+}
+
+void agent_native_close() {
+    if (agent_socket >= 0) { net_close(agent_socket); }
+    agent_socket = -1;
+}
+
+// One line to the app and the line it answers; null when the connection failed.
+string agent_native_request(string line) {
+    if (!agent_native_connect()) { return null; }
+    String out;
+    String_appendf(&out, "%s\n", line);
+    if (net_send_str(agent_socket, out.data) < 0) { agent_native_close(); return null; }
+    String answer;
+    char[4096] chunk;
+    while (true) {
+        int64 n = net_recv(agent_socket, &chunk[0], 4096);
+        if (n <= 0) { agent_native_close(); String_free(&answer); return null; }
+        bool end = false;
+        for (int64 i = 0; i < n; i++) {
+            if (chunk[i] == '\n') { end = true; break; }
+            String_push(&answer, chunk[i]);
+        }
+        if (end) { break; }
+    }
+    return answer.data == null ? ui_copy_text("") : answer.data;
+}
+
+// ---- requests ----
+
+// One request to the app; its answer parsed (null when nothing answered). The caller frees it.
+*JsonValue agent_request(string line) {
+    string text = null;
+    if (strcmp(agent_host, "web") == 0) { text = agent_http("/__ui/agent", line, 70000); }
+    else { text = agent_native_request(line); }
+    if (text == null) { return null; }
+    *JsonValue answer = json_parse(text);
+    free(text);
+    return answer;
+}
+
+// Whether the answer says ok.
+bool agent_ok(*JsonValue answer) {
+    *JsonValue ok = answer == null ? null : JsonValue_get(answer, "ok");
+    return ok != null && ok.kind == JBool && ok.boolean != 0;
+}
+
+string agent_member(*JsonValue v, string key) {
+    *JsonValue m = v == null ? null : JsonValue_get(v, key);
+    return m != null && m.kind == JString ? (m.str.data == null ? "" : m.str.data) : null;
+}
+
+double agent_number(*JsonValue v, string key) {
+    *JsonValue m = v == null ? null : JsonValue_get(v, key);
+    return m != null && m.kind == JNumber ? m.num : 0;
+}
+
+// The source hash the build would have now (as Project_entry writes UI_SOURCE).
+string agent_source(Project* p) {
+    String out;
+    String_appendf(&out, "%016llx", serve_signature(p));
+    return out.data;
+}
+
+// Attaches: `ui serve` running, the app answering hello and built from the current sources.
+// A build that is not up to date yet is waited for while `ui serve` builds it; a failed one
+// stops with its output.
+void agent_attach(Project* p, bool real_clock) {
+    *JsonValue status = agent_serve(p);
+    if (strcmp(agent_host, "web") == 0) {
+        agent_web_port = (int)agent_number(status, "port");
+        agent_browser(p);
+    }
+    JsonValue_free(status);
+    string hello = real_clock ? "{\"op\": \"hello\", \"clock\": \"real\"}" : "{\"op\": \"hello\", \"clock\": \"virtual\"}";
+    // A first build of a mobile app installs it, which can take a few minutes.
+    int64 until = time_monotonic_ms() + (strcmp(agent_host, "web") == 0 ? 120000 : 300000);
+    bool said = false;
+    while (true) {
+        string source = agent_source(p);
+        // While ui serve builds, the app may be about to restart on the new build.
+        *JsonValue before = agent_serve_status(p);
+        *JsonValue building_now = before == null ? null : JsonValue_get(before, "building");
+        bool wait = building_now != null && building_now.boolean != 0;
+        JsonValue_free(before);
+        if (wait && time_monotonic_ms() < until) { time_sleep_ms(50); continue; }
+        *JsonValue answer = agent_request(hello);
+        string built = agent_member(answer, "source");
+        bool fresh = agent_ok(answer) && built != null && strcmp(built, source) == 0;
+        JsonValue_free(answer);
+        if (fresh) { return; }
+        *JsonValue now = agent_serve_status(p);
+        if (now == null) { agent_fail("ui serve stopped; start it again (ui agent starts it when it is not running)"); }
+        *JsonValue building = JsonValue_get(now, "building");
+        string error = agent_member(now, "error");
+        string tried = agent_member(now, "source");
+        bool busy = building != null && building.boolean != 0;
+        // A failed build of these very sources: nothing will change until they do.
+        if (!busy && error != null && error[0] != 0 && tried != null && strcmp(tried, source) == 0) {
+            // `ui test --json`: the build's errors as JSON lines first.
+            if (ui_json) {
+                String lines;
+                diag_convert_text(error, &lines);
+                print(lines.data == null ? "" : lines.data);
+                String_free(&lines);
+            }
+            String message;
+            String_appendf(&message, "refusing to drive a build older than the sources: the last build failed:\n%s"
+                "Fix it and save; ui serve %s builds again (ui agent %s ... retries once it built).", error, agent_host, agent_host);
+            agent_fail(message.data);
+        }
+        JsonValue_free(now);
+        if (time_monotonic_ms() > until) {
+            String message;
+            if (built == null) {
+                String_appendf(&message, "the app does not answer: is it a dev build? ui serve %s makes one (see build/ui/agent/serve-%s.log)", agent_host, agent_host);
+            } else {
+                String_appendf(&message, "refusing to drive a build older than the sources (built from %s, the sources are %s): "
+                    "ui serve %s rebuilds on each change; wait for it or restart it", built, source, agent_host);
+            }
+            agent_fail(message.data);
+        }
+        if (!said && !agent_json) {
+            printf(built == null ? "ui agent: waiting for the app\n" : "ui agent: waiting for ui serve to rebuild and reload the app\n");
+            fflush(null);
+            said = true;
+        }
+        agent_native_close();
+        time_sleep_ms(50);
+    }
+}

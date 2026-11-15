@@ -1,0 +1,301 @@
+// agent_output.esk: screenshots and printing (part of agent.esk, which imports it in order after the ones before it)
+
+// ---- screenshots ----
+
+// A WebSocket text frame (masked, as a client must) with `text`.
+void agent_ws_send(int fd, string text) {
+    int64 n = (int64)strlen(text);
+    Bytes frame;
+    defer Bytes_free(&frame);
+    frame.push((uint8)0x81);
+    if (n < 126) { frame.push((uint8)(0x80 | n)); }
+    else if (n < 65536) { frame.push((uint8)(0x80 | 126)); frame.push((uint8)(n >> 8)); frame.push((uint8)(n & 255)); }
+    else {
+        frame.push((uint8)(0x80 | 127));
+        for (int s = 56; s >= 0; s -= 8) { frame.push((uint8)((n >> s) & 255)); }
+    }
+    // A zero mask leaves the payload as it is.
+    for (k in 0..4) { frame.push((uint8)0); }
+    Bytes_append_raw(&frame, (*uint8)text, n);
+    net_send(fd, frame.data, frame.len);
+}
+
+// Reads exactly `n` bytes into `out`; false when the connection ended.
+bool agent_read(int fd, Bytes* out, int64 n) {
+    char[8192] chunk;
+    while (n > 0) {
+        int64 want = n < 8192 ? n : 8192;
+        int64 got = net_recv(fd, &chunk[0], want);
+        if (got <= 0) { return false; }
+        Bytes_append_raw(out, (*uint8)&chunk[0], got);
+        n -= got;
+    }
+    return true;
+}
+
+// The next whole text message, into `out`; false when the connection ended.
+bool agent_ws_message(int fd, String* out) {
+    String_clear(out);
+    while (true) {
+        Bytes head;
+        if (!agent_read(fd, &head, 2)) { Bytes_free(&head); return false; }
+        bool fin = (head.data[0] & 0x80) != 0;
+        int64 n = (int64)(head.data[1] & 127);
+        Bytes_free(&head);
+        if (n >= 126) {
+            Bytes size;
+            if (!agent_read(fd, &size, n == 126 ? 2 : 8)) { Bytes_free(&size); return false; }
+            n = 0;
+            for (int64 i = 0; i < size.len; i++) { n = (n << 8) | (int64)size.data[i]; }
+            Bytes_free(&size);
+        }
+        Bytes payload;
+        if (!agent_read(fd, &payload, n)) { Bytes_free(&payload); return false; }
+        for (int64 i = 0; i < payload.len; i++) { String_push(out, (char)payload.data[i]); }
+        Bytes_free(&payload);
+        if (fin) { return true; }
+    }
+    return false;
+}
+
+// The web's screenshot: the browser's page through the DevTools protocol, into `file`.
+string agent_web_screenshot(Project* p, string file) {
+    if (agent_cdp_port == 0) { return "a screenshot on the web needs the browser ui agent starts (set UI_CHROME to one)"; }
+    String list_url;
+    defer String_free(&list_url);
+    String_appendf(&list_url, "http://127.0.0.1:%d/json/list", agent_cdp_port);
+    Response response;
+    defer Response_free(&response);
+    if (fetch(list_url.data, &response) != 0) { return "the browser's DevTools do not answer"; }
+    *JsonValue targets = json_parse(Response_text(&response));
+    if (targets == null) { return "the browser's DevTools answered something else"; }
+    defer JsonValue_free(targets);
+    string socket_url = null;
+    for (i in 0..JsonValue_len(targets)) {
+        *JsonValue target = JsonValue_at(targets, i);
+        string url = agent_member(target, "url");
+        string kind = agent_member(target, "type");
+        if (kind != null && strcmp(kind, "page") == 0 && url != null && strstr(url, "#ui-agent") != null) {
+            socket_url = agent_member(target, "webSocketDebuggerUrl");
+        }
+    }
+    if (socket_url == null) { return "the browser has no page of the app"; }
+    // ws://127.0.0.1:PORT/devtools/page/ID
+    string path = strstr(&socket_url[5], "/");
+    int fd = net_tcp_connect("127.0.0.1", (uint16)agent_cdp_port);
+    if (fd < 0) { return "could not connect to the browser's DevTools"; }
+    defer net_close(fd);
+    net_set_timeouts(fd, 20000, 10000);
+    String handshake;
+    defer String_free(&handshake);
+    String_appendf(&handshake, "GET %s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dWkgYWdlbnQgc2NyZWVuc2g=\r\nSec-WebSocket-Version: 13\r\n\r\n", path, agent_cdp_port);
+    net_send_str(fd, handshake.data);
+    String reply;
+    defer String_free(&reply);
+    char[1] one;
+    while (String_find(&reply, "\r\n\r\n", 0) < 0) {
+        if (net_recv(fd, &one[0], 1) <= 0) { return "the browser refused the DevTools connection"; }
+        String_push(&reply, one[0]);
+    }
+    if (String_find(&reply, " 101", 0) < 0) { return "the browser refused the DevTools connection"; }
+    agent_ws_send(fd, "{\"id\": 1, \"method\": \"Page.captureScreenshot\", \"params\": {\"format\": \"png\"}}");
+    String message;
+    defer String_free(&message);
+    while (agent_ws_message(fd, &message)) {
+        *JsonValue answer = json_parse(message.data);
+        if (answer == null) { continue; }
+        if ((int)agent_number(answer, "id") != 1) { JsonValue_free(answer); continue; }
+        *JsonValue result = JsonValue_get(answer, "result");
+        string data = agent_member(result, "data");
+        if (data == null) { JsonValue_free(answer); return "the browser did not take the screenshot"; }
+        int n = (int)strlen(data);
+        *uint8 png = alloc<uint8>(base64_decoded_len(n) + 4);
+        int size = base64_decode((*uint8)data, n, png);
+        JsonValue_free(answer);
+        if (size <= 0) { free(png); return "the screenshot was not base64"; }
+        int written = fs_write_all(file, png, size);
+        free(png);
+        return written == 1 ? null : "could not write the screenshot";
+    }
+    return "the browser closed the DevTools connection";
+}
+
+// The window's pixels into `file`: the browser's page, the simulator's screen, the device's,
+// the macOS, Linux or Windows window's content (which the host draws into the file itself).
+string agent_screenshot(Project* p, string file) {
+    if (strcmp(agent_host, "web") == 0) { return agent_web_screenshot(p, file); }
+    if (strcmp(agent_host, "macos") == 0 || strcmp(agent_host, "linux") == 0
+        || strcmp(agent_host, "windows") == 0) {
+        String path;
+        defer String_free(&path);
+        bool absolute = file[0] == '/' || file[0] == '\\' || (file[0] != 0 && file[1] == ':');
+        if (!absolute) { fs_cwd(&path); String_append(&path, "/"); }
+        String_append(&path, file);
+        String request;
+        defer String_free(&request);
+        String_append(&request, "{\"op\": \"screenshot\", \"file\": ");
+        serve_json_string(&request, path.data);
+        String_append(&request, "}");
+        *JsonValue answer = agent_request(request.data);
+        bool ok = agent_ok(answer);
+        JsonValue_free(answer);
+        return ok ? null : "the app could not take the screenshot";
+    }
+    String command;
+    defer String_free(&command);
+    if (strcmp(agent_host, "ios") == 0) { String_appendf(&command, "xcrun simctl io booted screenshot %s > /dev/null 2>&1", agent_quote(file)); }
+    else { String_appendf(&command, "%s exec-out screencap -p > %s", agent_quote(adb()), agent_quote(file)); }
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    if (sh(command.data, &result) != 0 || result.exit_code != 0) { return "could not take the screenshot"; }
+    return null;
+}
+
+// A PNG's size from its header, into `w` and `h` (0 when it is not one).
+void agent_png_size(string file, *int w, *int h) {
+    *w = 0; *h = 0;
+    int64 size = 0;
+    *uint8 data = fs_read_all(file, &size);
+    if (data == null) { return; }
+    if (size >= 24) {
+        *w = ((int)data[16] << 24) | ((int)data[17] << 16) | ((int)data[18] << 8) | (int)data[19];
+        *h = ((int)data[20] << 24) | ((int)data[21] << 16) | ((int)data[22] << 8) | (int)data[23];
+    }
+    free(data);
+}
+
+// ---- printing ----
+
+// A node in a line: `Button #5 [add] "Increment"` with its label and key.
+void agent_node_line(*JsonValue node, String* out) {
+    String_appendf(out, "%s #%d", agent_member(node, "kind"), (int)agent_number(node, "id"));
+    string name = agent_member(node, "name");
+    if (name != null) { String_appendf(out, " (%s)", name); }
+    string test_id = agent_member(node, "test_id");
+    if (test_id != null) { String_appendf(out, " [%s]", test_id); }
+    string label = agent_member(node, "label");
+    if (label != null) { String_appendf(out, " label=\"%s\"", label); }
+    string text = agent_member(node, "text");
+    if (text != null) { String_appendf(out, " \"%s\"", text); }
+    if (JsonValue_get(node, "key") != null) { String_appendf(out, " key=%lld", (int64)agent_number(node, "key")); }
+}
+
+void agent_print_tree(*JsonValue node, int depth) {
+    String line;
+    defer String_free(&line);
+    for (i in 0..depth) { String_append(&line, "  "); }
+    agent_node_line(node, &line);
+    string placeholder = agent_member(node, "placeholder");
+    if (placeholder != null) { String_appendf(&line, " placeholder=\"%s\"", placeholder); }
+    *JsonValue props = JsonValue_get(node, "props");
+    if (props != null) {
+        String_append(&line, " {");
+        for (i in 0..JsonValue_len(props)) {
+            *JsonValue prop = JsonValue_at(props, i);
+            String value;
+            JsonValue_stringify(prop, &value);
+            String_appendf(&line, "%s%s: %s", i > 0 ? ", " : "", prop.key.data, value.data);
+            String_free(&value);
+        }
+        String_append(&line, "}");
+    }
+    // Where the element was called from (a build with source positions).
+    string file = agent_member(node, "file");
+    if (file != null) { String_appendf(&line, "  %s:%d", file, (int)agent_number(node, "line")); }
+    println(line.data);
+    *JsonValue children = JsonValue_get(node, "children");
+    if (children == null) { return; }
+    for (i in 0..JsonValue_len(children)) { agent_print_tree(JsonValue_at(children, i), depth + 1); }
+}
+
+// Prints an op's answer for a person.
+void agent_print(string op, *JsonValue answer) {
+    String line;
+    defer String_free(&line);
+    if (strcmp(op, "tree") == 0) {
+        *JsonValue root = JsonValue_get(answer, "root");
+        *JsonValue children = root == null ? null : JsonValue_get(root, "children");
+        if (children != null) { for (i in 0..JsonValue_len(children)) { agent_print_tree(JsonValue_at(children, i), 0); } }
+        return;
+    }
+    if (strcmp(op, "layout") == 0) {
+        *JsonValue window = JsonValue_get(answer, "window");
+        printf("window %dx%d points, scale %d%%\n", (int)agent_number(window, "width"), (int)agent_number(window, "height"),
+            (int)agent_number(window, "scale"));
+        *JsonValue frames = JsonValue_get(answer, "frames");
+        for (i in 0..JsonValue_len(frames)) {
+            *JsonValue frame = JsonValue_at(frames, i);
+            String_clear(&line);
+            agent_node_line(frame, &line);
+            String_appendf(&line, "  x=%g y=%g w=%g h=%g", agent_number(frame, "x"), agent_number(frame, "y"),
+                agent_number(frame, "width"), agent_number(frame, "height"));
+            *JsonValue visible = JsonValue_get(frame, "visible");
+            if (visible != null && visible.boolean == 0) { String_append(&line, " hidden"); }
+            println(line.data);
+        }
+        return;
+    }
+    if (strcmp(op, "state") == 0) {
+        *JsonValue scopes = JsonValue_get(answer, "scopes");
+        for (i in 0..JsonValue_len(scopes)) {
+            *JsonValue scope = JsonValue_at(scopes, i);
+            String values;
+            JsonValue_stringify(JsonValue_get(scope, "signals"), &values);
+            printf("%s (#%d): %s\n", agent_member(scope, "path"), (int)agent_number(scope, "id"), values.data);
+            String_free(&values);
+        }
+        *JsonValue routes = JsonValue_get(answer, "routes");
+        if (JsonValue_len(routes) > 0) {
+            String_append(&line, "routes:");
+            for (i in 0..JsonValue_len(routes)) { String_appendf(&line, " %s%s", i > 0 ? "> " : "", JsonValue_at(routes, i).str.data); }
+            println(line.data);
+        }
+        printf("modals %d, timers %d, display frames %s, fetches %d, clock %s at %g ms\n", (int)agent_number(answer, "modals"),
+            (int)agent_number(answer, "timers"), JsonValue_get(answer, "frames").boolean != 0 ? "on" : "off",
+            (int)agent_number(answer, "fetches"), agent_member(answer, "clock"), agent_number(answer, "now"));
+        return;
+    }
+    if (strcmp(op, "tap") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+        string verb = strcmp(op, "tap") == 0 ? "tapped" : strcmp(op, "type") == 0 ? "typed into" : "scrolled";
+        printf("%s %s (%s #%d)", verb, agent_member(answer, "target"), agent_member(answer, "kind"), (int)agent_number(answer, "id"));
+        if (strcmp(op, "scroll") == 0) { printf(" to %g", agent_number(answer, "offset")); }
+        printf("\n");
+        return;
+    }
+    if (strcmp(op, "back") == 0) {
+        println(JsonValue_get(answer, "handled").boolean != 0 ? "back: handled" : "back: nothing to go back from");
+        return;
+    }
+    if (strcmp(op, "clock") == 0) {
+        printf("clock %s at %g ms", agent_member(answer, "clock"), agent_number(answer, "now"));
+        if (strcmp(agent_member(answer, "clock"), "virtual") == 0) {
+            printf(" (+%g, %d fired, %s%s)", agent_number(answer, "advanced"), (int)agent_number(answer, "fired"),
+                JsonValue_get(answer, "idle").boolean != 0 ? "idle" : "busy: ", agent_member(answer, "busy"));
+        }
+        printf("\n");
+        return;
+    }
+    if (strcmp(op, "logs") == 0) {
+        *JsonValue core = JsonValue_get(answer, "core");
+        *JsonValue host = JsonValue_get(answer, "host");
+        for (i in 0..JsonValue_len(host)) { println(JsonValue_at(host, i).str.data); }
+        for (i in 0..JsonValue_len(core)) { printf("ui %s\n", JsonValue_at(core, i).str.data); }
+        return;
+    }
+    if (strcmp(op, "perf") == 0) {
+        *JsonValue frame = JsonValue_get(answer, "frame_ms");
+        *JsonValue bytes = JsonValue_get(answer, "commit_bytes");
+        printf("frames %d (last %d measured): p50 %.2f ms, p95 %.2f ms, max %.2f ms\n", (int)agent_number(answer, "frames"),
+            (int)agent_number(frame, "measured"), agent_number(frame, "p50"), agent_number(frame, "p95"), agent_number(frame, "max"));
+        printf("commits: last %d B, max %d B, mean %d B; %d nodes; memory %.1f MB\n", (int)agent_number(bytes, "last"),
+            (int)agent_number(bytes, "max"), (int)agent_number(bytes, "mean"), (int)agent_number(answer, "nodes"),
+            agent_number(answer, "memory_bytes") / 1048576.0);
+        if (JsonValue_get(answer, "startup_ms") != null) { printf("cold start: %.0f ms to the first commit\n", agent_number(answer, "startup_ms")); }
+        return;
+    }
+    String text;
+    JsonValue_stringify(answer, &text);
+    println(text.data);
+    String_free(&text);
+}

@@ -1,0 +1,280 @@
+// agent_command.esk: the command (part of agent.esk, which imports it in order after the ones before it)
+
+// ---- the command ----
+
+// How many words an op takes after its name.
+int agent_arity(string op) {
+    if (strcmp(op, "tap") == 0 || strcmp(op, "screenshot") == 0 || strcmp(op, "clock") == 0) { return 1; }
+    if (strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) { return 2; }
+    return 0;
+}
+
+// One op: its words (the name first; the last word of `type` is the rest of the text).
+void agent_split(string text, List<String>* words, int limit) {
+    String word;
+    int i = 0;
+    while (text[i] == ' ') { i++; }
+    while (text[i] != 0) {
+        if (text[i] == ' ' && words.size < limit) {
+            if (word.len > 0) { words.push(word); word = String{}; }
+            while (text[i] == ' ') { i++; }
+            continue;
+        }
+        String_push(&word, text[i]);
+        i++;
+    }
+    if (word.len > 0) { words.push(word); }
+}
+
+// The request for an op from its words (the name first), into `request`; null when it is
+// well formed, else what is wrong with it. `screenshot` is the tool's own and has none.
+string agent_request_text(List<String>* words, String* request) {
+    string op = words.data[0].data;
+    String_clear(request);
+    String_append(request, "{\"op\": ");
+    serve_json_string(request, op);
+    int need = agent_arity(op);
+    if (words.size - 1 < need) {
+        String message;
+        String_appendf(&message, "%s takes %d argument%s (docs/agents.md)", op, need, need == 1 ? "" : "s");
+        return message.data;
+    }
+    if (strcmp(op, "tap") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+        String_append(request, ", \"target\": ");
+        serve_json_string(request, words.data[1].data);
+    }
+    if (strcmp(op, "type") == 0) {
+        String_append(request, ", \"text\": ");
+        serve_json_string(request, words.data[2].data);
+    }
+    if (strcmp(op, "scroll") == 0) {
+        string dy = words.data[2].data;
+        int at = dy[0] == '-' ? 1 : 0;
+        if (dy[at] < '0' || dy[at] > '9') { return "scroll takes a number of points (scroll ID DY)"; }
+        String_appendf(request, ", \"dy\": %d", atoi(dy));
+    }
+    if (strcmp(op, "clock") == 0) {
+        string arg = words.data[1].data;
+        if (strcmp(arg, "settle") == 0) { String_append(request, ", \"settle\": true"); }
+        else if (strcmp(arg, "real") == 0) { String_append(request, ", \"real\": true"); }
+        else if (arg[0] == '+') { String_appendf(request, ", \"ms\": %d", atoi(&arg[1])); }
+        else { return "clock takes +MS, settle or real"; }
+    }
+    String_append(request, "}");
+    return null;
+}
+
+// Runs one op; false when it failed (the reason printed).
+bool agent_op(Project* p, List<String>* words) {
+    string op = words.data[0].data;
+    String request;
+    defer String_free(&request);
+    int need = agent_arity(op);
+    if (words.size - 1 < need) {
+        String message;
+        String_appendf(&message, "%s takes %d argument%s (docs/agents.md)", op, need, need == 1 ? "" : "s");
+        println_err(message.data);
+        return false;
+    }
+    if (strcmp(op, "screenshot") == 0) {
+        // What is on screen once the app rendered the last request.
+        string error = agent_screenshot(p, words.data[1].data);
+        int w = 0;
+        int h = 0;
+        if (error == null) { agent_png_size(words.data[1].data, &w, &h); }
+        if (agent_json) {
+            String line;
+            if (error == null) {
+                String_append(&line, "{\"ok\":true,\"op\":\"screenshot\",\"file\":");
+                serve_json_string(&line, words.data[1].data);
+                String_appendf(&line, ",\"width\":%d,\"height\":%d}", w, h);
+            } else {
+                String_append(&line, "{\"ok\":false,\"op\":\"screenshot\",\"error\":");
+                serve_json_string(&line, error);
+                String_append(&line, "}");
+            }
+            println(line.data);
+            String_free(&line);
+        } else if (error == null) { printf("screenshot: %s (%dx%d pixels)\n", words.data[1].data, w, h); }
+        if (error != null) { print_err("ui agent: screenshot: "); println_err(error); }
+        return error == null;
+    }
+    string wrong = agent_request_text(words, &request);
+    if (wrong != null) {
+        println_err(wrong);
+        return false;
+    }
+    *JsonValue answer = agent_request(request.data);
+    if (answer == null) {
+        if (agent_json) { printf("{\"ok\":false,\"op\":\"%s\",\"error\":\"the app did not answer\"}\n", op); }
+        print_err("ui agent: "); print_err(op); println_err(": the app did not answer");
+        return false;
+    }
+    defer JsonValue_free(answer);
+    bool ok = agent_ok(answer);
+    if (agent_json) {
+        String text;
+        JsonValue_stringify(answer, &text);
+        println(text.data);
+        String_free(&text);
+    } else if (ok) { agent_print(op, answer); }
+    if (!ok) {
+        print_err("ui agent: "); print_err(op); print_err(": "); println_err(agent_member(answer, "error"));
+    }
+    fflush(null);
+    return ok;
+}
+
+// Stops the browser `ui agent` started for this project, waiting until it is gone; true when
+// there was one.
+bool agent_stop_browser(Project* p) {
+    if (agent_browser_port(p) == 0) { return false; }
+    String text;
+    defer String_free(&text);
+    fs_read_text(join(agent_dir(p), "browser.json"), &text);
+    *JsonValue state = json_parse(text.data);
+    int pid = (int)agent_number(state, "pid");
+    JsonValue_free(state);
+#ifndef _WIN32
+    if (pid > 0) { kill(pid, 15); }
+    int64 until = time_monotonic_ms() + 10000;
+    while (agent_alive(pid) && time_monotonic_ms() < until) { time_sleep_ms(50); }
+    if (agent_alive(pid)) { kill(pid, 9); time_sleep_ms(200); }
+#endif
+    fs_remove_all(join(agent_dir(p), "browser.json"));
+    return true;
+}
+
+// Starts the app again as at launch, in a new process (a new page on the web), when `ui serve
+// HOST` runs; without it there is nothing to start again (attaching starts it).
+void agent_restart(Project* p) {
+    agent_native_close();
+    *JsonValue status = agent_serve_status(p);
+    if (strcmp(agent_host, "web") == 0) {
+        agent_stop_browser(p);
+        // A fresh profile, so the page starts with nothing cached; and no page of the old
+        // browser takes a request the dev server still holds for it.
+        fs_remove_all(join(agent_dir(p), "chrome"));
+        if (status != null) {
+            agent_web_port = (int)agent_number(status, "port");
+            string answer = agent_http("/__ui/agent/forget", "{}", 5000);
+            if (answer != null) { free(answer); }
+        }
+        JsonValue_free(status);
+        return;
+    }
+    if (status == null) { return; }
+    JsonValue_free(status);
+    if (strcmp(agent_host, "ios") == 0) { ios_launch(p, true); return; }
+    if (strcmp(agent_host, "macos") == 0) { macos_launch(p); return; }
+    if (strcmp(agent_host, "linux") == 0) { linux_launch(p); return; }
+    if (strcmp(agent_host, "windows") == 0) { windows_launch(p); return; }
+    String command;
+    defer String_free(&command);
+    String_appendf(&command, "%s shell am force-stop %s && %s shell am start -n %s/org.eskiu.ui.UiActivity > /dev/null",
+        agent_quote(adb()), p.id.data, agent_quote(adb()), p.id.data);
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    if (sh(command.data, &result) != 0 || result.exit_code != 0) { agent_fail("could not start the app again (adb am start)"); }
+}
+
+// Stops what `ui agent` started for this project: the browser and `ui serve HOST`.
+void agent_stop(Project* p) {
+    // Quiet under --json (and `ui test`).
+    if (agent_stop_browser(p) && !agent_json) { println("ui agent: stopped the browser"); }
+    *JsonValue status = agent_serve_status(p);
+    if (status != null) {
+        int pid = (int)agent_number(status, "pid");
+#ifdef _WIN32
+        windows_kill(pid);
+#else
+        if (pid > 0) { kill(pid, 15); }
+#endif
+        JsonValue_free(status);
+        if (!agent_json) { printf("ui agent: stopped ui serve %s\n", agent_host); }
+    }
+    // The app itself on the simulator or the device, so the next start is a fresh one.
+    String command;
+    defer String_free(&command);
+    if (strcmp(agent_host, "ios") == 0) { String_appendf(&command, "xcrun simctl terminate booted %s > /dev/null 2>&1", p.id.data); }
+    if (strcmp(agent_host, "android") == 0) { String_appendf(&command, "%s shell am force-stop %s > /dev/null 2>&1", agent_quote(adb()), p.id.data); }
+    if (strcmp(agent_host, "macos") == 0 && macos_pid(p) != 0) {
+        macos_terminate(p);
+        if (!agent_json) { printf("ui agent: stopped the app\n"); }
+    }
+    if (strcmp(agent_host, "linux") == 0 && linux_pid(p) != 0) {
+        linux_terminate(p);
+        if (!agent_json) { printf("ui agent: stopped the app\n"); }
+    }
+    if (strcmp(agent_host, "windows") == 0 && windows_pid(p) != 0) {
+        windows_terminate(p);
+        if (!agent_json) { printf("ui agent: stopped the app\n"); }
+    }
+    if (command.len > 0) {
+        ProcessResult result;
+        sh(command.data, &result);
+        ProcessResult_free(&result);
+        if (!agent_json) { printf("ui agent: stopped the app\n"); }
+    }
+}
+
+void agent_usage() {
+    println_err("usage: ui agent web|macos|linux|windows|ios|android [--json] [--real-clock] OP...\n"
+                "       ui agent web|macos|linux|windows|ios|android --stop\n"
+                "ops: tree, layout, state, logs, perf, back, \"tap ID\", \"type ID TEXT\", \"scroll ID DY\",\n"
+                "     \"screenshot FILE\", \"clock +MS\", \"clock settle\", \"clock real\" (docs/agents.md)");
+    exit(2);
+}
+
+void agent_command(Project* p, int argc, string* argv) {
+    if (argc < 3) { agent_usage(); }
+    agent_host = argv[2];
+    if (strcmp(agent_host, "web") != 0 && strcmp(agent_host, "macos") != 0 && strcmp(agent_host, "linux") != 0
+        && strcmp(agent_host, "ios") != 0 && strcmp(agent_host, "android") != 0
+        && strcmp(agent_host, "windows") != 0) { agent_usage(); }
+    agent_socket = -1;
+    bool real_clock = false;
+    bool stop = false;
+    List<string> args;
+    defer args.free();
+    for (int i = 3; i < argc; i++) {
+        if (strcmp(argv[i], "--json") == 0) { agent_json = true; }
+        else if (strcmp(argv[i], "--real-clock") == 0) { real_clock = true; }
+        else if (strcmp(argv[i], "--stop") == 0) { stop = true; }
+        else { args.push(argv[i]); }
+    }
+    if (stop) { agent_stop(p); return; }
+    if (args.size == 0) { agent_usage(); }
+    // The ops: an argument with spaces is one op with its words; a bare op name takes the
+    // arguments after it that it needs.
+    List<List<String>> ops;
+    int at = 0;
+    while (at < args.size) {
+        List<String> words;
+        string arg = args.data[at++];
+        if (strchr(arg, ' ') != null) {
+            List<String> first;
+            agent_split(arg, &first, 1);
+            agent_split(arg, &words, agent_arity(first.data[0].data));
+            fs_list_free(&first);
+        } else {
+            String name;
+            String_from(&name, arg);
+            words.push(name);
+            int need = agent_arity(arg);
+            for (k in 0..need) {
+                if (at >= args.size) { break; }
+                String word;
+                String_from(&word, args.data[at++]);
+                words.push(word);
+            }
+        }
+        if (words.size == 0) { continue; }
+        ops.push(words);
+    }
+    agent_attach(p, real_clock);
+    for (i in 0..ops.size) {
+        if (!agent_op(p, &ops.data[i])) { exit(1); }
+    }
+    agent_native_close();
+}
