@@ -1,0 +1,248 @@
+// webapp_dispatch.esk: what the host calls, and the built-in commands (part of webapp.esk, which imports it in order after the ones before it)
+
+// ---- What the host calls (on the main thread) ----
+
+// A request to one of the schemes.
+void uiw_on_request(int window, int64 id, string scheme, string url, string method, string range) {
+    // The path: after the authority, up to the query or fragment, decoded.
+    int64 at = 0;
+    string marker = strstr(url, "://");
+    if (marker != null) { at = (int64)(marker - url) + 3; }
+    while (url[at] != 0 && url[at] != '/' && url[at] != '?' && url[at] != '#') { at++; }
+    if (url[at] == '/') { at++; }
+    int64 end = at;
+    while (url[end] != 0 && url[end] != '?' && url[end] != '#') { end++; }
+    String path;
+    defer String_free(&path);
+    String_from(&path, "");
+    url_decode_range(url, at, end, &path, 0);
+    String query;
+    defer String_free(&query);
+    String_from(&query, "");
+    if (url[end] == '?') {
+        int64 q = end + 1;
+        int64 stop = q;
+        while (url[stop] != 0 && url[stop] != '#') { stop++; }
+        String_append_bytes(&query, &url[q], stop - q);
+    }
+    WebappRequest request = WebappRequest{window, id, scheme, url, path.data, query.data,
+        method == null ? "GET" : method, range == null ? "" : range, false};
+    // A CORS preflight is allowed whatever it asks.
+    if (strcmp(request.method, "OPTIONS") == 0) {
+        request.answered = true;
+        String headers;
+        defer String_free(&headers);
+        webapp_common_headers(&headers);
+        String_append(&headers, "Access-Control-Allow-Methods: GET, HEAD, POST, PUT, OPTIONS\nAccess-Control-Allow-Headers: *\nContent-Length: 0\n");
+        uiw_respond(id, 204, headers.data, null, 0, 0, null);
+        return;
+    }
+    if (strcmp(scheme, "app") == 0) {
+        webapp_frontend(&request);
+    } else {
+        for (i in 0..webapp.protocols.size) {
+            WebappProtocol* protocol = &webapp.protocols.data[i];
+            if (String_eq_cstr(&protocol.scheme, scheme) != 1) { continue; }
+            if (protocol.files) {
+                if (!webapp_safe_path(request.path)) { WebappRequest_status(&request, 403); break; }
+                String file;
+                webapp_join(protocol.root.data, request.path, &file);
+                WebappRequest_file(&request, file.data);
+                String_free(&file);
+            } else {
+                protocol.handler(&request);
+            }
+            break;
+        }
+    }
+    if (!request.answered) { WebappRequest_status(&request, 404); }
+}
+
+// A message from a page: an invoke or an emit (bridge.js).
+void uiw_on_message(int window, string text) {
+    JsonDoc doc = json_parse_doc(text);
+    defer JsonDoc_free(&doc);
+    if (doc.root == null || doc.root.kind != JObject) { return; }
+    *JsonValue kind = JsonValue_get(doc.root, "kind");
+    if (kind == null || kind.kind != JString) { return; }
+    string what = JsonValue_as_cstr(kind);
+    if (strcmp(what, "invoke") == 0) {
+        *JsonValue id = JsonValue_get(doc.root, "id");
+        *JsonValue command = JsonValue_get(doc.root, "cmd");
+        if (id == null || command == null || command.kind != JString) { return; }
+        WebappCall call = WebappCall{window, (int)JsonValue_as_int(id), JsonValue_as_cstr(command),
+            JsonValue_get(doc.root, "args"), false, false};
+        webapp_dispatch(&call);
+        if (!call.answered && !call.deferred) {
+            String error;
+            String_appendf(&error, "the command %s did not answer", call.command);
+            WebappCall_reject(&call, error.data);
+            String_free(&error);
+        }
+    } else if (strcmp(what, "emit") == 0) {
+        *JsonValue event = JsonValue_get(doc.root, "event");
+        if (event == null || event.kind != JString) { return; }
+        *JsonValue payload = JsonValue_get(doc.root, "payload");
+        String json;
+        defer String_free(&json);
+        if (payload == null) { String_append(&json, "null"); } else { JsonValue_stringify(payload, &json); }
+        string name = JsonValue_as_cstr(event);
+        for (i in 0..webapp.listeners.size) {
+            if (String_eq_cstr(&webapp.listeners.data[i].event, name) != 1) { continue; }
+            webapp.listeners.data[i].handler(WebappEvent{window, name, json.data, payload});
+        }
+    }
+}
+
+// The command `call` names: a built-in one ("ui:...") or the program's.
+void webapp_dispatch(WebappCall* call) {
+    if (strncmp(call.command, "ui:", 3) == 0) { webapp_builtin(call); return; }
+    for (i in 0..webapp.commands.size) {
+        if (String_eq_cstr(&webapp.commands.data[i].name, call.command) == 1) {
+            webapp.commands.data[i].handler(call);
+            return;
+        }
+    }
+    String error;
+    defer String_free(&error);
+    String_appendf(&error, "no command %s", call.command);
+    WebappCall_reject(call, error.data);
+}
+
+// The window asks to close: 1 to close it. A page with onCloseRequested gets the event
+// "ui:close-requested" and decides (it calls destroy()).
+int uiw_on_close(int window) {
+    for (i in 0..webapp.intercepting.size) {
+        if (webapp.intercepting.data[i] == window) {
+            webapp_emit(window, "ui:close-requested", null);
+            return 0;
+        }
+    }
+    if (webapp.has_close_handler && !webapp.close_handler(window)) { return 0; }
+    return 1;
+}
+
+// The window closed.
+void uiw_on_closed(int window) {
+    for (i in 0..webapp.intercepting.size) {
+        if (webapp.intercepting.data[i] == window) { webapp.intercepting.remove(i); return; }
+    }
+}
+
+// ---- The built-in commands ----
+
+// The level a page's dialog `kind` names (internal).
+int webapp_level(string kind) {
+    if (kind == null) { return WEBAPP_INFO; }
+    if (strcmp(kind, "warning") == 0) { return WEBAPP_WARNING; }
+    if (strcmp(kind, "error") == 0) { return WEBAPP_ERROR; }
+    return WEBAPP_INFO;
+}
+
+// The page's dialog filters ([{name, extensions: [...]}]) as uiw_dialog_file takes them.
+void webapp_filters(*JsonValue filters, String* out) {
+    if (filters == null || filters.kind != JArray) { return; }
+    for (i in 0..JsonValue_len(filters)) {
+        *JsonValue filter = JsonValue_at(filters, i);
+        *JsonValue name = JsonValue_get(filter, "name");
+        *JsonValue extensions = JsonValue_get(filter, "extensions");
+        if (extensions == null || extensions.kind != JArray) { continue; }
+        String_appendf(out, "%s\t", name != null && name.kind == JString ? JsonValue_as_cstr(name) : "");
+        for (j in 0..JsonValue_len(extensions)) {
+            *JsonValue extension = JsonValue_at(extensions, j);
+            if (extension.kind != JString) { continue; }
+            if (j > 0) { String_append(out, ","); }
+            String_append(out, JsonValue_as_cstr(extension));
+        }
+        String_append(out, "\n");
+    }
+}
+
+// The commands the page's module has built in: ui:dialog, ui:window and ui:quit (internal).
+void webapp_builtin(WebappCall* call) {
+    if (strcmp(call.command, "ui:dialog") == 0) {
+        string type = call.string("type");
+        if (type == null) { call.reject("ui:dialog: no type"); return; }
+        string title = call.string("title");
+        if (strcmp(type, "message") == 0 || strcmp(type, "confirm") == 0) {
+            bool confirm = strcmp(type, "confirm") == 0;
+            string ok = call.string("okLabel");
+            string cancel = call.string("cancelLabel");
+            int chose = uiw_dialog_message(call.window, confirm ? 1 : 0, webapp_level(call.string("kind")),
+                title == null ? "" : title, call.string("message") == null ? "" : call.string("message"),
+                ok == null ? "OK" : ok, cancel == null ? "Cancel" : cancel);
+            call.resolve(confirm ? (chose == 1 ? "true" : "false") : "null");
+            return;
+        }
+        bool save = strcmp(type, "save") == 0;
+        bool multiple = !save && call.bool("multiple", false);
+        String filters;
+        defer String_free(&filters);
+        String_from(&filters, "");
+        webapp_filters(call.arg("filters"), &filters);
+        List<String> paths;
+        defer fs_list_free(&paths);
+        int count = webapp_file_dialog(call.window, WebappDialog{title, call.string("defaultPath"), filters.data,
+            !save && call.bool("directory", false), multiple, save}, &paths);
+        String json;
+        defer String_free(&json);
+        if (count == 0) { String_append(&json, "null"); }
+        else if (multiple) {
+            String_append(&json, "[");
+            for (i in 0..paths.size) {
+                if (i > 0) { String_append(&json, ","); }
+                webapp_quote(&json, paths.data[i].data);
+            }
+            String_append(&json, "]");
+        } else { webapp_quote(&json, paths.data[0].data); }
+        call.resolve(json.data);
+        return;
+    }
+    if (strcmp(call.command, "ui:window") == 0) {
+        string op = call.string("op");
+        int window = (int)call.int("window", (int64)call.window);
+        if (op == null) { call.reject("ui:window: no op"); return; }
+        if (strcmp(op, "setTitle") == 0) { webapp_set_title(window, call.string("title")); }
+        else if (strcmp(op, "setSize") == 0) { webapp_set_size(window, (int)call.int("width", 0), (int)call.int("height", 0)); }
+        else if (strcmp(op, "setMinSize") == 0) { webapp_set_min_size(window, (int)call.int("width", 0), (int)call.int("height", 0)); }
+        else if (strcmp(op, "setFullscreen") == 0) { webapp_set_fullscreen(window, call.bool("on", true)); }
+        else if (strcmp(op, "isFullscreen") == 0) { call.resolve(webapp_is_fullscreen(window) ? "true" : "false"); return; }
+        else if (strcmp(op, "focus") == 0) { uiw_window_focus(window); }
+        else if (strcmp(op, "devtools") == 0) { uiw_window_devtools(window); }
+        else if (strcmp(op, "destroy") == 0) { webapp_close(window); }
+        else if (strcmp(op, "close") == 0) {
+            // As the close button: the page answers first, then the window closes.
+            call.resolve(null);
+            if (uiw_on_close(window) == 1) { webapp_close(window); }
+            return;
+        } else if (strcmp(op, "interceptClose") == 0) {
+            bool on = call.bool("on", true);
+            bool found = false;
+            for (i in 0..webapp.intercepting.size) {
+                if (webapp.intercepting.data[i] == window) {
+                    found = true;
+                    if (!on) { webapp.intercepting.remove(i); }
+                    break;
+                }
+            }
+            if (on && !found) { webapp.intercepting.push(window); }
+        } else {
+            String error;
+            String_appendf(&error, "ui:window: no op %s", op);
+            call.reject(error.data);
+            String_free(&error);
+            return;
+        }
+        call.resolve(null);
+        return;
+    }
+    if (strcmp(call.command, "ui:quit") == 0) {
+        call.resolve(null);
+        webapp_quit((int)call.int("code", 0));
+        return;
+    }
+    String error;
+    defer String_free(&error);
+    String_appendf(&error, "no command %s", call.command);
+    call.reject(error.data);
+}

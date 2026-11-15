@@ -1,0 +1,222 @@
+// webapp_files.esk: files over a scheme (part of webapp.esk, which imports it in order after the ones before it)
+
+// ---- Files over a scheme ----
+
+// The media type of a file by its extension (application/octet-stream when unknown).
+string webapp_mime(string path) {
+    int dot = -1;
+    for (int i = 0; path[i] != 0; i++) {
+        if (path[i] == '.') { dot = i; }
+        if (path[i] == '/') { dot = -1; }
+    }
+    if (dot < 0) { return "application/octet-stream"; }
+    String ext;
+    defer String_free(&ext);
+    String_from(&ext, &path[dot + 1]);
+    String_lower(&ext);
+    string e = ext.data;
+    if (strcmp(e, "html") == 0 || strcmp(e, "htm") == 0) { return "text/html; charset=utf-8"; }
+    if (strcmp(e, "js") == 0 || strcmp(e, "mjs") == 0) { return "text/javascript; charset=utf-8"; }
+    if (strcmp(e, "css") == 0) { return "text/css; charset=utf-8"; }
+    if (strcmp(e, "json") == 0 || strcmp(e, "map") == 0) { return "application/json"; }
+    if (strcmp(e, "webmanifest") == 0) { return "application/manifest+json"; }
+    if (strcmp(e, "wasm") == 0) { return "application/wasm"; }
+    if (strcmp(e, "txt") == 0 || strcmp(e, "csv") == 0) { return "text/plain; charset=utf-8"; }
+    if (strcmp(e, "xml") == 0) { return "application/xml"; }
+    if (strcmp(e, "png") == 0) { return "image/png"; }
+    if (strcmp(e, "jpg") == 0 || strcmp(e, "jpeg") == 0) { return "image/jpeg"; }
+    if (strcmp(e, "gif") == 0) { return "image/gif"; }
+    if (strcmp(e, "webp") == 0) { return "image/webp"; }
+    if (strcmp(e, "avif") == 0) { return "image/avif"; }
+    if (strcmp(e, "svg") == 0) { return "image/svg+xml"; }
+    if (strcmp(e, "ico") == 0) { return "image/x-icon"; }
+    if (strcmp(e, "bmp") == 0) { return "image/bmp"; }
+    if (strcmp(e, "woff") == 0) { return "font/woff"; }
+    if (strcmp(e, "woff2") == 0) { return "font/woff2"; }
+    if (strcmp(e, "ttf") == 0) { return "font/ttf"; }
+    if (strcmp(e, "otf") == 0) { return "font/otf"; }
+    if (strcmp(e, "mp3") == 0) { return "audio/mpeg"; }
+    if (strcmp(e, "ogg") == 0 || strcmp(e, "oga") == 0) { return "audio/ogg"; }
+    if (strcmp(e, "wav") == 0) { return "audio/wav"; }
+    if (strcmp(e, "flac") == 0) { return "audio/flac"; }
+    if (strcmp(e, "m4a") == 0) { return "audio/mp4"; }
+    if (strcmp(e, "mp4") == 0) { return "video/mp4"; }
+    if (strcmp(e, "webm") == 0) { return "video/webm"; }
+    if (strcmp(e, "glb") == 0) { return "model/gltf-binary"; }
+    if (strcmp(e, "gltf") == 0) { return "model/gltf+json"; }
+    if (strcmp(e, "pdf") == 0) { return "application/pdf"; }
+    return "application/octet-stream";
+}
+
+// The Range header `range` over `size` bytes: 0 without one (or one this does not take, such
+// as several ranges: the whole body answers it), 1 with its first byte and length in
+// `start` and `length`, -1 when it cannot be satisfied.
+int webapp_range(string range, int64 size, *int64 start, *int64 length) {
+    if (range == null || strncmp(range, "bytes=", 6) != 0) { return 0; }
+    string spec = &range[6];
+    for (int i = 0; spec[i] != 0; i++) { if (spec[i] == ',') { return 0; } }
+    int64 first = -1;
+    int64 last = -1;
+    int i = 0;
+    while (spec[i] == ' ') { i++; }
+    if (spec[i] >= '0' && spec[i] <= '9') {
+        first = 0;
+        while (spec[i] >= '0' && spec[i] <= '9') { first = first * 10 + (int64)(spec[i] - '0'); i++; }
+    }
+    if (spec[i] != '-') { return 0; }
+    i++;
+    if (spec[i] >= '0' && spec[i] <= '9') {
+        last = 0;
+        while (spec[i] >= '0' && spec[i] <= '9') { last = last * 10 + (int64)(spec[i] - '0'); i++; }
+    }
+    if (first < 0 && last < 0) { return 0; }
+    if (first < 0) {
+        // The last `last` bytes.
+        if (last == 0 || size == 0) { return -1; }
+        *start = last >= size ? 0 : size - last;
+        *length = size - *start;
+        return 1;
+    }
+    if (first >= size) { return -1; }
+    if (last < 0) {
+        last = size - 1;
+        if (last - first + 1 > WEBAPP_RANGE_CHUNK) { last = first + WEBAPP_RANGE_CHUNK - 1; }
+    }
+    if (last >= size) { last = size - 1; }
+    if (last < first) { return -1; }
+    *start = first;
+    *length = last - first + 1;
+    return 1;
+}
+
+// The headers every answer has: CORS open to the page (its origin is app:// or a dev
+// server's), no caching (a file may change between two reads).
+void webapp_common_headers(String* headers) {
+    String_append(headers, "Access-Control-Allow-Origin: *\nAccess-Control-Expose-Headers: Content-Range, Content-Length, Accept-Ranges\nCache-Control: no-store\n");
+}
+
+// Answers with `length` bytes of `file` (from offset 0) or of `data`, honoring the range.
+void webapp_respond_body(WebappRequest* self, string file, *uint8 data, int64 size, string mime) {
+    self.answered = true;
+    String headers;
+    defer String_free(&headers);
+    webapp_common_headers(&headers);
+    String_appendf(&headers, "Content-Type: %s\nAccept-Ranges: bytes\n", mime == null ? "application/octet-stream" : mime);
+    int64 start = 0;
+    int64 length = size;
+    int ranged = webapp_range(self.range, size, &start, &length);
+    if (ranged < 0) {
+        String_appendf(&headers, "Content-Range: bytes */%lld\nContent-Length: 0\n", size);
+        uiw_respond(self.id, 416, headers.data, null, 0, 0, null);
+        return;
+    }
+    int status = 200;
+    if (ranged == 1) {
+        status = 206;
+        String_appendf(&headers, "Content-Range: bytes %lld-%lld/%lld\n", start, start + length - 1, size);
+    } else {
+        start = 0;
+        length = size;
+    }
+    String_appendf(&headers, "Content-Length: %lld\n", length);
+    if (strcmp(self.method, "HEAD") == 0) { length = 0; }
+    if (file != null) { uiw_respond(self.id, status, headers.data, file, start, length, null); }
+    else { uiw_respond(self.id, status, headers.data, null, 0, length, data == null ? null : data + start); }
+}
+
+// Answers with the file at `path` (ranges too): false, and a 404, when it is not a file.
+bool WebappRequest_file(WebappRequest* self, string path) {
+    FileStat stat;
+    if (path == null || fs_stat(path, &stat) != 0 || fs_is_dir(path) == 1) {
+        WebappRequest_status(self, 404);
+        return false;
+    }
+    webapp_respond_body(self, path, null, stat.size, webapp_mime(path));
+    return true;
+}
+
+// Answers with `length` bytes of `data` (copied), of type `mime` (ranges too).
+void WebappRequest_bytes(WebappRequest* self, *uint8 data, int64 length, string mime) {
+    webapp_respond_body(self, null, data, length, mime);
+}
+
+// Answers with `text` of type `mime` (text/plain when null).
+void WebappRequest_text(WebappRequest* self, string text, string mime) {
+    webapp_respond_body(self, null, (*uint8)text, strlen(text), mime == null ? "text/plain; charset=utf-8" : mime);
+}
+
+// Answers with `status` and no body.
+void WebappRequest_status(WebappRequest* self, int status) {
+    self.answered = true;
+    String headers;
+    defer String_free(&headers);
+    webapp_common_headers(&headers);
+    String_append(&headers, "Content-Length: 0\n");
+    uiw_respond(self.id, status, headers.data, null, 0, 0, null);
+}
+
+// A path that stays inside its root: no "..", no "\" (a Windows separator), no NUL.
+bool webapp_safe_path(string path) {
+    int start = 0;
+    for (int i = 0; ; i++) {
+        char c = path[i];
+        if (c == '\\') { return false; }
+        if (c == '/' || c == 0) {
+            if (i - start == 2 && path[start] == '.' && path[start + 1] == '.') { return false; }
+            start = i + 1;
+        }
+        if (c == 0) { return true; }
+    }
+    return true;
+}
+
+// The file `path` under `root` ("" or "/" for an absolute path).
+void webapp_join(string root, string path, String* out) {
+    if (root == null || root[0] == 0 || strcmp(root, "/") == 0) {
+        // "C:/..." on Windows stays as it is; elsewhere the path is absolute.
+        bool drive = path[0] != 0 && path[1] == ':';
+        if (drive) { String_append(out, path); } else { String_appendf(out, "/%s", path); }
+        return;
+    }
+    int n = (int)strlen(root);
+    String_appendf(out, root[n - 1] == '/' ? "%s%s" : "%s/%s", root, path);
+}
+
+// The front end: its files, the client module, the binary answers waiting, and its root
+// page for a path with no extension (a route of the page's router).
+void webapp_frontend(WebappRequest* request) {
+    if (strncmp(request.path, "__eskiu/bytes/", 14) == 0) {
+        int token = atoi(&request.path[14]);
+        Mutex_lock(&webapp.bytes_lock);
+        WebappBytes found = WebappBytes{0, null, 0};
+        for (i in 0..webapp.bytes.size) {
+            if (webapp.bytes.data[i].token == token) { found = webapp.bytes.data[i]; webapp.bytes.remove(i); break; }
+        }
+        Mutex_unlock(&webapp.bytes_lock);
+        if (found.token == 0) { WebappRequest_status(request, 404); return; }
+        WebappRequest_bytes(request, found.data, found.length, "application/octet-stream");
+        free(found.data);
+        return;
+    }
+    if (strcmp(request.path, "@eskiu/webapp.js") == 0) {
+        WebappRequest_text(request, UI_WEBAPP_CLIENT, "text/javascript; charset=utf-8");
+        return;
+    }
+    if (!webapp_safe_path(request.path)) { WebappRequest_status(request, 403); return; }
+    String file;
+    defer String_free(&file);
+    String_appendf(&file, "%s/%s", webapp.frontend.data == null ? "." : webapp.frontend.data,
+        request.path[0] == 0 ? "index.html" : request.path);
+    if (fs_is_file(file.data) != 1) {
+        bool route = true;
+        for (int i = 0; request.path[i] != 0; i++) {
+            if (request.path[i] == '/') { route = true; }
+            else if (request.path[i] == '.') { route = false; }
+        }
+        if (route) {
+            String_clear(&file);
+            String_appendf(&file, "%s/index.html", webapp.frontend.data == null ? "." : webapp.frontend.data);
+        }
+    }
+    WebappRequest_file(request, file.data);
+}
