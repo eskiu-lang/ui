@@ -1,0 +1,335 @@
+// driver_requests.esk: building answers and directives, and the requests (part of driver.esk, which imports it in order after the ones before it)
+
+// Starts an answer: {"ok": true, "op": OP (internal).
+void ui_driver_begin(string op) {
+    String_clear(&ui_drv.out);
+    String_append(&ui_drv.out, "{\"ok\": true, \"op\": ");
+    ui_json_string(&ui_drv.out, op);
+}
+
+// An answer that the request failed with `error`.
+string ui_driver_error(string op, string error) {
+    String_clear(&ui_drv.out);
+    String_append(&ui_drv.out, "{\"ok\": false, \"op\": ");
+    ui_json_string(&ui_drv.out, op == null ? "" : op);
+    String_append(&ui_drv.out, ", \"error\": ");
+    ui_json_string(&ui_drv.out, error);
+    String_append(&ui_drv.out, "}");
+    return ui_drv.out.data;
+}
+
+// A directive for the host: {"host": OP, "node": N (its kind and the rest follow), and the
+// request waits for ui_driver_finish (internal).
+void ui_driver_directive(string op, *Node node) {
+    String_clear(&ui_drv.pending); String_append(&ui_drv.pending, op);
+    ui_drv.node = node == null ? 0 : node.id;
+    String_clear(&ui_drv.out);
+    String_append(&ui_drv.out, "{\"host\": ");
+    ui_json_string(&ui_drv.out, op);
+    if (node != null) { String_appendf(&ui_drv.out, ", \"node\": %d, \"kind\": %d", node.id, node.kind); }
+}
+
+// The clock directive: the hosts move their own animations to the driver's time.
+string ui_driver_clock_directive(string op, bool settle) {
+    ui_driver_directive(op, null);
+    String_append(&ui_drv.out, ", \"now\": ");
+    ui_json_number(&ui_drv.out, ui_drv.now);
+    String_appendf(&ui_drv.out, ", \"virtual\": %s, \"settle\": %s}", ui_drv.virtual ? "true" : "false", settle ? "true" : "false");
+    return ui_drv.out.data;
+}
+
+// A member of a request: its text (null when missing or not a string), number or flag
+// (internal).
+string ui_driver_text(*JsonValue request, string key) {
+    *JsonValue v = JsonValue_get(request, key);
+    return v != null && v.kind == JString ? (v.str.data == null ? "" : v.str.data) : null;
+}
+
+// A request's number member, or `otherwise` (internal).
+double ui_driver_number(*JsonValue request, string key, double otherwise) {
+    *JsonValue v = JsonValue_get(request, key);
+    return v != null && v.kind == JNumber ? v.num : otherwise;
+}
+
+// Whether a request's member is true (internal).
+bool ui_driver_flag(*JsonValue request, string key) {
+    *JsonValue v = JsonValue_get(request, key);
+    return v != null && v.kind == JBool && v.boolean != 0;
+}
+
+// The answer to a request (a JSON object), or a directive for the host ({"host": ...}),
+// which the host carries out before calling ui_driver_finish. The text is the driver's,
+// valid until the next request. `source` is what the build was made from (UI_SOURCE).
+string ui_driver_request(string line, string source) {
+    String_clear(&ui_drv.pending);
+    *JsonValue request = json_parse(line);
+    if (request == null || request.kind != JObject) {
+        JsonValue_free(request);
+        return ui_driver_error(null, "a request is one JSON object with an \"op\"");
+    }
+    string answer = ui_driver_answer(request, source);
+    JsonValue_free(request);
+    return answer;
+}
+
+// Answers a parsed request (internal).
+string ui_driver_answer(*JsonValue request, string source) {
+    string op = ui_driver_text(request, "op");
+    if (op == null) { return ui_driver_error(null, "a request needs an \"op\""); }
+    if (ui == null) { return ui_driver_error(op, "the app is not running"); }
+    ui_driver_flush();
+    if (strcmp(op, "hello") == 0) {
+        string clock = ui_driver_text(request, "clock");
+        if (clock != null && strcmp(clock, "real") == 0) { ui_driver_release_clock(); }
+        else if (clock == null || strcmp(clock, "virtual") == 0) { ui_driver_take_clock(); }
+        String_clear(&ui_drv.target); String_append(&ui_drv.target, source == null ? "" : source);
+        return ui_driver_clock_directive("hello", false);
+    }
+    if (strcmp(op, "tree") == 0) {
+        ui_driver_begin(op);
+        String_append(&ui_drv.out, ", \"root\": ");
+        ui_driver_tree_node(&ui_drv.out, ui.root);
+        String_append(&ui_drv.out, "}");
+        return ui_drv.out.data;
+    }
+    if (strcmp(op, "state") == 0) {
+        ui_driver_begin(op);
+        String_append(&ui_drv.out, ", \"scopes\": [");
+        bool first = true;
+        ui_driver_state_node(&ui_drv.out, ui.root, &first);
+        String_append(&ui_drv.out, "], \"routes\": [");
+        if (ui.router != null) {
+            for (i in 0..ui.router.stack.size) {
+                if (i > 0) { String_append(&ui_drv.out, ", "); }
+                ui_json_string(&ui_drv.out, ui.router.stack.data[i].data);
+            }
+        }
+        int armed = 0;
+        for (i in 0..ui.timers.size) { if (ui.timers.data[i].armed) { armed++; } }
+        String_appendf(&ui_drv.out, "], \"modals\": %d, \"timers\": %d, \"frames\": %s, \"fetches\": %d, \"clock\": \"%s\", \"now\": ",
+            ui.modals.size, armed, ui.frames_on ? "true" : "false", ui.fetches.size, ui_drv.virtual ? "virtual" : "real");
+        ui_json_number(&ui_drv.out, ui_drv.now);
+        String_append(&ui_drv.out, "}");
+        return ui_drv.out.data;
+    }
+    if (strcmp(op, "back") == 0) {
+        bool handled = ui_back();
+        ui_driver_flush();
+        ui_driver_begin(op);
+        String_appendf(&ui_drv.out, ", \"handled\": %s}", handled ? "true" : "false");
+        return ui_drv.out.data;
+    }
+    if (strcmp(op, "clock") == 0) {
+        if (ui_driver_flag(request, "real")) {
+            ui_driver_release_clock();
+            ui_drv.advanced = 0;
+            return ui_driver_clock_directive("clock", false);
+        }
+        double before = ui_drv.virtual ? ui_drv.now : 0;
+        bool settle = ui_driver_flag(request, "settle");
+        if (settle) { ui_driver_settle(); }
+        else {
+            double ms = ui_driver_number(request, "ms", -1);
+            if (ms < 0) { return ui_driver_error(op, "clock takes +MS (a number of milliseconds) or settle"); }
+            ui_driver_advance(ms);
+            ui_drv.idle = ui_driver_is_idle();
+        }
+        ui_drv.advanced = ui_drv.now - before;
+        return ui_driver_clock_directive("clock", settle);
+    }
+    if (strcmp(op, "logs") == 0 || strcmp(op, "perf") == 0 || strcmp(op, "layout") == 0) {
+        ui_driver_directive(op, null);
+        String_append(&ui_drv.out, "}");
+        return ui_drv.out.data;
+    }
+    if (strcmp(op, "tap") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+        string target = ui_driver_text(request, "target");
+        String error;
+        defer String_free(&error);
+        *Node node = ui_driver_find(target, &error);
+        if (node == null) { return ui_driver_error(op, error.data); }
+        *Node reached = node;
+        if (strcmp(op, "tap") == 0) { reached = ui_driver_tappable(node); }
+        else if (strcmp(op, "scroll") == 0) { reached = ui_driver_scrollable(node); }
+        else if (node.kind != 5) { reached = null; }
+        if (reached == null) {
+            String_appendf(&error, "'%s' is a %s (#%d), which %s", target, ui_kind_name(node.kind), node.id,
+                strcmp(op, "tap") == 0 ? "takes no press and is inside nothing that does"
+                : strcmp(op, "scroll") == 0 ? "is not a scroll or inside one" : "is not a TextInput");
+            return ui_driver_error(op, error.data);
+        }
+        String_clear(&ui_drv.target); String_append(&ui_drv.target, target);
+        ui_driver_directive(op, reached);
+        if (strcmp(op, "type") == 0) {
+            string text = ui_driver_text(request, "text");
+            String_append(&ui_drv.out, ", \"text\": ");
+            ui_json_string(&ui_drv.out, text == null ? "" : text);
+        }
+        if (strcmp(op, "scroll") == 0) {
+            String_append(&ui_drv.out, ", \"dy\": ");
+            ui_json_number(&ui_drv.out, ui_driver_number(request, "dy", 0));
+        }
+        String_append(&ui_drv.out, "}");
+        return ui_drv.out.data;
+    }
+    String message;
+    String_appendf(&message, "unknown op '%s'", op);
+    string answer = ui_driver_error(op, message.data);
+    String_free(&message);
+    return answer;
+}
+
+// Reads a number from `text` at `*at`, moving past it and the blanks after it (internal).
+double ui_driver_read(string text, *int at) {
+    int i = *at;
+    double sign = 1;
+    if (text[i] == '-') { sign = -1; i++; }
+    double value = 0;
+    while (text[i] >= '0' && text[i] <= '9') { value = value * 10 + (double)(text[i] - '0'); i++; }
+    if (text[i] == '.') {
+        i++;
+        double scale = 0.1;
+        while (text[i] >= '0' && text[i] <= '9') { value += scale * (double)(text[i] - '0'); scale /= 10; i++; }
+    }
+    while (text[i] == ' ' || text[i] == '\t') { i++; }
+    *at = i;
+    return sign * value;
+}
+
+// The layout answer from the host's lines "ID X Y WIDTH HEIGHT VISIBLE" (points from the
+// window's top left), in tree order (internal).
+void ui_driver_layout_node(*String out, *Node node, List<double>* rows, *bool first) {
+    for (int r = 0; r + 5 < rows.size; r += 6) {
+        if ((int)rows.data[r] != node.id || node == ui.root) { continue; }
+        String_append(out, *first ? "" : ", ");
+        *first = false;
+        String_append(out, "{");
+        ui_driver_identity(out, node);
+        String_append(out, ", \"x\": "); ui_json_number(out, rows.data[r + 1]);
+        String_append(out, ", \"y\": "); ui_json_number(out, rows.data[r + 2]);
+        String_append(out, ", \"width\": "); ui_json_number(out, rows.data[r + 3]);
+        String_append(out, ", \"height\": "); ui_json_number(out, rows.data[r + 4]);
+        String_appendf(out, ", \"visible\": %s}", rows.data[r + 5] != 0 ? "true" : "false");
+        break;
+    }
+    for (i in 0..node.children.size) { ui_driver_layout_node(out, node.children.data[i], rows, first); }
+}
+
+// The host carried out the directive: `result` is what it reports ("error: ..." when it
+// could not). Renders what the host's input scheduled and answers the request.
+string ui_driver_finish(string result) {
+    string op = ui_drv.pending.data;
+    if (op == null || op[0] == 0) { return ui_driver_error(null, "no request is waiting for the host"); }
+    String op_text;
+    String_from(&op_text, op);
+    defer String_free(&op_text);
+    op = op_text.data;
+    String_clear(&ui_drv.pending);
+    if (result == null) { result = ""; }
+    if (strncmp(result, "error: ", 7) == 0) { return ui_driver_error(op, &result[7]); }
+    if (ui == null) { return ui_driver_error(op, "the app stopped"); }
+    ui_driver_flush();
+    ui_driver_begin(op);
+    if (strcmp(op, "hello") == 0 || strcmp(op, "clock") == 0) {
+        String_appendf(&ui_drv.out, ", \"clock\": \"%s\", \"now\": ", ui_drv.virtual ? "virtual" : "real");
+        ui_json_number(&ui_drv.out, ui_drv.now);
+        if (strcmp(op, "hello") == 0) {
+            String_append(&ui_drv.out, ", \"source\": ");
+            ui_json_string(&ui_drv.out, ui_drv.target.data == null ? "" : ui_drv.target.data);
+            String_append(&ui_drv.out, ", \"platform\": ");
+            ui_json_string(&ui_drv.out, ui_platform_name());
+        } else {
+            String_append(&ui_drv.out, ", \"advanced\": ");
+            ui_json_number(&ui_drv.out, ui_drv.advanced);
+            String_appendf(&ui_drv.out, ", \"fired\": %d, \"idle\": %s, \"busy\": ", ui_drv.fired,
+                ui_driver_is_idle() ? "true" : "false");
+            ui_json_string(&ui_drv.out, ui_drv.busy.data == null ? "" : ui_drv.busy.data);
+        }
+    } else if (strcmp(op, "tap") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+        String_append(&ui_drv.out, ", \"target\": ");
+        ui_json_string(&ui_drv.out, ui_drv.target.data);
+        *Node node = ui_drv.node > 0 && ui_drv.node < ui.by_id.size ? ui.by_id.data[ui_drv.node] : null;
+        String_appendf(&ui_drv.out, ", \"id\": %d", ui_drv.node);
+        if (node != null) {
+            String_append(&ui_drv.out, ", \"kind\": ");
+            ui_json_string(&ui_drv.out, ui_kind_name(node.kind));
+        }
+        if (strcmp(op, "scroll") == 0) {
+            int at = 0;
+            String_append(&ui_drv.out, ", \"offset\": ");
+            ui_json_number(&ui_drv.out, ui_driver_read(result, &at));
+        }
+    } else if (strcmp(op, "layout") == 0) {
+        List<double> rows;
+        defer rows.free();
+        int at = 0;
+        while (result[at] != 0) {
+            while (result[at] == '\n' || result[at] == ' ') { at++; }
+            if (result[at] == 0) { break; }
+            for (k in 0..6) { rows.push(ui_driver_read(result, &at)); }
+            while (result[at] != 0 && result[at] != '\n') { at++; }
+        }
+        String_appendf(&ui_drv.out, ", \"window\": {\"width\": %d, \"height\": %d, \"scale\": %d}, \"frames\": [",
+            ui.window.width, ui.window.height, ui.window.scale);
+        bool first = true;
+        ui_driver_layout_node(&ui_drv.out, ui.root, &rows, &first);
+        String_append(&ui_drv.out, "]");
+    } else if (strcmp(op, "logs") == 0) {
+        String_append(&ui_drv.out, ", \"core\": [");
+        for (i in 0..ui_drv.logs.size) {
+            if (i > 0) { String_append(&ui_drv.out, ", "); }
+            ui_json_string(&ui_drv.out, ui_drv.logs.data[i].data);
+        }
+        String_append(&ui_drv.out, "], \"host\": [");
+        int at = 0;
+        bool first = true;
+        String line;
+        defer String_free(&line);
+        while (true) {
+            char c = result[at];
+            if (c == '\n' || c == 0) {
+                if (line.len > 0) {
+                    if (!first) { String_append(&ui_drv.out, ", "); }
+                    first = false;
+                    ui_json_string(&ui_drv.out, line.data);
+                }
+                String_clear(&line);
+                if (c == 0) { break; }
+            } else { String_push(&line, c); }
+            at++;
+        }
+        String_append(&ui_drv.out, "]");
+    } else if (strcmp(op, "perf") == 0) {
+        List<double> sorted;
+        defer sorted.free();
+        for (i in 0..ui_drv.frame_ms.size) { sorted.push(ui_drv.frame_ms.data[i]); }
+        for (i in 1..sorted.size) {
+            double v = sorted.data[i];
+            int j = i - 1;
+            while (j >= 0 && sorted.data[j] > v) { sorted.data[j + 1] = sorted.data[j]; j--; }
+            sorted.data[j + 1] = v;
+        }
+        double p50 = sorted.size > 0 ? sorted.data[sorted.size / 2] : 0;
+        double p95 = sorted.size > 0 ? sorted.data[sorted.size * 95 / 100] : 0;
+        double worst = sorted.size > 0 ? sorted.data[sorted.size - 1] : 0;
+        int live = 0;
+        for (i in 0..ui.by_id.size) { if (ui.by_id.data[i] != null) { live++; } }
+        String_appendf(&ui_drv.out, ", \"frames\": %d, \"frame_ms\": {\"p50\": %.3f, \"p95\": %.3f, \"max\": %.3f, \"measured\": %d}",
+            ui_drv.frame_count, p50, p95, worst, sorted.size);
+        String_appendf(&ui_drv.out, ", \"commit_bytes\": {\"last\": %d, \"max\": %d, \"mean\": %lld}, \"nodes\": %d",
+            ui_drv.commit_last, ui_drv.commit_max,
+            ui_drv.frame_count > 0 ? ui_drv.commit_bytes / ui_drv.frame_count : 0, live);
+        // The host's result: its memory, then when the process started or the page was
+        // navigated to (wall clock ms; 0 when it does not know).
+        int at = 0;
+        String_append(&ui_drv.out, ", \"memory_bytes\": ");
+        ui_json_number(&ui_drv.out, ui_driver_read(result, &at));
+        double started = ui_driver_read(result, &at);
+        if (started > 0 && ui_drv.first_commit > 0) {
+            String_append(&ui_drv.out, ", \"startup_ms\": ");
+            ui_json_number(&ui_drv.out, ui_drv.first_commit - started);
+        }
+    }
+    String_append(&ui_drv.out, "}");
+    return ui_drv.out.data;
+}

@@ -1,0 +1,267 @@
+// driver_nodes.esk: answers: JSON text, props, finding nodes and their state (part of driver.esk, which imports it in order after the ones before it)
+
+// ---- answers ----
+
+// `text` as a JSON string, appended to `out` (null as "").
+void ui_json_string(*String out, string text) {
+    String_append(out, "\"");
+    if (text != null) {
+        for (int64 i = 0; text[i] != 0; i++) {
+            uint8 c = (uint8)text[i];
+            if (c == '"') { String_append(out, "\\\""); }
+            else if (c == '\\') { String_append(out, "\\\\"); }
+            else if (c == '\n') { String_append(out, "\\n"); }
+            else if (c == '\r') { String_append(out, "\\r"); }
+            else if (c == '\t') { String_append(out, "\\t"); }
+            else if (c < 32) { String_appendf(out, "\\u%04x", (int)c); }
+            else { String_push(out, (char)c); }
+        }
+    }
+    String_append(out, "\"");
+}
+
+// A number in JSON: whole numbers without a fraction (internal).
+void ui_json_number(*String out, double value) {
+    if (value == (double)(int64)value) { String_appendf(out, "%lld", (int64)value); }
+    else { String_appendf(out, "%.3f", value); }
+}
+
+// An int prop's name in `tree` (internal).
+string ui_driver_prop_name(int code) {
+    if (code == 4) { return "width"; }
+    if (code == 5) { return "height"; }
+    if (code == 6) { return "grow"; }
+    if (code == 7) { return "wrap"; }
+    if (code == 8) { return "background"; }
+    if (code == 9) { return "color"; }
+    if (code == 10) { return "font_size"; }
+    if (code == 11) { return "font_weight"; }
+    if (code == 12) { return "border_width"; }
+    if (code == 13) { return "border_color"; }
+    if (code == 14) { return "radius"; }
+    if (code == 15) { return "opacity"; }
+    if (code == 16) { return "align"; }
+    if (code == 17) { return "justify"; }
+    if (code == 18) { return "on"; }
+    if (code == 19) { return "spinning"; }
+    if (code == 22) { return "refreshing"; }
+    if (code == 23) { return "active"; }
+    if (code == 24) { return "absolute"; }
+    if (code == 25) { return "left"; }
+    if (code == 26) { return "top"; }
+    if (code == 27) { return "right"; }
+    if (code == 28) { return "bottom"; }
+    if (code == 29) { return "aspect_ratio"; }
+    if (code == 30) { return "on_layout"; }
+    if (code == 31) { return "on_hover"; }
+    if (code == 32) { return "value"; }
+    if (code == 33) { return "min"; }
+    if (code == 34) { return "max"; }
+    if (code == 35) { return "translate_x"; }
+    if (code == 36) { return "translate_y"; }
+    if (code == 37) { return "scale"; }
+    if (code == 38) { return "rotate"; }
+    if (code == 39) { return "transition_ms"; }
+    if (code == 40) { return "easing"; }
+    if (code == 41) { return "on_pan"; }
+    if (code == 42) { return "min_width"; }
+    if (code == 43) { return "max_width"; }
+    if (code == 44) { return "min_height"; }
+    if (code == 45) { return "max_height"; }
+    if (code == 46) { return "shadow"; }
+    if (code == 47) { return "cover"; }
+    if (code == 48) { return "pixelated"; }
+    if (code == 49) { return "on_long_press"; }
+    if (code == 50) { return "gradient"; }
+    if (code == 51) { return "gradient_angle"; }
+    if (code == 52) { return "blur"; }
+    if (code == 53) { return "grid_column"; }
+    if (code == 54) { return "grid_column_span"; }
+    if (code == 55) { return "grid_row"; }
+    if (code == 56) { return "grid_row_span"; }
+    return null;
+}
+
+// Whether int prop `code` belongs to elements of `kind`, and its value when not set
+// (internal).
+bool ui_driver_prop_applies(int kind, int code, *int64 unset) {
+    *unset = 0;
+    if (code == 18) { *unset = -1; return kind == 9; }
+    if (code == 19) { *unset = -1; return kind == 10; }
+    if (code == 22) { return kind == 6; }
+    if (code == 23) { *unset = -1; return kind == 14; }
+    if (code >= 32 && code <= 34) { *unset = kUnset; return kind == 15; }
+    if (code == 8 || code == 9 || code == 13 || code == 50) { *unset = -1; }
+    if (code == 15 || code == 37) { *unset = 100; }
+    if (code == 51) { *unset = 180; }
+    if (code >= 25 && code <= 28) { *unset = kUnset; }
+    return ui_driver_prop_name(code) != null;
+}
+
+// A node's identity in an answer: "id", "kind", and its test_id, label, text, key and
+// component name when it has them (internal).
+void ui_driver_identity(*String out, *Node node) {
+    String_appendf(out, "\"id\": %d, \"kind\": ", node.id);
+    ui_json_string(out, ui_kind_name(node.kind));
+    if (node.test_id != null) { String_append(out, ", \"test_id\": "); ui_json_string(out, node.test_id); }
+    if (node.label != null) { String_append(out, ", \"label\": "); ui_json_string(out, node.label); }
+    if (node.text != null) { String_append(out, ", \"text\": "); ui_json_string(out, node.text); }
+    if (node.key.set) { String_appendf(out, ", \"key\": %lld", node.key.value); }
+    if (node.name != null) { String_append(out, ", \"name\": "); ui_json_string(out, node.name); }
+#ifdef UI_SRCLOC
+    // Where the element was called from.
+    if (node.at.file != null) {
+        String_append(out, ", \"file\": ");
+        ui_json_string(out, ui_source_file(node.at.file));
+        String_appendf(out, ", \"line\": %d, \"col\": %d", node.at.line, node.at.col);
+    }
+#endif
+}
+
+// A node and its children for `tree` (internal).
+void ui_driver_tree_node(*String out, *Node node) {
+    String_append(out, "{");
+    ui_driver_identity(out, node);
+    if (node.placeholder != null) { String_append(out, ", \"placeholder\": "); ui_json_string(out, node.placeholder); }
+    if (node.source != null) { String_append(out, ", \"source\": "); ui_json_string(out, node.source); }
+    if (node.kind == 5 && node.focused == 1) { String_append(out, ", \"focused\": true"); }
+    bool any = false;
+    String props;
+    defer String_free(&props);
+    if (node.kind != 0 && node.gap != 8) { String_appendf(&props, "\"gap\": %d", node.gap); any = true; }
+    if (node.padding != 0) { String_appendf(&props, "%s\"padding\": %d", any ? ", " : "", node.padding); any = true; }
+    for (code in 4..57) {
+        if (node == ui.root) { break; }
+        int64 unset = 0;
+        if (!ui_driver_prop_applies(node.kind, code, &unset)) { continue; }
+        int64 value = node.props[code];
+        if (value == unset) { continue; }
+        String_appendf(&props, "%s\"%s\": ", any ? ", " : "", ui_driver_prop_name(code));
+        if (code == 8 || code == 9 || code == 13 || code == 50) { String_appendf(&props, "\"#%08llx\"", value & 0xffffffff); }
+        else { String_appendf(&props, "%lld", value); }
+        any = true;
+    }
+    if (any) { String_appendf(out, ", \"props\": {%s}", props.data); }
+    if (node.children.size > 0) {
+        String_append(out, ", \"children\": [");
+        for (i in 0..node.children.size) {
+            if (i > 0) { String_append(out, ", "); }
+            ui_driver_tree_node(out, node.children.data[i]);
+        }
+        String_append(out, "]");
+    }
+    String_append(out, "}");
+}
+
+// A node's accessible name: its label, else a text's or button's own text (internal).
+string ui_driver_name(*Node node) {
+    if (node.label != null) { return node.label; }
+    if (node.kind == 3 || node.kind == 4) { return node.text; }
+    return null;
+}
+
+// Collects the nodes whose test_id (by_name false) or accessible name (true) is `target`
+// (internal).
+void ui_driver_collect(*Node node, string target, bool by_name, List<*Node>* found) {
+    string value = by_name ? ui_driver_name(node) : node.test_id;
+    if (node != ui.root && value != null && strcmp(value, target) == 0) { found.push(node); }
+    for (i in 0..node.children.size) { ui_driver_collect(node.children.data[i], target, by_name, found); }
+}
+
+// The node `target` names: "#N" is node N; otherwise the element whose test_id is `target`,
+// else the one whose accessible name is. Null with the reason in `error` when none or more
+// than one match (internal).
+*Node ui_driver_find(string target, *String error) {
+    if (target == null || target[0] == 0) { String_append(error, "no element named (give a test_id, a label or #id)"); return null; }
+    if (target[0] == '#') {
+        int id = atoi(&target[1]);
+        *Node node = id > 0 && id < ui.by_id.size ? ui.by_id.data[id] : null;
+        if (node == null) { String_appendf(error, "no element #%d", id); }
+        return node;
+    }
+    List<*Node> found;
+    defer found.free();
+    ui_driver_collect(ui.root, target, false, &found);
+    if (found.size == 0) { ui_driver_collect(ui.root, target, true, &found); }
+    if (found.size == 1) { return found.data[0]; }
+    if (found.size == 0) {
+        String_appendf(error, "no element with test_id or accessible name '%s'", target);
+        return null;
+    }
+    String_appendf(error, "%d elements match '%s':", found.size, target);
+    for (i in 0..found.size) {
+        if (i == 3) { String_append(error, " ..."); break; }
+        String_appendf(error, " #%d %s in ", found.data[i].id, ui_kind_name(found.data[i].kind));
+        ui_node_path(found.data[i], error);
+        String_append(error, ";");
+    }
+    String_append(error, " give one a test_id, or use #id");
+    return null;
+}
+
+// What a tap reaches from `node`: itself when it takes presses (a button, a pressable, a
+// field, a switch, a modal), else the nearest that does above it (internal).
+*Node ui_driver_tappable(*Node node) {
+    for (*Node at = node; at != null && at != ui.root; at = at.parent) {
+        int k = at.kind;
+        if (k == 4 || k == 5 || k == 8 || k == 9 || k == 12) { return at; }
+    }
+    return null;
+}
+
+// The nearest scroll at or above `node` (internal).
+*Node ui_driver_scrollable(*Node node) {
+    for (*Node at = node; at != null && at != ui.root; at = at.parent) { if (at.kind == 6) { return at; } }
+    return null;
+}
+
+// A signal's value for `state` (internal).
+void ui_driver_value(*String out, Slot slot) {
+    if (slot.kind == 3) {
+        *StringState state = (*StringState)slot.data;
+        ui_json_string(out, state.signal.value.text);
+        return;
+    }
+    *void at = slot.data;
+    int t = slot.vtype;
+    if (t == 1) { String_appendf(out, "%d", *(*int)at); }
+    else if (t == 2) { String_appendf(out, "%lld", *(*int64)at); }
+    else if (t == 3) { String_append(out, *(*bool)at ? "true" : "false"); }
+    else if (t == 4) { ui_json_number(out, *(*double)at); }
+    else if (t == 5) { ui_json_number(out, (double)*(*float)at); }
+    else if (t == 6) { string text = *(*string)at; if (text == null) { String_append(out, "null"); } else { ui_json_string(out, text); } }
+    else if (t == 7) { String_appendf(out, "%d", (int)*(*uint8)at); }
+    else if (t == 8) { String_appendf(out, "%d", (int)*(*char)at); }
+    else if (t == 9) { String_appendf(out, "%d", (int)*(*int16)at); }
+    else if (t == 10) { String_appendf(out, "%u", *(*uint)at); }
+    else if (t == 11) { String_appendf(out, "%llu", *(*uint64)at); }
+    else { String_append(out, "\"(a value of another type)\""); }
+}
+
+// The scopes holding signals, for `state` (internal).
+void ui_driver_state_node(*String out, *Node node, *bool first) {
+    bool has = false;
+    for (i in 0..node.slots.size) { if (node.slots.data[i].kind == 0 || node.slots.data[i].kind == 3) { has = true; } }
+    if (has) {
+        String_append(out, *first ? "" : ", ");
+        *first = false;
+        String_append(out, "{");
+        ui_driver_identity(out, node);
+        String_append(out, ", \"path\": ");
+        String path;
+        ui_node_path(node, &path);
+        ui_json_string(out, path.data);
+        String_free(&path);
+        String_append(out, ", \"signals\": [");
+        bool comma = false;
+        for (i in 0..node.slots.size) {
+            Slot slot = node.slots.data[i];
+            if (slot.kind != 0 && slot.kind != 3) { continue; }
+            if (comma) { String_append(out, ", "); }
+            comma = true;
+            ui_driver_value(out, slot);
+        }
+        String_append(out, "]}");
+    }
+    for (i in 0..node.children.size) { ui_driver_state_node(out, node.children.data[i], first); }
+}
