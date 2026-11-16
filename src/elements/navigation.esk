@@ -274,6 +274,37 @@ string route_param(string pattern, string route, int index) {
     return index >= 0 && index < values.size ? entry.values.data[index].data : null;
 }
 
+// The ":name" part of `path` under `pattern` as a number ("/places/:id" and "/places/3"
+// give 3), or `fallback` when the path does not match or the part is not a whole number.
+int route_int(string pattern, string path, string name, int fallback) {
+    // which ":" segment of the pattern is `name`
+    int index = -1;
+    int seen = 0;
+    for (int i = 0; pattern[i] != 0; i++) {
+        if (pattern[i] == ':' && (i == 0 || pattern[i - 1] == '/')) {
+            int n = 0;
+            while (name[n] != 0 && pattern[i + 1 + n] == name[n]) { n++; }
+            char after = pattern[i + 1 + n];
+            if (name[n] == 0 && (after == '/' || after == 0)) { index = seen; }
+            seen++;
+        }
+    }
+    if (index < 0) { return fallback; }
+    List<String> params;
+    defer route_params_free(&params);
+    if (!route_match(pattern, path, &params) || index >= params.size) { return fallback; }
+    string text = params.data[index].data;
+    if (text == null || text[0] == 0) { return fallback; }
+    int value = 0;
+    int at = text[0] == '-' ? 1 : 0;
+    if (text[at] == 0) { return fallback; }
+    for (int i = at; text[i] != 0; i++) {
+        if (text[i] < '0' || text[i] > '9') { return fallback; }
+        value = value * 10 + (int)(text[i] - '0');
+    }
+    return at == 1 ? -value : value;
+}
+
 // Frees what route_match put in `params`.
 void route_params_free(List<String>* params) {
     for (i in 0..params.size) { String_free(&params.data[i]); }
