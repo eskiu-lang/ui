@@ -105,7 +105,7 @@ void Project_find(Project* self) {
     String_from(&self.display, display != null ? display : self.name.data);
     string id = self.config.string("app.id");
     if (id != null) { String_from(&self.id, id); }
-    if (self.ui.len == 0) { fail("ui: eskiu.lock has no ui package: eskiuc add ui --git https://github.com/eskiu-lang/ui"); }
+    if (self.ui.len == 0) { fail("ui: eskiu.lock has no ui package: eskiuc add ui --git https://github.com/eskiu-packages/ui"); }
 }
 
 // build/ui/TARGET, created.

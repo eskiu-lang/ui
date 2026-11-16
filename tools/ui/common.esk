@@ -1,7 +1,7 @@
 // Running commands, paths, the compiler and ESKIU_HOME.
 // Part of the ui tool (tools/ui/main.esk imports every part).
 
-const string kUiGit = "https://github.com/eskiu-lang/ui";
+const string kUiGit = "https://github.com/eskiu-packages/ui";
 // The release `ui new` depends on.
 const string kUiRev = "v0.6.0";
 

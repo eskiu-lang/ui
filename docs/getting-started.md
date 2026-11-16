@@ -14,7 +14,7 @@ curl -fsSL https://eskiu-lang.org/install.sh | sh -s -- --with-ui
 Or build it from the repository (any directory on the PATH):
 
 ```bash
-git clone https://github.com/eskiu-lang/ui
+git clone https://github.com/eskiu-packages/ui
 eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
 ```
 
@@ -38,7 +38,7 @@ once per toolchain into `$ESKIU_HOME/cache` (`~/.eskiu/cache`).
 ## A first app
 
 ```bash
-ui new myapp          # a project that depends on github.com/eskiu-lang/ui
+ui new myapp          # a project that depends on github.com/eskiu-packages/ui
 cd myapp
 ui run web            # serves build/ui/web and opens the browser (UI_PORT to change the port)
 ui run macos          # an AppKit window (--webview: the web build in a WKWebView)

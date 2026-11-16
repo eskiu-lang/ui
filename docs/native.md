@@ -442,7 +442,7 @@ maps/
   native/web/map.mjs
 ```
 
-[eskiu-lang/ui-location](https://github.com/eskiu-lang/ui-location) is one: `use_location`
+[eskiu-packages/ui-location](https://github.com/eskiu-packages/ui-location) is one: `use_location`
 over CoreLocation, `LocationManager` (with a runtime permission and C externs that call Java
 through JNI) and `navigator.geolocation`, a `ui.toml` with the framework, a usage text the app
 can replace and the Android permissions, tests that run on the computer with stand-ins for the
@@ -453,7 +453,7 @@ mounted.
 If a package in `eskiu.lock` also declares prebuilt native archives in its `eskiu.toml`
 (`[native.NAME]` for `ios-arm64`, `ios-arm64-simulator`, `ios-x86_64-simulator`,
 `android-arm64`, `macos-arm64`, `macos-x86_64`, `linux-x86_64`, `linux-arm64` or
-`windows-x86_64`, as [`eskiu-lang/gpu`](https://github.com/eskiu-lang/gpu) does for
+`windows-x86_64`, as [`eskiu-packages/gpu`](https://github.com/eskiu-packages/gpu) does for
 `wgpu_native`), `ui build ios`, `ui build android`, `ui build macos`, `ui build linux` and
 `ui build windows` download the archive into
 `~/.eskiu/native/` when missing and link its `libNAME.a` into the app bundle automatically.
