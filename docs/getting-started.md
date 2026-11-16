@@ -89,10 +89,7 @@ void App() {
     Column(Style{grow: 1, padding: 24, gap: 16, justify: JustifyCenter, align: AlignCenter}) {
         *Signal<int> count = use_signal<int>(0);
         TextWith(Style{font_size: 28, font_weight: 700}, "myapp");
-        String label;
-        defer String_free(&label);
-        String_format(&label, "Pressed %d times", count.get());
-        Text(label.data);
+        Text(textf("Pressed %d times", count.get()));
         ButtonWith(Style{background: rgb(79, 70, 229), color: rgb(255, 255, 255), radius: 12, padding: 12},
             "Press me") { count.set(count.get() + 1); }
     }

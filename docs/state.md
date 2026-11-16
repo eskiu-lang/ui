@@ -223,10 +223,7 @@ Text given to an element (`Text`, a button's title, an input's value) is copied,
 `String` built for one render can be freed right after the call:
 
 ```eskiu
-String label;
-defer String_free(&label);
-String_format(&label, "%d left", remaining.get());
-Text(label.data);
+Text(textf("%d left", remaining.get()));
 ```
 
 ## Closures a component keeps

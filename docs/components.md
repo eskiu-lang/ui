@@ -25,7 +25,7 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 
 | Element | What it is |
 |---|---|
-| `Text(string)`, `TextWith(Style, string)` | Text. It is copied; format it with `<string>`'s `String_format`, which `-Wformat` checks. |
+| `Text(string)`, `TextWith(Style, string)` | Text. It is copied, so `textf("%d left", n)` formats one for the frame with nothing to free (`-Wformat` does not check `textf` yet; `<string>`'s `String_format` is checked). |
 | `Button(string, on_press)`, `ButtonWith(Style, string, on_press)` | A button with a title. |
 | `Button_owned(string, on_press, cleanup)` | A button whose `cleanup` runs when the handler is replaced or unmounted. |
 
@@ -193,11 +193,8 @@ list, take what it shows as arguments, and report changes through closures:
 void Stepper(string label, int value, escaping fn(int)->void on_change) {
     ui_own(void() { ui_release_int(on_change); });
     Row(Style{gap: 12, align: AlignCenter, label: label}) {
-        String text;
-        defer String_free(&text);
-        String_format(&text, "%s: %d", label, value);
         Button("-") { on_change(value - 1); }
-        Text(text.data);
+        Text(textf("%s: %d", label, value));
         Button("+") { on_change(value + 1); }
     }
 }
