@@ -29,6 +29,7 @@ import "core/wire.esk";
 import "core/reactive.esk";
 import "core/closures.esk";
 import "core/tree.esk";
+import "core/textf.esk";
 import "core/runtime.esk";
 import "core/boundary.esk";
 import "elements/layout.esk";

@@ -42,6 +42,7 @@ int main() {
     lenient_keys(); printf("PASS lenient keys\n");
     text_input(); printf("PASS text input\n");
     labels(); printf("PASS labels\n");
+    textf_texts(); printf("PASS textf\n");
     fonts(); printf("PASS fonts\n");
     grids(); printf("PASS grids\n");
     sizes(); printf("PASS sizes\n");

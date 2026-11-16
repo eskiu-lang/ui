@@ -1,0 +1,37 @@
+// textf: printf-style text that lives for one frame (part of <ui>, imported before
+// core/runtime.esk, whose ui_frame frees it).
+
+// The texts textf made, freed when the frame that rendered them has run its renders and
+// writes (an element copies what it is given).
+List<*char> ui_frame_texts;
+
+// printf-style text for this frame: `Text(textf("Count: %d", n))`. It lives until the end
+// of the frame, so it goes to an element (which keeps its own copy), not to a signal or a
+// global; there is nothing to free.
+string textf(string fmt, ...) {
+    va_list ap;
+    va_start(ap);
+#ifdef _WIN32
+    int n = __mingw_vsnprintf(null, 0, fmt, ap);
+#else
+    int n = vsnprintf(null, 0, fmt, ap);
+#endif
+    va_end(ap);
+    if (n < 0) { return ""; }
+    *char buf = alloc<char>(n + 1);
+    va_start(ap);
+#ifdef _WIN32
+    __mingw_vsnprintf(buf, (size_t)(n + 1), fmt, ap);
+#else
+    vsnprintf(buf, (size_t)(n + 1), fmt, ap);
+#endif
+    va_end(ap);
+    ui_frame_texts.push(buf);
+    return (string)buf;
+}
+
+// Frees the frame's textf texts (internal).
+void ui_free_frame_texts() {
+    for (i in 0..ui_frame_texts.size) { free(ui_frame_texts.data[i]); }
+    ui_frame_texts.size = 0;
+}

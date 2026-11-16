@@ -73,6 +73,40 @@ void labels() {
     ui_shutdown(); balanced("labels leak");
 }
 
+*Signal<int> textf_count;
+
+// The first Text below `node`, depth first (null when none).
+*Node first_text(*Node node) {
+    if (node.kind == 3) { return node; }
+    for (i in 0..node.children.size) {
+        *Node t = first_text(node.children.data[i]);
+        if (t != null) { return t; }
+    }
+    return null;
+}
+
+// textf: a frame's formatted text reaches the element, and is freed with the frame.
+void textf_texts() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        textf_count = use_signal<int>(0);
+        Column(Style{}) { Text(textf("Count: %d of %s", textf_count.get(), "ten")); }
+    }
+    ui_frame();
+    *Node t = first_text(ui.root);
+    check(t != null && strcmp(t.text, "Count: 0 of ten") == 0, "textf's text is the element's");
+    check(ui_frame_texts.size == 0, "the frame's texts are freed after it");
+    textf_count.set(5); ui_frame();
+    t = first_text(ui.root);
+    check(t != null && strcmp(t.text, "Count: 5 of ten") == 0, "textf again in the next frame");
+    string outside = textf("%d", 42);
+    check(strcmp(outside, "42") == 0 && ui_frame_texts.size == 1, "textf outside a render waits for a frame");
+    ui_frame();
+    check(ui_frame_texts.size == 0, "a frame with nothing to render frees it too");
+    ui_shutdown(); balanced("textf leak");
+}
+
 *Signal<int> font_version;
 
 void fonts() {

@@ -361,7 +361,10 @@ bool ui_frame() {
         }
     }
     ui.dirty_memos.size = 0;
-    if (ui.next_nodes.size == 0 && ui.dirty_effects.size == 0 && ui.commands.len == 0) { return false; }
+    if (ui.next_nodes.size == 0 && ui.dirty_effects.size == 0 && ui.commands.len == 0) {
+        ui_free_frame_texts();
+        return false;
+    }
     List<*Node> due = ui.next_nodes;
     ui.next_nodes = List<*Node>{};
     List<int> depths;
@@ -394,6 +397,7 @@ bool ui_frame() {
         write(); ui_release_closure(write);
     }
     ui.writes.size = 0;
+    ui_free_frame_texts();
     for (i in 0..ui.looping.size) {
         if (!ui.looping.data[i].render_write) { ui.looping.data[i].loop_frames = 0; }
     }
