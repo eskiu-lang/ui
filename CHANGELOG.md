@@ -13,6 +13,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   element copies its text, so this is safe wherever an element takes one. The `ui new`
   template uses it. `-Wformat` does not check it yet.
 - `ui agent perf` on the web: `memory_reserved_bytes`, the size of the wasm memory.
+- `ListSignal<T>` (`use_list<T>()` in a scope, `list_signal_new<T>()` in a model): a list whose
+  readers render again when it changes (`push`, `insert`, `remove`, `set`, `swap`, `clear`,
+  and `changed()` after an edit in place), so a model needs no revision counter.
+- `frame_string()`: an empty `String` for the frame, for an API that writes into one
+  (`time_format`), freed with the frame as `textf` is.
+- `ui_own_fn(callback)`: a component frees a closure it was given, of any type, in place of
+  `ui_own` with the `ui_release_*` of that type. The kit uses it.
+- `TextInput_bind(Input, *StringState)`, a field whose text is the state, and
+  `StringState_empty`.
+- `Box(Style)`, a box with no children, and `Spacer(grow)`.
+- `NoColor` for an unset color, and the docs show a palette as `0xRRGGBBAA` constants.
+- `route_int(pattern, route, name, fallback)`: one `:name` part of a route as a number.
+- The examples use all of these.
 
 ### Fixed
 
