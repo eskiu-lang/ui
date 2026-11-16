@@ -55,8 +55,8 @@ def main():
     dex = BUILD / "dex"
     classes.mkdir(exist_ok=True); dex.mkdir(exist_ok=True)
     bootclasspath = str(tools / "core-lambda-stubs.jar") + os.pathsep + str(platform)
-    run(["javac", "-source", "8", "-target", "8", "-bootclasspath", bootclasspath, "-d", classes, HERE / "hosts/android/UiActivity.java",
-         *sorted(native.glob("*.java"))])
+    run(["javac", "-source", "8", "-target", "8", "-bootclasspath", bootclasspath, "-d", classes,
+         *sorted((HERE / "hosts/android").glob("*.java")), *sorted(native.glob("*.java"))])
     run([tools / "d8", "--min-api", "24", "--lib", platform, "--output", dex, *sorted(classes.rglob("*.class"))])
     unsigned = BUILD / "unsigned.apk"
     run([tools / "aapt", "package", "-f", "-M", HERE / "hosts/android/AndroidManifest.xml", "-A", HERE / "tests/harness/assets",

@@ -7,7 +7,7 @@ shim: the app, its components and its state are the same Eskiu code everywhere.
 |---|---|---|
 | Web | `hosts/web/`: `renderer.mjs` over the DOM, the app compiled to wasm by emscripten | CSS flexbox with Yoga's defaults |
 | iOS | `hosts/ios/host.mm`: UIKit, Objective-C++ | Yoga 3.2.1 |
-| Android | `hosts/android/`: `UiActivity.java` over `android.view`, `host.cpp` the JNI shim | Yoga 3.2.1 |
+| Android | `hosts/android/`: `UiActivity.java` and its `Ui*.java` parts over `android.view`, `host.cpp` the JNI shim | Yoga 3.2.1 |
 | macOS | `hosts/macos/host.mm`: AppKit, Objective-C++ (`hosts/macos/webview.m`: the web host in a `WKWebView` window, with `--webview`) | Yoga 3.2.1 |
 | Linux | `hosts/linux/host.cpp`: GTK 4, C++ (`hosts/linux/webview.c`: the web host in a WebKitGTK window, with `--webview`) | Yoga 3.2.1 |
 | Windows | `hosts/windows/host.cpp`: Win32 windows and common controls, C++ (`hosts/windows/webview.cpp`: the web host in a WebView2 window, with `--webview`) | Yoga 3.2.1 |
@@ -119,7 +119,7 @@ output records its inputs).
 ## Android
 
 `ui build android` cross-compiles the app for `aarch64-linux-android24`, compiles Yoga and
-`host.cpp` with the NDK's clang into `libeskiu_ui.so`, compiles `UiActivity.java` with `javac`
+`host.cpp` with the NDK's clang into `libeskiu_ui.so`, compiles the host's Java (`hosts/android/*.java`) with `javac`
 and `d8`, and packages, aligns and signs the APK with the build tools (`aapt`, `zipalign`,
 `apksigner`, a debug key), with no Gradle. Native C, C++ and Java code goes into the same
 library and dex. With Maven dependencies or Kotlin code it builds through Gradle instead, and

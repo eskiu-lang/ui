@@ -244,7 +244,11 @@ string build_android(Project* p) {
     string dex = join(out, "classes.dex");
     List<string> java_sources;
     defer java_sources.free();
-    java_sources.push(join(p.ui.data, "hosts/android/UiActivity.java"));
+    // the host's classes (hosts/android/*.java)
+    List<String> host_java;
+    defer fs_list_free(&host_java);
+    fs_glob(join(p.ui.data, "hosts/android/*.java"), &host_java);
+    for (i in 0..host_java.size) { java_sources.push(host_java.data[i].data); }
     for (i in 0..java_count) { java_sources.push(java.data[i].data); }
     if (stale(dex, &java_sources)) {
         fs_remove_all(classes);
@@ -254,7 +258,7 @@ string build_android(Project* p) {
         Cmd javac;
         javac.add("javac"); javac.add("-nowarn"); javac.add("-source"); javac.add("8"); javac.add("-target"); javac.add("8");
         javac.add("-bootclasspath"); javac.add(bootclasspath.data); javac.add("-d"); javac.add(classes);
-        javac.add(join(p.ui.data, "hosts/android/UiActivity.java"));
+        for (i in 0..host_java.size) { javac.add(host_java.data[i].data); }
         for (i in 0..java_count) { javac.add(java.data[i].data); }
         javac.must(null);
         javac.free();
