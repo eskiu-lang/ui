@@ -76,3 +76,47 @@ void refresh_control() {
     check(prop_value(2, 22) == 0, "and goes away");
     ui_shutdown(); balanced("refresh leak");
 }
+
+// ListSignal: a model's list and a scope's list render their readers again when they
+// change, a change during a render waits for it, and both free their storage.
+*ListSignal<int> model_list;
+*ListSignal<int> scope_list;
+int list_renders;
+
+void list_signals() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    model_list = list_signal_new<int>();
+    model_list.push(1);
+    model_list.push(2);
+    list_renders = 0;
+    ui_mount() {
+        list_renders++;
+        scope_list = use_list<int>();
+        int sum = 0;
+        for (i in 0..model_list.size()) { sum += model_list.get(i); }
+        int in_scope = scope_list.size();
+        Column(Style{}) {
+            Text(textf("sum %d, %d in scope", sum, in_scope));
+            for (i in 0..scope_list.size()) { Text(textf("item %d", scope_list.get(i))); }
+        }
+    }
+    ui_frame();
+    check(list_renders == 1, "the first render");
+    model_list.push(3); ui_frame();
+    check(list_renders == 2, "a push renders the reader again");
+    model_list.items().data[0] = 10; model_list.changed(); ui_frame();
+    check(list_renders == 3, "changed() after an edit in place renders it again");
+    ui_frame();
+    check(list_renders == 3, "no change, no render");
+    scope_list.push(7); scope_list.insert(0, 5); ui_frame();
+    check(list_renders == 4 && scope_list.list.size == 2 && scope_list.list.data[0] == 5, "a scope's list");
+    scope_list.swap(0, 1); scope_list.remove(1); ui_frame();
+    check(scope_list.list.size == 1 && scope_list.list.data[0] == 7, "swap and remove");
+    model_list.set(1, 20); model_list.clear(); ui_frame();
+    check(model_list.list.size == 0 && list_renders == 6, "set and clear");
+    ui_shutdown();
+    model_list.free();
+    balanced("list signals leak");
+}
+

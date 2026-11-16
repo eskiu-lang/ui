@@ -1,0 +1,55 @@
+// The shorthands for common app code: Box, Spacer, frame_string, ui_own_fn, TextInput_bind,
+// StringState_empty and route_int.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+*Signal<int> erg_renders;
+*StringState erg_title;
+int erg_changes;
+
+// A component that owns the closure it is given (ui_own_fn), rendered again and again.
+void ErgStepper(int value, escaping fn(int)->void on_change) {
+    ui_own_fn(on_change);
+    ButtonWith(Style{label: "plus"}, "+") { on_change(value + 1); }
+}
+
+void ergonomics() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        erg_renders = use_signal<int>(0);
+        erg_title = use_string("");
+        int n = erg_renders.get();
+        Column(Style{}) {
+            Row(Style{label: "bar"}) {
+                Box(Style{grow: 2, height: 8, background: rgb(1, 2, 3)});
+                Spacer(0);
+            }
+            *String text = frame_string();
+            text.appendf("render %d", n);
+            Text(text.data);
+            ErgStepper(n, void(int next) { erg_changes = next; });
+            TextInput_bind(Input{label: "title"}, erg_title);
+            Text(erg_title.empty() ? "no title" : erg_title.get());
+        }
+    }
+    ui_frame();
+    *Node bar = find_label(ui.root, "bar");
+    check(bar != null && bar.children.size == 2 && bar.children.data[0].children.size == 0,
+        "Box and Spacer are boxes with no children");
+    check(ui_frame_strings.size == 0, "frame_string's String is freed with the frame");
+    for (i in 1..20) { erg_renders.set(i); ui_frame(); }
+    press_label("plus");
+    check(erg_changes == 20, "ui_own_fn keeps the latest closure working");
+    *Node field = find_label(ui.root, "title");
+    ui_event_text(field.id, field.generation, "Milk"); ui_frame();
+    check(strcmp(erg_title.get(), "Milk") == 0 && !erg_title.empty(), "TextInput_bind sets its StringState");
+    ui_shutdown();
+    balanced("ergonomics leak");
+
+    check(route_int("/places/:id", "/places/3", "id", -1) == 3, "route_int");
+    check(route_int("/places/:id/plan", "/places/12/plan", "id", -1) == 12, "route_int in the middle");
+    check(route_int("/a/:x/:y", "/a/4/-5", "y", 0) == -5, "the second parameter");
+    check(route_int("/places/:id", "/places/abc", "id", -1) == -1, "not a number");
+    check(route_int("/places/:id", "/other/3", "id", -1) == -1, "no match");
+    check(route_int("/places/:id", "/places/3", "name", -1) == -1, "no such parameter");
+}

@@ -13,6 +13,7 @@ import "scheduler.esk";
 import "memory.esk";
 import "identity.esk";
 import "elements.esk";
+import "ergonomics.esk";
 import "lists.esk";
 import "system.esk";
 import "navigation.esk";
@@ -43,6 +44,7 @@ int main() {
     text_input(); printf("PASS text input\n");
     labels(); printf("PASS labels\n");
     textf_texts(); printf("PASS textf\n");
+    ergonomics(); printf("PASS ergonomics\n");
     fonts(); printf("PASS fonts\n");
     grids(); printf("PASS grids\n");
     sizes(); printf("PASS sizes\n");
@@ -70,6 +72,7 @@ int main() {
     controls(); printf("PASS controls\n");
     window_size(); printf("PASS window\n");
     flat_list(); printf("PASS flat list\n");
+    list_signals(); printf("PASS list signals\n");
     section_list(); printf("PASS section list\n");
     commands(); printf("PASS commands\n");
     links_and_status_bar(); printf("PASS links, status bar\n");
