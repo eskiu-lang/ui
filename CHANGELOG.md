@@ -4,7 +4,7 @@ All notable changes to ui are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-16
 
 ### Changed
 
@@ -12,8 +12,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   calls fewer or more hooks than the last one, no longer stops the program: the hooks from
   that slot on unmount and the new ones mount, and the ones before keep their state
   (`ui_discard_slots_from`; `docs/state.md`, "The hooks rule").
+- Android: `UiActivity` is split by topic into `UiCommands`, `UiDriver`, `UiPanTracker`,
+  `UiProps`, `UiSelfTest`, `UiTree` and `UiYogaGroup` (`hosts/android/`). The ui tool
+  compiles every Java file there; a build of its own that compiled `UiActivity.java` alone
+  has to compile them all.
+- The larger hosts, the driver, the agent, `ui test` and `<ui/webapp>` are split into
+  parts, and the larger modules keep theirs in private `src/_module/` directories. No API
+  change.
 
-## [0.5.0] - 2026-11-10
+## [0.5.0]
 
 ### Added
 
