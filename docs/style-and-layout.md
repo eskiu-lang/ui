@@ -15,10 +15,10 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}) 
 | `width`, `height` | 0 | Size in points; 0 lets the content and the parent decide. |
 | `grow` | 0 | How much of the parent's free space along its direction this child takes (flex-grow). |
 | `wrap` | false | A row's children flow onto more lines (flex-wrap). |
-| `background`, `color` | -1 | Background and text color from `rgb`/`rgba`; -1 is the platform's default. |
+| `background`, `color` | `NoColor` | Background and text color from `rgb`/`rgba`, or a constant `0xRRGGBBAA`; `NoColor` (-1) is the platform's default. |
 | `font_size` | 0 | Points; 0 is the platform's default. |
 | `font_weight` | 0 | 100 to 900; 0 is the default. |
-| `border_width`, `border_color` | 0, -1 | The border, in points. |
+| `border_width`, `border_color` | 0, `NoColor` | The border, in points. |
 | `radius` | 0 | Corner radius in points; it clips the content. |
 | `opacity` | 100 | Percent. |
 | `align` | `AlignDefault` | Children across the axis: `AlignStart`, `AlignCenter`, `AlignEnd`, `AlignStretch`. |
@@ -54,7 +54,15 @@ Style card() { return Style{padding: 16, radius: 16, background: kit.surface}; }
 
 `rgb(r, g, b)` and `rgba(r, g, b, a)` take channels from 0 to 255 and give an `int64` of
 the form `0xRRGGBBAA`, which can also be written directly (`0x4F46E5FF`). A color with
-alpha 0 is transparent.
+alpha 0 is transparent. A global cannot call `rgb`, so an app's palette is written as
+constants in that form, and `NoColor` leaves a color unset:
+
+```eskiu
+const int64 kInk = 0x111827FF;      // rgb(17, 24, 39)
+const int64 kPrimary = 0x4F46E5FF;  // rgb(79, 70, 229)
+
+Row(Style{background: selected ? kPrimary : NoColor}) { TextWith(Style{color: kInk}, name); }
+```
 
 ## Layout
 

@@ -12,6 +12,8 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 |---|---|
 | `Column(Style, block)` | Children top to bottom. |
 | `Row(Style, block)` | Children left to right. |
+| `Box(Style)` | A box with no children, drawn by its style: a bar, a dot, a divider. |
+| `Spacer(grow)` | Empty space that takes `grow` parts of what is left along the parent's axis (0 is 1). |
 | `Scroll(Style, block)` | A column whose content scrolls when it is taller than the space it gets. |
 | `Pressable(Style, on_press, block)` | A column that reacts to a press anywhere in it. |
 | `Scope(name, Key, block)` | A component's own scope: state, identity, and `name` in diagnostics. No view. |
@@ -33,6 +35,7 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 
 | Element | What it is |
 |---|---|
+| `TextInput_bind(Input, *StringState)` | A text field whose text is the state: typing sets it, setting it changes the field. |
 | `TextInput(Input, fn(string)->void)` | A controlled text field. `Input{key, value, placeholder, label, focused, style}`: `value` is what it shows, the handler gets each edit (borrowed for the call). `focused` is 1 to focus it, 0 to blur it, -1 (the default) to leave focus to the user. |
 | `TextInput_focus(Input, on_change, fn(bool)->void on_focus)` | The same, told when the field gains or loses focus. |
 | `Switch(Style, bool value, fn(bool)->void)` | A controlled on/off switch. |
@@ -96,6 +99,7 @@ See [native code](native.md) for the platform side.
 | `Navigator(*Router, fn(string)->void screen)` | The stack as screens; the ones under the top stay mounted. |
 | `router.push`, `back`, `replace`, `reset`, `path`, `depth`, `at` | Change and read the stack. |
 | `route_match(pattern, route, *List<String> params)` | `"/places/:id"` against a route; the caller frees the params. |
+| `route_int(pattern, route, name, fallback)` | One `:name` part of a route as a number, or `fallback`. |
 | `route_param(pattern, route, index)` | One parameter of a route the navigator handed a screen, kept as long as the route is on the stack (null when it does not match). |
 
 See [navigation](navigation.md).
@@ -191,7 +195,7 @@ list, take what it shows as arguments, and report changes through closures:
 
 ```eskiu
 void Stepper(string label, int value, escaping fn(int)->void on_change) {
-    ui_own(void() { ui_release_int(on_change); });
+    ui_own_fn(on_change);
     Row(Style{gap: 12, align: AlignCenter, label: label}) {
         Button("-") { on_change(value - 1); }
         Text(textf("%s: %d", label, value));

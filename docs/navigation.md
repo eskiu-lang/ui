@@ -11,10 +11,8 @@ void ui_app_start(int which) {
     router = router_new("/");
     ui_mount() {
         Navigator(router, void(string route) {
-            List<String> params;
-            defer route_params_free(&params);
-            if (route_match("/places/:id", route, &params)) { PlacePage(atoi(params.data[0].data)); }
-            else { PlaceList(); }
+            int id = route_int("/places/:id", route, "id", -1);
+            if (id >= 0) { PlacePage(id); } else { PlaceList(); }
         });
     }
 }
@@ -28,6 +26,9 @@ A route is a path: `"/"`, `"/places/2"`, `"/places/2/plan?budget=comfort"`. The 
 each one shows. `route_match(pattern, route, &params)` matches a route against a pattern
 segment by segment: a `:name` segment takes any one segment into `params`, a `*` takes the
 rest, and the query is ignored. `route_params_free` frees what it put there.
+`route_int(pattern, route, name, fallback)` gives one `:name` part as a number, or the
+fallback when the route does not match or the part is not a number. A route to push can be
+built with `textf`: `router.push(textf("/places/%d", id))` (the router copies it).
 
 To hand a screen a parameter as text, use `route_param(pattern, route, index)` instead: it
 returns the parameter (or null when the route does not match), kept with the route until the

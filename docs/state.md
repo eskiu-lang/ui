@@ -208,41 +208,80 @@ void ui_app_stop() { total.free(); }
 runtime exists, and its owner frees it with `free()` after the UI that reads it is gone
 (the hosts call `ui_app_stop` after the shutdown).
 
+## Lists
+
+A list of things the app shows is a `ListSignal`: a `List` whose readers render again when
+it changes, so a model needs no counter of its own to say that it did.
+
+```eskiu
+struct Todo { int id; bool done; string title; }
+*ListSignal<Todo> todos;
+
+void ui_app_start(int which) {
+    todos = list_signal_new<Todo>();
+    ui_mount() { App(); }
+}
+
+void App() {
+    Column(Style{gap: 8}) {
+        *List<Todo> items = todos.items();
+        for (i in 0..items.size) { Text(items.data[i].title); }
+        Button("Add") { todos.push(Todo{todos.size(), false, ui_copy("New")}); }
+    }
+}
+```
+
+Reading it (`size()`, `get(i)`, `items()`) subscribes the reader. `push`, `insert`,
+`remove`, `set`, `swap` and `clear` change it and render its readers again; after editing
+an element in place (`todos.items().data[i].done = true`), `changed()` tells them. As with a
+signal, a change during a render waits until the render ends. `use_list<T>()` is the same
+for a list a scope owns, freed when it unmounts; `list_signal_new<T>()` is for the model, and
+its owner frees it with `free()`. The list owns its elements' storage, not what they point
+at: free an element's strings before removing it or freeing the list.
+
 ## Strings
 
 ```eskiu
 *StringState draft = use_string("");
-TextInput(Input{value: draft.get(), placeholder: "New task"}, void(string text) { draft.set(text); });
+TextInput_bind(Input{placeholder: "New task"}, draft);
+Button("Add") { if (!draft.empty()) { add(draft.get()); draft.set(""); } }
 ```
+
+`TextInput_bind` is a field whose text is the state: typing sets it, and setting it changes
+the field. `empty()` says whether the text is empty.
 
 `use_string(initial)` holds immutable, reference-counted text (`UiString`). `get()` borrows
 the text until the next `set()`. A handler that outlives the render and needs the text
 takes a `snapshot()`, which retains it, and releases it in its cleanup.
 
-Text given to an element (`Text`, a button's title, an input's value) is copied, so a
-`String` built for one render can be freed right after the call:
+Text given to an element (`Text`, a button's title, an input's value) is copied, so text
+built for one frame needs nothing freed: `textf` formats it, and `frame_string()` gives an
+empty `String` for an API that writes into one. Both live until the end of the frame.
 
 ```eskiu
 Text(textf("%d left", remaining.get()));
+*String date = frame_string();
+time_format(time_now_s(), "%A, %B %d", TIME_LOCAL, date);
+Text(date.data);
 ```
 
 ## Closures a component keeps
 
 A handler given to an element is owned by the element's node and freed after the commit
 that replaced or removed it. A component that takes a closure and only calls it from a
-handler of its own (so no element owns it directly) gives the destructor to `ui_own`
-before its first element:
+handler of its own (so no element owns it directly) hands it to `ui_own_fn` before its
+first element:
 
 ```eskiu
 void Checkbox(string label, bool checked, escaping fn(bool)->void on_change) {
-    ui_own(void() { ui_release_bool(on_change); });
+    ui_own_fn(on_change);
     Pressable(Style{label: label}, void() { on_change(!checked); }) { ... }
 }
 ```
 
-The destructor goes with the next element's block and runs when that block is replaced or
-unmounted. `src/core/closures.esk` has a `ui_release_*` for each closure type the elements
-take.
+The closure is freed with the next element's block, when that block is replaced or
+unmounted; `ui_own_fn` takes a closure of any type. For other cleanup, `ui_own` takes a
+destructor of its own.
 
 ## Errors
 
