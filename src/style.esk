@@ -77,6 +77,10 @@ enum Align { AlignDefault, AlignStart, AlignCenter, AlignEnd, AlignStretch }
 // between them, or space around them.
 enum Justify { JustifyDefault, JustifyStart, JustifyCenter, JustifyEnd, JustifyBetween, JustifyAround }
 
+// A color is 0xRRGGBBAA, so a palette can be constants: `const int64 kInk = 0x111827FF;`
+// (rgb(17, 24, 39)). NoColor leaves a color unset: no background, the platform's text color.
+const int64 NoColor = -1;
+
 // An opaque color, each channel 0 to 255; rgba adds the alpha.
 int64 rgb(int r, int g, int b) { return rgba(r, g, b, 255); }
 
