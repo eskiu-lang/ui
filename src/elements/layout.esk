@@ -37,6 +37,15 @@ void Column(Style style, escaping fn()->void block UI_LOC) { UI_HERE ui_element(
 // Children laid out left to right.
 void Row(Style style, escaping fn()->void block UI_LOC) { UI_HERE ui_element(2, style, null, block, void() {}, void() {}); }
 
+// A box with no children, drawn by its style alone: a bar, a dot, a divider.
+void Box(Style style UI_LOC) { UI_HERE ui_element(2, style, null, void() {}, void() {}, void() {}); }
+
+// Empty space that takes `grow` parts of what is left along its parent's axis (0 is 1).
+void Spacer(int grow UI_LOC) {
+    UI_HERE
+    ui_element(2, Style{grow: grow > 0 ? grow : 1}, null, void() {}, void() {}, void() {});
+}
+
 // A column whose content scrolls when it is taller than the space it gets.
 void Scroll(Style style, escaping fn()->void block UI_LOC) { UI_HERE ui_element(6, style, null, block, void() {}, void() {}); }
 
