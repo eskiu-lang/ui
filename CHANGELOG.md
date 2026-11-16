@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `textf("Count: %d", n)`: printf-style text for the current frame, freed when the frame is
   done, so a label with a number needs no `String` and no `defer` (`Text(textf(...))`). An
   element copies its text, so this is safe wherever an element takes one. The `ui new`
-  template uses it. `-Wformat` does not check it yet.
+  template uses it. Eskiu 0.16.1's `-Wformat` checks its format string.
 - `ui agent perf` on the web: `memory_reserved_bytes`, the size of the wasm memory.
 - `ListSignal<T>` (`use_list<T>()` in a scope, `list_signal_new<T>()` in a model): a list whose
   readers render again when it changes (`push`, `insert`, `remove`, `set`, `swap`, `clear`,
