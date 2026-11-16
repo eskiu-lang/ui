@@ -1,60 +1,58 @@
-// A TODO list: keyed rows with their own state, a model-owned signal, a text field.
+// A TODO list: keyed rows with their own state, a model-owned list, a text field.
 import <string>;
 import <ui>;
 
 struct Todo { int id; bool done; string title; }
-// The model owns its signal, so it outlives any mount of the view that reads it.
-struct Store { List<Todo> items; int next_id; *Signal<int> revision; }
+// The model owns its list, so it outlives any mount of the view that reads it; a change to
+// the list renders what reads it.
+struct Store { *ListSignal<Todo> items; int next_id; }
 Store todo_store;
 
-void Store_init(*Store self) { self.revision = signal_new<int>(0); }
+void Store_init(*Store self) { self.items = list_signal_new<Todo>(); }
 void Store_free(*Store self) {
-    for (i in 0..self.items.size) { free(self.items.data[i].title); }
+    for (i in 0..self.items.list.size) { free(self.items.list.data[i].title); }
     self.items.free();
-    self.revision.free();
-    self.revision = null;
+    self.items = null;
 }
 
-void Store_changed(*Store self) { self.revision.set(self.revision.get() + 1); }
+// Tells the views after the items were edited in place.
+void Store_changed(*Store self) { self.items.changed(); }
 // The store owns its titles: a title is copied in and freed with its item.
 void Store_add(*Store self, string title) {
     self.items.push(Todo{self.next_id++, false, ui_copy(title)});
-    self.changed();
 }
 void Store_toggle(*Store self, int id) {
-    for (i in 0..self.items.size) {
-        if (self.items.data[i].id == id) { self.items.data[i].done = !self.items.data[i].done; }
+    *List<Todo> items = self.items.items();
+    for (i in 0..items.size) {
+        if (items.data[i].id == id) { items.data[i].done = !items.data[i].done; }
     }
     self.changed();
 }
 void Store_remove(*Store self, int id) {
-    for (i in 0..self.items.size) {
-        if (self.items.data[i].id == id) {
-            free(self.items.data[i].title);
+    *List<Todo> items = self.items.items();
+    for (i in 0..items.size) {
+        if (items.data[i].id == id) {
+            free(items.data[i].title);
             self.items.remove(i);
             break;
         }
     }
-    self.changed();
 }
 
 void TodoApp(*Store store) {
     Column(Style{padding: 16}) {
-        store.revision.get();
+        *List<Todo> items = store.items.items();
         Row(Style{}) {
             Image(Style{width: 48, height: 48, label: "Eskiu"}, "logo.png");
             Text("Eskiu TODO");
         }
         int pending = 0;
-        for (i in 0..store.items.size) { if (!store.items.data[i].done) { pending++; } }
-        String count;
-        defer String_free(&count);
-        String_format(&count, "Pending: %d", pending);
-        Text(count.data);
+        for (i in 0..items.size) { if (!items.data[i].done) { pending++; } }
+        Text(textf("Pending: %d", pending));
         // The rows scroll when there are more than fit.
         Scroll(Style{height: 320}) {
-            for (i in 0..store.items.size) {
-                Todo item = store.items.data[i];
+            for (i in 0..items.size) {
+                Todo item = items.data[i];
                 Row(Style{key: key(item.id), wrap: true}) {
                     *Signal<bool> editing = use_signal<bool>(false);
                     Text(item.title);
@@ -64,22 +62,16 @@ void TodoApp(*Store store) {
                     Button("Delete") { store.remove(item.id); }
                 }
             }
-            if (store.items.size == 0) { Text("Nothing to do"); }
+            if (items.size == 0) { Text("Nothing to do"); }
         }
         *StringState draft = use_string("");
-        TextInput(Input{value: draft.get(), placeholder: "New task", label: "New task"},
-            void(string text) { draft.set(text); });
+        TextInput_bind(Input{placeholder: "New task", label: "New task"}, draft);
         Button("Add") {
-            if (draft.get()[0] != 0) { store.add(draft.get()); draft.set(""); }
+            if (!draft.empty()) { store.add(draft.get()); draft.set(""); }
         }
         Button("Reverse") {
-            for (int i = 0; i < store.items.size / 2; i++) {
-                int j = store.items.size - 1 - i;
-                Todo temporary = store.items.data[i];
-                store.items.data[i] = store.items.data[j];
-                store.items.data[j] = temporary;
-            }
-            store.changed();
+            int n = store.items.size();
+            for (int i = 0; i < n / 2; i++) { store.items.swap(i, n - 1 - i); }
         }
     }
 }

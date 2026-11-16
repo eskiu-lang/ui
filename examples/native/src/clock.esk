@@ -11,11 +11,8 @@ extern void clock_stop();
 // A native slider from 0 to 100: the "slider" view each platform registers (the built-in
 // Slider element does the same; this one shows how a view of your own is made).
 void NativeSlider(string label, int value, escaping fn(int)->void on_change) {
-    ui_own(void() { ui_release_int(on_change); });
-    String text;
-    defer String_free(&text);
-    String_format(&text, "%d", value);
-    ui_native_prop("value", text.data);
+    ui_own_fn(on_change);
+    ui_native_prop("value", textf("%d", value));
     NativeView(Style{height: 44, label: label}, "slider", void(string name, string payload) {
         if (strcmp(name, "change") == 0) { on_change(atoi(payload)); }
     });
@@ -31,13 +28,8 @@ void Clock() {
             on_cleanup() { clock_stop(); }
         }
         TextWith(Style{font_size: 28, font_weight: 700}, "Native code");
-        String line;
-        defer String_free(&line);
-        String_format(&line, "Ticks: %d", ticks.get());
-        Text(line.data);
-        String_clear(&line);
-        String_format(&line, "Volume: %d", volume.get());
-        Text(line.data);
+        Text(textf("Ticks: %d", ticks.get()));
+        Text(textf("Volume: %d", volume.get()));
         NativeSlider("Volume", volume.get(), void(int v) { volume.set(v); });
         Button("Mute") { volume.set(0); }
     }

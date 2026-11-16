@@ -24,7 +24,7 @@ void tasks_app() {
     ui_event_text(field.id, field.generation, "Plan the launch"); ui_frame();
     *Node add = field.parent.children.data[1];
     ui_event(add.id, add.generation); ui_frame();
-    check(store.tasks.size == 8 && find_label(ui.root, "Plan the launch") != null, "a typed task is added");
+    check(store.tasks.list.size == 8 && find_label(ui.root, "Plan the launch") != null, "a typed task is added");
     ui_shutdown();
     store.free();
     balanced("tasks app leak");
