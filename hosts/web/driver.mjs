@@ -99,8 +99,13 @@ async function carry(app, host, d) {
     return rows.join('\n');
   }
   if (d.host === 'logs') return logs.join('\n');
-  // The memory, then when the page was navigated to (the cold start counts from it).
-  if (d.host === 'perf') return `${app.HEAPU8?.length ?? performance.memory?.usedJSHeapSize ?? 0} ${performance.timeOrigin}`;
+  // The memory the program holds (its allocator's bytes in use; the wasm memory's size only
+  // grows), when the page was navigated to (the cold start counts from it), and the wasm
+  // memory's size.
+  if (d.host === 'perf') {
+    const used = app._ui_driver_heap ? app._ui_driver_heap() : (performance.memory?.usedJSHeapSize ?? 0);
+    return `${used} ${performance.timeOrigin} ${app.HEAPU8?.length ?? 0}`;
+  }
   return `error: the web host does not know ${d.host}`;
 }
 

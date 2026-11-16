@@ -210,10 +210,10 @@ commits: last 40 B, max 4283 B, mean 153 B; 74 nodes; memory 16.1 MB
 cold start: 2839 ms to the first commit
 ```
 
-A frame's time is the core's render and the host's apply of its commit. The memory is the
-wasm heap on the web, the process's footprint on iOS and macOS, its resident set on Linux, its private
-bytes on Windows,
-the native and Java heaps on Android.
+A frame's time is the core's render and the host's apply of its commit. The memory is what
+the program's allocator holds on the web (the wasm memory only grows, so its size is apart, as
+`memory_reserved_bytes` with `--json`), the process's footprint on iOS and macOS, its resident
+set on Linux, its private bytes on Windows, the native and Java heaps on Android.
 The cold start (`startup_ms` with `--json`) is from the process's start (the page's
 navigation on the web) to the first commit applied: the core notes the wall clock at its
 first commit, the host reports when the process started (the kernel's start time of the

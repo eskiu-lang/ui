@@ -329,6 +329,12 @@ string ui_driver_finish(string result) {
             String_append(&ui_drv.out, ", \"startup_ms\": ");
             ui_json_number(&ui_drv.out, ui_drv.first_commit - started);
         }
+        // the web's wasm memory: reserved, beyond what memory_bytes counts (0 elsewhere)
+        double reserved = ui_driver_read(result, &at);
+        if (reserved > 0) {
+            String_append(&ui_drv.out, ", \"memory_reserved_bytes\": ");
+            ui_json_number(&ui_drv.out, reserved);
+        }
     }
     String_append(&ui_drv.out, "}");
     return ui_drv.out.data;

@@ -264,6 +264,20 @@ string ui_driver_done(string result) {
 // driver owns the clock.
 double ui_driver_time() { return app_active ? ui_driver_now() : 0; }
 
+#ifdef __EMSCRIPTEN__
+// emscripten's allocator statistics (struct mallinfo): uordblks is the bytes malloc has
+// handed out and not freed.
+struct _UiMallinfo { int arena; int ordblks; int smblks; int hblks; int hblkhd; int usmblks; int fsmblks; int uordblks; int fordblks; int keepcost; }
+extern _UiMallinfo mallinfo();
+
+// The bytes the program holds on the web: what its allocator has handed out. The size of
+// the wasm memory is not that, since it only grows (the web host reports it apart).
+double ui_driver_heap() {
+    _UiMallinfo m = mallinfo();
+    return (double)(uint32)m.uordblks;
+}
+#endif
+
 // A reload under `ui serve` (src/core/reload.esk): the running app's routes and signals as
 // text, which the host takes before it stops this core (valid until the next call).
 string ui_reload_save() { return app_active ? ui_reload_snapshot() : ""; }

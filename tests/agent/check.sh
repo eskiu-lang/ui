@@ -100,6 +100,8 @@ op state '"modals":0'
 op back '"handled":false'
 op logs '"core":\['
 op perf '"frames":[1-9]' '"memory_bytes":[1-9]'
+# the web counts what the allocator holds, and gives the wasm memory's size apart
+if [ "$HOST" = web ]; then op perf '"memory_reserved_bytes":[1-9]'; fi
 op "clock real" '"clock":"real"'
 # A reload keeps the state: an edit under ui serve, and the app on the new build has the
 # count and the title it had (src/core/reload.esk).
