@@ -4,6 +4,11 @@
 // Frees an escaping closure of type fn()->void.
 void ui_release_closure(escaping fn()->void callback) { free_closure(callback); }
 
+// Frees `callback`, a closure a component was given, when the component renders again or
+// unmounts: `ui_own_fn(on_change);` first thing in a component that takes one. It works for
+// any function type, in place of ui_own with the ui_release_* of that type.
+void ui_own_fn<F>(F callback) { ui_own(void() { free_closure(callback); }); }
+
 // Through a parameter: the self-hosted compiler miscompiles free_closure of a captured
 // variable inside a lambda.
 void ui_release_text(escaping fn(string)->void callback) { free_closure(callback); }
