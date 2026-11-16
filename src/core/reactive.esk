@@ -215,6 +215,7 @@ string ui_hook_name(int kind) {
     if (kind == 11) { return "use_frame"; }
     if (kind == 12) { return "use_app_state"; }
     if (kind == 13) { return "use_animated_then"; }
+    if (kind == 14) { return "use_list"; }
     return "use_string";
 }
 

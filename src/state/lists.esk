@@ -1,0 +1,105 @@
+// Reactive lists: use_list and list_signal_new keep a List whose readers render again when it
+// changes, so a model needs no revision counter of its own.
+// Part of <ui> (src/ui.esk imports every part; they are not imported alone).
+
+// A list that renders its readers again when it changes. Reading it (size, get, items)
+// subscribes the reader; push, insert, remove, set, swap and clear change it and tell them,
+// and changed() tells them after an element was edited in place (`l.items().data[i].done =
+// true`). During a render a change waits until the render ends, as a signal's set does. The
+// list owns its elements' storage, not what they point at: free the strings an element owns
+// before you remove it or free the list.
+struct ListSignal<T> { List<T> list; Source source; }
+
+// The scope's list at this position, empty on the first render; freed (with its storage)
+// when the scope unmounts.
+*ListSignal<T> use_list<T>() {
+    static int tag;
+    *Slot slot = ui_slot(14, &tag);
+    if (slot.data == null) {
+        *ListSignal<T> l = alloc<ListSignal<T>>(1);
+        slot.data = l;
+        slot.dispose = void() { ui_detach_source(&l.source); l.list.free(); free(l); };
+    }
+    return (*ListSignal<T>)slot.data;
+}
+
+// A list owned by the app's model rather than by a scope: it outlives any mount and is freed
+// by its owner with free() (after the UI that reads it is shut down).
+*ListSignal<T> list_signal_new<T>() { return alloc<ListSignal<T>>(1); }
+
+// Frees a list made by list_signal_new, and its storage.
+void ListSignal_free<T>(ListSignal<T>* self) {
+    ui_detach_source(&self.source);
+    self.list.free();
+    free(self);
+}
+
+// The number of elements; reading it subscribes.
+int ListSignal_size<T>(ListSignal<T>* self) {
+    ui_track(&self.source);
+    return self.list.size;
+}
+
+// Element i; reading it subscribes.
+T ListSignal_get<T>(ListSignal<T>* self, int i) {
+    ui_track(&self.source);
+    return self.list.data[i];
+}
+
+// The List itself, to loop over or to edit an element in place (then call changed());
+// reading it subscribes. Do not push to it or remove from it directly: use the methods.
+*List<T> ListSignal_items<T>(ListSignal<T>* self) {
+    ui_track(&self.source);
+    return &self.list;
+}
+
+// Runs a change now, or once the running render ends, as a signal's set does (internal).
+void ui_list_change(*Source source, escaping fn()->void change) {
+    ui_require(ui == null || ui.tracking == null || ui.tracking.kind != 1, "memo must be pure");
+    if (ui != null && ui.phase == 1) {
+        ui.writes.push(void() { change(); ui_changed(source); });
+        return;
+    }
+    change();
+    ui_release_closure(change);
+    ui_changed(source);
+}
+
+// Appends `value`.
+void ListSignal_push<T>(ListSignal<T>* self, T value) {
+    ui_list_change(&self.source, void() { self.list.push(value); });
+}
+
+// Puts `value` at index i, moving the rest up (i == size appends).
+void ListSignal_insert<T>(ListSignal<T>* self, int i, T value) {
+    ui_list_change(&self.source, void() { self.list.insert(i, value); });
+}
+
+// Removes element i, moving the rest down.
+void ListSignal_remove<T>(ListSignal<T>* self, int i) {
+    ui_list_change(&self.source, void() { self.list.remove(i); });
+}
+
+// Replaces element i.
+void ListSignal_set<T>(ListSignal<T>* self, int i, T value) {
+    ui_list_change(&self.source, void() { self.list.data[i] = value; });
+}
+
+// Swaps elements i and j.
+void ListSignal_swap<T>(ListSignal<T>* self, int i, int j) {
+    ui_list_change(&self.source, void() {
+        T kept = self.list.data[i];
+        self.list.data[i] = self.list.data[j];
+        self.list.data[j] = kept;
+    });
+}
+
+// Empties the list (its storage stays for the next elements).
+void ListSignal_clear<T>(ListSignal<T>* self) {
+    ui_list_change(&self.source, void() { self.list.size = 0; });
+}
+
+// Tells the readers that an element was edited in place.
+void ListSignal_changed<T>(ListSignal<T>* self) {
+    ui_list_change(&self.source, void() {});
+}
