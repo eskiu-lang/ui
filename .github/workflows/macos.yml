@@ -1,0 +1,91 @@
+# The macOS jobs, apart from CI: the org's macOS runners can take long to start, and a
+# job that waits too long is cancelled; here that does not mark CI failed.
+name: macOS
+on:
+  # once per change: develop (main and the tags only get commits that already ran here)
+  push:
+    branches: [develop]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to a branch stops the run of the older one.
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Eskiu
+        run: brew install eskiu-lang/eskiu/eskiu
+      - name: Tests
+        run: tools/ci.sh
+
+  host-ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Eskiu
+        run: brew install eskiu-lang/eskiu/eskiu
+      - name: Yoga, compiled once
+        uses: actions/cache@v4
+        with:
+          path: ~/.eskiu/cache
+          key: yoga-ios-${{ hashFiles('tools/ui/yoga.esk') }}
+      - name: Boot a simulator
+        run: |
+          # The first available iPhone, booted and waited for.
+          udid=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          for runtime in sorted(devices, reverse=True):
+              for d in devices[runtime]:
+                  if d["name"].startswith("iPhone") and d["isAvailable"]:
+                      print(d["udid"]); sys.exit()')
+          echo "Booting $udid"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+      - name: Host checks and budgets
+        run: tools/ci_host.sh ios
+      - name: Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-ios-logs
+          path: |
+            tests/*/build/ui/agent/*.log
+            tests/*/build/ui/test
+            examples/*/build/ui/agent/*.log
+            build/agent-ios
+          if-no-files-found: ignore
+
+  host-macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Eskiu
+        run: brew install eskiu-lang/eskiu/eskiu
+      - name: Yoga, compiled once
+        uses: actions/cache@v4
+        with:
+          path: ~/.eskiu/cache
+          key: yoga-macos-${{ hashFiles('tools/ui/yoga.esk') }}
+      - name: Host checks and budgets
+        run: tools/ci_host.sh macos
+      - name: Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-macos-logs
+          path: |
+            tests/*/build/ui/agent/*.log
+            tests/*/build/ui/macos/app.log
+            tests/*/build/ui/test
+            examples/*/build/ui/agent/*.log
+            examples/*/build/ui/macos/app.log
+            build/agent-macos
+          if-no-files-found: ignore
