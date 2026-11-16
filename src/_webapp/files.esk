@@ -1,4 +1,4 @@
-// webapp_files.esk: files over a scheme (part of webapp.esk, which imports it in order after the ones before it)
+// _webapp/files.esk: files over a scheme (part of webapp.esk, which imports it in order after the ones before it)
 
 // ---- Files over a scheme ----
 

@@ -315,6 +315,6 @@ int webapp_run() {
 // Ends webapp_run with `code`. Any thread.
 void webapp_quit(int code) { uiw_quit(code); }
 
-import "webapp_calls.esk";
-import "webapp_files.esk";
-import "webapp_dispatch.esk";
+import "_webapp/calls.esk";
+import "_webapp/files.esk";
+import "_webapp/dispatch.esk";

@@ -1,4 +1,4 @@
-// webapp_dispatch.esk: what the host calls, and the built-in commands (part of webapp.esk, which imports it in order after the ones before it)
+// _webapp/dispatch.esk: what the host calls, and the built-in commands (part of webapp.esk, which imports it in order after the ones before it)
 
 // ---- What the host calls (on the main thread) ----
 

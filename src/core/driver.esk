@@ -333,5 +333,5 @@ void ui_driver_shutdown() {
     ui_drv.logs.free();
 }
 
-import "driver_nodes.esk";
-import "driver_requests.esk";
+import "_driver/nodes.esk";
+import "_driver/requests.esk";

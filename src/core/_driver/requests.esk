@@ -1,4 +1,4 @@
-// driver_requests.esk: building answers and directives, and the requests (part of driver.esk, which imports it in order after the ones before it)
+// core/_driver/requests.esk: building answers and directives, and the requests (part of driver.esk, which imports it in order after the ones before it)
 
 // Starts an answer: {"ok": true, "op": OP (internal).
 void ui_driver_begin(string op) {

@@ -1,4 +1,4 @@
-// webapp_calls.esk: JSON text, answers, arguments, events and dialogs (part of webapp.esk, which imports it in order after the ones before it)
+// _webapp/calls.esk: JSON text, answers, arguments, events and dialogs (part of webapp.esk, which imports it in order after the ones before it)
 
 // ---- JSON text (internal) ----
 
