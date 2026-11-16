@@ -14,7 +14,7 @@
 
 <p align="center">
   <a href="https://github.com/eskiu-packages/ui/actions/workflows/ci.yml"><img src="https://github.com/eskiu-packages/ui/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/version-0.6.0-6448d4" alt="Version 0.6.0">
+  <img src="https://img.shields.io/badge/version-0.6.1-6448d4" alt="Version 0.6.1">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
 </p>
 

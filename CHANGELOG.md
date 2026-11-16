@@ -4,7 +4,7 @@ All notable changes to ui are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.6.1] - 2026-11-16
 
 ### Added
 
@@ -27,6 +27,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `route_int(pattern, route, name, fallback)`: one `:name` part of a route as a number.
 - The examples use all of these.
 
+### Changed
+
+- The package moved to the eskiu-packages organization; the old URL redirects. `ui new`
+  makes apps on ui 0.6.1.
+
 ### Fixed
 
 - `ui agent perf` on the web reported the size of the wasm memory as `memory_bytes`
@@ -35,7 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads it: `tap Agree` on a kit `Checkbox("Agree", ...)` (a labeled pressable around its
   label's text) is one match, not two, in `ui agent` and in `.uitest` files.
 
-## [0.6.0] - 2026-11-16
+## [0.6.0]
 
 ### Changed
 

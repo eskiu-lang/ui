@@ -3,7 +3,7 @@
 
 const string kUiGit = "https://github.com/eskiu-packages/ui";
 // The release `ui new` depends on.
-const string kUiRev = "v0.6.0";
+const string kUiRev = "v0.6.1";
 
 const string kYogaGit = "https://github.com/react/yoga.git";
 
