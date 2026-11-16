@@ -12,7 +12,7 @@ void TextField(string value, string placeholder, escaping fn(string)->void on_ch
 // A checkbox with its label; on_change gets the new state.
 void Checkbox(string label, bool checked, escaping fn(bool)->void on_change UI_LOC) {
     UI_HERE
-    ui_own(void() { ui_release_bool(on_change); });
+    ui_own_fn(on_change);
     Pressable(Style{label: label}, void() { on_change(!checked); }) {
         Row(Style{gap: 10, align: AlignCenter}) {
             Row(Style{width: 22, height: 22, radius: 6, border_width: 2,
@@ -28,7 +28,7 @@ void Checkbox(string label, bool checked, escaping fn(bool)->void on_change UI_L
 // One choice among `options` (a line each); on_change gets the index chosen.
 void RadioGroup(string options, int selected, escaping fn(int)->void on_change UI_LOC) {
     UI_HERE
-    ui_own(void() { ui_release_int(on_change); });
+    ui_own_fn(on_change);
     Column(Style{gap: 10}) {
         List<String> items;
         kit_options(options, &items);

@@ -4,7 +4,7 @@
 // Options side by side in a track, the selected one raised (a toggle group).
 void SegmentedControl(string options, int selected, escaping fn(int)->void on_change UI_LOC) {
     UI_HERE
-    ui_own(void() { ui_release_int(on_change); });
+    ui_own_fn(on_change);
     Row(Style{background: kit.track, radius: kit.radius, padding: 4, gap: 4}) {
         List<String> items;
         kit_options(options, &items);
@@ -25,7 +25,7 @@ void SegmentedControl(string options, int selected, escaping fn(int)->void on_ch
 // Tabs over content the caller shows for `selected`: the selected one underlined.
 void TabBar(string tabs, int selected, escaping fn(int)->void on_change UI_LOC) {
     UI_HERE
-    ui_own(void() { ui_release_int(on_change); });
+    ui_own_fn(on_change);
     Row(Style{gap: 20}) {
         List<String> items;
         kit_options(tabs, &items);
@@ -52,7 +52,7 @@ void Toolbar(escaping fn()->void block UI_LOC) {
 // A title bar; `actions` puts controls at its end.
 void NavBar(string title, escaping fn()->void actions UI_LOC) {
     UI_HERE
-    ui_own(void() { ui_release_closure(actions); });
+    ui_own_fn(actions);
     Row(Style{padding: 16, gap: 12, align: AlignCenter, background: kit.surface, label: title}) {
         TextWith(Style{grow: 1, font_size: kit.heading_size + 2, font_weight: 700, color: kit.ink}, title);
         actions();
@@ -62,7 +62,7 @@ void NavBar(string title, escaping fn()->void actions UI_LOC) {
 // A pressable row with a title and an optional subtitle; it lights up under a pointer.
 void ListItem(string title, string subtitle, escaping fn()->void on_press UI_LOC) {
     UI_HERE
-    ui_own(void() { ui_release_closure(on_press); });
+    ui_own_fn(on_press);
     Scope("ListItem", Key{}) {
         *Signal<bool> over = use_signal<bool>(false);
         ui_on_hover(void(bool inside) { over.set(inside); });

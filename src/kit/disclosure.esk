@@ -4,7 +4,7 @@
 // A header that shows or hides its content (one section of an Accordion).
 void Collapsible(string title, escaping fn()->void content UI_LOC) {
     UI_HERE
-    ui_own(void() { ui_release_closure(content); });
+    ui_own_fn(content);
     Scope("Collapsible", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
         Pressable(Style{padding: 14, label: title}, void() { open.set(!open.get()); }) {
