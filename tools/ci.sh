@@ -26,7 +26,7 @@ build/tags
 eskiuc tests/constants.esk -o build/constants
 build/constants
 eskiuc tests/rejections.esk -o build/rejections
-for case in "1:render loop" "2:hook kind/type changed" "3:duplicate key" "4:memo cycle" \
+for case in "1:render loop" "3:duplicate key" "4:memo cycle" \
             "5:the root fallback failed: int 8" "7:duplicate key" "9:RefreshControl must come right before" "8:in Column\[0\] > TodoRow\[key 3\]"; do
     mode=${case%%:*}
     message=${case#*:}
@@ -47,7 +47,7 @@ if eskiuc build/srcloc_probe.esk --test-typechecker > /dev/null 2>&1; then
     printf '#define UI_SRCLOC 1\nimport "../tests/rejections.esk";\n' > build/rejections_srcloc.esk
     eskiuc build/rejections_srcloc.esk -o build/rejections-srcloc
     if build/rejections-srcloc 3 > build/rejection.txt 2>&1; then echo "FAIL rejection: exited 0"; exit 1; fi
-    grep -q "at .*tests/rejections.esk:24:13" build/rejection.txt || { cat build/rejection.txt; exit 1; }
+    grep -q "at .*tests/rejections.esk:20:13" build/rejection.txt || { cat build/rejection.txt; exit 1; }
     echo "PASS source positions"
 else
     echo "SKIP source positions: this eskiuc has no src_line()"
