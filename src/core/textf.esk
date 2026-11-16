@@ -30,8 +30,22 @@ string textf(string fmt, ...) {
     return (string)buf;
 }
 
-// Frees the frame's textf texts (internal).
+// The Strings frame_string handed out, freed with the frame's texts.
+List<*String> ui_frame_strings;
+
+// An empty String that lives until the end of the frame, for an API that writes into one:
+// `*String date = frame_string(); time_format(t, "%A", TIME_LOCAL, date); Text(date.data);`.
+// As with textf, give its text to an element, not to a signal or a global.
+*String frame_string() {
+    *String s = alloc<String>(1);
+    ui_frame_strings.push(s);
+    return s;
+}
+
+// Frees the frame's textf texts and frame_string Strings (internal).
 void ui_free_frame_texts() {
     for (i in 0..ui_frame_texts.size) { free(ui_frame_texts.data[i]); }
     ui_frame_texts.size = 0;
+    for (i in 0..ui_frame_strings.size) { String_free(ui_frame_strings.data[i]); free(ui_frame_strings.data[i]); }
+    ui_frame_strings.size = 0;
 }
