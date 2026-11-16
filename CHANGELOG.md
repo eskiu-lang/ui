@@ -4,6 +4,24 @@ All notable changes to ui are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `textf("Count: %d", n)`: printf-style text for the current frame, freed when the frame is
+  done, so a label with a number needs no `String` and no `defer` (`Text(textf(...))`). An
+  element copies its text, so this is safe wherever an element takes one. The `ui new`
+  template uses it. `-Wformat` does not check it yet.
+- `ui agent perf` on the web: `memory_reserved_bytes`, the size of the wasm memory.
+
+### Fixed
+
+- `ui agent perf` on the web reported the size of the wasm memory as `memory_bytes`
+  (16 MB on every page, since it only grows); it is now what the program's allocator holds.
+- An element found by its accessible name includes what is inside it, as a screen reader
+  reads it: `tap Agree` on a kit `Checkbox("Agree", ...)` (a labeled pressable around its
+  label's text) is one match, not two, in `ui agent` and in `.uitest` files.
+
 ## [0.6.0] - 2026-11-16
 
 ### Changed
