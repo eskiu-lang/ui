@@ -41,6 +41,8 @@ struct StringState { Signal<*UiString> signal; }
 }
 // The text; reading it subscribes. Borrowed until the next set().
 string StringState_get(*StringState self) { return self.signal.get().text; }
+// Whether the text is empty; reading it subscribes.
+bool StringState_empty(*StringState self) { return self.signal.get().text[0] == 0; }
 // The current string with a reference added, for a closure that outlives the next set();
 // release it when done.
 *UiString StringState_snapshot(*StringState self) { return self.signal.get().retain(); }

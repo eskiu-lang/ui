@@ -42,6 +42,16 @@ void TextInput(Input input, escaping fn(string)->void on_change UI_LOC) {
         void() {}, void() {}) {}
 }
 
+// A field whose text is `text`: typing sets it, and setting it changes the field. The
+// Input's value is not used.
+void TextInput_bind(Input input, *StringState text UI_LOC) {
+    UI_HERE
+    InputExtra extra = InputExtra{on_text: void(string typed) { text.set(typed); }, placeholder: input.placeholder,
+        focused: input.focused};
+    ui.next_input = &extra;
+    ui_element(5, ui_input_style(input), text.get(), void() {}, void() {}) {}
+}
+
 // The same, with `on_focus` told when the field gains (true) or loses (false) focus.
 void TextInput_focus(Input input, escaping fn(string)->void on_change, escaping fn(bool)->void on_focus UI_LOC) {
     UI_HERE
