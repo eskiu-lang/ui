@@ -113,6 +113,8 @@ void uitest_collect(*JsonValue node, string target, int mode, List<*JsonValue>* 
     else if (mode == 1) { string name = uitest_name(node); hit = name != null && strcmp(name, target) == 0; }
     else { hit = JsonValue_get(node, "id") != null && (int)agent_number(node, "id") == atoi(&target[1]); }
     if (hit) { found.push(node); }
+    // what is inside an element found by its accessible name is part of it (the driver's rule)
+    if (hit && mode == 1) { return; }
     *JsonValue children = JsonValue_get(node, "children");
     if (children == null) { return; }
     for (i in 0..JsonValue_len(children)) { uitest_collect(JsonValue_at(children, i), target, mode, found); }

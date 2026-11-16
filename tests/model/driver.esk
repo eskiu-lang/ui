@@ -7,6 +7,7 @@ List<int> drv_host_armed;
 int drv_host_stopped;
 int drv_host_frames;
 *Signal<int> drv_count;
+bool drv_agreed = false;
 int drv_timeouts;
 int drv_intervals;
 int drv_ticks;
@@ -52,6 +53,8 @@ void driver_test_ids() {
             TextInput(Input{value: title.get(), placeholder: "Title", style: Style{test_id: "title"}},
                 void(string text) { title.set(text); });
             Pressable(Style{}, void() { drv_count.set(100); }) { TextWith(Style{test_id: "inner"}, "Press me"); }
+            // a Checkbox's shape: a labeled pressable around a text with the same words
+            Pressable(Style{label: "Agree"}, void() { drv_agreed = true; }) { Text("Agree"); }
         }
     }
     ui_frame();
@@ -76,6 +79,9 @@ void driver_test_ids() {
         "a missing name is refused");
     check(has(drive("{\"op\": \"tap\", \"target\": \"inner\"}"), "\"kind\": \"Pressable\""), "a tap on a text reaches its pressable");
     check(drv_count.value == 100, "the pressable's handler");
+    check(has(drive("{\"op\": \"tap\", \"target\": \"Agree\"}"), "\"ok\": true"),
+        "a text inside the element its name names is not a second match");
+    check(drv_agreed, "the labeled pressable's handler");
     string typed = drive("{\"op\": \"type\", \"target\": \"title\", \"text\": \"Milk\"}");
     check(has(typed, "\"ok\": true, \"op\": \"type\""), "type into a field");
     check(has(drive("{\"op\": \"type\", \"target\": \"add\", \"text\": \"x\"}"), "is not a TextInput"), "type needs a field");

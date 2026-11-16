@@ -67,7 +67,9 @@ Fix it and save; ui serve web builds again (ui agent web ... retries once it bui
    label, its own text.
 3. `#12` is the element with id 12, as `tree` and `layout` show them.
 
-Two or more matches is an error naming them; give one a `test_id`. A `test_id` is only for
+What is inside an element that matched by its accessible name is part of it, as a screen
+reader reads it: a `Checkbox("Agree", …)` is one match for `Agree`, not the pressable and its
+label's text. Two or more matches is an error naming them; give one a `test_id`. A `test_id` is only for
 tests and the driver: it is not the accessibility label, a screen reader never hears it, and
 a release build ignores it.
 

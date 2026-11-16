@@ -161,10 +161,14 @@ string ui_driver_name(*Node node) {
 }
 
 // Collects the nodes whose test_id (by_name false) or accessible name (true) is `target`
-// (internal).
+// (internal). An element found by its accessible name is one element to a screen reader,
+// what is inside it included: a Checkbox's label text is not a second match.
 void ui_driver_collect(*Node node, string target, bool by_name, List<*Node>* found) {
     string value = by_name ? ui_driver_name(node) : node.test_id;
-    if (node != ui.root && value != null && strcmp(value, target) == 0) { found.push(node); }
+    if (node != ui.root && value != null && strcmp(value, target) == 0) {
+        found.push(node);
+        if (by_name) { return; }
+    }
     for (i in 0..node.children.size) { ui_driver_collect(node.children.data[i], target, by_name, found); }
 }
 
