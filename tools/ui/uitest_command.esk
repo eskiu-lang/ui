@@ -159,6 +159,7 @@ bool uitest_run(Project* p, string path, *JsonValue perf) {
             passed = false;
             break;
         }
+        if (ui_json) { uitest_json_step(uitest_line, line.data); }
     }
     if (perf != null) { uitest_record(perf, name.data); }
     agent_native_close();
@@ -168,6 +169,20 @@ bool uitest_run(Project* p, string path, *JsonValue perf) {
     }
     fflush(null);
     return passed;
+}
+
+// Under --json, a step that passed: {"ok": true, "host", "line", "step"} (a step that failed
+// is in the test's result line).
+void uitest_json_step(int line, string step) {
+    String out;
+    defer String_free(&out);
+    String_append(&out, "{\"ok\": true, \"host\": ");
+    diag_json_string(&out, agent_host);
+    String_appendf(&out, ", \"line\": %d, \"step\": ", line);
+    diag_json_string(&out, step);
+    String_append(&out, "}");
+    println(out.data);
+    fflush(null);
 }
 
 // Under --json, a test's result: {"test", "host", "file", "ok", "steps", "seconds"}, and for
