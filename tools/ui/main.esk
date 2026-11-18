@@ -84,9 +84,9 @@ int desktop_port;
 int main(int argc, string* argv) {
     if (argc < 2) { usage(); }
     serve_self = argv[0];
-    // --json (build, run, serve, test): JSON lines on standard output (tools/ui/diagnostics.esk).
+    // --json (build, run, serve, test, agent): JSON lines on standard output (tools/ui/diagnostics.esk).
     if (strcmp(argv[1], "build") == 0 || strcmp(argv[1], "run") == 0 || strcmp(argv[1], "serve") == 0 || strcmp(argv[1], "test") == 0
-        || strcmp(argv[1], "release") == 0) {
+        || strcmp(argv[1], "release") == 0 || strcmp(argv[1], "agent") == 0) {
         int kept = 2;
         for (int i = 2; i < argc; i++) {
             if (strcmp(argv[i], "--json") == 0 && strcmp(argv[1], "release") != 0) { ui_json = true; }
