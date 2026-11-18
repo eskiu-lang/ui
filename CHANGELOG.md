@@ -4,7 +4,24 @@ All notable changes to ui are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.6.1] - 2026-11-16
+## [0.6.2] - 2026-11-18
+
+### Fixed
+
+- `ui agent web` gives the app a 390 by 844 point window (or `UI_AGENT_WINDOW`) on any Chrome:
+  the page is opened as `#ui-agent:WxH` and takes that size, and screenshots take that region.
+  Headless Chrome on Linux kept a window at least 500 wide, so the app laid out at 500 by 701.
+- `ui agent --json` reads `--json` (it printed text before), and when the app does not build
+  its errors come first as JSON diagnostics, then `{"ok": false, "error": ...}`.
+- A failed build of the current sources says "the build of these sources failed" instead of
+  "refusing to drive a build older than the sources", with the line break it lacked.
+
+### Added
+
+- `ui test --json` writes a line per step that passed, `{"ok": true, "host", "line", "step"}`, so a
+  test that passes still shows its steps.
+
+## [0.6.1]
 
 ### Added
 
