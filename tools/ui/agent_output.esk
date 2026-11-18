@@ -99,7 +99,15 @@ string agent_web_screenshot(Project* p, string file) {
         String_push(&reply, one[0]);
     }
     if (String_find(&reply, " 101", 0) < 0) { return "the browser refused the DevTools connection"; }
-    agent_ws_send(fd, "{\"id\": 1, \"method\": \"Page.captureScreenshot\", \"params\": {\"format\": \"png\"}}");
+    // the app's window (agent_web_window), which may be smaller than the browser's
+    int w = 0;
+    int h = 0;
+    agent_web_window(&w, &h);
+    String request;
+    defer String_free(&request);
+    String_appendf(&request, "{\"id\": 1, \"method\": \"Page.captureScreenshot\", \"params\": {\"format\": \"png\", "
+        "\"captureBeyondViewport\": true, \"clip\": {\"x\": 0, \"y\": 0, \"width\": %d, \"height\": %d, \"scale\": 1}}}", w, h);
+    agent_ws_send(fd, request.data);
     String message;
     defer String_free(&message);
     while (agent_ws_message(fd, &message)) {

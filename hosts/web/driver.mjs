@@ -121,13 +121,13 @@ async function answer(app, host, request) {
 }
 
 // Asks the dev server for requests while the page is open; the newest page (or one opened
-// with #ui-agent, as the browser `ui agent` starts) takes them.
+// with #ui-agent or #ui-agent:WxH, as the browser `ui agent` starts) takes them.
 export function startDriver({app, host}) {
   capture();
   const commit = host.commit;
   host.commit = (...parts) => { commit.apply(host, parts); adopt(app); };
   const page = Math.random().toString(36).slice(2);
-  const agent = location.hash === '#ui-agent' ? 1 : 0;
+  const agent = location.hash.startsWith('#ui-agent') ? 1 : 0;
   let first = 1;
   (async () => {
     for (;;) {

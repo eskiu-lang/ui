@@ -166,8 +166,26 @@ int agent_browser_port(Project* p) {
     return (int)port.num;
 }
 
-// A headless browser on the app's page (#ui-agent, which the dev server prefers), started
-// when this project has none.
+// The web's window in points: UI_AGENT_WINDOW (WxH or W,H), else a phone's, 390 by 844.
+void agent_web_window(int* w, int* h) {
+    *w = 390;
+    *h = 844;
+    string size = env_get("UI_AGENT_WINDOW");
+    if (size == null || size[0] == 0) { return; }
+    int width = atoi(size);
+    int at = 0;
+    while (size[at] != 0 && size[at] != 'x' && size[at] != 'X' && size[at] != ',') { at++; }
+    int height = size[at] == 0 ? 0 : atoi(&size[at + 1]);
+    if (width > 0 && height > 0) {
+        *w = width;
+        *h = height;
+    }
+}
+
+// A headless browser on the app's page, started when this project has none. The page is
+// opened as #ui-agent:WxH (the dev server prefers a #ui-agent page), and gives the app a
+// window of that size whatever size Chrome made its own (headless Chrome on Linux keeps a
+// window at least 500 wide); screenshots take that region.
 void agent_browser(Project* p) {
     agent_cdp_port = agent_browser_port(p);
     if (agent_cdp_port != 0) { return; }
@@ -178,11 +196,12 @@ void agent_browser(Project* p) {
     }
     string value = env_get("UI_AGENT_CDP_PORT");
     agent_cdp_port = value != null && value[0] != 0 ? atoi(value) : 9333;
-    string size = env_get("UI_AGENT_WINDOW");
+    int w = 0;
+    int h = 0;
+    agent_web_window(&w, &h);
     String window;
     defer String_free(&window);
-    String_from(&window, size != null && size[0] != 0 ? size : "390,844");
-    String_replace_all(&window, "x", ",");
+    String_appendf(&window, "%d,%d", w, h);
     String command;
     defer String_free(&command);
     // UI_CHROME_ARGS: more flags (--no-sandbox where the machine has no sandbox for it).
@@ -191,8 +210,8 @@ void agent_browser(Project* p) {
     string extra = env_get("UI_CHROME_ARGS");
     String_appendf(&command, "exec %s %s--remote-debugging-port=%d --user-data-dir=%s --window-size=%s --no-first-run "
         "--no-default-browser-check --disable-background-timer-throttling --disable-renderer-backgrounding --hide-scrollbars %s "
-        "http://127.0.0.1:%d/#ui-agent", agent_quote(chrome), strstr(chrome, "headless-shell") != null ? "" : "--headless=new ",
-        agent_cdp_port, agent_quote(join(agent_dir(p), "chrome")), window.data, extra == null ? "" : extra, agent_web_port);
+        "http://127.0.0.1:%d/#ui-agent:%dx%d", agent_quote(chrome), strstr(chrome, "headless-shell") != null ? "" : "--headless=new ",
+        agent_cdp_port, agent_quote(join(agent_dir(p), "chrome")), window.data, extra == null ? "" : extra, agent_web_port, w, h);
     int pid = agent_spawn(command.data, join(agent_dir(p), "browser.log"));
     if (pid <= 0) { agent_fail("could not start the browser"); }
     String state;
