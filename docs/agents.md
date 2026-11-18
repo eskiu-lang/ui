@@ -53,7 +53,7 @@ they are now. While `ui serve` is building it waits; when the last build of thes
 failed it stops with the compiler's errors:
 
 ```
-ui agent: refusing to drive a build older than the sources: the last build failed:
+ui agent: the build of these sources failed:
 error: src/main.esk:52:12: Expected declaration, got EOF
 Fix it and save; ui serve web builds again (ui agent web ... retries once it built).
 ```
@@ -83,7 +83,9 @@ TextInput(Input{value: title.get(), style: Style{test_id: "title"}}, void(string
 Each argument is one op. An op with arguments is quoted (`"tap add"`), or its arguments
 follow it (`tap add`); the text of `type` is the rest of its argument (`"type title Milk
 bread"`). The ops run in order, and the first that fails stops `ui agent` with exit code 1.
-`--json` prints each op's answer as one JSON object per line instead of text.
+`--json` prints each op's answer as one JSON object per line instead of text. When the app
+does not build, its errors come first as [JSON diagnostics](#diagnostics-as-json), and the last line is
+`{"ok": false, "error": ...}`.
 
 | Op | Answers |
 |---|---|
@@ -294,9 +296,10 @@ the tool converts the text form (`error: FILE:LINE:COL: MESSAGE`, its notes, hin
 same either way. The last line is the result: `{"ok": true, "built": PATH}` or `{"ok": false,
 "error": ...}`. Under `ui serve --json` each build adds `{"event": "building"}` and `{"event":
 "built" | "failed", "seconds": S}`, and the page and `ui agent` still show the errors as text.
-`ui test --json` writes a line per test, `{"test", "host", "file", "ok", "steps", "seconds"}`
-with the failed `"line"`, `"step"` and `"error"`, then `{"ok", "passed", "failed"}`; a build
-that failed comes first as its diagnostics.
+`ui test --json` writes a line per step that passed, `{"ok": true, "host", "line", "step"}`, then
+a line per test, `{"test", "host", "file", "ok", "steps", "seconds"}` with the failed `"line"`,
+`"step"` and `"error"`, then `{"ok", "passed", "failed"}`; a build that failed comes first as its
+diagnostics.
 
 ## Testing an app
 
