@@ -92,6 +92,14 @@ op "screenshot $OUT/three.png" '"width":[1-9]'
 cmp -s "$OUT/one.png" "$OUT/three.png" && fail "settle did not finish the animations"
 echo "PASS $HOST: settle finished the animations"
 op layout '"test_id":"add"' '"width":[1-9]' '"window":{"width":[1-9]'
+# The web's window is a phone's, 390 by 844 points (docs/agents.md), on every machine's Chrome;
+# the screenshot is that size at the page's scale.
+if [ "$HOST" = web ]; then
+    window=$(grep -o '"window":{[^}]*}' "$OUT/last.json")
+    echo "web: $window"
+    echo "$window" | grep -q '"width":390,"height":844' || fail "the window is not 390x844: $window"
+    op "screenshot $OUT/size.png" '"width":390,"height":844'
+fi
 op "scroll list 200" '"op":"scroll"' '"offset":[1-9]'
 op "tap open" '"ok":true'
 op state '"modals":1'
