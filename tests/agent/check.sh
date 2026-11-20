@@ -149,6 +149,17 @@ if [ "$HOST" = web ]; then
         cat "$OUT/last.json" "$OUT/last.err"; fail "a failed runtime check: the app went on"; }
     grep -q 'duplicate key' "$OUT/last.json" || { cat "$OUT/last.json" "$OUT/last.err"; fail "a failed runtime check: no message"; }
     echo "PASS $HOST: a failed runtime check tells its message"
+    # An app that fails as it starts (a RefreshControl before no Scroll): the agent stops at
+    # once with the runtime's message, instead of waiting for an app that never answers.
+    sed 's|^    Column(Style{grow: 1, padding: 16, gap: 8}) {$|    RefreshControl(false, void() {});\n    Column(Style{grow: 1, padding: 16, gap: 8}) {|' "$OUT/main.esk.orig" > src/main.esk
+    grep -q RefreshControl src/main.esk || { restore; fail "could not edit the app"; }
+    started=$(date +%s)
+    "$UI" agent "$HOST" --json tree > "$OUT/last.json" 2> "$OUT/last.err" && { restore; cat "$OUT/last.json"; fail "a failed start: accepted"; }
+    restore
+    took=$(( $(date +%s) - started ))
+    grep -q 'RefreshControl must come right before' "$OUT/last.json" || { cat "$OUT/last.json" "$OUT/last.err"; fail "a failed start: no message"; }
+    [ "$took" -lt 60 ] || fail "a failed start took $took s"
+    echo "PASS $HOST: an app that fails as it starts tells why ($took s)"
 fi
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
 [ "$HOST" = ios ] && { xcrun simctl status_bar booted clear > /dev/null 2>&1 || true; }
