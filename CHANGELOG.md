@@ -4,6 +4,21 @@ All notable changes to ui are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- `ui agent web` keeps the app's window on every route: a `Navigator` push rewrote the page's
+  URL without its `#ui-agent:WxH`, so the agent lost the page (screenshots failed) and the app
+  laid out at the browser's size. A modal and the splash, fixed to the window, now cover the
+  app's window too, not the browser's.
+- A failed runtime check on the web (a duplicate key, a render loop, a hook outside a render)
+  reaches `ui agent` and `ui test` with its message and where, instead of only
+  "Aborted(native code called abort())": the page prints through the console of the moment,
+  which the driver keeps.
+- `ui run android` and `ui agent android` replace an installed app signed with another key
+  (another machine's debug key) by uninstalling it first, instead of failing.
+
 ## [0.6.2] - 2026-11-18
 
 ### Fixed
