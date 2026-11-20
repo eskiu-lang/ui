@@ -12,6 +12,7 @@
 import "ui.esk";
 
 import "kit/theme.esk";
+import "kit/locale.esk";
 import "kit/text.esk";
 import "kit/display.esk";
 import "kit/buttons.esk";

@@ -1,0 +1,69 @@
+// The kit's words: month and weekday names, the first day of the week, how a date is written,
+// and what its components say to a screen reader.
+// Part of <ui/kit> (src/kit.esk imports every part).
+
+// The words the kit shows and says, English by default. Lists are comma separated. `weekdays`
+// are the initials from Sunday; `first_weekday` is the day a Calendar's weeks start on (0
+// Sunday, 1 Monday). `date` and `month_year` are patterns with {day}, {month} and {year}.
+// `colors` names ColorPicker's swatches in order. Set `kit_text` before mounting:
+// `kit_text = kit_text_for(ui_locale());`, or fields of your own.
+struct KitText {
+    string months = "January,February,March,April,May,June,July,August,September,October,November,December";
+    string weekdays = "S,M,T,W,T,F,S";
+    int first_weekday = 0;
+    string date = "{month} {day}, {year}";
+    string month_year = "{month} {year}";
+    string previous_month = "Previous month";
+    string next_month = "Next month";
+    string progress = "Progress";
+    string color = "Color";
+    string colors = "Red,Orange,Amber,Lime,Green,Cyan,Blue,Indigo,Violet,Pink,Gray,Black";
+    string delete = "Delete";
+}
+
+KitText kit_text;
+
+// The kit's words in English (KitText's defaults).
+KitText kit_text_english() { return KitText{}; }
+
+// The kit's words in Spanish, weeks from Monday.
+KitText kit_text_spanish() {
+    return KitText{months: "enero,febrero,marzo,abril,mayo,junio,julio,agosto,septiembre,octubre,noviembre,diciembre",
+                   weekdays: "D,L,M,M,J,V,S", first_weekday: 1, date: "{day} de {month} de {year}",
+                   month_year: "{month} de {year}", previous_month: "Mes anterior", next_month: "Mes siguiente",
+                   progress: "Progreso", color: "Color",
+                   colors: "Rojo,Naranja,Ámbar,Lima,Verde,Cian,Azul,Índigo,Violeta,Rosa,Gris,Negro", delete: "Eliminar"};
+}
+
+// The kit's words for a language tag ("es", "es-MX", "en-US"): Spanish or English.
+KitText kit_text_for(string language) {
+    if (language != null && language[0] == 'e' && language[1] == 's' && (language[2] == 0 || language[2] == '-')) {
+        return kit_text_spanish();
+    }
+    return kit_text_english();
+}
+
+// Item `index` (from 0) of a comma-separated list into `out`; empty past its end.
+void kit_text_item(string list, int index, String* out) {
+    String_clear(out);
+    if (list == null) { return; }
+    int at = 0;
+    for (int i = 0; list[i] != 0; i++) {
+        if (list[i] == ',') { at++; continue; }
+        if (at == index) { String_push(out, list[i]); }
+    }
+}
+
+// `pattern` with {day}, {month} (the month's name) and {year} filled in, into `out`.
+void kit_text_fill(string pattern, int year, int month, int day, String* out) {
+    String_clear(out);
+    String name;
+    defer String_free(&name);
+    kit_text_item(kit_text.months, month - 1, &name);
+    for (int i = 0; pattern[i] != 0; i++) {
+        if (strncmp(&pattern[i], "{day}", 5) == 0) { String_appendf(out, "%d", day); i += 4; }
+        else if (strncmp(&pattern[i], "{month}", 7) == 0) { String_append(out, name.data == null ? "" : name.data); i += 6; }
+        else if (strncmp(&pattern[i], "{year}", 6) == 0) { String_appendf(out, "%d", year); i += 5; }
+        else { String_push(out, pattern[i]); }
+    }
+}
