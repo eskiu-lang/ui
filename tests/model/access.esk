@@ -1,0 +1,78 @@
+// Accessibility and input: Style's role and states go out as props only when set, a disabled
+// element (or one inside it) drops what the user does, and a TextInput sends its editing
+// options and reports return to ui_on_submit.
+// Part of the model tests (tests/model/main.esk imports every part).
+
+*Signal<bool> access_off;
+
+int access_presses;
+
+void accessibility() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    access_presses = 0;
+    ui_mount() {
+        access_off = use_signal<bool>(false);
+        Row(Style{label: "Agree", role: RoleCheckbox, checked: CheckOn, value: "1 of 2", hint: "Accepts the terms"}) {}
+        Row(Style{role: RoleTab, selected: true, expanded: DisclosureCollapsed}) {}
+        Row(Style{role: RoleProgress, value_min: 0, value_max: 100, value_now: 40}) {}
+        Row(Style{}) {}
+        ButtonWith(Style{label: "Go", disabled: access_off.get()}, "Go") { access_presses++; }
+        Column(Style{disabled: access_off.get()}) {
+            ButtonWith(Style{label: "Inner"}, "Inner") { access_presses++; }
+        }
+    }
+    ui_frame();
+    check(count_prop(2, 57) == 3 && prop_value(2, 57) == RoleCheckbox, "a role goes out only where it is set");
+    check(count_prop(2, 58) == 1 && prop_value(2, 58) == CheckOn, "checked");
+    check(count_prop(2, 59) == 1 && count_prop(2, 60) == 1 && prop_value(2, 60) == DisclosureCollapsed,
+        "selected and expanded");
+    check(count_prop(2, 62) == 1 && prop_value(2, 62) == 40 && count_prop(2, 64) == 1, "a range");
+    check(count_prop(9, 8) == 1 && count_prop(9, 9) == 1, "value and hint as strings");
+    check(count_prop(2, 61) == 0, "nothing disabled: no disabled prop");
+    press_label("Go");
+    press_label("Inner");
+    check(access_presses == 2, "enabled buttons take presses");
+    access_off.set(true); ui_frame();
+    check(count_prop(2, 61) == 2, "disabled goes out where it is set");
+    press_label("Go");
+    press_label("Inner");
+    check(access_presses == 2, "a disabled button and one inside a disabled column take no press");
+    access_off.set(false); ui_frame();
+    press_label("Inner");
+    check(access_presses == 3, "enabled again");
+    ui_shutdown(); balanced("accessibility leak");
+}
+
+*StringState access_text;
+
+String access_submitted;
+
+void input_options() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    String_clear(&access_submitted);
+    ui_mount() {
+        access_text = use_string("hunter2");
+        ui_on_submit(void(string text) { String_clear(&access_submitted); String_append(&access_submitted, text); });
+        TextInput(Input{value: access_text.get(), label: "Password", secure: true, return_key: ReturnGo,
+            keyboard: KeyboardText, capitalize: CapitalizeNone, autocorrect: false, autofill: AutofillPassword},
+            void(string text) { access_text.set(text); });
+        TextInput(Input{value: "", label: "Notes", multiline: true}, void(string text) {});
+    }
+    ui_frame();
+    check(count_prop(2, 65) == 1 && count_prop(2, 67) == 1 && prop_value(2, 67) == ReturnGo, "secure and return key");
+    check(count_prop(2, 69) == 1 && count_prop(2, 70) == 1 && prop_value(2, 70) == 0 && prop_value(2, 71) == AutofillPassword,
+        "capitalize, autocorrect off, autofill");
+    check(count_prop(2, 66) == 0, "the default keyboard sends nothing");
+    check(count_prop(2, 68) == 1 && count_prop(2, 72) == 1, "multiline, and one submit listener");
+    *Node field = find_label(ui.root, "Password");
+    check(ui_event_submit(field.id, field.generation, "hunter2"), "submit dispatched");
+    check(strcmp((string)access_submitted.data, "hunter2") == 0, "the submit handler got the text");
+    *Node notes = find_label(ui.root, "Notes");
+    check(!ui_event_submit(notes.id, notes.generation, "x") || strcmp((string)access_submitted.data, "hunter2") == 0,
+        "a field without a submit listener does not call another's");
+    ui_frame();
+    ui_shutdown(); balanced("input options leak");
+    String_free(&access_submitted);
+}
