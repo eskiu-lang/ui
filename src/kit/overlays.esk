@@ -131,29 +131,37 @@ void Tooltip(string text, escaping fn()->void content UI_LOC) {
 }
 
 // Toasts: kit_toast shows a short message at the bottom for a few seconds, through the
-// ToastHost the app puts last in its root (it is absolute over the root's bottom). With no
-// host mounted, a toast is dropped.
+// ToastHost the app puts last in its root (it is absolute over the root's bottom). Messages
+// shown while one is up wait their turn, each shown in full and announced to a screen reader.
+// With no host mounted, a toast is dropped.
 *Signal<int> kit_toast_count;
-*StringState kit_toast_message;
+List<String> kit_toast_queue;
 
-// Shows `text` at the bottom for a few seconds, through the mounted ToastHost; dropped
-// when none is mounted.
+// Shows `text` at the bottom for a few seconds, after the toasts before it, through the
+// mounted ToastHost; dropped when none is mounted.
 void kit_toast(string text) {
     if (kit_toast_count == null) { return; }
-    kit_toast_message.set(text == null ? "" : text);
+    String copy;
+    String_append(&copy, text == null ? "" : text);
+    List_push(&kit_toast_queue, copy);
     kit_toast_count.set(kit_toast_count.value + 1);
 }
 
+// Drops the toasts waiting (internal).
+void kit_toast_clear() {
+    for (i in 0..kit_toast_queue.size) { String_free(&kit_toast_queue.data[i]); }
+    kit_toast_queue.free();
+}
+
 // The mounted host takes the toasts while it is mounted.
-void kit_toast_owner(*Signal<int> count, *StringState message) {
+void kit_toast_owner(*Signal<int> count) {
     static int tag;
     *Slot slot = ui_slot(8, &tag);
     if (slot.data != null) { return; }
     slot.data = count;
     kit_toast_count = count;
-    kit_toast_message = message;
     slot.dispose = void() {
-        if (kit_toast_count == count) { kit_toast_count = null; kit_toast_message = null; }
+        if (kit_toast_count == count) { kit_toast_count = null; kit_toast_clear(); }
     };
 }
 
@@ -166,22 +174,31 @@ void ToastHost(UI_LOC_ONLY) {
     ui.next_name = "ToastHost";
     ui_element(0, Style{absolute: true, left: 0, right: 0, bottom: 0, height: 0, gap: 0}, null, void() {
         *Signal<int> toasts = use_signal<int>(0);
-        *StringState message = use_string("");
-        kit_toast_owner(toasts, message);
-        int count = toasts.get();
-        *Signal<int> shown = use_signal<int>(0);
+        kit_toast_owner(toasts);
+        toasts.get();
         *Signal<bool> visible = use_signal<bool>(false);
         *Signal<bool> present = use_signal<bool>(false);
-        if (count != shown.value) { shown.set(count); visible.set(true); present.set(true); }
-        // A new message restarts the clock (a different period re-arms the timer).
-        use_timeout(visible.get() ? 2500 + count % 2 : 0) { visible.set(false); }
-        use_timeout(!visible.get() && present.get() ? 300 : 0) { present.set(false); }
-        if (!present.get()) { return; }
+        // The next toast in the queue, once the one before it is gone.
+        if (!present.get() && kit_toast_queue.size > 0) {
+            visible.set(true);
+            present.set(true);
+            ui_announce(kit_toast_queue.data[0].data);
+        }
+        use_timeout(visible.get() ? 2500 : 0) { visible.set(false); }
+        use_timeout(!visible.get() && present.get() ? 300 : 0) {
+            if (kit_toast_queue.size > 0) {
+                String_free(&kit_toast_queue.data[0]);
+                List_remove(&kit_toast_queue, 0);
+            }
+            present.set(false);
+        }
+        if (!present.get() || kit_toast_queue.size == 0) { return; }
+        string message = kit_toast_queue.data[0].data;
         Row(Style{absolute: true, left: 24, right: 24, bottom: 24 + ui_insets().bottom, justify: JustifyCenter,
                   opacity: visible.get() ? 100 : 0, translate_y: visible.get() ? 0 : 16, transition_ms: 250,
                   easing: EaseOut}) {
-            Row(Style{padding: 14, radius: 14, background: kit.ink, shadow: 8, label: message.get()}) {
-                TextWith(Style{font_size: 15, font_weight: 600, color: kit.page}, message.get());
+            Row(Style{padding: 14, radius: 14, background: kit.ink, shadow: 8, label: message, role: RoleAlert}) {
+                TextWith(Style{font_size: 15, font_weight: 600, color: kit.page}, message);
             }
         }
     }, void() {}) {}
