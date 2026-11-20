@@ -4,7 +4,7 @@
 // A controlled on/off switch: it shows `value`, and on_change gets the user's toggle.
 void Switch(Style style, bool value, escaping fn(bool)->void on_change UI_LOC) {
     UI_HERE
-    SwitchExtra extra = SwitchExtra{value, on_change};
+    _SwitchExtra extra = _SwitchExtra{value, on_change};
     ui.next_switch = &extra;
     ui_element(9, style, null, void() {}, void() {}) {}
 }
@@ -13,7 +13,7 @@ void Switch(Style style, bool value, escaping fn(bool)->void on_change UI_LOC) {
 // gets each value the user drags it to (a value the app does not take is sent back).
 void Slider(Style style, int value, int min, int max, escaping fn(int)->void on_change UI_LOC) {
     UI_HERE
-    SliderExtra extra = SliderExtra{value, min, max, on_change};
+    _SliderExtra extra = _SliderExtra{value, min, max, on_change};
     ui.next_slider = &extra;
     ui_element(15, style, null, void() {}, void() {}) {}
 }
@@ -56,7 +56,7 @@ void ui_on_submit(escaping fn(string)->void handler) {
 }
 
 // The Input's editing options into what the element sends (internal).
-void ui_input_options(*InputExtra extra, Input input) {
+void _ui_input_options(*InputExtra extra, Input input) {
     extra.secure = input.secure;
     extra.keyboard = input.keyboard;
     extra.return_key = input.return_key;
@@ -80,7 +80,7 @@ void TextInput(Input input, escaping fn(string)->void on_change UI_LOC) {
     UI_HERE
     InputExtra extra = InputExtra{on_text: on_change, placeholder: input.placeholder,
         focused: input.focused};
-    ui_input_options(&extra, input);
+    _ui_input_options(&extra, input);
     ui.next_input = &extra;
     ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
         void() {}, void() {}) {}
@@ -92,7 +92,7 @@ void TextInput_bind(Input input, *StringState text UI_LOC) {
     UI_HERE
     InputExtra extra = InputExtra{on_text: void(string typed) { text.set(typed); }, placeholder: input.placeholder,
         focused: input.focused};
-    ui_input_options(&extra, input);
+    _ui_input_options(&extra, input);
     ui.next_input = &extra;
     ui_element(5, ui_input_style(input), text.get(), void() {}, void() {}) {}
 }
@@ -102,7 +102,7 @@ void TextInput_focus(Input input, escaping fn(string)->void on_change, escaping 
     UI_HERE
     InputExtra extra = InputExtra{on_text: on_change, on_focus: on_focus, has_on_focus: true,
         placeholder: input.placeholder, focused: input.focused};
-    ui_input_options(&extra, input);
+    _ui_input_options(&extra, input);
     ui.next_input = &extra;
     ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
         void() {}, void() {}) {}

@@ -61,18 +61,18 @@ void StatusBar(int bar_style, bool hidden UI_LOC) {
 void use_back(escaping fn()->bool handler) {
     static int tag;
     *Slot slot = ui_slot(4, &tag);
-    *BackEntry entry = (*BackEntry)slot.data;
+    *_BackEntry entry = (*_BackEntry)slot.data;
     if (entry == null) {
-        entry = alloc<BackEntry>(1);
+        entry = alloc<_BackEntry>(1);
         slot.data = entry;
         ui.back_handlers.push(entry);
-        slot.dispose = void() { ui_drop_back(entry); ui_release_back(entry.handler); free(entry); };
+        slot.dispose = void() { _ui_drop_back(entry); ui_release_back(entry.handler); free(entry); };
     } else { ui_release_back(entry.handler); }
     entry.handler = handler;
 }
 
 // Removes a use_back handler (internal).
-void ui_drop_back(*BackEntry entry) {
+void _ui_drop_back(*_BackEntry entry) {
     if (entry.removed) { return; }
     entry.removed = true;
     for (int i = ui.back_handlers.size - 1; i >= 0; i--) {
@@ -85,7 +85,7 @@ void ui_drop_back(*BackEntry entry) {
 bool ui_back() {
     ui_require_consistent();
 #ifdef UI_TEST
-    ui_reload_input();
+    _ui_reload_input();
 #endif
     if (ui.modals.size > 0) {
         ui.modals.data[ui.modals.size - 1].handler();

@@ -25,12 +25,12 @@ void ui_share(string text, string url) {
 void ui_clipboard_set(string text) { ui_command_strings(0, 6, text == null ? "" : text, null); }
 
 // A clipboard read waiting for its answer: the request id and the handler (internal).
-struct PendingText { int id; fn(string)->void on_text; }
+struct _PendingText { int id; fn(string)->void on_text; }
 
 // Asks for the clipboard's text; `on_text` gets it as an event ("" when it holds none).
 void ui_clipboard_get(escaping fn(string)->void on_text) {
     int request = ++ui.next_request;
-    ui.text_requests.push(PendingText{request, on_text});
+    ui.text_requests.push(_PendingText{request, on_text});
     ui_command_strings(request, 7, null, null);
 }
 
@@ -53,9 +53,9 @@ bool ui_event_answer(int request, string text) { return ui_post(Event{request, 0
 
 // Hands an answer event (15) to the request waiting for it and frees its handler; false
 // when no request has that id (internal).
-bool ui_dispatch_answer_event(*Event event) {
+bool _ui_dispatch_answer_event(*Event event) {
     for (i in 0..ui.text_requests.size) {
-        PendingText pending = ui.text_requests.data[i];
+        _PendingText pending = ui.text_requests.data[i];
         if (pending.id != event.id) { continue; }
         ui.text_requests.remove(i);
         pending.on_text(event.text == null ? "" : event.text);

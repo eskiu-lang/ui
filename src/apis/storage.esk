@@ -38,7 +38,7 @@ void ui_set_asset_host(escaping fn(string)->string lookup) {
 // Every key and value, loaded on first use and written whole on each change: in a file in
 // the data directory, or in the page's localStorage on the web. Meant for settings and small
 // state; a large or structured store belongs in a file of its own.
-List<NativePair> ui_store;
+List<_NativePair> ui_store;
 bool ui_store_loaded;
 
 #ifdef __wasm__
@@ -83,7 +83,7 @@ string ui_store_field(string text, int* at) {
 
 // The file ui_storage keeps its values in (ui-storage.tsv in the data directory), a string
 // the caller frees, or null when there is no data directory (internal).
-string ui_store_path() {
+string _ui_store_path() {
     if (ui_data_path == null || ui_data_path[0] == 0) { return null; }
     String path;
     String_appendf(&path, "%s/ui-storage.tsv", ui_data_path);
@@ -92,14 +92,14 @@ string ui_store_path() {
 
 // Reads the saved values on first use: from the file, or the browser's storage on the web
 // (internal).
-void ui_store_load() {
+void _ui_store_load() {
     if (ui_store_loaded) { return; }
     ui_store_loaded = true;
     string text = null;
 #ifdef __wasm__
     text = ui_host_storage_load();
 #else
-    string path = ui_store_path();
+    string path = _ui_store_path();
     if (path != null) {
         int64 size = 0;
         *uint8 bytes = fs_read_all(path, &size);
@@ -119,14 +119,14 @@ void ui_store_load() {
         if (text[at] == '\t') { at++; }
         string value = ui_store_field(text, &at);
         if (text[at] == '\n') { at++; }
-        if (key[0] != 0) { ui_store.push(NativePair{key, value}); } else { free(key); free(value); }
+        if (key[0] != 0) { ui_store.push(_NativePair{key, value}); } else { free(key); free(value); }
     }
     free(text);
 }
 
 // Writes every value back: to a temporary file renamed over the old one, or the browser's
 // storage on the web (internal).
-void ui_store_save() {
+void _ui_store_save() {
     String text;
     defer String_free(&text);
     String_append(&text, "");
@@ -139,7 +139,7 @@ void ui_store_save() {
 #ifdef __wasm__
     ui_host_storage_save(text.data);
 #else
-    string path = ui_store_path();
+    string path = _ui_store_path();
     if (path == null) { return; }
     // Written beside it, then renamed over it: a crash leaves the old or the new file.
     String temporary;
@@ -152,42 +152,42 @@ void ui_store_save() {
 }
 
 // The index of `key` among the loaded values, or -1 (internal).
-int ui_store_find(string key) {
+int _ui_store_find(string key) {
     for (i in 0..ui_store.size) { if (strcmp(ui_store.data[i].name, key) == 0) { return i; } }
     return -1;
 }
 
 // The value saved for `key`, or null. Borrowed until the next set or remove.
 string ui_storage_get(string key) {
-    ui_store_load();
-    int at = ui_store_find(key);
+    _ui_store_load();
+    int at = _ui_store_find(key);
     return at < 0 ? null : ui_store.data[at].value;
 }
 
 // Saves `value` (null: "") under `key`, replacing what was there, and writes the store at
 // once.
 void ui_storage_set(string key, string value) {
-    ui_store_load();
-    int at = ui_store_find(key);
+    _ui_store_load();
+    int at = _ui_store_find(key);
     string copy = ui_copy(value == null ? "" : value);
-    if (at < 0) { ui_store.push(NativePair{ui_copy(key), copy}); }
+    if (at < 0) { ui_store.push(_NativePair{ui_copy(key), copy}); }
     else { free(ui_store.data[at].value); ui_store.data[at].value = copy; }
-    ui_store_save();
+    _ui_store_save();
 }
 
 // Forgets `key` and writes the store; nothing when it is not there.
 void ui_storage_remove(string key) {
-    ui_store_load();
-    int at = ui_store_find(key);
+    _ui_store_load();
+    int at = _ui_store_find(key);
     if (at < 0) { return; }
     free(ui_store.data[at].name); free(ui_store.data[at].value);
     ui_store.remove(at);
-    ui_store_save();
+    _ui_store_save();
 }
 
 // Forget the loaded entries (the next use loads them again); for tests and shutdown.
 void ui_storage_unload() {
-    ui_free_pairs(&ui_store);
-    ui_store = List<NativePair>{};
+    _ui_free_pairs(&ui_store);
+    ui_store = List<_NativePair>{};
     ui_store_loaded = false;
 }

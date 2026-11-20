@@ -2,7 +2,7 @@
 // Part of <ui/kit> (src/kit.esk imports every part).
 
 // Frees a fn(int64)->void closure (internal).
-void kit_release_int64(escaping fn(int64)->void callback) { free_closure(callback); }
+void _kit_release_int64(escaping fn(int64)->void callback) { free_closure(callback); }
 
 // `content` in a panel next to `trigger` while `open`: below it, or above when there is no room
 // below, kept inside the window. A tap outside, back and Escape call on_dismiss.
@@ -148,7 +148,7 @@ void kit_toast(string text) {
 }
 
 // Drops the toasts waiting (internal).
-void kit_toast_clear() {
+void _kit_toast_clear() {
     for (i in 0..kit_toast_queue.size) { String_free(&kit_toast_queue.data[i]); }
     kit_toast_queue.free();
 }
@@ -161,7 +161,7 @@ void kit_toast_owner(*Signal<int> count) {
     slot.data = count;
     kit_toast_count = count;
     slot.dispose = void() {
-        if (kit_toast_count == count) { kit_toast_count = null; kit_toast_clear(); }
+        if (kit_toast_count == count) { kit_toast_count = null; _kit_toast_clear(); }
     };
 }
 

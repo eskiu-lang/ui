@@ -242,7 +242,7 @@ void ui_stop() {
     ui_host_cancel();
     ui_shutdown();
 #ifdef UI_UPDATES
-    ui_updates_stop();
+    _ui_updates_stop();
 #endif
     ui_app_stop();
 }

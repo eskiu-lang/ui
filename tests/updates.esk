@@ -68,7 +68,7 @@ void start() {
 
 void stop() {
     ui_shutdown();
-    ui_updates_stop();
+    _ui_updates_stop();
     for (i in 0..fetch_urls.size) { String_free(&fetch_urls.data[i]); String_free(&fetch_saves.data[i]); }
     fetch_ids.size = 0; fetch_urls.size = 0; fetch_saves.size = 0;
 }
@@ -159,7 +159,7 @@ int main() {
     error = ui_update_parse(manifest(100, "com.example.walker", "2.1.0", &outside, false), UI_UPDATE_KEY, "com.example.walker", "2.1.0", &bundle);
     check(error != null && strstr(error, "not valid") != null, "a path out of assets/ is refused, signed or not");
     check(ui_update_parse("hello", UI_UPDATE_KEY, "com.example.walker", "2.1.0", &bundle) != null, "a page that is not a bundle is refused");
-    ui_update_free(&bundle);
+    _ui_update_free(&bundle);
 
     fs_remove_all("build/updates-test");
     fs_mkdir_p("build/updates-test");
@@ -179,10 +179,10 @@ int main() {
     check(strcmp(ui_update_ready(), "100") == 0 && strcmp(ui_update_version(), "") == 0, "bundle 100 waits for the next start");
     check(String_eq_cstr(&image_source, "logo.png") == 1, "the running app keeps its logo");
     String blob;
-    ui_update_blob(&blob, sha_hex("new logo"), "logo.png");
+    _ui_update_blob(&blob, sha_hex("new logo"), "logo.png");
     check(fs_exists(blob.data) == 1 && String_ends_with(&blob, ".png") == 1, "the new logo is kept by its hash, with its extension");
     String home;
-    ui_update_blob(&home, sha_hex("{}"), "screens/home.json");
+    _ui_update_blob(&home, sha_hex("{}"), "screens/home.json");
     check(fs_exists(home.data) != 1, "a file the bundle did not change is not downloaded");
     check(ui_storage_get("ui.update.ready") != null, "the waiting bundle is in the store");
     stop();
@@ -213,7 +213,7 @@ int main() {
     check(strstr(ui_update_error(), "does not match its hash") != null, "a file that does not match its hash is refused");
     check(strcmp(ui_update_ready(), "") == 0 && ui_storage_get("ui.update.ready") == null, "and no bundle waits");
     String part;
-    ui_update_blob(&part, sha_hex("newer logo"), "logo.png");
+    _ui_update_blob(&part, sha_hex("newer logo"), "logo.png");
     String_append(&part, ".part");
     check(fs_exists(part.data) != 1, "the partial file is removed");
     // A bundle with a bad signature: refused before any download.
@@ -237,7 +237,7 @@ int main() {
     ui_update_apply();
     ui_frame();
     String newest;
-    ui_update_blob(&newest, sha_hex("newer logo"), "logo.png");
+    _ui_update_blob(&newest, sha_hex("newer logo"), "logo.png");
     check(strcmp(ui_update_version(), "200") == 0 && String_eq(&image_source, &newest) == 1, "applied: the Image shows bundle 200's logo");
     stop();
     // The next start prunes what no bundle uses.

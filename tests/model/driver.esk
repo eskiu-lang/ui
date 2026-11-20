@@ -152,7 +152,7 @@ void driver_clock() {
     check(has(drive("{\"op\": \"clock\", \"settle\": true}"), "\"idle\": true"), "settle with only an interval left is idle");
     // use_frame ticks run on the virtual clock: an animation moves only as it advances.
     drv_count.set(1000);
-    ui_driver_flush();
+    _ui_driver_flush();
     check(drv_host_frames == 0, "display frames do not go to the host");
     string moving = drive("{\"op\": \"clock\", \"ms\": 100}");
     check(has(moving, "\"idle\": false, \"busy\": \"use_frame\""), "an animation keeps frames running");

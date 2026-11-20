@@ -36,58 +36,58 @@ void ListSignal_free<T>(ListSignal<T>* self) {
 
 // The number of elements; reading it subscribes.
 int ListSignal_size<T>(ListSignal<T>* self) {
-    ui_track(&self.source);
+    _ui_track(&self.source);
     return self.list.size;
 }
 
 // Element i; reading it subscribes.
 T ListSignal_get<T>(ListSignal<T>* self, int i) {
-    ui_track(&self.source);
+    _ui_track(&self.source);
     return self.list.data[i];
 }
 
 // The List itself, to loop over or to edit an element in place (then call changed());
 // reading it subscribes. Do not push to it or remove from it directly: use the methods.
 *List<T> ListSignal_items<T>(ListSignal<T>* self) {
-    ui_track(&self.source);
+    _ui_track(&self.source);
     return &self.list;
 }
 
 // Runs a change now, or once the running render ends, as a signal's set does (internal).
-void ui_list_change(*Source source, escaping fn()->void change) {
+void _ui_list_change(*Source source, escaping fn()->void change) {
     ui_require(ui == null || ui.tracking == null || ui.tracking.kind != 1, "memo must be pure");
     if (ui != null && ui.phase == 1) {
-        ui.writes.push(void() { change(); ui_changed(source); });
+        ui.writes.push(void() { change(); _ui_changed(source); });
         return;
     }
     change();
     ui_release_closure(change);
-    ui_changed(source);
+    _ui_changed(source);
 }
 
 // Appends `value`.
 void ListSignal_push<T>(ListSignal<T>* self, T value) {
-    ui_list_change(&self.source, void() { self.list.push(value); });
+    _ui_list_change(&self.source, void() { self.list.push(value); });
 }
 
 // Puts `value` at index i, moving the rest up (i == size appends).
 void ListSignal_insert<T>(ListSignal<T>* self, int i, T value) {
-    ui_list_change(&self.source, void() { self.list.insert(i, value); });
+    _ui_list_change(&self.source, void() { self.list.insert(i, value); });
 }
 
 // Removes element i, moving the rest down.
 void ListSignal_remove<T>(ListSignal<T>* self, int i) {
-    ui_list_change(&self.source, void() { self.list.remove(i); });
+    _ui_list_change(&self.source, void() { self.list.remove(i); });
 }
 
 // Replaces element i.
 void ListSignal_set<T>(ListSignal<T>* self, int i, T value) {
-    ui_list_change(&self.source, void() { self.list.data[i] = value; });
+    _ui_list_change(&self.source, void() { self.list.data[i] = value; });
 }
 
 // Swaps elements i and j.
 void ListSignal_swap<T>(ListSignal<T>* self, int i, int j) {
-    ui_list_change(&self.source, void() {
+    _ui_list_change(&self.source, void() {
         T kept = self.list.data[i];
         self.list.data[i] = self.list.data[j];
         self.list.data[j] = kept;
@@ -96,10 +96,10 @@ void ListSignal_swap<T>(ListSignal<T>* self, int i, int j) {
 
 // Empties the list (its storage stays for the next elements).
 void ListSignal_clear<T>(ListSignal<T>* self) {
-    ui_list_change(&self.source, void() { self.list.size = 0; });
+    _ui_list_change(&self.source, void() { self.list.size = 0; });
 }
 
 // Tells the readers that an element was edited in place.
 void ListSignal_changed<T>(ListSignal<T>* self) {
-    ui_list_change(&self.source, void() {});
+    _ui_list_change(&self.source, void() {});
 }

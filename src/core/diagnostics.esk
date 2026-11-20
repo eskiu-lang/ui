@@ -56,7 +56,7 @@ void ui_fail(string message) { ui_fail_node(message, ui == null ? null : ui.buil
 // called from) to stderr, then aborts.
 void ui_fail_node(string message, *Node node) {
 #ifdef UI_SRCLOC
-    ui_fail_where(message, node, node == null ? UiSourceLoc{} : node.at);
+    _ui_fail_where(message, node, node == null ? UiSourceLoc{} : node.at);
 #else
     // stderr is unbuffered: the message survives the abort when output goes to a file.
     String text;
@@ -75,7 +75,7 @@ void ui_fail_node(string message, *Node node) {
 #endif
 
 // A position's file as shown: under the app's root, from there (internal).
-string ui_source_file(string file) {
+string _ui_source_file(string file) {
     string root = UI_SOURCE_ROOT;
     int64 n = (int64)strlen(root);
     if (file != null && n > 0 && strncmp(file, root, (size_t)n) == 0) { return (string)((*char)file + n); }
@@ -83,9 +83,9 @@ string ui_source_file(string file) {
 }
 
 // "\n  at FILE:LINE:COL" for a known position, appended to `out` (internal).
-void ui_source_at(*String out, UiSourceLoc at) {
+void _ui_source_at(*String out, UiSourceLoc at) {
     if (at.file == null) { return; }
-    String_appendf(out, "\n  at %s:%d:%d", ui_source_file(at.file), at.line, at.col);
+    String_appendf(out, "\n  at %s:%d:%d", _ui_source_file(at.file), at.line, at.col);
 }
 
 // For the element the running block makes next: `at` is its call (UI_HERE). The first one
@@ -95,11 +95,11 @@ void ui_here(UiSourceLoc at) {
 }
 
 // ui_fail_node with the position `at` (internal).
-void ui_fail_where(string message, *Node node, UiSourceLoc at) {
+void _ui_fail_where(string message, *Node node, UiSourceLoc at) {
     String text;
     String_appendf(&text, "ui: %s\n  in ", message);
     ui_node_path(node, &text);
-    ui_source_at(&text, at);
+    _ui_source_at(&text, at);
     println_err(text.data);
     abort();
 }

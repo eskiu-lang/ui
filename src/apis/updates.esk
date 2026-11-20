@@ -20,7 +20,7 @@ struct UiUpdateBundle { int64 version; List<UiUpdateFile> files; }
 
 // The updater's state (internal): the bundle in use and its manifest, the one waiting for the
 // next start, the one downloading and how far it is, and the last error.
-struct UiUpdater {
+struct _UiUpdater {
     UiUpdateBundle active;
     String active_text;
     String ready_text;
@@ -36,7 +36,7 @@ struct UiUpdater {
     *Signal<int> changed;
 }
 
-UiUpdater ui_updater;
+_UiUpdater ui_updater;
 
 // The version of the bundle the app uses ("" with the assets it was built with).
 string ui_update_version() {
@@ -66,7 +66,7 @@ string ui_update_error() {
 }
 
 // Frees a bundle's files (internal).
-void ui_update_free(UiUpdateBundle* bundle) {
+void _ui_update_free(UiUpdateBundle* bundle) {
     for (i in 0..bundle.files.size) {
         String_free(&bundle.files.data[i].path);
         String_free(&bundle.files.data[i].hash);
@@ -78,7 +78,7 @@ void ui_update_free(UiUpdateBundle* bundle) {
 
 // The hash the app was built with for `path` (from UI_UPDATE_BASE, "PATH HASH" lines) into
 // `out`; false when the app has no such asset (internal).
-bool ui_update_builtin(string path, String* out) {
+bool _ui_update_builtin(string path, String* out) {
     string base = UI_UPDATE_BASE;
     int64 n = (int64)strlen(path);
     int64 at = 0;
@@ -96,7 +96,7 @@ bool ui_update_builtin(string path, String* out) {
 }
 
 // Whether a bundle's path stays inside assets/: relative, no "..", no blanks (internal).
-bool ui_update_path_ok(string path) {
+bool _ui_update_path_ok(string path) {
     if (path[0] == 0 || path[0] == '/') { return false; }
     for (int i = 0; path[i] != 0; i++) {
         char c = path[i];
@@ -108,7 +108,7 @@ bool ui_update_path_ok(string path) {
 }
 
 // Whether `text` is 64 lowercase hex digits (internal).
-bool ui_update_hash_ok(string text) {
+bool _ui_update_hash_ok(string text) {
     int n = 0;
     while (text[n] != 0) {
         char c = text[n];
@@ -119,7 +119,7 @@ bool ui_update_hash_ok(string text) {
 }
 
 // The number `text` spells (decimal digits only), or -1 (internal).
-int64 ui_update_number(string text) {
+int64 _ui_update_number(string text) {
     if (text[0] == 0) { return -1; }
     int64 value = 0;
     for (int i = 0; text[i] != 0; i++) {
@@ -136,7 +136,7 @@ int64 ui_update_number(string text) {
 // is `public_key` (hex). `app` and `base` are the app's id and version; a bundle for another
 // app or another version is refused.
 string ui_update_parse(string text, string public_key, string app, string base, UiUpdateBundle* out) {
-    ui_update_free(out);
+    _ui_update_free(out);
     int64 length = (int64)strlen(text);
     int64 sig = -1;
     for (int64 i = length - 5; i >= 0; i--) {
@@ -173,10 +173,10 @@ string ui_update_parse(string text, string public_key, string app, string base, 
             has_base = true;
             if (strcmp(words.data[1].data, base) != 0) { error = "the bundle is for another version of the app"; }
         } else if (words.size == 2 && strcmp(head, "version") == 0) {
-            out.version = ui_update_number(words.data[1].data);
+            out.version = _ui_update_number(words.data[1].data);
         } else if (words.size == 4 && strcmp(head, "file") == 0) {
-            int64 size = ui_update_number(words.data[2].data);
-            if (!ui_update_path_ok(words.data[1].data) || size < 0 || !ui_update_hash_ok(words.data[3].data)) {
+            int64 size = _ui_update_number(words.data[2].data);
+            if (!_ui_update_path_ok(words.data[1].data) || size < 0 || !_ui_update_hash_ok(words.data[3].data)) {
                 error = "a file line of the bundle is not valid";
             } else {
                 UiUpdateFile file;
@@ -192,13 +192,13 @@ string ui_update_parse(string text, string public_key, string app, string base, 
         words.free();
     }
     if (error == null && (!has_app || !has_base || out.version <= 0)) { error = "the bundle has no app, base or version"; }
-    if (error != null) { ui_update_free(out); }
+    if (error != null) { _ui_update_free(out); }
     return error;
 }
 
 // Where a file with this hash and path is kept on this device: DATA/ui-updates/HASH.EXT, the
 // path's extension kept for the decoders that look at it (internal).
-void ui_update_blob(String* out, string hash, string path) {
+void _ui_update_blob(String* out, string hash, string path) {
     String_clear(out);
     String_appendf(out, "%s/ui-updates/%s", ui_data_dir(), hash);
     int dot = -1;
@@ -217,19 +217,19 @@ void ui_update_blob(String* out, string hash, string path) {
 
 // Fills each file's `local`: the device's copy of a file the bundle changed, "" for one that
 // is the app's own. False when a changed file is missing (internal).
-bool ui_update_locate(UiUpdateBundle* bundle) {
+bool _ui_update_locate(UiUpdateBundle* bundle) {
     String builtin;
     defer String_free(&builtin);
     bool complete = true;
     for (i in 0..bundle.files.size) {
         UiUpdateFile* file = &bundle.files.data[i];
         String_clear(&file.local);
-        if (ui_update_builtin(file.path.data, &builtin) && String_eq(&builtin, &file.hash) == 1) { continue; }
+        if (_ui_update_builtin(file.path.data, &builtin) && String_eq(&builtin, &file.hash) == 1) { continue; }
 #ifdef __wasm__
         // The service worker serves it at its own URL.
         String_from(&file.local, file.path.data);
 #else
-        ui_update_blob(&file.local, file.hash.data, file.path.data);
+        _ui_update_blob(&file.local, file.hash.data, file.path.data);
         if (fs_exists(file.local.data) != 1) { complete = false; }
 #endif
     }
@@ -253,14 +253,14 @@ string ui_update_source(string name) {
 
 // The bundle in use: `text` (a manifest checked before) when its files are all here, else none
 // (internal).
-void ui_update_use(string text) {
-    ui_update_free(&ui_updater.active);
+void _ui_update_use(string text) {
+    _ui_update_free(&ui_updater.active);
     String_clear(&ui_updater.active_text);
     if (text == null || text[0] == 0) { return; }
     // Checked when it was downloaded; checked again here, in case the store was changed.
     if (ui_update_parse(text, UI_UPDATE_KEY, ui_app_id(), ui_app_version(), &ui_updater.active) != null
-        || !ui_update_locate(&ui_updater.active)) {
-        ui_update_free(&ui_updater.active);
+        || !_ui_update_locate(&ui_updater.active)) {
+        _ui_update_free(&ui_updater.active);
         ui_storage_remove("ui.update.active");
         return;
     }
@@ -278,16 +278,16 @@ void ui_updates_start() {
         ui_storage_remove("ui.update.ready");
     }
     string active = ui_storage_get("ui.update.active");
-    ui_update_use(active);
+    _ui_update_use(active);
     ui_updater.ready_version = 0;
     String_clear(&ui_updater.ready_text);
 }
 
 // At stop: the updater's state is freed; a download in progress stops (internal).
-void ui_updates_stop() {
+void _ui_updates_stop() {
     if (!ui_updater.started) { return; }
-    ui_update_free(&ui_updater.active);
-    ui_update_free(&ui_updater.incoming);
+    _ui_update_free(&ui_updater.active);
+    _ui_update_free(&ui_updater.incoming);
     String_free(&ui_updater.active_text);
     String_free(&ui_updater.ready_text);
     String_free(&ui_updater.incoming_text);
@@ -302,13 +302,13 @@ void ui_updates_stop() {
 }
 
 // The download stopped: `error` is why (null when it finished) (internal).
-void ui_update_finish(string error) {
+void _ui_update_finish(string error) {
     ui_updater.busy = false;
     String_clear(&ui_updater.error);
     if (error != null) {
         String_append(&ui_updater.error, error);
-        ui_update_report(error);
-        ui_update_free(&ui_updater.incoming);
+        _ui_update_report(error);
+        _ui_update_free(&ui_updater.incoming);
         String_clear(&ui_updater.incoming_text);
         ui_updater.changed.set(ui_updater.changed.value + 1);
         return;
@@ -336,13 +336,13 @@ void ui_update_finish(string error) {
     strings.free();
     String_free(&version);
 #endif
-    ui_update_free(&ui_updater.incoming);
+    _ui_update_free(&ui_updater.incoming);
     String_clear(&ui_updater.incoming_text);
     ui_updater.changed.set(ui_updater.changed.value + 1);
 }
 
 // Says why an update was not installed on standard error (the app's logs) (internal).
-void ui_update_report(string error) {
+void _ui_update_report(string error) {
     String line;
     String_appendf(&line, "ui: update: %s", error);
     println_err(line.data);
@@ -351,7 +351,7 @@ void ui_update_report(string error) {
 
 // The next file of the incoming bundle that this device does not have: downloaded and checked,
 // then the one after it; the bundle is ready after the last (internal).
-void ui_update_next() {
+void _ui_update_next() {
     while (ui_updater.next < ui_updater.incoming.files.size) {
         UiUpdateFile* file = &ui_updater.incoming.files.data[ui_updater.next];
         if (file.local.len == 0) { ui_updater.next++; continue; }
@@ -360,10 +360,10 @@ void ui_update_next() {
 #ifdef __wasm__
         // The page downloads it into Cache Storage and checks its hash (hosts/web/renderer.mjs).
         int request = ++ui.next_request;
-        ui.text_requests.push(PendingText{request, void(string answer) {
-            if (answer != null && answer[0] != 0) { ui_update_finish(answer); return; }
+        ui.text_requests.push(_PendingText{request, void(string answer) {
+            if (answer != null && answer[0] != 0) { _ui_update_finish(answer); return; }
             ui_updater.next++;
-            ui_update_next();
+            _ui_update_next();
         }});
         List<string> strings;
         strings.push("fetch"); strings.push(url.data); strings.push(file.hash.data); strings.push(file.path.data);
@@ -391,21 +391,21 @@ void ui_update_next() {
             if (error != null) { fs_remove(partial.data); }
             String_free(&partial);
             String_free(&hash);
-            if (error != null) { ui_update_finish(error); return; }
+            if (error != null) { _ui_update_finish(error); return; }
             ui_updater.next++;
-            ui_update_next();
+            _ui_update_next();
         });
         String_free(&part);
         String_free(&url);
         return;
 #endif
     }
-    ui_update_finish(null);
+    _ui_update_finish(null);
 }
 
 // Removes the files of ui-updates/ that neither the bundle in use nor the waiting one needs
 // (internal).
-void ui_update_prune() {
+void _ui_update_prune() {
 #ifndef __wasm__
     if (ui_data_dir()[0] == 0) { return; }
     String dir;
@@ -435,7 +435,7 @@ void ui_update_prune() {
         String_free(&names.data[i]);
     }
     names.free();
-    ui_update_free(&ready);
+    _ui_update_free(&ready);
     String_free(&dir);
 #endif
 }
@@ -455,22 +455,22 @@ void ui_update_check() {
             return;
         }
         string error = ui_update_parse(result.body, UI_UPDATE_KEY, ui_app_id(), ui_app_version(), &ui_updater.incoming);
-        if (error != null) { ui_update_finish(error); return; }
+        if (error != null) { _ui_update_finish(error); return; }
         int64 newest = ui_updater.active.version > ui_updater.ready_version ? ui_updater.active.version : ui_updater.ready_version;
         if (ui_updater.incoming.version <= newest) {
-            ui_update_free(&ui_updater.incoming);
+            _ui_update_free(&ui_updater.incoming);
             ui_updater.busy = false;
             return;
         }
         String_clear(&ui_updater.incoming_text);
         String_append(&ui_updater.incoming_text, result.body);
-        ui_update_locate(&ui_updater.incoming);
+        _ui_update_locate(&ui_updater.incoming);
         ui_updater.next = 0;
-        ui_update_next();
+        _ui_update_next();
     });
     String_free(&url);
 #ifndef __wasm__
-    ui_update_prune();
+    _ui_update_prune();
 #endif
 }
 
@@ -483,7 +483,7 @@ void ui_update_apply() {
     ui_storage_remove("ui.update.ready");
     String text;
     String_from(&text, ui_updater.ready_text.data);
-    ui_update_use(text.data);
+    _ui_update_use(text.data);
     String_free(&text);
     ui_updater.ready_version = 0;
     String_clear(&ui_updater.ready_text);

@@ -5,7 +5,7 @@
 struct Date { int year; int month; int day; }
 
 // Frees a fn(Date)->void closure (internal).
-void kit_release_date(escaping fn(Date)->void callback) { free_closure(callback); }
+void _kit_release_date(escaping fn(Date)->void callback) { free_closure(callback); }
 
 // Whether `year` is a leap year (Gregorian).
 bool kit_leap(int year) { return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0; }
@@ -31,7 +31,7 @@ void kit_month_name(int month, String* out) { kit_text_item(kit_text.months, mon
 // least 280 points.
 void Calendar(Date selected, escaping fn(Date)->void on_select UI_LOC) {
     UI_HERE
-    ui_own(void() { kit_release_date(on_select); });
+    ui_own(void() { _kit_release_date(on_select); });
     Scope("Calendar", Key{}) {
         // The month shown, as year * 12 + month - 1.
         *Signal<int> shown = use_signal<int>(selected.year * 12 + selected.month - 1);
@@ -100,7 +100,7 @@ void Calendar(Date selected, escaping fn(Date)->void on_select UI_LOC) {
 // A field showing `value` that opens a Calendar.
 void DatePicker(Date value, escaping fn(Date)->void on_change UI_LOC) {
     UI_HERE
-    ui_own(void() { kit_release_date(on_change); });
+    ui_own(void() { _kit_release_date(on_change); });
     Scope("DatePicker", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
         String text;
@@ -129,7 +129,7 @@ int64 kit_swatch(int i) {
 // A swatch showing `color` that opens a grid of colors to choose from.
 void ColorPicker(int64 color, escaping fn(int64)->void on_change UI_LOC) {
     UI_HERE
-    ui_own(void() { kit_release_int64(on_change); });
+    ui_own(void() { _kit_release_int64(on_change); });
     Scope("ColorPicker", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
         Popover(open.get(), void() { open.set(false); }, void() {

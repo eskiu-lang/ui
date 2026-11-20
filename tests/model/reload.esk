@@ -92,7 +92,7 @@ void reload_keeps_state() {
     check(rl_late.value == 5, "a new scope starts fresh");
     int unused = 0;
     for (i in 0..ui_rl.signals.size) {
-        *UiSavedSignal entry = &ui_rl.signals.data[i];
+        *_UiSavedSignal entry = &ui_rl.signals.data[i];
         if (!entry.used) {
             unused++;
             check(String_eq_cstr(&entry.path, "Column[0] > Gone[1]") == 1, "only the removed scope's state is left");

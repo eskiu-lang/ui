@@ -119,14 +119,6 @@ void ui_clipboard_set(string text)
 The clipboard: put text in it, or get what it holds; `on_text` gets it ("" for nothing),
 as an event.
 
-### PendingText
-
-```eskiu
-struct PendingText { int id; fn(string)->void on_text; }
-```
-
-A clipboard read waiting for its answer: the request id and the handler (internal).
-
 ### ui_clipboard_get
 
 ```eskiu
@@ -167,15 +159,6 @@ bool ui_event_answer(int request, string text)
 
 The host's side: the text a request asked for (event 15).
 
-### ui_dispatch_answer_event
-
-```eskiu
-bool ui_dispatch_answer_event(*Event event)
-```
-
-Hands an answer event (15) to the request waiting for it and frees its handler; false
-when no request has that id (internal).
-
 
 ## `<ui/apis/ed25519>`
 
@@ -200,22 +183,6 @@ void ui_sha512_init(UiSha512* self)
 ```
 
 Starts a SHA-512.
-
-### ui_rotr64
-
-```eskiu
-uint64 ui_rotr64(uint64 x, int n)
-```
-
-`x` rotated right by `n` bits (internal).
-
-### ui_sha512_block
-
-```eskiu
-void ui_sha512_block(UiSha512* self, *uint8 p)
-```
-
-One 128-byte block into the state (internal).
 
 ### ui_sha512_update
 
@@ -281,14 +248,6 @@ void ui_fe_pack(*uint8 o, *int64 n)
 
 The element reduced mod p, as 32 little-endian bytes.
 
-### ui_bytes_differ
-
-```eskiu
-int ui_bytes_differ(*uint8 a, *uint8 b, int n)
-```
-
-1 when 32 bytes differ (internal).
-
 ### ui_fe_neq
 
 ```eskiu
@@ -353,30 +312,6 @@ void ui_fe_pow2523(*int64 o, *int64 i)
 
 o = i ^ ((p - 5) / 8), for square roots.
 
-### ui_ed_add
-
-```eskiu
-void ui_ed_add(*int64 p, *int64 q)
-```
-
-p += q (internal).
-
-### ui_ed_swap
-
-```eskiu
-void ui_ed_swap(*int64 p, *int64 q, int b)
-```
-
-Swaps the points p and q when b is 1, in constant time (internal).
-
-### ui_ed_pack
-
-```eskiu
-void ui_ed_pack(*uint8 r, *int64 p)
-```
-
-A point as 32 bytes: y, with x's parity in the top bit (internal).
-
 ### ui_ed_scalarmult
 
 ```eskiu
@@ -392,30 +327,6 @@ void ui_ed_scalarbase(*int64 p, *uint8 s)
 ```
 
 p = s * B, the base point.
-
-### ui_ed_mod_l
-
-```eskiu
-void ui_ed_mod_l(*uint8 r, *int64 x)
-```
-
-r = x mod L, from 64 limbs of a byte each (internal).
-
-### ui_ed_reduce
-
-```eskiu
-void ui_ed_reduce(*uint8 r)
-```
-
-A 64-byte hash reduced mod L into its first 32 bytes (internal).
-
-### ui_ed_unpack_neg
-
-```eskiu
-bool ui_ed_unpack_neg(*int64 r, *uint8 p)
-```
-
--A from a public key, or false when the bytes are not a point (internal).
 
 ### ui_ed25519_public_key
 
@@ -625,14 +536,6 @@ struct FetchResult { int status; string body; string headers; string error; }
 The answer, borrowed for the handler's call: the status (0 when the request failed, with
 `error` saying why), the body as text and the response headers, one per line.
 
-### PendingFetch
-
-```eskiu
-struct PendingFetch { int id; fn(FetchResult)->void on_done; }
-```
-
-A request waiting for its answer: its id and the handler (internal).
-
 ### ui_fetch
 
 ```eskiu
@@ -649,15 +552,6 @@ bool ui_event_fetch(int id, int status, string body, string headers)
 
 The host's side: the request `id` finished (event 16; status 0: `body` is the error).
 
-### ui_dispatch_fetch_event
-
-```eskiu
-bool ui_dispatch_fetch_event(*Event event)
-```
-
-Hands a fetch event (16) to the request waiting for it as a FetchResult and frees its
-handler; false when no request has that id (internal).
-
 ### ui_cache_path
 
 ```eskiu
@@ -666,15 +560,6 @@ void ui_cache_path(string url, String* out)
 
 Where ui_cached_file keeps `url`: the app's data directory, ui-cache/, a hash of the URL
 and the URL's file name (its extension tells decoders the format).
-
-### PendingCache
-
-```eskiu
-struct PendingCache { int fetch; String url; String path; List<fn(string)->void> waiting; }
-```
-
-A download for ui_cached_file: its request id, the URL, the cache path and every handler
-waiting for it (internal).
 
 ### ui_cached_file
 
@@ -690,18 +575,10 @@ iOS and Android: the web has no files (null).
 ### ui_answer_cache
 
 ```eskiu
-void ui_answer_cache(*PendingCache pending, string path)
+void ui_answer_cache(*_PendingCache pending, string path)
 ```
 
 Each handler waiting for `pending` gets `path`, then it is freed.
-
-### ui_free_pending_cache
-
-```eskiu
-void ui_free_pending_cache(*PendingCache pending)
-```
-
-Frees a PendingCache's strings and list (internal).
 
 ### CachedFile
 
@@ -711,14 +588,6 @@ struct CachedFile { String url; String path; int pending; bool unmounted; bool a
 
 A use_cached_file's state: the URL, its path once there, and the downloads it waits for
 (it is freed by the last of those, or by its block's unmount when none is left).
-
-### ui_free_cached_file
-
-```eskiu
-void ui_free_cached_file(*CachedFile cached)
-```
-
-Frees a CachedFile (internal).
 
 ### use_cached_file
 
@@ -788,41 +657,6 @@ string ui_store_field(string text, int* at)
 
 The text from `at` to the next tab or newline, unescaped; `at` moves past it.
 
-### ui_store_path
-
-```eskiu
-string ui_store_path()
-```
-
-The file ui_storage keeps its values in (ui-storage.tsv in the data directory), a string
-the caller frees, or null when there is no data directory (internal).
-
-### ui_store_load
-
-```eskiu
-void ui_store_load()
-```
-
-Reads the saved values on first use: from the file, or the browser's storage on the web
-(internal).
-
-### ui_store_save
-
-```eskiu
-void ui_store_save()
-```
-
-Writes every value back: to a temporary file renamed over the old one, or the browser's
-storage on the web (internal).
-
-### ui_store_find
-
-```eskiu
-int ui_store_find(string key)
-```
-
-The index of `key` among the loaded values, or -1 (internal).
-
 ### ui_storage_get
 
 ```eskiu
@@ -889,29 +723,6 @@ struct UiUpdateBundle { int64 version; List<UiUpdateFile> files; }
 
 A bundle's manifest once checked: its version and its files.
 
-### UiUpdater
-
-```eskiu
-struct UiUpdater {
-    UiUpdateBundle active;
-    String active_text;
-    String ready_text;
-    int64 ready_version;
-    UiUpdateBundle incoming;
-    String incoming_text;
-    int next;
-    bool busy;
-    bool started;
-    String error;
-    String version;
-    String ready_shown;
-    *Signal<int> changed;
-}
-```
-
-The updater's state (internal): the bundle in use and its manifest, the one waiting for the
-next start, the one downloading and how far it is, and the last error.
-
 ### ui_update_version
 
 ```eskiu
@@ -940,47 +751,6 @@ Why the last check did not install a bundle ("" when it did, or found nothing ne
 failed download, a signature or a hash that does not match. The check runs again at the
 next start. Reading it subscribes, as ui_update_ready.
 
-### ui_update_free
-
-```eskiu
-void ui_update_free(UiUpdateBundle* bundle)
-```
-
-Frees a bundle's files (internal).
-
-### ui_update_builtin
-
-```eskiu
-bool ui_update_builtin(string path, String* out)
-```
-
-The hash the app was built with for `path` (from UI_UPDATE_BASE, "PATH HASH" lines) into
-`out`; false when the app has no such asset (internal).
-
-### ui_update_path_ok
-
-```eskiu
-bool ui_update_path_ok(string path)
-```
-
-Whether a bundle's path stays inside assets/: relative, no "..", no blanks (internal).
-
-### ui_update_hash_ok
-
-```eskiu
-bool ui_update_hash_ok(string text)
-```
-
-Whether `text` is 64 lowercase hex digits (internal).
-
-### ui_update_number
-
-```eskiu
-int64 ui_update_number(string text)
-```
-
-The number `text` spells (decimal digits only), or -1 (internal).
-
 ### ui_update_parse
 
 ```eskiu
@@ -994,24 +764,6 @@ and a "file PATH SIZE SHA256" line per file, each line ending in a newline, then
 is `public_key` (hex). `app` and `base` are the app's id and version; a bundle for another
 app or another version is refused.
 
-### ui_update_blob
-
-```eskiu
-void ui_update_blob(String* out, string hash, string path)
-```
-
-Where a file with this hash and path is kept on this device: DATA/ui-updates/HASH.EXT, the
-path's extension kept for the decoders that look at it (internal).
-
-### ui_update_locate
-
-```eskiu
-bool ui_update_locate(UiUpdateBundle* bundle)
-```
-
-Fills each file's `local`: the device's copy of a file the bundle changed, "" for one that
-is the app's own. False when a changed file is missing (internal).
-
 ### ui_update_source
 
 ```eskiu
@@ -1022,15 +774,6 @@ An asset's source as the app uses it: the updated file's path when the bundle in
 it (iOS and Android), else `name` itself. The path is the updater's, valid until the next
 update; reading it subscribes, so an Image shows a bundle applied while it runs.
 
-### ui_update_use
-
-```eskiu
-void ui_update_use(string text)
-```
-
-The bundle in use: `text` (a manifest checked before) when its files are all here, else none
-(internal).
-
 ### ui_updates_start
 
 ```eskiu
@@ -1039,48 +782,6 @@ void ui_updates_start()
 
 At start, before the app mounts: a bundle downloaded last time becomes the one in use, and
 the one in use is read (internal; the bridge calls it).
-
-### ui_updates_stop
-
-```eskiu
-void ui_updates_stop()
-```
-
-At stop: the updater's state is freed; a download in progress stops (internal).
-
-### ui_update_finish
-
-```eskiu
-void ui_update_finish(string error)
-```
-
-The download stopped: `error` is why (null when it finished) (internal).
-
-### ui_update_report
-
-```eskiu
-void ui_update_report(string error)
-```
-
-Says why an update was not installed on standard error (the app's logs) (internal).
-
-### ui_update_next
-
-```eskiu
-void ui_update_next()
-```
-
-The next file of the incoming bundle that this device does not have: downloaded and checked,
-then the one after it; the bundle is ready after the last (internal).
-
-### ui_update_prune
-
-```eskiu
-void ui_update_prune()
-```
-
-Removes the files of ui-updates/ that neither the bundle in use nor the waiting one needs
-(internal).
 
 ### ui_update_check
 
@@ -1199,26 +900,17 @@ The block of a boundary node (ui.builder while it runs).
 ### ui_render_failed
 
 ```eskiu
-*Node ui_render_failed(*Node node, string text, int from, int writes, int journal, *Observer evaluating)
+*Node ui_render_failed(*Node node, string text, int from, int writes, int journal, *_Observer evaluating)
 ```
 
 A render run by the frame (not inside a boundary's own block) threw: the nearest boundary
 above `node` takes it, and is returned to run with its fallback. The root's fallback
 failing is an error nothing can show, so it stops.
 
-### ui_boundary_fail
-
-```eskiu
-void ui_boundary_fail(*Node node, string text, string path)
-```
-
-Marks the boundary `node` as failed with the error's text and scope path (copied; the
-old ones are freed after the commit) and reports it (internal).
-
 ### ui_rollback
 
 ```eskiu
-void ui_rollback(*Node node, int from, int writes, int journal, *Observer evaluating)
+void ui_rollback(*Node node, int from, int writes, int journal, *_Observer evaluating)
 ```
 
 Undo what a failed render did since its save point, then empty the boundary: the commit is
@@ -1237,7 +929,7 @@ every node counts as known.
 ### ui_unwind_evaluating
 
 ```eskiu
-void ui_unwind_evaluating(*Observer depth)
+void ui_unwind_evaluating(*_Observer depth)
 ```
 
 Observers a throw left evaluating (down to `depth`, the one computing when the work began)
@@ -1288,14 +980,6 @@ Drop a node's hooks from position `from` on, as ui_discard_slots drops them all:
 before it stay. A render that reaches another hook at a position (another component in a
 branch: `if (ar) ArView() else View()`), or more or fewer hooks than the last one, starts
 the hooks from there afresh, as if what was there unmounted and the new one mounted.
-
-### ui_free_boundary
-
-```eskiu
-void ui_free_boundary(*Boundary boundary)
-```
-
-Frees a Boundary's closures and strings (internal).
 
 ### ui_guard_cleanup
 
@@ -1516,22 +1200,6 @@ void ui_fail_node(string message, *Node node)
 Prints `message` with `node`'s scope path (and, in a UI_SRCLOC build, where its element was
 called from) to stderr, then aborts.
 
-### ui_source_file
-
-```eskiu
-string ui_source_file(string file)
-```
-
-A position's file as shown: under the app's root, from there (internal).
-
-### ui_source_at
-
-```eskiu
-void ui_source_at(*String out, UiSourceLoc at)
-```
-
-"\n  at FILE:LINE:COL" for a known position, appended to `out` (internal).
-
 ### ui_here
 
 ```eskiu
@@ -1540,14 +1208,6 @@ void ui_here(UiSourceLoc at)
 
 For the element the running block makes next: `at` is its call (UI_HERE). The first one
 given wins, so a component's position goes to the element it makes first.
-
-### ui_fail_where
-
-```eskiu
-void ui_fail_where(string message, *Node node, UiSourceLoc at)
-```
-
-ui_fail_node with the position `at` (internal).
 
 ### ui_require
 
@@ -1685,99 +1345,6 @@ bool ui_driver_virtual()
 
 Whether the driver owns the clock.
 
-### ui_driver_log
-
-```eskiu
-void ui_driver_log(string level, string text)
-```
-
-Notes a core error or warning for `logs` (internal).
-
-### ui_driver_note_frame
-
-```eskiu
-void ui_driver_note_frame(double ms, int bytes)
-```
-
-Notes a frame's time and its commit's size for `perf` (internal).
-
-### ui_driver_note_prop
-
-```eskiu
-void ui_driver_note_prop(*Node node, int prop)
-```
-
-A prop sent to the host: a change animated by the node's transition, or a screen shown
-or hidden (which slides), keeps the host busy for a while on the virtual clock (internal).
-
-### ui_driver_arm
-
-```eskiu
-void ui_driver_arm(int token, int ms, bool repeat)
-```
-
-Arms a timer on the virtual clock (internal).
-
-### ui_driver_disarm
-
-```eskiu
-void ui_driver_disarm(int token)
-```
-
-Disarms a timer on the virtual clock (internal).
-
-### ui_driver_frames
-
-```eskiu
-void ui_driver_frames(bool on)
-```
-
-Starts or stops display frames on the virtual clock (internal).
-
-### ui_driver_take_clock
-
-```eskiu
-void ui_driver_take_clock()
-```
-
-Takes the clock from the host: armed timers and display frames move to the virtual clock,
-at time 0 (internal).
-
-### ui_driver_release_clock
-
-```eskiu
-void ui_driver_release_clock()
-```
-
-Gives the clock back to the host: armed timers start again on its clock, from their whole
-period (internal).
-
-### ui_driver_flush
-
-```eskiu
-void ui_driver_flush()
-```
-
-Renders what is scheduled until nothing is (each commit is applied at once by the bridge
-and the model tests' renderer) (internal).
-
-### ui_driver_next
-
-```eskiu
-int ui_driver_next(*double when)
-```
-
-The next thing due on the virtual clock: the index of the earliest timer, -1 for a
-display frame, -2 for nothing (internal).
-
-### ui_driver_step
-
-```eskiu
-bool ui_driver_step(double until)
-```
-
-Runs what is due next, at its time; false when nothing is due by `until` (internal).
-
 ### ui_driver_advance
 
 ```eskiu
@@ -1787,32 +1354,14 @@ int ui_driver_advance(double ms)
 Moves the virtual clock forward `ms`, running each timer and frame due on the way at its
 own time, with the renders they cause; how many ran.
 
-### ui_driver_is_idle
-
-```eskiu
-bool ui_driver_is_idle()
-```
-
-Whether nothing would happen without input: no timeout pending (intervals repeat
-forever and do not count), no display frames, no render, no host transition running.
-What is still busy goes to ui_drv.busy (internal).
-
 ### ui_driver_settle
 
 ```eskiu
 bool ui_driver_settle()
 ```
 
-Runs the virtual clock until idle (ui_driver_is_idle), at most kDriverSettle ms; true when
+Runs the virtual clock until idle (_ui_driver_is_idle), at most kDriverSettle ms; true when
 it got there.
-
-### ui_driver_shutdown
-
-```eskiu
-void ui_driver_shutdown()
-```
-
-Frees the driver's state with the runtime (internal).
 
 ### ui_json_string
 
@@ -1822,117 +1371,6 @@ void ui_json_string(*String out, string text)
 
 `text` as a JSON string, appended to `out` (null as "").
 
-### ui_json_number
-
-```eskiu
-void ui_json_number(*String out, double value)
-```
-
-A number in JSON: whole numbers without a fraction (internal).
-
-### ui_driver_prop_name
-
-```eskiu
-string ui_driver_prop_name(int code)
-```
-
-An int prop's name in `tree` (internal).
-
-### ui_driver_prop_applies
-
-```eskiu
-bool ui_driver_prop_applies(int kind, int code, *int64 unset)
-```
-
-Whether int prop `code` belongs to elements of `kind`, and its value when not set
-(internal).
-
-### ui_driver_identity
-
-```eskiu
-void ui_driver_identity(*String out, *Node node)
-```
-
-A node's identity in an answer: "id", "kind", and its test_id, label, text, key and
-component name when it has them (internal).
-
-### ui_driver_tree_node
-
-```eskiu
-void ui_driver_tree_node(*String out, *Node node)
-```
-
-A node and its children for `tree` (internal).
-
-### ui_driver_name
-
-```eskiu
-string ui_driver_name(*Node node)
-```
-
-A node's accessible name: its label, else a text's or button's own text (internal).
-
-### ui_driver_collect
-
-```eskiu
-void ui_driver_collect(*Node node, string target, bool by_name, List<*Node>* found)
-```
-
-Collects the nodes whose test_id (by_name false) or accessible name (true) is `target`
-(internal). An element found by its accessible name is one element to a screen reader,
-what is inside it included: a Checkbox's label text is not a second match.
-
-### ui_driver_find
-
-```eskiu
-*Node ui_driver_find(string target, *String error)
-```
-
-The node `target` names: "#N" is node N; otherwise the element whose test_id is `target`,
-else the one whose accessible name is. Null with the reason in `error` when none or more
-than one match (internal).
-
-### ui_driver_tappable
-
-```eskiu
-*Node ui_driver_tappable(*Node node)
-```
-
-What a tap reaches from `node`: itself when it takes presses (a button, a pressable, a
-field, a switch, a modal), else the nearest that does above it (internal).
-
-### ui_driver_scrollable
-
-```eskiu
-*Node ui_driver_scrollable(*Node node)
-```
-
-The nearest scroll at or above `node` (internal).
-
-### ui_driver_value
-
-```eskiu
-void ui_driver_value(*String out, Slot slot)
-```
-
-A signal's value for `state` (internal).
-
-### ui_driver_state_node
-
-```eskiu
-void ui_driver_state_node(*String out, *Node node, *bool first)
-```
-
-The scopes holding signals, for `state` (internal).
-
-### ui_driver_begin
-
-```eskiu
-void ui_driver_begin(string op)
-```
-
-Starts an answer: {"ok": true, "op": OP (internal).
-
 ### ui_driver_error
 
 ```eskiu
@@ -1941,15 +1379,6 @@ string ui_driver_error(string op, string error)
 
 An answer that the request failed with `error`.
 
-### ui_driver_directive
-
-```eskiu
-void ui_driver_directive(string op, *Node node)
-```
-
-A directive for the host: {"host": OP, "node": N (its kind and the rest follow), and the
-request waits for ui_driver_finish (internal).
-
 ### ui_driver_clock_directive
 
 ```eskiu
@@ -1957,31 +1386,6 @@ string ui_driver_clock_directive(string op, bool settle)
 ```
 
 The clock directive: the hosts move their own animations to the driver's time.
-
-### ui_driver_text
-
-```eskiu
-string ui_driver_text(*JsonValue request, string key)
-```
-
-A member of a request: its text (null when missing or not a string), number or flag
-(internal).
-
-### ui_driver_number
-
-```eskiu
-double ui_driver_number(*JsonValue request, string key, double otherwise)
-```
-
-A request's number member, or `otherwise` (internal).
-
-### ui_driver_flag
-
-```eskiu
-bool ui_driver_flag(*JsonValue request, string key)
-```
-
-Whether a request's member is true (internal).
 
 ### ui_driver_request
 
@@ -1992,31 +1396,6 @@ string ui_driver_request(string line, string source)
 The answer to a request (a JSON object), or a directive for the host ({"host": ...}),
 which the host carries out before calling ui_driver_finish. The text is the driver's,
 valid until the next request. `source` is what the build was made from (UI_SOURCE).
-
-### ui_driver_answer
-
-```eskiu
-string ui_driver_answer(*JsonValue request, string source)
-```
-
-Answers a parsed request (internal).
-
-### ui_driver_read
-
-```eskiu
-double ui_driver_read(string text, *int at)
-```
-
-Reads a number from `text` at `*at`, moving past it and the blanks after it (internal).
-
-### ui_driver_layout_node
-
-```eskiu
-void ui_driver_layout_node(*String out, *Node node, List<double>* rows, *bool first)
-```
-
-The layout answer from the host's lines "ID X Y WIDTH HEIGHT VISIBLE" (points from the
-window's top left), in tree order (internal).
 
 ### ui_driver_finish
 
@@ -2091,7 +1470,7 @@ Part of `<ui>` (src/ui.esk imports every part; they are not imported alone).
 ### Reader
 
 ```eskiu
-struct Reader { *Observer observer; int at; }
+struct Reader { *_Observer observer; int at; }
 ```
 
 A subscription is one entry on each side, each holding the other's index, so either
@@ -2111,36 +1490,14 @@ readers (internal).
 ```eskiu
 struct Source {
     List<Reader> readers;
-    *Observer memo;
-    *Observer marked;
+    *_Observer memo;
+    *_Observer marked;
     int64 marked_epoch;
 }
 ```
 
 Something observers read (a signal, or a memo's value): its readers, the memo computing
 it if any, and the last run that subscribed (internal).
-
-### Observer
-
-```eskiu
-struct Observer {
-    int kind;
-    *Node owner;
-    List<Edge> deps;
-    int64 epoch;
-    bool dirty;
-    bool evaluating;
-    bool queued;
-    fn()->void compute;
-    fn()->void cleanup;
-    bool has_cleanup;
-    *Source output;
-    *Observer below;
-}
-```
-
-A block's render, a memo or an effect: what it read, whether it must run again, its
-compute and cleanup closures, and a memo's output (internal).
 
 ### Slot
 
@@ -2154,70 +1511,13 @@ struct Slot {
 A hook's state in its scope: the hook kind and its type's tag, the data, how to free it,
 and its observer if any. ui_slot gives one to a package's own hooks.
 
-### ui_remove_reader
-
-```eskiu
-void ui_remove_reader(*Source source, int at)
-```
-
-Removes reader `at` of a source in O(1), fixing the moved entry's index (internal).
-
-### ui_remove_edge
-
-```eskiu
-void ui_remove_edge(*Observer observer, int at)
-```
-
-Removes edge `at` of an observer in O(1), fixing the moved entry's index (internal).
-
 ### ui_untrack
 
 ```eskiu
-void ui_untrack(*Observer observer)
+void ui_untrack(*_Observer observer)
 ```
 
 Drop every subscription of the observer; a new run subscribes again.
-
-### ui_track
-
-```eskiu
-void ui_track(*Source source)
-```
-
-Subscribes the running observer, if any, to `source` (once per run) (internal).
-
-### ui_queue
-
-```eskiu
-void ui_queue(List<*Observer>* list, *Observer observer)
-```
-
-Adds an observer to a dirty list once (internal).
-
-### ui_unqueue
-
-```eskiu
-void ui_unqueue(List<*Observer>* list, *Observer observer)
-```
-
-Takes an observer off a dirty list (internal).
-
-### ui_changed
-
-```eskiu
-void ui_changed(*Source source)
-```
-
-Marks every reader of `source` dirty: memos and effects are queued, blocks scheduled to
-render again (internal).
-
-### ui_stale_memos
-
-```eskiu
-void ui_stale_memos(*Source source)
-```
-
-Marks the memos that read `source`, and theirs in turn, dirty (internal).
 
 ### ui_detach_source
 
@@ -2226,31 +1526,6 @@ void ui_detach_source(*Source source)
 ```
 
 Forget a source that is being freed: no observer keeps it as a dependency.
-
-### ui_validate
-
-```eskiu
-void ui_validate(*Observer observer)
-```
-
-Computes a dirty memo again, tracking what it reads; stops with "memo cycle" when it is
-already computing (internal).
-
-### ui_observer
-
-```eskiu
-*Observer ui_observer(int kind, *Node owner)
-```
-
-A new observer of `kind` (0 block, 1 memo, 2 effect) owned by `owner` (internal).
-
-### ui_drop_observer
-
-```eskiu
-void ui_drop_observer(*Observer observer)
-```
-
-Unsubscribes and frees an observer, running its cleanup first (internal).
 
 ### ui_hook_name
 
@@ -2300,14 +1575,6 @@ wherever the signal moved to in the code (another scope, another order), when it
 the same. The key names it in the whole app; two mounted signals with the same key both get
 the value. A release build keeps nothing across launches and ignores the key.
 
-### ui_signal_at
-
-```eskiu
-*Signal<T> ui_signal_at<T>(string key, T initial)
-```
-
-The signal of use_signal and use_signal_keyed (internal).
-
 ### signal_new
 
 ```eskiu
@@ -2351,15 +1618,6 @@ void Signal_set<T>(Signal<T>* self, T value)
 Writes the value: every reader renders or runs again; setting the same value does
 nothing. During a render the write waits until the render ends; inside a memo it stops
 the program ("memo must be pure").
-
-### Memo
-
-```eskiu
-struct Memo<T> { Signal<T> signal; fn()->T callback; bool initialized; }
-```
-
-A use_memo's state: its output signal, the compute closure and whether it has a value
-(internal).
 
 ### use_memo
 
@@ -2423,62 +1681,6 @@ spelled: int, int64, int16, uint8, char, uint, uint64, bool, double, float, or t
 use_string. A signal of another type (a pointer, a struct, a closure, a borrowed string)
 is not saved: it starts from its initial value.
 
-### UiSavedSignal
-
-```eskiu
-struct UiSavedSignal { String path; int index; String key; String type; String value; bool used; }
-```
-
-A signal of the snapshot: its scope path and index, or its key; its type's name and its
-value as text; whether a signal took it (internal).
-
-### UiReloadState
-
-```eskiu
-struct UiReloadState {
-    bool active;
-    List<String> routes;
-    bool routes_taken;
-    List<UiSavedSignal> signals;
-    String out;
-}
-```
-
-The snapshot the new core restores from, until the first input (internal).
-
-### ui_reload_type
-
-```eskiu
-string ui_reload_type(int vtype)
-```
-
-The name a signal's type is saved under (ui_driver_value_type's codes), or null when its
-values are not saved (internal).
-
-### ui_reload_escape
-
-```eskiu
-void ui_reload_escape(*String out, string text)
-```
-
-`text` with tabs, newlines and backslashes escaped, appended to `out` (internal).
-
-### ui_reload_value_text
-
-```eskiu
-bool ui_reload_value_text(Slot slot, *String out)
-```
-
-A slot's value as saved text, into `out`; false when it is not saved (internal).
-
-### ui_reload_save_node
-
-```eskiu
-void ui_reload_save_node(*Node node)
-```
-
-The records of `node`'s signals and its descendants' (internal).
-
 ### ui_reload_snapshot
 
 ```eskiu
@@ -2488,30 +1690,6 @@ string ui_reload_snapshot()
 The snapshot of the running app (the text is the core's, valid until the next call): the
 routes of the router the platform follows and the signals of the mounted scopes.
 
-### ui_reload_drop
-
-```eskiu
-void ui_reload_drop()
-```
-
-Frees what the snapshot holds; nothing is restored after it (internal).
-
-### ui_reload_shutdown
-
-```eskiu
-void ui_reload_shutdown()
-```
-
-Frees the snapshot and its text, at shutdown (internal).
-
-### ui_reload_fields
-
-```eskiu
-void ui_reload_fields(string line, int64 n, List<String>* fields)
-```
-
-Splits a snapshot line at its tabs, unescaping each field (internal).
-
 ### ui_reload_load
 
 ```eskiu
@@ -2520,59 +1698,6 @@ void ui_reload_load(string text)
 
 Takes a snapshot to restore from, before the app starts (ui_reload_snapshot's text,
 copied). A text that is not one is ignored.
-
-### ui_reload_input
-
-```eskiu
-void ui_reload_input()
-```
-
-The first input after a reload (a press, an edit, a toggle, back): from then on a scope that
-mounts is new, so nothing more is restored (internal).
-
-### ui_reload_routes
-
-```eskiu
-void ui_reload_routes(*Router router)
-```
-
-The router the platform follows takes the saved routes, once (internal).
-
-### ui_reload_find
-
-```eskiu
-*UiSavedSignal ui_reload_find(*Slot slot, string key)
-```
-
-The saved record for the signal just made in `slot` (the running scope's last slot), by
-`key` or by the scope's path and the slot's index among its signals; null when there is
-none. A record whose type is not the signal's is used up and not restored (internal).
-
-### ui_reload_integer
-
-```eskiu
-uint64 ui_reload_integer(string text)
-```
-
-A decimal integer's text as uint64 bits (a leading - negates) (internal).
-
-### ui_reload_take
-
-```eskiu
-bool ui_reload_take(*Slot slot, string key, *void at)
-```
-
-Restores the signal just made in `slot` (its value at `at`) from the snapshot, by `key` or
-by its place; false when the snapshot has nothing for it (internal).
-
-### ui_reload_text
-
-```eskiu
-string ui_reload_text(*Slot slot)
-```
-
-The saved text of the use_string just made in `slot`, or null (borrowed until the next
-input) (internal).
 
 
 ## `<ui/core/runtime>`
@@ -2632,7 +1757,7 @@ struct Ui {
     bool inactive;
     *Signal<int> environment;
     *Node builder;
-    *Observer tracking;
+    *_Observer tracking;
     List<*Node> by_id;
     List<int> generations;
     List<int> retired_ids;
@@ -2640,8 +1765,8 @@ struct Ui {
     List<*Node> next_nodes;
     List<*Node> render_writes;
     List<*Node> looping;
-    List<*Observer> dirty_memos;
-    List<*Observer> dirty_effects;
+    List<*_Observer> dirty_memos;
+    List<*_Observer> dirty_effects;
     Commit commit;
     List<fn()->void> writes;
     List<fn()->void> retired;
@@ -2654,14 +1779,14 @@ struct Ui {
     string next_name;
     *InputExtra next_input;
     string next_source;
-    *SwitchExtra next_switch;
+    *_SwitchExtra next_switch;
     bool next_animating;
-    *SliderExtra next_slider;
-    *ListExtra next_list;
+    *_SliderExtra next_slider;
+    *_ListExtra next_list;
     int next_bar_style;
     bool next_bar_hidden;
-    List<*NativeHandler> native_handlers;
-    List<NativePair> next_native_props;
+    List<*_NativeHandler> native_handlers;
+    List<_NativePair> next_native_props;
     string next_view_type;
     *Router router;
     bool next_active;
@@ -2670,13 +1795,13 @@ struct Ui {
     fn(int, int, bool)->void timer_start;
     fn(int)->void timer_stop;
     bool has_timer_host;
-    List<*UiFrameHandler> frame_handlers;
+    List<*_UiFrameHandler> frame_handlers;
     fn(bool)->void frame_request;
     bool has_frame_host;
     bool frames_on;
     double last_frame_time;
     int frame_timer;
-    List<*AppStateHandler> app_state_handlers;
+    List<*_AppStateHandler> app_state_handlers;
     fn(Frame)->void next_layout;
     bool has_next_layout;
     fn(bool)->void next_hover;
@@ -2690,15 +1815,15 @@ struct Ui {
     fn(bool)->void next_image;
     bool has_next_image;
     List<fn()->void> next_owned;
-    *RefreshExtra next_refresh;
-    RefreshExtra refresh_slot;
+    *_RefreshExtra next_refresh;
+    _RefreshExtra refresh_slot;
     Commit commands;
     List<Pending> alerts;
-    List<PendingText> text_requests;
-    List<PendingFetch> fetches;
-    List<PendingCache> caching;
+    List<_PendingText> text_requests;
+    List<_PendingFetch> fetches;
+    List<_PendingCache> caching;
     int next_request;
-    List<*BackEntry> back_handlers;
+    List<*_BackEntry> back_handlers;
     List<*Node> modals;
     string link;
     Window window;
@@ -2711,7 +1836,7 @@ struct Ui {
     bool in_flight;
     List<*Node> pass_unmounted;
     int discard_from;
-    *Observer evaluating;
+    *_Observer evaluating;
     fn()->void next_content;
     fn(UiError)->void next_fallback;
     bool has_next_boundary;
@@ -2749,14 +1874,6 @@ struct Pending { int id; fn(int)->void on_choice; }
 
 An alert waiting for its answer: the request id and the handler (internal).
 
-### BackEntry
-
-```eskiu
-struct BackEntry { fn()->bool handler; bool removed; }
-```
-
-A use_back handler on the stack of back handlers (internal).
-
 ### ui_init
 
 ```eskiu
@@ -2793,15 +1910,6 @@ One pass over the effects dirty at completion, parents first and, within a depth
 the order they were scheduled. An effect dirtied again after it ran waits for the next
 commit.
 
-### ui_effects_from
-
-```eskiu
-void ui_effects_from(List<*Observer>* due, List<int>* order, *int at, **Observer current)
-```
-
-Runs the due effects from `at` on, in order, noting the current one for error reports
-(internal).
-
 ### ui_complete
 
 ```eskiu
@@ -2811,38 +1919,13 @@ void ui_complete(int sequence)
 The host's side: the commit `sequence` has been applied. Frees what waited for it, runs
 the effects, then the events that arrived meanwhile.
 
-### ui_memo_work
-
-```eskiu
-bool ui_memo_work()
-```
-
-Whether a dirty memo has readers (internal).
-
-### ui_memos_from
-
-```eskiu
-void ui_memos_from(*int at, **Observer current)
-```
-
-Validates the dirty memos that have readers from `at` on (internal).
-
 ### RenderSave
 
 ```eskiu
-struct RenderSave { *Node node; int from; int writes; int journal; *Observer evaluating; }
+struct RenderSave { *Node node; int from; int writes; int journal; *_Observer evaluating; }
 ```
 
 Where a render started, for the rollback if it throws.
-
-### ui_renders_from
-
-```eskiu
-void ui_renders_from(List<*Node>* run, *int at, *RenderSave save)
-```
-
-Runs the scheduled blocks from `at` on, noting where each started for a rollback
-(internal).
 
 ### ui_frame
 
@@ -2971,31 +2054,6 @@ bool ui_dispatch_event(*Event event)
 A handler that throws is reported and the app goes on; what it wrote before the throw
 stays written.
 
-### ui_user_event
-
-```eskiu
-bool ui_user_event(int kind)
-```
-
-True for the events a user's action makes: a press, an edit, a toggle, a refresh, a value,
-a gesture, a long press, a submit (internal).
-
-### ui_node_disabled
-
-```eskiu
-bool ui_node_disabled(*Node node)
-```
-
-True when node or one of its ancestors is disabled (Style.disabled) (internal).
-
-### ui_dispatch_now
-
-```eskiu
-bool ui_dispatch_now(*Event event)
-```
-
-Runs the handler an event is for; false when the node or request is gone (internal).
-
 ### ui_needs_frame
 
 ```eskiu
@@ -3089,14 +2147,6 @@ An empty String that lives until the end of the frame, for an API that writes in
 `*String date = frame_string(); time_format(t, "%A", TIME_LOCAL, date); Text(date.data);`.
 As with textf, give its text to an element, not to a signal or a global.
 
-### ui_free_frame_texts
-
-```eskiu
-void ui_free_frame_texts()
-```
-
-Frees the frame's textf texts and frame_string Strings (internal).
-
 
 ## `<ui/core/tree>`
 
@@ -3164,7 +2214,7 @@ struct Node {
     int runs;
     int loop_frames;
     bool render_write;
-    *Observer observer;
+    *_Observer observer;
     fn()->void block;
     fn()->void handler;
     fn()->void handler_cleanup;
@@ -3189,7 +2239,7 @@ struct Node {
     string grid_columns;
     string grid_rows;
     string source;
-    List<NativePair> native_props;
+    List<_NativePair> native_props;
     fn(string, string)->void on_view;
     fn(Frame)->void on_layout;
     bool has_on_layout;
@@ -3220,22 +2270,6 @@ struct Node {
 A node of the tree: an element or a scope, with its id and generation, kind, key, props
 as sent, children, hooks, handlers and the block that renders it (internal).
 
-### ui_emit
-
-```eskiu
-void ui_emit(int op, *Node node, int before)
-```
-
-Appends a create, text, insert or move record for `node` to the commit (internal).
-
-### ui_emit_prop
-
-```eskiu
-void ui_emit_prop(*Node node, int prop, int value)
-```
-
-Appends an int prop record to the commit (internal).
-
 ### ui_prop
 
 ```eskiu
@@ -3245,14 +2279,6 @@ void ui_prop(*Node node, bool fresh, int code, int64 value, int64 unset)
 Send int prop `code` when it differs from what was sent; a fresh node starts at the
 default, `unset`. A color's default (-1) goes out as 0, which renderers read as "the
 platform's own".
-
-### ui_emit_string_prop
-
-```eskiu
-void ui_emit_string_prop(*Node node, int prop, string value)
-```
-
-Appends a string prop record to the commit (null is "") (internal).
 
 ### ui_update_string
 
@@ -3264,22 +2290,6 @@ Keep a copy of `value` in `*slot` when it changed, retiring the old one after th
 commit; true when the renderer must hear about it. Null and "" are the same and stored
 as null, so an element without the prop allocates nothing.
 
-### ui_drop_from
-
-```eskiu
-void ui_drop_from(List<*Node>* list, *Node node)
-```
-
-Removes `node` from a list of nodes, if it is there (internal).
-
-### ui_schedule
-
-```eskiu
-void ui_schedule(*Node node)
-```
-
-Schedules `node`'s block to run in the next frame (once) (internal).
-
 ### ui_kept
 
 ```eskiu
@@ -3289,15 +2299,6 @@ List<bool> ui_kept(List<int>* seq)
 Which entries of `seq` (old positions, -1 for new nodes) form a longest increasing
 subsequence: those children keep their place, every other one moves.
 
-### ui_run
-
-```eskiu
-void ui_run(*Node node)
-```
-
-Runs `node`'s block: its children are matched by key, then kind and position, new ones
-created, moved ones moved with the fewest moves, and the rest unmounted (internal).
-
 ### ui_unmount
 
 ```eskiu
@@ -3306,40 +2307,6 @@ void ui_unmount(*Node node)
 
 A node's removal is sent before its descendants', so a host knows a subtree leaves (a
 screen that slides out keeps its content) before it hears of the parts.
-
-### SwitchExtra
-
-```eskiu
-struct SwitchExtra { bool value; fn(bool)->void on_change; }
-```
-
-What Switch adds to an element (internal).
-
-### SliderExtra
-
-```eskiu
-struct SliderExtra { int value; int min; int max; fn(int)->void on_change; }
-```
-
-What Slider adds to an element (internal).
-
-### RefreshExtra
-
-```eskiu
-struct RefreshExtra { bool refreshing; fn()->void on_refresh; }
-```
-
-What a RefreshControl adds to the scroll after it (internal).
-
-### ListExtra
-
-```eskiu
-struct ListExtra {
-    fn(int)->void on_item; fn(int, int)->void on_cell; }
-}
-```
-
-What a virtualized list adds to its scroll (internal).
 
 ### InputExtra
 
@@ -3398,14 +2365,6 @@ void ui_finish_owned(List<fn()->void> owned)
 ```
 
 Run and free a list of destructors taken from a node (a copy owns it now).
-
-### ui_assign_id
-
-```eskiu
-void ui_assign_id(*Node node)
-```
-
-Gives `node` a free id and the next generation for that id (internal).
 
 
 ## `<ui/core/wire>`
@@ -3473,8 +2432,8 @@ and what is in it take no input and read as unavailable), 62 value now, 63 value
 65 secure (1: hide what is typed), 66 keyboard (Keyboard), 67 return key (ReturnKey),
 68 multiline (1 or 0), 69 capitalize (Capitalize), 70 autocorrect (1 on, the default; 0
 off), 71 autofill (Autofill), 72 submit listener (1: the host reports return with
-ui_dispatch_submit). 73 padding top, 74 right, 75 bottom, 76 left (points; kUnset: the
-padding of prop 2), 77 margin top, 78 right, 79 bottom, 80 left (points), 81 text align
+ui_dispatch_submit). 73 padding top, 74 right, 75 bottom, 76 left (points; 0: the padding
+of prop 2), 77 margin top, 78 right, 79 bottom, 80 left (points), 81 text align
 (TextAlign), 82 maximum lines (0: no limit; cut with an ellipsis), 83 shrink (flex-shrink),
 84 image listener (1: the host reports an Image's load or failure with ui_dispatch_image).
 An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
@@ -3574,14 +2533,6 @@ int use_animated_then(int target, int ms, int easing, escaping fn()->void on_don
 
 use_animated that also runs `on_done` each time the value arrives at a new target.
 
-### ui_release_done
-
-```eskiu
-void ui_release_done(escaping fn()->void on_done)
-```
-
-Frees an on_done closure (internal).
-
 ### AnimatedDone
 
 ```eskiu
@@ -3589,14 +2540,6 @@ struct AnimatedDone { fn()->void on_done; }
 ```
 
 The latest on_done, kept in the hook's slot and freed with it.
-
-### ui_animate
-
-```eskiu
-int ui_animate(int target, int ms, int easing, bool has_done, escaping fn()->void on_done)
-```
-
-The animation behind use_animated and use_animated_then (internal).
 
 ### use_repeat
 
@@ -3642,14 +2585,6 @@ struct Tick { double time; double delta; }
 A display frame: its time and the time since the last frame run, in seconds (0 for the
 first frame after frames start).
 
-### UiFrameHandler
-
-```eskiu
-struct UiFrameHandler { fn(Tick)->void handler; bool running; bool removed; }
-```
-
-A use_frame handler and whether it runs (internal).
-
 ### ui_set_frame_host
 
 ```eskiu
@@ -3660,14 +2595,6 @@ The host's side: request(true) starts its display clock (CADisplayLink, Choreogr
 requestAnimationFrame), request(false) stops it; each frame comes back as
 ui_event_frame(time). With none set, frames come from a 16 ms timer.
 
-### ui_frames_switch
-
-```eskiu
-void ui_frames_switch(bool on)
-```
-
-Starts or stops the display clock: the host's, else a 16 ms timer (internal).
-
 ### ui_frames_update
 
 ```eskiu
@@ -3675,14 +2602,6 @@ void ui_frames_update()
 ```
 
 Frames run while some mounted scope's use_frame is running.
-
-### ui_drop_frame_handler
-
-```eskiu
-void ui_drop_frame_handler(*UiFrameHandler entry)
-```
-
-Removes a use_frame handler and stops the frames when none runs (internal).
 
 ### use_frame
 
@@ -3702,47 +2621,6 @@ bool ui_event_frame(double time)
 
 The host's side: the display shows a frame at `time` seconds (any fixed origin).
 
-### ui_dispatch_frame_event
-
-```eskiu
-bool ui_dispatch_frame_event(*Event event)
-```
-
-Runs the frame handlers for a display frame event (internal).
-
-### ui_run_frames
-
-```eskiu
-bool ui_run_frames(double time)
-```
-
-Runs each running frame handler with the time and the time since the last frame; false
-when frames are off or none ran (internal).
-
-### ui_frames_shutdown
-
-```eskiu
-void ui_frames_shutdown()
-```
-
-Stops the frames and frees the handlers' list (internal).
-
-### AppStateHandler
-
-```eskiu
-struct AppStateHandler { fn(bool)->void handler; bool removed; }
-```
-
-A use_app_state handler (internal).
-
-### ui_drop_app_state
-
-```eskiu
-void ui_drop_app_state(*AppStateHandler entry)
-```
-
-Removes a use_app_state handler (internal).
-
 ### use_app_state
 
 ```eskiu
@@ -3752,14 +2630,6 @@ void use_app_state(escaping fn(bool)->void handler)
 `handler(active)` each time the app comes to the foreground (true) or leaves it (false)
 while the scope is mounted: pause audio, stop a game loop, refresh data. ui_is_active()
 reads the current state.
-
-### ui_dispatch_app_state_event
-
-```eskiu
-bool ui_dispatch_app_state_event(*Event event)
-```
-
-Runs every use_app_state handler for a foreground or background event (internal).
 
 
 ## `<ui/elements/gestures>`
@@ -3881,14 +2751,6 @@ void ui_on_submit(escaping fn(string)->void handler)
 
 For the TextInput right after it: `handler` gets the field's text when the user presses
 return (the Input's return_key), not on a multiline field, whose return starts a new line.
-
-### ui_input_options
-
-```eskiu
-void ui_input_options(*InputExtra extra, Input input)
-```
-
-The Input's editing options into what the element sends (internal).
 
 ### ui_input_style
 
@@ -4131,30 +2993,6 @@ The platform's busy indicator, spinning while `animating`.
 Native modules and views: code the app ships per platform.
 Part of `<ui>` (src/ui.esk imports every part; they are not imported alone).
 
-### NativePair
-
-```eskiu
-struct NativePair { string name; string value; }
-```
-
-A name and a value, both owned (internal).
-
-### NativeHandler
-
-```eskiu
-struct NativeHandler { string channel; fn(string)->void handler; bool removed; }
-```
-
-A use_native_event handler and its channel (internal).
-
-### ui_free_pairs
-
-```eskiu
-void ui_free_pairs(List<NativePair>* pairs)
-```
-
-Frees each pair's strings and the list (internal).
-
 ### use_native_event
 
 ```eskiu
@@ -4163,14 +3001,6 @@ void use_native_event(string channel, escaping fn(string)->void handler)
 
 A handler for a native channel's events while the scope is mounted; the payload is
 borrowed for the call.
-
-### ui_drop_native
-
-```eskiu
-void ui_drop_native(*NativeHandler entry)
-```
-
-Removes a use_native_event handler (internal).
 
 ### ui_event_native
 
@@ -4196,14 +3026,6 @@ void NativeView(Style style, string type, escaping fn(string, string)->void on_e
 
 A view the app registered with each host under `type` (see the hosts' registries). It is
 a leaf: give it a size. on_event gets the events the view sends (name and payload).
-
-### ui_emit_named
-
-```eskiu
-void ui_emit_named(*Node node, string name, string value)
-```
-
-Appends a named prop record for a native view to the commit (internal).
 
 ### ui_native_view_props
 
@@ -4258,14 +3080,6 @@ struct RouteParams { string route; String pattern; List<String> values; }
 The params route_param read, each kept with the route it came from until that route
 leaves its router's stack.
 
-### ui_route_params_drop
-
-```eskiu
-void ui_route_params_drop(string route)
-```
-
-Frees the params route_param kept for `route` (internal).
-
 ### Router_free
 
 ```eskiu
@@ -4308,14 +3122,6 @@ void ui_route_drop(String route)
 A route's text, and the params read from it, live until the commit that stopped showing
 it completes.
 
-### ui_route_changed
-
-```eskiu
-void ui_route_changed(*Router self)
-```
-
-Renders the router's readers again (internal).
-
 ### ui_route_history
 
 ```eskiu
@@ -4324,31 +3130,6 @@ void ui_route_history(*Router self, string mode, List<string>* strings)
 
 What the web host does with the browser's history for the router the URL follows:
 command 3 with a mode ("push", "replace", "back", "reset") and its strings.
-
-### ui_route_push
-
-```eskiu
-void ui_route_push(*Router self, string path, bool history)
-```
-
-Pushes `path`, telling the browser's history when `history` (internal).
-
-### ui_route_replace
-
-```eskiu
-void ui_route_replace(*Router self, string path, bool history)
-```
-
-Replaces the top route with `path`, telling the browser's history when `history`
-(internal).
-
-### ui_route_pop
-
-```eskiu
-void ui_route_pop(*Router self)
-```
-
-Pops the top route (internal).
 
 ### Router_push
 
@@ -4398,15 +3179,6 @@ bool ui_event_route(string path, int index)
 
 The host's side, on the web: the browser went back or forward to `path`, at `index` in
 the history the router made.
-
-### ui_dispatch_route_event
-
-```eskiu
-void ui_dispatch_route_event(*Event event)
-```
-
-Moves the router the URL follows to the browser's history position: pops, pushes or
-replaces (internal).
 
 ### ui_link_route
 
@@ -4676,14 +3448,6 @@ void use_back(escaping fn()->bool handler)
 A back handler for as long as the scope is mounted (Android's back button, and a modal's
 request to close goes first). It returns true when it handled the press.
 
-### ui_drop_back
-
-```eskiu
-void ui_drop_back(*BackEntry entry)
-```
-
-Removes a use_back handler (internal).
-
 ### ui_back
 
 ```eskiu
@@ -4780,38 +3544,6 @@ void ui_set_timer_host(escaping fn(int, int, bool)->void start, escaping fn(int)
 The host's side: start(token, ms, repeat) arms a timer, stop(token) disarms it; each tick
 comes back as ui_event_timer(token). With none set, timers never fire.
 
-### ui_timer_arm
-
-```eskiu
-void ui_timer_arm(*UiTimer timer)
-```
-
-Starts a timer with the host (internal).
-
-### ui_timer_disarm
-
-```eskiu
-void ui_timer_disarm(*UiTimer timer)
-```
-
-Stops a timer with the host (internal).
-
-### ui_drop_timer
-
-```eskiu
-void ui_drop_timer(*UiTimer timer)
-```
-
-Stops and removes a timer (internal).
-
-### ui_use_timer
-
-```eskiu
-void ui_use_timer(int ms, bool repeat, escaping fn()->void handler)
-```
-
-The hook behind use_interval and use_timeout (internal).
-
 ### use_interval
 
 ```eskiu
@@ -4836,15 +3568,6 @@ bool ui_event_timer(int token)
 ```
 
 The host's side: the timer with `token` fired.
-
-### ui_dispatch_timer_event
-
-```eskiu
-bool ui_dispatch_timer_event(*Event event)
-```
-
-Runs the handler of the timer that fired, or a frame when it is the frame timer
-(internal).
 
 
 ## `<ui/kit>`
@@ -5112,14 +3835,6 @@ A pressable row with a title and an optional subtitle; it lights up under a poin
 Things over the content: Popover, DropdownMenu, Select, Tooltip, toasts.
 Part of `<ui/kit>` (src/kit.esk imports every part).
 
-### kit_release_int64
-
-```eskiu
-void kit_release_int64(escaping fn(int64)->void callback)
-```
-
-Frees a fn(int64)->void closure (internal).
-
 ### Popover
 
 ```eskiu
@@ -5171,14 +3886,6 @@ void kit_toast(string text)
 Shows `text` at the bottom for a few seconds, after the toasts before it, through the
 mounted ToastHost; dropped when none is mounted.
 
-### kit_toast_clear
-
-```eskiu
-void kit_toast_clear()
-```
-
-Drops the toasts waiting (internal).
-
 ### kit_toast_owner
 
 ```eskiu
@@ -5209,14 +3916,6 @@ struct Date { int year; int month; int day; }
 ```
 
 A day of the Gregorian calendar.
-
-### kit_release_date
-
-```eskiu
-void kit_release_date(escaping fn(Date)->void callback)
-```
-
-Frees a fn(Date)->void closure (internal).
 
 ### kit_leap
 
@@ -5548,14 +4247,6 @@ Element i; reading it subscribes.
 The List itself, to loop over or to edit an element in place (then call changed());
 reading it subscribes. Do not push to it or remove from it directly: use the methods.
 
-### ui_list_change
-
-```eskiu
-void ui_list_change(*Source source, escaping fn()->void change)
-```
-
-Runs a change now, or once the running render ends, as a signal's set does (internal).
-
 ### ListSignal_push
 
 ```eskiu
@@ -5758,8 +4449,8 @@ struct Style {
     int role; int checked; bool selected; int expanded; string value; string hint;
     int value_min; int value_max; int value_now;
     bool disabled;
-    int padding_top = kUnset; int padding_right = kUnset; int padding_bottom = kUnset; int padding_left = kUnset;
-    int margin; int margin_top = kUnset; int margin_right = kUnset; int margin_bottom = kUnset; int margin_left = kUnset;
+    int padding_top; int padding_right; int padding_bottom; int padding_left;
+    int margin; int margin_top; int margin_right; int margin_bottom; int margin_left;
     int text_align; int max_lines; int shrink;
 }
 ```
@@ -5808,10 +4499,10 @@ button), `selected` whether it is the chosen one (a tab, a radio button, a list 
 value_min). `disabled` turns the element and what is in it off: the platform shows and
 announces it as unavailable, and its handlers (presses, edits, toggles, gestures) are not
 called.
-`padding_top`, `padding_right`, `padding_bottom` and `padding_left` (points, kUnset: not set)
-replace `padding` on one side. `margin` is space outside the element on every side (points),
-and `margin_top`, `margin_right`, `margin_bottom` and `margin_left` (kUnset: not set) replace
-it on one. `text_align` (a TextAlign) places a text's lines; `max_lines` (0: no limit) cuts a
+`padding_top`, `padding_right`, `padding_bottom` and `padding_left` (points) replace `padding`
+on one side; a side left at 0 takes `padding` (for 8 on three sides and none on the fourth,
+give the three). `margin` is space outside the element on every side (points), and
+`margin_top`, `margin_right`, `margin_bottom` and `margin_left` replace it on one the same way. `text_align` (a TextAlign) places a text's lines; `max_lines` (0: no limit) cuts a
 text after that many lines, with an ellipsis. `shrink` (flex-shrink, 0 by default) lets the
 element get smaller than its content's size when its parent has no room: give a text in a
 row `shrink: 1` and it wraps instead of running out of the row.
@@ -6044,30 +4735,6 @@ struct WebappDialog {
 File dialogs: a title, where they start, the filters ("Images\tpng,jpg" per line), and
 whether they pick folders, several items, or a file to save.
 
-### WebappCommand
-
-```eskiu
-struct WebappCommand { String name; fn(*WebappCall)->void handler; }
-```
-
-A command the program registered (internal).
-
-### WebappListener
-
-```eskiu
-struct WebappListener { String event; fn(WebappEvent)->void handler; }
-```
-
-A listener of the page's events (internal).
-
-### WebappProtocol
-
-```eskiu
-struct WebappProtocol { String scheme; String root; bool files; fn(*WebappRequest)->void handler; }
-```
-
-A scheme the program answers: a handler, or the files under a root (internal).
-
 ### WebappBytes
 
 ```eskiu
@@ -6075,27 +4742,6 @@ struct WebappBytes { int token; *uint8 data; int64 length; }
 ```
 
 A binary answer waiting for the page to fetch it (app://localhost/__eskiu/bytes/TOKEN).
-
-### WebappState
-
-```eskiu
-struct WebappState {
-    bool started;
-    String platform;
-    String frontend;
-    List<WebappCommand> commands;
-    List<WebappListener> listeners;
-    List<WebappProtocol> protocols;
-    List<int> intercepting;
-    bool has_close_handler;
-    fn(int)->bool close_handler;
-    Mutex bytes_lock;
-    List<WebappBytes> bytes;
-    int next_bytes;
-}
-```
-
-What the module keeps between calls (internal).
 
 ### WEBAPP_RANGE_CHUNK
 
@@ -6105,15 +4751,6 @@ const int64 WEBAPP_RANGE_CHUNK = 8388608;
 
 The largest part of a file one answer to an open range ("bytes=N-") carries: a media
 element asks again for the rest.
-
-### webapp_start
-
-```eskiu
-void webapp_start()
-```
-
-Starts the platform's application once, before the first registration or window
-(internal).
 
 ### webapp_command
 
@@ -6245,14 +4882,6 @@ void webapp_quit(int code)
 ```
 
 Ends webapp_run with `code`. Any thread.
-
-### webapp_quote
-
-```eskiu
-void webapp_quote(String* out, string text)
-```
-
-`text` as a JSON string into `out`; null as null (internal).
 
 ### webapp_send
 
@@ -6582,14 +5211,6 @@ void uiw_on_closed(int window)
 
 The window closed.
 
-### webapp_level
-
-```eskiu
-int webapp_level(string kind)
-```
-
-The level a page's dialog `kind` names (internal).
-
 ### webapp_filters
 
 ```eskiu
@@ -6597,11 +5218,3 @@ void webapp_filters(*JsonValue filters, String* out)
 ```
 
 The page's dialog filters ([{name, extensions: [...]}]) as uiw_dialog_file takes them.
-
-### webapp_builtin
-
-```eskiu
-void webapp_builtin(WebappCall* call)
-```
-
-The commands the page's module has built in: ui:dialog, ui:window and ui:quit (internal).

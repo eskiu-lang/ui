@@ -113,7 +113,7 @@ double ui_driver_now() { return ui_drv.now; }
 bool ui_driver_virtual() { return ui_drv.virtual; }
 
 // Notes a core error or warning for `logs` (internal).
-void ui_driver_log(string level, string text) {
+void _ui_driver_log(string level, string text) {
     String line;
     String_appendf(&line, "%s: %s", level, text);
     if (ui_drv.logs.size >= 500) {
@@ -124,7 +124,7 @@ void ui_driver_log(string level, string text) {
 }
 
 // Notes a frame's time and its commit's size for `perf` (internal).
-void ui_driver_note_frame(double ms, int bytes) {
+void _ui_driver_note_frame(double ms, int bytes) {
     if (ui_drv.frame_count == 0) { ui_drv.first_commit = (double)time_now_ms(); }
     if (ui_drv.frame_ms.size >= 600) { ui_drv.frame_ms.remove(0); }
     ui_drv.frame_ms.push(ms);
@@ -136,7 +136,7 @@ void ui_driver_note_frame(double ms, int bytes) {
 
 // A prop sent to the host: a change animated by the node's transition, or a screen shown
 // or hidden (which slides), keeps the host busy for a while on the virtual clock (internal).
-void ui_driver_note_prop(*Node node, int prop) {
+void _ui_driver_note_prop(*Node node, int prop) {
     double until = ui_drv.now;
     bool animated = prop == 8 || prop == 9 || prop == 13 || prop == 15 || (prop >= 35 && prop <= 38);
     if (animated && node.props[39] > 0) { until = ui_drv.now + (double)node.props[39]; }
@@ -145,27 +145,27 @@ void ui_driver_note_prop(*Node node, int prop) {
 }
 
 // Arms a timer on the virtual clock (internal).
-void ui_driver_arm(int token, int ms, bool repeat) {
-    ui_driver_disarm(token);
+void _ui_driver_arm(int token, int ms, bool repeat) {
+    _ui_driver_disarm(token);
     ui_drv.timers.push(UiDriverTimer{token, ui_drv.now + (double)ms, ms, repeat});
 }
 
 // Disarms a timer on the virtual clock (internal).
-void ui_driver_disarm(int token) {
+void _ui_driver_disarm(int token) {
     for (int i = ui_drv.timers.size - 1; i >= 0; i--) {
         if (ui_drv.timers.data[i].token == token) { ui_drv.timers.remove(i); }
     }
 }
 
 // Starts or stops display frames on the virtual clock (internal).
-void ui_driver_frames(bool on) {
+void _ui_driver_frames(bool on) {
     if (on && !ui_drv.frames) { ui_drv.next_frame = ui_drv.now + kDriverFrame; }
     ui_drv.frames = on;
 }
 
 // Takes the clock from the host: armed timers and display frames move to the virtual clock,
 // at time 0 (internal).
-void ui_driver_take_clock() {
+void _ui_driver_take_clock() {
     if (ui_drv.virtual) { return; }
     ui_drv.virtual = true;
     ui_drv.now = 0;
@@ -184,21 +184,21 @@ void ui_driver_take_clock() {
         ui_drv.host_frames = ui.frame_request;
         if (ui.frames_on) { ui_drv.host_frames(false); }
     }
-    ui.timer_start = void(int token, int ms, bool repeat) { ui_driver_arm(token, ms, repeat); };
-    ui.timer_stop = void(int token) { ui_driver_disarm(token); };
+    ui.timer_start = void(int token, int ms, bool repeat) { _ui_driver_arm(token, ms, repeat); };
+    ui.timer_stop = void(int token) { _ui_driver_disarm(token); };
     ui.has_timer_host = true;
-    ui.frame_request = void(bool on) { ui_driver_frames(on); };
+    ui.frame_request = void(bool on) { _ui_driver_frames(on); };
     ui.has_frame_host = true;
     for (i in 0..ui.timers.size) {
         *UiTimer timer = ui.timers.data[i];
-        if (timer.armed) { ui_driver_arm(timer.token, timer.ms, timer.repeat); }
+        if (timer.armed) { _ui_driver_arm(timer.token, timer.ms, timer.repeat); }
     }
-    if (ui.frames_on) { ui_driver_frames(true); }
+    if (ui.frames_on) { _ui_driver_frames(true); }
 }
 
 // Gives the clock back to the host: armed timers start again on its clock, from their whole
 // period (internal).
-void ui_driver_release_clock() {
+void _ui_driver_release_clock() {
     if (!ui_drv.virtual) { return; }
     ui_drv.virtual = false;
     ui_drv.timers.size = 0;
@@ -219,20 +219,20 @@ void ui_driver_release_clock() {
     }
     if (frames) {
         ui.frames_on = false;
-        ui_frames_switch(true);
+        _ui_frames_switch(true);
     }
 }
 
 // Renders what is scheduled until nothing is (each commit is applied at once by the bridge
 // and the model tests' renderer) (internal).
-void ui_driver_flush() {
+void _ui_driver_flush() {
     int guard = 0;
     while (ui_needs_frame() && guard < 1000) { ui_frame(); guard++; }
 }
 
 // The next thing due on the virtual clock: the index of the earliest timer, -1 for a
 // display frame, -2 for nothing (internal).
-int ui_driver_next(*double when) {
+int _ui_driver_next(*double when) {
     int best = -2;
     double at = 0;
     for (i in 0..ui_drv.timers.size) {
@@ -244,9 +244,9 @@ int ui_driver_next(*double when) {
 }
 
 // Runs what is due next, at its time; false when nothing is due by `until` (internal).
-bool ui_driver_step(double until) {
+bool _ui_driver_step(double until) {
     double when = 0;
-    int next = ui_driver_next(&when);
+    int next = _ui_driver_next(&when);
     if (next == -2 || when > until) { return false; }
     if (when > ui_drv.now) { ui_drv.now = when; }
     ui_drv.fired++;
@@ -259,27 +259,27 @@ bool ui_driver_step(double until) {
         else { ui_drv.timers.remove(next); }
         ui_event_timer(timer.token);
     }
-    ui_driver_flush();
+    _ui_driver_flush();
     return true;
 }
 
 // Moves the virtual clock forward `ms`, running each timer and frame due on the way at its
 // own time, with the renders they cause; how many ran.
 int ui_driver_advance(double ms) {
-    ui_driver_take_clock();
+    _ui_driver_take_clock();
     ui_drv.fired = 0;
     double until = ui_drv.now + (ms < 0 ? 0 : ms);
-    ui_driver_flush();
-    while (ui_driver_step(until)) {}
+    _ui_driver_flush();
+    while (_ui_driver_step(until)) {}
     ui_drv.now = until;
-    ui_driver_flush();
+    _ui_driver_flush();
     return ui_drv.fired;
 }
 
 // Whether nothing would happen without input: no timeout pending (intervals repeat
 // forever and do not count), no display frames, no render, no host transition running.
 // What is still busy goes to ui_drv.busy (internal).
-bool ui_driver_is_idle() {
+bool _ui_driver_is_idle() {
     String_clear(&ui_drv.busy);
     bool timeout = false;
     for (i in 0..ui_drv.timers.size) { if (!ui_drv.timers.data[i].repeat) { timeout = true; } }
@@ -291,15 +291,15 @@ bool ui_driver_is_idle() {
     return ui_drv.busy.len == 0;
 }
 
-// Runs the virtual clock until idle (ui_driver_is_idle), at most kDriverSettle ms; true when
+// Runs the virtual clock until idle (_ui_driver_is_idle), at most kDriverSettle ms; true when
 // it got there.
 bool ui_driver_settle() {
-    ui_driver_take_clock();
+    _ui_driver_take_clock();
     ui_drv.fired = 0;
     double limit = ui_drv.now + kDriverSettle;
-    ui_driver_flush();
-    while (!ui_driver_is_idle()) {
-        if (ui_driver_step(limit)) { continue; }
+    _ui_driver_flush();
+    while (!_ui_driver_is_idle()) {
+        if (_ui_driver_step(limit)) { continue; }
         // Only a transition is left: its end.
         if (ui_drv.animating_until > ui_drv.now && ui_drv.animating_until <= limit
             && !ui_drv.frames && !ui_needs_frame()) {
@@ -309,12 +309,12 @@ bool ui_driver_settle() {
         }
         break;
     }
-    ui_drv.idle = ui_driver_is_idle();
+    ui_drv.idle = _ui_driver_is_idle();
     return ui_drv.idle;
 }
 
 // Frees the driver's state with the runtime (internal).
-void ui_driver_shutdown() {
+void _ui_driver_shutdown() {
     if (ui_drv.had_timer_host) { ui_release_timer_start(ui_drv.host_start); ui_release_int(ui_drv.host_stop); }
     if (ui_drv.had_frame_host) { ui_release_bool(ui_drv.host_frames); }
     ui_drv.had_timer_host = false;

@@ -13,12 +13,12 @@ struct FetchRequest { string url; string method; string headers; string body; in
 struct FetchResult { int status; string body; string headers; string error; }
 
 // A request waiting for its answer: its id and the handler (internal).
-struct PendingFetch { int id; fn(FetchResult)->void on_done; }
+struct _PendingFetch { int id; fn(FetchResult)->void on_done; }
 
 // Send `request`; on_done gets the result as an event, on the UI thread.
 void ui_fetch(FetchRequest request, escaping fn(FetchResult)->void on_done) {
     int id = ++ui.next_request;
-    ui.fetches.push(PendingFetch{id, on_done});
+    ui.fetches.push(_PendingFetch{id, on_done});
     String timeout;
     defer String_free(&timeout);
     String_appendf(&timeout, "%d", request.timeout_ms);
@@ -41,9 +41,9 @@ bool ui_event_fetch(int id, int status, string body, string headers) {
 
 // Hands a fetch event (16) to the request waiting for it as a FetchResult and frees its
 // handler; false when no request has that id (internal).
-bool ui_dispatch_fetch_event(*Event event) {
+bool _ui_dispatch_fetch_event(*Event event) {
     for (i in 0..ui.fetches.size) {
-        PendingFetch pending = ui.fetches.data[i];
+        _PendingFetch pending = ui.fetches.data[i];
         if (pending.id != event.id) { continue; }
         ui.fetches.remove(i);
         string text = event.text == null ? "" : event.text;
@@ -77,7 +77,7 @@ void ui_cache_path(string url, String* out) {
 
 // A download for ui_cached_file: its request id, the URL, the cache path and every handler
 // waiting for it (internal).
-struct PendingCache { int fetch; String url; String path; List<fn(string)->void> waiting; }
+struct _PendingCache { int fetch; String url; String path; List<fn(string)->void> waiting; }
 
 // `url`'s file in the app's cache: on_done gets its path, downloaded the first time and read
 // from the cache after that (when it is there already, on_done runs before this returns), or
@@ -104,7 +104,7 @@ void ui_cached_file(string url, escaping fn(string)->void on_done) {
     fs_mkdir_p(folder.data);
     // ui_fetch takes the next request id.
     int fetch = ui.next_request + 1;
-    PendingCache pending;
+    _PendingCache pending;
     pending.fetch = fetch;
     String_append(&pending.url, url);
     String_append(&pending.path, path.data);
@@ -113,7 +113,7 @@ void ui_cached_file(string url, escaping fn(string)->void on_done) {
     ui_fetch(FetchRequest{url: url, save_to: path.data}, void(FetchResult result) {
         for (i in 0..ui.caching.size) {
             if (ui.caching.data[i].fetch != fetch) { continue; }
-            PendingCache done = ui.caching.data[i];
+            _PendingCache done = ui.caching.data[i];
             ui.caching.remove(i);
             bool ok = result.status >= 200 && result.status < 300 && fs_exists(done.path.data) == 1;
             ui_answer_cache(&done, ok ? done.path.data : null);
@@ -124,16 +124,16 @@ void ui_cached_file(string url, escaping fn(string)->void on_done) {
 #endif
 
 // Each handler waiting for `pending` gets `path`, then it is freed.
-void ui_answer_cache(*PendingCache pending, string path) {
+void ui_answer_cache(*_PendingCache pending, string path) {
     for (k in 0..pending.waiting.size) {
         pending.waiting.data[k](path);
         ui_release_string(pending.waiting.data[k]);
     }
-    ui_free_pending_cache(pending);
+    _ui_free_pending_cache(pending);
 }
 
-// Frees a PendingCache's strings and list (internal).
-void ui_free_pending_cache(*PendingCache pending) {
+// Frees a _PendingCache's strings and list (internal).
+void _ui_free_pending_cache(*_PendingCache pending) {
     String_free(&pending.url);
     String_free(&pending.path);
     pending.waiting.free();
@@ -144,7 +144,7 @@ void ui_free_pending_cache(*PendingCache pending) {
 struct CachedFile { String url; String path; int pending; bool unmounted; bool asking; *Signal<int> version; }
 
 // Frees a CachedFile (internal).
-void ui_free_cached_file(*CachedFile cached) {
+void _ui_free_cached_file(*CachedFile cached) {
     String_free(&cached.url);
     String_free(&cached.path);
     cached.version.free();
@@ -163,7 +163,7 @@ string use_cached_file(string url) {
         slot.data = cached;
         slot.dispose = void() {
             cached.unmounted = true;
-            if (cached.pending == 0) { ui_free_cached_file(cached); }
+            if (cached.pending == 0) { _ui_free_cached_file(cached); }
         };
     }
     cached.version.get();
@@ -180,7 +180,7 @@ string use_cached_file(string url) {
     ui_cached_file(url, void(string path) {
         cached.pending--;
         if (cached.unmounted) {
-            if (cached.pending == 0) { ui_free_cached_file(cached); }
+            if (cached.pending == 0) { _ui_free_cached_file(cached); }
         } else if (path != null && String_eq_cstr(&cached.url, wanted) == 1) {
             String_clear(&cached.path);
             String_append(&cached.path, path);

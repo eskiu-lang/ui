@@ -41,7 +41,7 @@ void uiw_on_request(int window, int64 id, string scheme, string url, string meth
         webapp_frontend(&request);
     } else {
         for (i in 0..webapp.protocols.size) {
-            WebappProtocol* protocol = &webapp.protocols.data[i];
+            _WebappProtocol* protocol = &webapp.protocols.data[i];
             if (String_eq_cstr(&protocol.scheme, scheme) != 1) { continue; }
             if (protocol.files) {
                 if (!webapp_safe_path(request.path)) { WebappRequest_status(&request, 403); break; }
@@ -96,7 +96,7 @@ void uiw_on_message(int window, string text) {
 
 // The command `call` names: a built-in one ("ui:...") or the program's.
 void webapp_dispatch(WebappCall* call) {
-    if (strncmp(call.command, "ui:", 3) == 0) { webapp_builtin(call); return; }
+    if (strncmp(call.command, "ui:", 3) == 0) { _webapp_builtin(call); return; }
     for (i in 0..webapp.commands.size) {
         if (String_eq_cstr(&webapp.commands.data[i].name, call.command) == 1) {
             webapp.commands.data[i].handler(call);
@@ -132,7 +132,7 @@ void uiw_on_closed(int window) {
 // ---- The built-in commands ----
 
 // The level a page's dialog `kind` names (internal).
-int webapp_level(string kind) {
+int _webapp_level(string kind) {
     if (kind == null) { return WEBAPP_INFO; }
     if (strcmp(kind, "warning") == 0) { return WEBAPP_WARNING; }
     if (strcmp(kind, "error") == 0) { return WEBAPP_ERROR; }
@@ -159,7 +159,7 @@ void webapp_filters(*JsonValue filters, String* out) {
 }
 
 // The commands the page's module has built in: ui:dialog, ui:window and ui:quit (internal).
-void webapp_builtin(WebappCall* call) {
+void _webapp_builtin(WebappCall* call) {
     if (strcmp(call.command, "ui:dialog") == 0) {
         string type = call.string("type");
         if (type == null) { call.reject("ui:dialog: no type"); return; }
@@ -168,7 +168,7 @@ void webapp_builtin(WebappCall* call) {
             bool confirm = strcmp(type, "confirm") == 0;
             string ok = call.string("okLabel");
             string cancel = call.string("cancelLabel");
-            int chose = uiw_dialog_message(call.window, confirm ? 1 : 0, webapp_level(call.string("kind")),
+            int chose = uiw_dialog_message(call.window, confirm ? 1 : 0, _webapp_level(call.string("kind")),
                 title == null ? "" : title, call.string("message") == null ? "" : call.string("message"),
                 ok == null ? "OK" : ok, cancel == null ? "Cancel" : cancel);
             call.resolve(confirm ? (chose == 1 ? "true" : "false") : "null");
@@ -191,10 +191,10 @@ void webapp_builtin(WebappCall* call) {
             String_append(&json, "[");
             for (i in 0..paths.size) {
                 if (i > 0) { String_append(&json, ","); }
-                webapp_quote(&json, paths.data[i].data);
+                _webapp_quote(&json, paths.data[i].data);
             }
             String_append(&json, "]");
-        } else { webapp_quote(&json, paths.data[0].data); }
+        } else { _webapp_quote(&json, paths.data[0].data); }
         call.resolve(json.data);
         return;
     }

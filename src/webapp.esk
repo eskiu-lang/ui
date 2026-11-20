@@ -160,22 +160,22 @@ struct WebappDialog {
 // ---- State (internal) ----
 
 // A command the program registered (internal).
-struct WebappCommand { String name; fn(*WebappCall)->void handler; }
+struct _WebappCommand { String name; fn(*WebappCall)->void handler; }
 // A listener of the page's events (internal).
-struct WebappListener { String event; fn(WebappEvent)->void handler; }
+struct _WebappListener { String event; fn(WebappEvent)->void handler; }
 // A scheme the program answers: a handler, or the files under a root (internal).
-struct WebappProtocol { String scheme; String root; bool files; fn(*WebappRequest)->void handler; }
+struct _WebappProtocol { String scheme; String root; bool files; fn(*WebappRequest)->void handler; }
 // A binary answer waiting for the page to fetch it (app://localhost/__eskiu/bytes/TOKEN).
 struct WebappBytes { int token; *uint8 data; int64 length; }
 
 // What the module keeps between calls (internal).
-struct WebappState {
+struct _WebappState {
     bool started;
     String platform;
     String frontend;
-    List<WebappCommand> commands;
-    List<WebappListener> listeners;
-    List<WebappProtocol> protocols;
+    List<_WebappCommand> commands;
+    List<_WebappListener> listeners;
+    List<_WebappProtocol> protocols;
     List<int> intercepting;
     bool has_close_handler;
     fn(int)->bool close_handler;
@@ -184,7 +184,7 @@ struct WebappState {
     int next_bytes;
 }
 
-WebappState webapp;
+_WebappState webapp;
 
 // The largest part of a file one answer to an open range ("bytes=N-") carries: a media
 // element asks again for the rest.
@@ -192,7 +192,7 @@ const int64 WEBAPP_RANGE_CHUNK = 8388608;
 
 // Starts the platform's application once, before the first registration or window
 // (internal).
-void webapp_start() {
+void _webapp_start() {
     if (webapp.started) { return; }
     webapp.started = true;
     Mutex_init(&webapp.bytes_lock);
@@ -210,8 +210,8 @@ void webapp_start() {
 
 // The page's `invoke(name, args)` runs `handler`.
 void webapp_command(string name, escaping fn(*WebappCall)->void handler) {
-    webapp_start();
-    WebappCommand command;
+    _webapp_start();
+    _WebappCommand command;
     String_from(&command.name, name);
     command.handler = handler;
     webapp.commands.push(command);
@@ -219,8 +219,8 @@ void webapp_command(string name, escaping fn(*WebappCall)->void handler) {
 
 // The page's `emit(event, payload)` runs `handler`.
 void webapp_listen(string event, escaping fn(WebappEvent)->void handler) {
-    webapp_start();
-    WebappListener listener;
+    _webapp_start();
+    _WebappListener listener;
     String_from(&listener.event, event);
     listener.handler = handler;
     webapp.listeners.push(listener);
@@ -229,8 +229,8 @@ void webapp_listen(string event, escaping fn(WebappEvent)->void handler) {
 // The scheme `scheme` (scheme://localhost/..., https://scheme.localhost/... on Windows) is
 // answered by `handler`. Before the first window.
 void webapp_protocol(string scheme, escaping fn(*WebappRequest)->void handler) {
-    webapp_start();
-    WebappProtocol protocol;
+    _webapp_start();
+    _WebappProtocol protocol;
     String_from(&protocol.scheme, scheme);
     protocol.handler = handler;
     webapp.protocols.push(protocol);
@@ -241,7 +241,7 @@ void webapp_protocol(string scheme, escaping fn(*WebappRequest)->void handler) {
 // the page's convertFileSrc makes them), with ranges.
 void webapp_protocol_dir(string scheme, string root) {
     webapp_protocol(scheme, void(*WebappRequest request) {});
-    WebappProtocol* protocol = &webapp.protocols.data[webapp.protocols.size - 1];
+    _WebappProtocol* protocol = &webapp.protocols.data[webapp.protocols.size - 1];
     protocol.files = true;
     String_from(&protocol.root, root == null ? "" : root);
 }
@@ -277,7 +277,7 @@ void webapp_scheme_url(string scheme, string path, String* out) {
 
 // Opens a window: its id (0 when the platform could not make one).
 int webapp_window(WebappWindow options) {
-    webapp_start();
+    _webapp_start();
     String url;
     defer String_free(&url);
     webapp_start_url(options.url, &url);
@@ -308,7 +308,7 @@ void webapp_close(int window) { uiw_window_close(window); }
 
 // Runs until webapp_quit or the last window closes: the exit code, for main to return.
 int webapp_run() {
-    webapp_start();
+    _webapp_start();
     return uiw_run();
 }
 

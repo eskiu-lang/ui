@@ -58,7 +58,7 @@ void ui_section_rows(*Node list) {
 // `count` rows of `item_height` points; render(i) emits row i's content.
 void FlatList(Style style, int count, int item_height, escaping fn(int)->void render UI_LOC) {
     UI_HERE
-    ListExtra list = ListExtra{count: count, item_height: item_height < 1 ? 1 : item_height, on_item: render};
+    _ListExtra list = _ListExtra{count: count, item_height: item_height < 1 ? 1 : item_height, on_item: render};
     ui.next_list = &list;
     style.gap = 0;
     ui_element(6, style, null, void() { ui_list_rows(ui.builder); }, void() {}) {}
@@ -69,7 +69,7 @@ void FlatList(Style style, int count, int item_height, escaping fn(int)->void re
 void SectionList(Style style, *List<int> sizes, int header_height, int item_height,
     escaping fn(int, int)->void render UI_LOC) {
     UI_HERE
-    ListExtra list = ListExtra{item_height: item_height < 1 ? 1 : item_height, header_height: header_height,
+    _ListExtra list = _ListExtra{item_height: item_height < 1 ? 1 : item_height, header_height: header_height,
         sizes: sizes, on_cell: render};
     ui.next_list = &list;
     style.gap = 0;
@@ -80,7 +80,7 @@ void SectionList(Style style, *List<int> sizes, int header_height, int item_heig
 // the user pulls at the top, and the platform's indicator shows while `refreshing`.
 void RefreshControl(bool refreshing, escaping fn()->void on_refresh) {
     if (ui.next_refresh != null) { ui_release_closure(ui.next_refresh.on_refresh); }
-    ui.refresh_slot = RefreshExtra{refreshing, on_refresh};
+    ui.refresh_slot = _RefreshExtra{refreshing, on_refresh};
     ui.next_refresh = &ui.refresh_slot;
 }
 

@@ -42,7 +42,7 @@ void ui_boundary_reset(int id) {
     if (node == null || node.boundary == null || !node.boundary.failed) { return; }
     node.boundary.failed = false;
     node.boundary.switching = true;
-    ui_schedule(node);
+    _ui_schedule(node);
 }
 
 // What the root shows when a render throws outside any ErrorBoundary.
@@ -86,7 +86,7 @@ void ui_report_error(UiError error) {
     String_appendf(&message, "ui: error in %s: %s\n  in %s", ui_where_name(error.where), error.text, error.path);
     println_err(message.data);
 #ifdef UI_TEST
-    ui_driver_log("error", &message.data[4]);
+    _ui_driver_log("error", &message.data[4]);
 #endif
     String_free(&message);
 }
@@ -103,7 +103,7 @@ void ui_boundary_block() {
         int from = ui.commit.len;
         int writes = ui.writes.size;
         int journal = ui.pass_unmounted.size;
-        *Observer evaluating = ui.evaluating;
+        *_Observer evaluating = ui.evaluating;
         bool ok = true;
         string text = null;
         String path;
@@ -114,7 +114,7 @@ void ui_boundary_block() {
         }
         if (ok) { return; }
         ui_rollback(node, from, writes, journal, evaluating);
-        ui_boundary_fail(node, text, path.data);
+        _ui_boundary_fail(node, text, path.data);
         free(text);
         String_free(&path);
     }
@@ -124,7 +124,7 @@ void ui_boundary_block() {
 // A render run by the frame (not inside a boundary's own block) threw: the nearest boundary
 // above `node` takes it, and is returned to run with its fallback. The root's fallback
 // failing is an error nothing can show, so it stops.
-*Node ui_render_failed(*Node node, string text, int from, int writes, int journal, *Observer evaluating) {
+*Node ui_render_failed(*Node node, string text, int from, int writes, int journal, *_Observer evaluating) {
     *Node boundary = node.parent;
     while (boundary != null && boundary.boundary == null) { boundary = boundary.parent; }
     if (boundary == null) {
@@ -135,7 +135,7 @@ void ui_boundary_block() {
     String path;
     ui_scope_path(&path);
     ui_rollback(boundary, from, writes, journal, evaluating);
-    ui_boundary_fail(boundary, text, path.data);
+    _ui_boundary_fail(boundary, text, path.data);
     String_free(&path);
     boundary.current = true;
     return boundary;
@@ -143,7 +143,7 @@ void ui_boundary_block() {
 
 // Marks the boundary `node` as failed with the error's text and scope path (copied; the
 // old ones are freed after the commit) and reports it (internal).
-void ui_boundary_fail(*Node node, string text, string path) {
+void _ui_boundary_fail(*Node node, string text, string path) {
     *Boundary state = node.boundary;
     string old_text = state.text;
     string old_path = state.path;
@@ -158,7 +158,7 @@ void ui_boundary_fail(*Node node, string text, string path) {
 // Undo what a failed render did since its save point, then empty the boundary: the commit is
 // cut back to `from`, the removals cut with it are sent again for the nodes the host knows,
 // and the boundary's children and hooks go (nodes made after the cut without a removal).
-void ui_rollback(*Node node, int from, int writes, int journal, *Observer evaluating) {
+void ui_rollback(*Node node, int from, int writes, int journal, *_Observer evaluating) {
     ui_unwind_evaluating(evaluating);
     ui.builder = node.running ? node : null;
     ui.tracking = node.running ? node.observer : null;
@@ -170,7 +170,7 @@ void ui_rollback(*Node node, int from, int writes, int journal, *Observer evalua
     int end = ui.pass_unmounted.size;
     for (i in journal..end) {
         *Node gone = ui.pass_unmounted.data[i];
-        if (ui_known(gone)) { ui_emit(6, gone, 0); }
+        if (ui_known(gone)) { _ui_emit(6, gone, 0); }
     }
     ui_boundary_clear(node);
     ui.discard_from = -1;
@@ -184,9 +184,9 @@ bool ui_known(*Node node) {
 
 // Observers a throw left evaluating (down to `depth`, the one computing when the work began)
 // are dirty again, to be computed when next read.
-void ui_unwind_evaluating(*Observer depth) {
+void ui_unwind_evaluating(*_Observer depth) {
     while (ui.evaluating != null && ui.evaluating != depth) {
-        *Observer observer = ui.evaluating;
+        *_Observer observer = ui.evaluating;
         observer.evaluating = false;
         observer.dirty = true;
         ui.evaluating = observer.below;
@@ -203,7 +203,7 @@ void ui_drop_staged() {
     ui.next_list = null;
     ui.next_refresh = null;
     ui.next_view_type = null;
-    ui_free_pairs(&ui.next_native_props);
+    _ui_free_pairs(&ui.next_native_props);
     ui_run_owned(&ui.next_owned);
     if (ui.has_next_layout) { ui_release_frame(ui.next_layout); ui.has_next_layout = false; }
     if (ui.has_next_hover) { ui_release_bool(ui.next_hover); ui.has_next_hover = false; }
@@ -281,16 +281,16 @@ void ui_discard_slots_from(*Node node, int from) {
         Slot slot = slots.data[i];
         if (slot.observer != null) {
             ui_untrack(slot.observer);
-            ui_unqueue(slot.observer.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, slot.observer);
+            _ui_unqueue(slot.observer.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, slot.observer);
         }
-        if (slot.kind == 4) { ui_drop_back((*BackEntry)slot.data); }
-        if (slot.kind == 5) { ui_drop_native((*NativeHandler)slot.data); }
+        if (slot.kind == 4) { _ui_drop_back((*_BackEntry)slot.data); }
+        if (slot.kind == 5) { _ui_drop_native((*_NativeHandler)slot.data); }
     }
     ui.finalizers.push(void() {
         for (i in 0..slots.size) {
             Slot slot = slots.data[i];
             if (slot.kind == 2) {
-                *Observer effect = (*Observer)slot.data;
+                *_Observer effect = (*_Observer)slot.data;
                 if (effect.has_cleanup) {
                     ui_guard_cleanup(effect.cleanup); ui_release_closure(effect.cleanup);
                     effect.has_cleanup = false;
@@ -309,7 +309,7 @@ void ui_discard_slots_from(*Node node, int from) {
 }
 
 // Frees a Boundary's closures and strings (internal).
-void ui_free_boundary(*Boundary boundary) {
+void _ui_free_boundary(*Boundary boundary) {
     ui_release_closure(boundary.content);
     ui_release_fallback(boundary.fallback);
     free(boundary.text);

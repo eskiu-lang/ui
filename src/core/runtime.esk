@@ -38,7 +38,7 @@ struct Ui {
     bool inactive;
     *Signal<int> environment;
     *Node builder;
-    *Observer tracking;
+    *_Observer tracking;
     // Index = node id; null once the node is unmounted. An id is reused only after the
     // commit that removed its node completes, with the next generation.
     List<*Node> by_id;
@@ -49,8 +49,8 @@ struct Ui {
     List<*Node> next_nodes;
     List<*Node> render_writes;
     List<*Node> looping;
-    List<*Observer> dirty_memos;
-    List<*Observer> dirty_effects;
+    List<*_Observer> dirty_memos;
+    List<*_Observer> dirty_effects;
     Commit commit;
     List<fn()->void> writes;
     List<fn()->void> retired;
@@ -69,18 +69,18 @@ struct Ui {
     // The source of the next element (Image), likewise.
     string next_source;
     // The value and handler of the next Switch, and whether the next ActivityIndicator spins.
-    *SwitchExtra next_switch;
+    *_SwitchExtra next_switch;
     bool next_animating;
     // The value, range and handler of the next Slider, likewise.
-    *SliderExtra next_slider;
+    *_SliderExtra next_slider;
     // The rows and renderer of the next virtual list, likewise.
-    *ListExtra next_list;
+    *_ListExtra next_list;
     int next_bar_style;
     bool next_bar_hidden;
     // The handlers of native modules' events, by registration order.
-    List<*NativeHandler> native_handlers;
+    List<*_NativeHandler> native_handlers;
     // The next NativeView's named props and type.
-    List<NativePair> next_native_props;
+    List<_NativePair> next_native_props;
     string next_view_type;
     // The router the platform's URL and links follow (the first Navigator's), and whether
     // the next Screen is the top one.
@@ -96,14 +96,14 @@ struct Ui {
     // display clock (ui_set_frame_host), whether frames were asked for, the time of the last
     // one run (-1 before the first), and the timer standing in for a host without a display
     // clock (its token, 0 when none is armed).
-    List<*UiFrameHandler> frame_handlers;
+    List<*_UiFrameHandler> frame_handlers;
     fn(bool)->void frame_request;
     bool has_frame_host;
     bool frames_on;
     double last_frame_time;
     int frame_timer;
     // The handlers of foreground changes (use_app_state), by registration order.
-    List<*AppStateHandler> app_state_handlers;
+    List<*_AppStateHandler> app_state_handlers;
     // The layout and hover handlers of the next element (ui_on_layout, ui_on_hover).
     fn(Frame)->void next_layout;
     bool has_next_layout;
@@ -120,21 +120,21 @@ struct Ui {
     // Destructors for the next element (ui_own).
     List<fn()->void> next_owned;
     // The RefreshControl for the next Scroll or FlatList.
-    *RefreshExtra next_refresh;
-    RefreshExtra refresh_slot;
+    *_RefreshExtra next_refresh;
+    _RefreshExtra refresh_slot;
     // Commands for the host (alerts, URLs), written between frames and sent with the next
     // commit; the alerts waiting for an answer.
     Commit commands;
     List<Pending> alerts;
     // The requests waiting for text (ui_clipboard_get).
-    List<PendingText> text_requests;
+    List<_PendingText> text_requests;
     // The requests on the network (ui_fetch).
-    List<PendingFetch> fetches;
+    List<_PendingFetch> fetches;
     // The downloads of ui_cached_file, each with the handlers waiting for it.
-    List<PendingCache> caching;
+    List<_PendingCache> caching;
     int next_request;
     // Back handlers by registration order, and the modals open, by opening order.
-    List<*BackEntry> back_handlers;
+    List<*_BackEntry> back_handlers;
     List<*Node> modals;
     // The last link the app was opened with (Linking), or null.
     string link;
@@ -155,7 +155,7 @@ struct Ui {
     // handler (ui_on_error).
     List<*Node> pass_unmounted;
     int discard_from;
-    *Observer evaluating;
+    *_Observer evaluating;
     fn()->void next_content;
     fn(UiError)->void next_fallback;
     bool has_next_boundary;
@@ -184,7 +184,7 @@ void ui_retire(escaping fn()->void dispose) { ui.retired.push(dispose); }
 struct Pending { int id; fn(int)->void on_choice; }
 
 // A use_back handler on the stack of back handlers (internal).
-struct BackEntry { fn()->bool handler; bool removed; }
+struct _BackEntry { fn()->bool handler; bool removed; }
 
 // The host's side: starts the runtime in `runtime` with `apply`, which receives each
 // commit's bytes.
@@ -195,10 +195,10 @@ void ui_init(*Ui runtime, escaping fn(*uint8, int)->void apply) {
     ui.by_id.push(null);
     ui.generations.push(0);
     *Node root = alloc<Node>(1);
-    ui_assign_id(root);
+    _ui_assign_id(root);
     root.block = void() { ui_boundary_block(); };
     root.handler = void() {}; root.handler_cleanup = void() {};
-    root.observer = ui_observer(0, root);
+    root.observer = _ui_observer(0, root);
     root.boundary = alloc<Boundary>(1);
     root.boundary.content = void() {};
     root.boundary.fallback = void(UiError error) { ui_default_fallback(error); };
@@ -211,7 +211,7 @@ void ui_mount(escaping fn()->void block) {
     ui_require(!ui.root.next && !ui.root.mounted, "already mounted");
     ui_release_closure(ui.root.boundary.content);
     ui.root.boundary.content = block;
-    ui_schedule(ui.root);
+    _ui_schedule(ui.root);
 }
 
 // The indices of `depths` ordered by depth, ties in their order (a counting sort: stable
@@ -234,8 +234,8 @@ List<int> ui_by_depth(List<int>* depths) {
 // the order they were scheduled. An effect dirtied again after it ran waits for the next
 // commit.
 void ui_run_effects() {
-    List<*Observer> due = ui.dirty_effects;
-    ui.dirty_effects = List<*Observer>{};
+    List<*_Observer> due = ui.dirty_effects;
+    ui.dirty_effects = List<*_Observer>{};
     List<int> depths;
     for (i in 0..due.size) { depths.push(due.data[i].owner.depth); }
     List<int> order = ui_by_depth(&depths);
@@ -243,9 +243,9 @@ void ui_run_effects() {
     // one. The loop is a function of its own, so the try holds one call: on the web each call
     // made directly inside a try goes through a JavaScript wrapper.
     int at = 0;
-    *Observer effect = null;
+    *_Observer effect = null;
     while (at < order.size) {
-        try { ui_effects_from(&due, &order, &at, &effect); } catch (_) {
+        try { _ui_effects_from(&due, &order, &at, &effect); } catch (_) {
             string text = ui_copy(exception_text());
             ui_unwind_evaluating(null);
             ui.tracking = null;
@@ -264,9 +264,9 @@ void ui_run_effects() {
 
 // Runs the due effects from `at` on, in order, noting the current one for error reports
 // (internal).
-void ui_effects_from(List<*Observer>* due, List<int>* order, *int at, **Observer current) {
+void _ui_effects_from(List<*_Observer>* due, List<int>* order, *int at, **_Observer current) {
     while (*at < order.size) {
-        *Observer effect = due.data[order.data[*at]];
+        *_Observer effect = due.data[order.data[*at]];
         *current = effect;
         *at = *at + 1;
         effect.queued = false;
@@ -274,7 +274,7 @@ void ui_effects_from(List<*Observer>* due, List<int>* order, *int at, **Observer
         if (effect.has_cleanup) {
             effect.cleanup(); ui_release_closure(effect.cleanup); effect.has_cleanup = false;
         }
-        ui_validate(effect);
+        _ui_validate(effect);
     }
 }
 
@@ -312,37 +312,37 @@ void ui_complete(int sequence) {
 }
 
 // Whether a dirty memo has readers (internal).
-bool ui_memo_work() {
+bool _ui_memo_work() {
     for (i in 0..ui.dirty_memos.size) {
-        *Observer memo = ui.dirty_memos.data[i];
+        *_Observer memo = ui.dirty_memos.data[i];
         if (memo.dirty && memo.output.readers.size > 0) { return true; }
     }
     return false;
 }
 
 // Validates the dirty memos that have readers from `at` on (internal).
-void ui_memos_from(*int at, **Observer current) {
+void _ui_memos_from(*int at, **_Observer current) {
     while (*at < ui.dirty_memos.size) {
-        *Observer memo = ui.dirty_memos.data[*at];
+        *_Observer memo = ui.dirty_memos.data[*at];
         *current = memo;
         *at = *at + 1;
         memo.queued = false;
-        if (memo.dirty && memo.output.readers.size > 0) { ui_validate(memo); }
+        if (memo.dirty && memo.output.readers.size > 0) { _ui_validate(memo); }
     }
 }
 
 // Where a render started, for the rollback if it throws.
-struct RenderSave { *Node node; int from; int writes; int journal; *Observer evaluating; }
+struct RenderSave { *Node node; int from; int writes; int journal; *_Observer evaluating; }
 
 // Runs the scheduled blocks from `at` on, noting where each started for a rollback
 // (internal).
-void ui_renders_from(List<*Node>* run, *int at, *RenderSave save) {
+void _ui_renders_from(List<*Node>* run, *int at, *RenderSave save) {
     while (*at < run.size) {
         *Node node = run.data[*at];
         *at = *at + 1;
         if (!node.current) { continue; }
         *save = RenderSave{node, ui.commit.len, ui.writes.size, ui.pass_unmounted.size, ui.evaluating};
-        ui_run(node);
+        _ui_run(node);
     }
 }
 
@@ -359,17 +359,17 @@ bool ui_frame() {
     // A memo that throws stays dirty and its readers run again, so it throws again where a
     // render reads it, inside a boundary (which reports it).
     int next_memo = 0;
-    *Observer memo = null;
+    *_Observer memo = null;
     while (next_memo < ui.dirty_memos.size) {
-        try { ui_memos_from(&next_memo, &memo); } catch (_) {
+        try { _ui_memos_from(&next_memo, &memo); } catch (_) {
             ui_unwind_evaluating(null);
             ui.tracking = null;
-            ui_changed(memo.output);
+            _ui_changed(memo.output);
         }
     }
     ui.dirty_memos.size = 0;
     if (ui.next_nodes.size == 0 && ui.dirty_effects.size == 0 && ui.commands.len == 0) {
-        ui_free_frame_texts();
+        _ui_free_frame_texts();
         return false;
     }
     List<*Node> due = ui.next_nodes;
@@ -392,7 +392,7 @@ bool ui_frame() {
     int at = 0;
     RenderSave save;
     while (at < run.size) {
-        try { ui_renders_from(&run, &at, &save); } catch (_) {
+        try { _ui_renders_from(&run, &at, &save); } catch (_) {
             string text = ui_copy(exception_text());
             run.push(ui_render_failed(save.node, text, save.from, save.writes, save.journal, save.evaluating));
             free(text);
@@ -404,7 +404,7 @@ bool ui_frame() {
         write(); ui_release_closure(write);
     }
     ui.writes.size = 0;
-    ui_free_frame_texts();
+    _ui_free_frame_texts();
     for (i in 0..ui.looping.size) {
         if (!ui.looping.data[i].render_write) { ui.looping.data[i].loop_frames = 0; }
     }
@@ -433,7 +433,7 @@ bool ui_frame() {
 #endif
     ui.apply(ui.commit.data, ui.commit.len);
 #ifdef UI_TEST
-    ui_driver_note_frame(ui_driver_clock_ms() - started, bytes);
+    _ui_driver_note_frame(ui_driver_clock_ms() - started, bytes);
 #endif
     return true;
 }
@@ -445,7 +445,7 @@ bool ui_post(Event event) {
 #ifdef UI_TEST
     // The user's input after a reload: the scopes that mount from now on start afresh.
     int k = event.kind;
-    if (k == 1 || k == 2 || k == 4 || k == 6 || k == 7 || k == 14 || k == 17 || k == 20) { ui_reload_input(); }
+    if (k == 1 || k == 2 || k == 4 || k == 6 || k == 7 || k == 14 || k == 17 || k == 20) { _ui_reload_input(); }
 #endif
     if (ui.in_flight || ui.phase != 0) {
         if (event.text != null) { event.text = ui_copy(event.text); }
@@ -518,11 +518,11 @@ bool ui_event_scroll(int id, int generation, int offset, int viewport) {
 // stays written.
 bool ui_dispatch_event(*Event event) {
     *Node builder = ui.builder;
-    *Observer tracking = ui.tracking;
+    *_Observer tracking = ui.tracking;
     int phase = ui.phase;
-    *Observer evaluating = ui.evaluating;
+    *_Observer evaluating = ui.evaluating;
     bool handled = true;
-    try { handled = ui_dispatch_now(event); } catch (_) {
+    try { handled = _ui_dispatch_now(event); } catch (_) {
         string text = ui_copy(exception_text());
         ui_unwind_evaluating(evaluating);
         ui.builder = builder;
@@ -541,12 +541,12 @@ bool ui_dispatch_event(*Event event) {
 
 // True for the events a user's action makes: a press, an edit, a toggle, a refresh, a value,
 // a gesture, a long press, a submit (internal).
-bool ui_user_event(int kind) {
+bool _ui_user_event(int kind) {
     return kind == 1 || kind == 2 || kind == 4 || kind == 7 || kind == 14 || kind == 17 || kind == 20 || kind == 21;
 }
 
 // True when node or one of its ancestors is disabled (Style.disabled) (internal).
-bool ui_node_disabled(*Node node) {
+bool _ui_node_disabled(*Node node) {
     for (*Node n = node; n != null; n = n.parent) {
         if (n.props[61] != 0) { return true; }
     }
@@ -554,22 +554,22 @@ bool ui_node_disabled(*Node node) {
 }
 
 // Runs the handler an event is for; false when the node or request is gone (internal).
-bool ui_dispatch_now(*Event event) {
+bool _ui_dispatch_now(*Event event) {
     if (event.kind == 8) {
         // A native module's event: every handler of the channel, newest first.
         bool handled = false;
         for (int i = ui.native_handlers.size - 1; i >= 0; i--) {
-            *NativeHandler entry = ui.native_handlers.data[i];
+            *_NativeHandler entry = ui.native_handlers.data[i];
             if (strcmp(entry.channel, event.name) == 0) { entry.handler(event.text); handled = true; }
         }
         return handled;
     }
-    if (event.kind == 10) { ui_dispatch_route_event(event); return ui.router != null; }
-    if (event.kind == 12) { return ui_dispatch_timer_event(event); }
-    if (event.kind == 18) { return ui_dispatch_frame_event(event); }
-    if (event.kind == 19) { return ui_dispatch_app_state_event(event); }
-    if (event.kind == 15) { return ui_dispatch_answer_event(event); }
-    if (event.kind == 16) { return ui_dispatch_fetch_event(event); }
+    if (event.kind == 10) { _ui_dispatch_route_event(event); return ui.router != null; }
+    if (event.kind == 12) { return _ui_dispatch_timer_event(event); }
+    if (event.kind == 18) { return _ui_dispatch_frame_event(event); }
+    if (event.kind == 19) { return _ui_dispatch_app_state_event(event); }
+    if (event.kind == 15) { return _ui_dispatch_answer_event(event); }
+    if (event.kind == 16) { return _ui_dispatch_fetch_event(event); }
     if (event.kind == 6) {
         for (i in 0..ui.alerts.size) {
             Pending pending = ui.alerts.data[i];
@@ -587,7 +587,7 @@ bool ui_dispatch_now(*Event event) {
     *Node node = ui.by_id.data[id];
     if (node == null || node.generation != event.generation) { return false; }
     // What the user does to a disabled element (or one inside it) does nothing.
-    if (ui_user_event(event.kind) && ui_node_disabled(node)) { return false; }
+    if (_ui_user_event(event.kind) && _ui_node_disabled(node)) { return false; }
     // A press on a modal is the user asking to close it (Escape, a back gesture).
     if (event.kind == 1 && (node.kind == 4 || node.kind == 8 || node.kind == 12)) { node.handler(); return true; }
     // What the user changed is what the renderer shows now: recorded as sent, so a render
@@ -598,7 +598,7 @@ bool ui_dispatch_now(*Event event) {
         node.text = ui_copy(event.text);
         node.on_text(event.text);
         // Render the scope again even if the app ignored the edit, so its value wins.
-        ui_schedule(node.parent);
+        _ui_schedule(node.parent);
         return true;
     }
     if (event.kind == 3 && node.kind == 5) {
@@ -613,7 +613,7 @@ bool ui_dispatch_now(*Event event) {
         // sends it back.
         node.props[32] = event.value;
         node.on_value(event.value);
-        ui_schedule(node.parent);
+        _ui_schedule(node.parent);
         return true;
     }
     if (event.kind == 17 && node.has_on_pan) {
@@ -637,13 +637,13 @@ bool ui_dispatch_now(*Event event) {
         node.viewport = event.extra;
         int moved = node.scroll_offset - node.rendered_offset;
         if (moved < 0) { moved = -moved; }
-        if (resized || moved >= node.row_height) { ui_schedule(node); }
+        if (resized || moved >= node.row_height) { _ui_schedule(node); }
         return true;
     }
     if (event.kind == 4 && node.kind == 9) {
         node.props[18] = event.value;
         node.on_bool(event.value != 0);
-        ui_schedule(node.parent);
+        _ui_schedule(node.parent);
         return true;
     }
     return false;
@@ -653,7 +653,7 @@ bool ui_dispatch_now(*Event event) {
 // and no commit in flight.
 bool ui_needs_frame() {
     if (ui == null || ui.in_flight) { return false; }
-    return ui.next_nodes.size > 0 || ui.dirty_effects.size > 0 || ui.commands.len > 0 || ui_memo_work();
+    return ui.next_nodes.size > 0 || ui.dirty_effects.size > 0 || ui.commands.len > 0 || _ui_memo_work();
 }
 
 // Unmounts the tree, sends the last commit (the renderer must apply it at once) and frees
@@ -679,7 +679,7 @@ void ui_shutdown() {
     if (ui.has_next_submit) { ui_release_text(ui.next_submit); }
     if (ui.has_next_image) { ui_release_bool(ui.next_image); }
     ui.timers.free();
-    ui_frames_shutdown();
+    _ui_frames_shutdown();
     ui.app_state_handlers.free();
     if (ui.has_timer_host) { ui_release_timer_start(ui.timer_start); ui_release_int(ui.timer_stop); }
     ui.alerts.free(); ui.back_handlers.free();
@@ -693,13 +693,13 @@ void ui_shutdown() {
     free(ui.link);
     free(ui.locale);
     for (i in 0..ui.events.size) { free(ui.events.data[i].text); free(ui.events.data[i].name); }
-    ui.native_handlers.free(); ui_free_pairs(&ui.next_native_props);
+    ui.native_handlers.free(); _ui_free_pairs(&ui.next_native_props);
     ui.finalizers.free(); ui.events.free();
     ui.pass_unmounted.free();
     if (ui.has_on_error) { ui_release_fallback(ui.on_error); }
 #ifdef UI_TEST
-    ui_driver_shutdown();
-    ui_reload_shutdown();
+    _ui_driver_shutdown();
+    _ui_reload_shutdown();
 #endif
     ui = null;
 }

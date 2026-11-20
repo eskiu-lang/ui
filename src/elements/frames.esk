@@ -7,22 +7,22 @@
 struct Tick { double time; double delta; }
 
 // A use_frame handler and whether it runs (internal).
-struct UiFrameHandler { fn(Tick)->void handler; bool running; bool removed; }
+struct _UiFrameHandler { fn(Tick)->void handler; bool running; bool removed; }
 
 // The host's side: request(true) starts its display clock (CADisplayLink, Choreographer,
 // requestAnimationFrame), request(false) stops it; each frame comes back as
 // ui_event_frame(time). With none set, frames come from a 16 ms timer.
 void ui_set_frame_host(escaping fn(bool)->void request) {
     bool on = ui.frames_on;
-    if (on) { ui_frames_switch(false); }
+    if (on) { _ui_frames_switch(false); }
     if (ui.has_frame_host) { ui_release_bool(ui.frame_request); }
     ui.frame_request = request;
     ui.has_frame_host = true;
-    if (on) { ui_frames_switch(true); }
+    if (on) { _ui_frames_switch(true); }
 }
 
 // Starts or stops the display clock: the host's, else a 16 ms timer (internal).
-void ui_frames_switch(bool on) {
+void _ui_frames_switch(bool on) {
     ui.frames_on = on;
     ui.last_frame_time = -1;
     if (ui.has_frame_host) { ui.frame_request(on); return; }
@@ -40,14 +40,14 @@ void ui_frames_switch(bool on) {
 void ui_frames_update() {
     bool wanted = false;
     for (i in 0..ui.frame_handlers.size) {
-        *UiFrameHandler entry = ui.frame_handlers.data[i];
+        *_UiFrameHandler entry = ui.frame_handlers.data[i];
         if (entry.running && !entry.removed) { wanted = true; break; }
     }
-    if (wanted != ui.frames_on) { ui_frames_switch(wanted); }
+    if (wanted != ui.frames_on) { _ui_frames_switch(wanted); }
 }
 
 // Removes a use_frame handler and stops the frames when none runs (internal).
-void ui_drop_frame_handler(*UiFrameHandler entry) {
+void _ui_drop_frame_handler(*_UiFrameHandler entry) {
     if (entry.removed) { return; }
     entry.removed = true;
     for (int i = ui.frame_handlers.size - 1; i >= 0; i--) {
@@ -62,14 +62,14 @@ void ui_drop_frame_handler(*UiFrameHandler entry) {
 void use_frame(bool running, escaping fn(Tick)->void handler) {
     static int tag;
     *Slot slot = ui_slot(11, &tag);
-    *UiFrameHandler entry = (*UiFrameHandler)slot.data;
+    *_UiFrameHandler entry = (*_UiFrameHandler)slot.data;
     if (entry == null) {
-        entry = alloc<UiFrameHandler>(1);
+        entry = alloc<_UiFrameHandler>(1);
         entry.handler = handler;
         entry.running = running;
         slot.data = entry;
         ui.frame_handlers.push(entry);
-        slot.dispose = void() { ui_drop_frame_handler(entry); ui_release_tick(entry.handler); free(entry); };
+        slot.dispose = void() { _ui_drop_frame_handler(entry); ui_release_tick(entry.handler); free(entry); };
         ui_frames_update();
         return;
     }
@@ -88,20 +88,20 @@ bool ui_event_frame(double time) {
 }
 
 // Runs the frame handlers for a display frame event (internal).
-bool ui_dispatch_frame_event(*Event event) { return ui_run_frames(event.value + event.extra / 1000000.0); }
+bool _ui_dispatch_frame_event(*Event event) { return _ui_run_frames(event.value + event.extra / 1000000.0); }
 
 // Runs each running frame handler with the time and the time since the last frame; false
 // when frames are off or none ran (internal).
-bool ui_run_frames(double time) {
+bool _ui_run_frames(double time) {
     if (!ui.frames_on) { return false; }
     double delta = ui.last_frame_time < 0 || time < ui.last_frame_time ? 0 : time - ui.last_frame_time;
     ui.last_frame_time = time;
     bool ran = false;
     // A handler may unmount scopes: their entries leave the list, so it is walked by a copy.
-    List<*UiFrameHandler> entries;
+    List<*_UiFrameHandler> entries;
     for (i in 0..ui.frame_handlers.size) { entries.push(ui.frame_handlers.data[i]); }
     for (i in 0..entries.size) {
-        *UiFrameHandler entry = entries.data[i];
+        *_UiFrameHandler entry = entries.data[i];
         if (entry.removed || !entry.running) { continue; }
         entry.handler(Tick{time, delta});
         ran = true;
@@ -111,17 +111,17 @@ bool ui_run_frames(double time) {
 }
 
 // Stops the frames and frees the handlers' list (internal).
-void ui_frames_shutdown() {
-    if (ui.frames_on) { ui_frames_switch(false); }
+void _ui_frames_shutdown() {
+    if (ui.frames_on) { _ui_frames_switch(false); }
     if (ui.has_frame_host) { ui_release_bool(ui.frame_request); }
     ui.frame_handlers.free();
 }
 
 // A use_app_state handler (internal).
-struct AppStateHandler { fn(bool)->void handler; bool removed; }
+struct _AppStateHandler { fn(bool)->void handler; bool removed; }
 
 // Removes a use_app_state handler (internal).
-void ui_drop_app_state(*AppStateHandler entry) {
+void _ui_drop_app_state(*_AppStateHandler entry) {
     if (entry.removed) { return; }
     entry.removed = true;
     for (int i = ui.app_state_handlers.size - 1; i >= 0; i--) {
@@ -135,13 +135,13 @@ void ui_drop_app_state(*AppStateHandler entry) {
 void use_app_state(escaping fn(bool)->void handler) {
     static int tag;
     *Slot slot = ui_slot(12, &tag);
-    *AppStateHandler entry = (*AppStateHandler)slot.data;
+    *_AppStateHandler entry = (*_AppStateHandler)slot.data;
     if (entry == null) {
-        entry = alloc<AppStateHandler>(1);
+        entry = alloc<_AppStateHandler>(1);
         entry.handler = handler;
         slot.data = entry;
         ui.app_state_handlers.push(entry);
-        slot.dispose = void() { ui_drop_app_state(entry); ui_release_bool(entry.handler); free(entry); };
+        slot.dispose = void() { _ui_drop_app_state(entry); ui_release_bool(entry.handler); free(entry); };
         return;
     }
     ui_release_bool(entry.handler);
@@ -149,12 +149,12 @@ void use_app_state(escaping fn(bool)->void handler) {
 }
 
 // Runs every use_app_state handler for a foreground or background event (internal).
-bool ui_dispatch_app_state_event(*Event event) {
-    List<*AppStateHandler> entries;
+bool _ui_dispatch_app_state_event(*Event event) {
+    List<*_AppStateHandler> entries;
     for (i in 0..ui.app_state_handlers.size) { entries.push(ui.app_state_handlers.data[i]); }
     bool ran = false;
     for (i in 0..entries.size) {
-        *AppStateHandler entry = entries.data[i];
+        *_AppStateHandler entry = entries.data[i];
         if (entry.removed) { continue; }
         entry.handler(event.value != 0);
         ran = true;

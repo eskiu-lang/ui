@@ -43,7 +43,7 @@ List<*String> ui_frame_strings;
 }
 
 // Frees the frame's textf texts and frame_string Strings (internal).
-void ui_free_frame_texts() {
+void _ui_free_frame_texts() {
     for (i in 0..ui_frame_texts.size) { free(ui_frame_texts.data[i]); }
     ui_frame_texts.size = 0;
     for (i in 0..ui_frame_strings.size) { String_free(ui_frame_strings.data[i]); free(ui_frame_strings.data[i]); }

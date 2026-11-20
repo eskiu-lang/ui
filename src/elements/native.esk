@@ -6,13 +6,13 @@
 // through events on a channel, which reach use_native_event handlers on the UI thread.
 
 // A name and a value, both owned (internal).
-struct NativePair { string name; string value; }
+struct _NativePair { string name; string value; }
 
 // A use_native_event handler and its channel (internal).
-struct NativeHandler { string channel; fn(string)->void handler; bool removed; }
+struct _NativeHandler { string channel; fn(string)->void handler; bool removed; }
 
 // Frees each pair's strings and the list (internal).
-void ui_free_pairs(List<NativePair>* pairs) {
+void _ui_free_pairs(List<_NativePair>* pairs) {
     for (i in 0..pairs.size) { free(pairs.data[i].name); free(pairs.data[i].value); }
     pairs.free();
 }
@@ -22,21 +22,21 @@ void ui_free_pairs(List<NativePair>* pairs) {
 void use_native_event(string channel, escaping fn(string)->void handler) {
     static int tag;
     *Slot slot = ui_slot(5, &tag);
-    *NativeHandler entry = (*NativeHandler)slot.data;
+    *_NativeHandler entry = (*_NativeHandler)slot.data;
     if (entry == null) {
-        entry = alloc<NativeHandler>(1);
+        entry = alloc<_NativeHandler>(1);
         entry.channel = ui_copy(channel);
         slot.data = entry;
         ui.native_handlers.push(entry);
         slot.dispose = void() {
-            ui_drop_native(entry); ui_release_payload(entry.handler); free(entry.channel); free(entry);
+            _ui_drop_native(entry); ui_release_payload(entry.handler); free(entry.channel); free(entry);
         };
     } else { ui_release_payload(entry.handler); }
     entry.handler = handler;
 }
 
 // Removes a use_native_event handler (internal).
-void ui_drop_native(*NativeHandler entry) {
+void _ui_drop_native(*_NativeHandler entry) {
     if (entry.removed) { return; }
     entry.removed = true;
     for (int i = ui.native_handlers.size - 1; i >= 0; i--) {
@@ -51,7 +51,7 @@ bool ui_event_native(string channel, string payload) {
 
 // A named prop for the NativeView right after it.
 void ui_native_prop(string name, string value) {
-    ui.next_native_props.push(NativePair{ui_copy(name), ui_copy(value == null ? "" : value)});
+    ui.next_native_props.push(_NativePair{ui_copy(name), ui_copy(value == null ? "" : value)});
 }
 
 // A view the app registered with each host under `type` (see the hosts' registries). It is
@@ -65,7 +65,7 @@ void NativeView(Style style, string type, escaping fn(string, string)->void on_e
 }
 
 // Appends a named prop record for a native view to the commit (internal).
-void ui_emit_named(*Node node, string name, string value) {
+void _ui_emit_named(*Node node, string name, string value) {
     *Commit c = &ui.commit;
     c.u8(11); c.u32(node.id);
     for (k in 0..2) {
@@ -83,20 +83,20 @@ void ui_emit_named(*Node node, string name, string value) {
 void ui_native_view_props(*Node node, bool fresh) {
     string type = ui.next_view_type;
     ui.next_view_type = null;
-    if (ui_update_string(&node.source, type)) { ui_emit_string_prop(node, 4, node.source); }
-    List<NativePair> given = ui.next_native_props;
-    ui.next_native_props = List<NativePair>{};
+    if (ui_update_string(&node.source, type)) { _ui_emit_string_prop(node, 4, node.source); }
+    List<_NativePair> given = ui.next_native_props;
+    ui.next_native_props = List<_NativePair>{};
     for (i in 0..given.size) {
-        NativePair pair = given.data[i];
+        _NativePair pair = given.data[i];
         int at = -1;
         for (j in 0..node.native_props.size) {
             if (strcmp(node.native_props.data[j].name, pair.name) == 0) { at = j; break; }
         }
         if (at < 0) {
-            ui_emit_named(node, pair.name, pair.value);
-            node.native_props.push(NativePair{ui_copy(pair.name), ui_copy(pair.value)});
+            _ui_emit_named(node, pair.name, pair.value);
+            node.native_props.push(_NativePair{ui_copy(pair.name), ui_copy(pair.value)});
         } else if (strcmp(node.native_props.data[at].value, pair.value) != 0) {
-            ui_emit_named(node, pair.name, pair.value);
+            _ui_emit_named(node, pair.name, pair.value);
             free(node.native_props.data[at].value);
             node.native_props.data[at].value = ui_copy(pair.value);
         }
@@ -105,12 +105,12 @@ void ui_native_view_props(*Node node, bool fresh) {
         bool kept = false;
         for (i in 0..given.size) { if (strcmp(given.data[i].name, node.native_props.data[j].name) == 0) { kept = true; } }
         if (!kept) {
-            ui_emit_named(node, node.native_props.data[j].name, "");
+            _ui_emit_named(node, node.native_props.data[j].name, "");
             free(node.native_props.data[j].name); free(node.native_props.data[j].value);
             node.native_props.remove(j);
         }
     }
-    ui_free_pairs(&given);
+    _ui_free_pairs(&given);
 }
 
 // The host's side: native view `id` sent the event `name` with `payload` (read during the

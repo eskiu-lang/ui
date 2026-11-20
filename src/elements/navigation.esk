@@ -25,7 +25,7 @@ struct RouteParams { string route; String pattern; List<String> values; }
 List<*RouteParams> ui_route_params;
 
 // Frees the params route_param kept for `route` (internal).
-void ui_route_params_drop(string route) {
+void _ui_route_params_drop(string route) {
     for (int i = ui_route_params.size - 1; i >= 0; i--) {
         *RouteParams entry = ui_route_params.data[i];
         if (entry.route != route) { continue; }
@@ -40,7 +40,7 @@ void ui_route_params_drop(string route) {
 // Free it after the UI that shows it is shut down (in ui_app_stop).
 void Router_free(*Router self) {
     for (i in 0..self.stack.size) {
-        ui_route_params_drop(self.stack.data[i].data);
+        _ui_route_params_drop(self.stack.data[i].data);
         String_free(&self.stack.data[i]);
     }
     self.stack.free();
@@ -73,15 +73,15 @@ string Router_at(*Router self, int i) {
 // it completes.
 void ui_route_drop(String route) {
     if (ui != null) {
-        ui_retire(void() { ui_route_params_drop(route.data); free(route.data); });
+        ui_retire(void() { _ui_route_params_drop(route.data); free(route.data); });
     } else {
-        ui_route_params_drop(route.data);
+        _ui_route_params_drop(route.data);
         free(route.data);
     }
 }
 
 // Renders the router's readers again (internal).
-void ui_route_changed(*Router self) { self.version.set(self.version.value + 1); }
+void _ui_route_changed(*Router self) { self.version.set(self.version.value + 1); }
 
 // What the web host does with the browser's history for the router the URL follows:
 // command 3 with a mode ("push", "replace", "back", "reset") and its strings.
@@ -95,11 +95,11 @@ void ui_route_history(*Router self, string mode, List<string>* strings) {
 }
 
 // Pushes `path`, telling the browser's history when `history` (internal).
-void ui_route_push(*Router self, string path, bool history) {
+void _ui_route_push(*Router self, string path, bool history) {
     String route;
     String_from(&route, path);
     self.stack.push(route);
-    ui_route_changed(self);
+    _ui_route_changed(self);
     if (history) {
         List<string> strings;
         strings.push(path);
@@ -110,12 +110,12 @@ void ui_route_push(*Router self, string path, bool history) {
 
 // Replaces the top route with `path`, telling the browser's history when `history`
 // (internal).
-void ui_route_replace(*Router self, string path, bool history) {
+void _ui_route_replace(*Router self, string path, bool history) {
     String route;
     String_from(&route, path);
     ui_route_drop(self.stack.data[self.stack.size - 1]);
     self.stack.data[self.stack.size - 1] = route;
-    ui_route_changed(self);
+    _ui_route_changed(self);
     if (history) {
         List<string> strings;
         strings.push(path);
@@ -125,22 +125,22 @@ void ui_route_replace(*Router self, string path, bool history) {
 }
 
 // Pops the top route (internal).
-void ui_route_pop(*Router self) {
+void _ui_route_pop(*Router self) {
     ui_route_drop(self.stack.data[self.stack.size - 1]);
     self.stack.size--;
-    ui_route_changed(self);
+    _ui_route_changed(self);
 }
 
 // Pushes `path` (copied): its screen slides in on the phone, the URL changes on the web.
-void Router_push(*Router self, string path) { ui_route_push(self, path, true); }
+void Router_push(*Router self, string path) { _ui_route_push(self, path, true); }
 
 // Replaces the top route with `path` (copied), with no transition back to it.
-void Router_replace(*Router self, string path) { ui_route_replace(self, path, true); }
+void Router_replace(*Router self, string path) { _ui_route_replace(self, path, true); }
 
 // Back one route; false at the root.
 bool Router_back(*Router self) {
     if (self.stack.size <= 1) { return false; }
-    ui_route_pop(self);
+    _ui_route_pop(self);
     List<string> strings;
     ui_route_history(self, "back", &strings);
     strings.free();
@@ -149,8 +149,8 @@ bool Router_back(*Router self) {
 
 // Only `path` on the stack.
 void Router_reset(*Router self, string path) {
-    while (self.stack.size > 1) { ui_route_pop(self); }
-    ui_route_replace(self, path, false);
+    while (self.stack.size > 1) { _ui_route_pop(self); }
+    _ui_route_replace(self, path, false);
     List<string> strings;
     strings.push(path);
     ui_route_history(self, "reset", &strings);
@@ -171,14 +171,14 @@ bool ui_event_route(string path, int index) { return ui_post(Event{0, 0, 10, ind
 
 // Moves the router the URL follows to the browser's history position: pops, pushes or
 // replaces (internal).
-void ui_dispatch_route_event(*Event event) {
+void _ui_dispatch_route_event(*Event event) {
     *Router router = ui.router;
     if (router == null || event.text == null) { return; }
     int index = event.value < 0 ? 0 : event.value;
-    while (router.stack.size > index + 1) { ui_route_pop(router); }
-    if (index > router.stack.size - 1) { ui_route_push(router, event.text, false); }
+    while (router.stack.size > index + 1) { _ui_route_pop(router); }
+    if (index > router.stack.size - 1) { _ui_route_push(router, event.text, false); }
     else if (strcmp(router.stack.data[router.stack.size - 1].data, event.text) != 0) {
-        ui_route_replace(router, event.text, false);
+        _ui_route_replace(router, event.text, false);
     }
 }
 
@@ -322,7 +322,7 @@ void ui_route_owner(*Router router) {
         router.synced = true;
 #ifdef UI_TEST
         // Under `ui serve`, the routes it had before a reload.
-        ui_reload_routes(router);
+        _ui_reload_routes(router);
 #endif
         ui_route_sync(router);
     }
@@ -349,7 +349,7 @@ void Navigator(*Router router, escaping fn(string)->void screen UI_LOC) {
                 String route;
                 ui_link_route(link, &route);
                 if (strcmp(route.data, router.stack.data[router.stack.size - 1].data) != 0) {
-                    ui_route_push(router, route.data, true);
+                    _ui_route_push(router, route.data, true);
                 }
                 String_free(&route);
             }

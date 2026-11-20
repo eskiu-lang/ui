@@ -3,7 +3,7 @@
 // ---- JSON text (internal) ----
 
 // `text` as a JSON string into `out`; null as null (internal).
-void webapp_quote(String* out, string text) {
+void _webapp_quote(String* out, string text) {
     if (text == null) { String_append(out, "null"); return; }
     _json_escape(out, text, strlen(text));
 }
@@ -25,7 +25,7 @@ void webapp_answer(int window, int id, string value, string error) {
     String_appendf(&message, "{\"kind\":\"reply\",\"id\":%d,", id);
     if (error != null) {
         String_append(&message, "\"ok\":false,\"error\":");
-        webapp_quote(&message, error);
+        _webapp_quote(&message, error);
     } else {
         String_append(&message, "\"ok\":true,\"value\":");
         String_append(&message, value == null || value[0] == 0 ? "null" : value);
@@ -70,7 +70,7 @@ void WebappReply_resolve(const WebappReply* self, string json) {
 void WebappReply_resolve_string(const WebappReply* self, string text) {
     String json;
     defer String_free(&json);
-    webapp_quote(&json, text);
+    _webapp_quote(&json, text);
     webapp_answer(self.window, self.id, json.data, null);
 }
 // The answer as bytes (copied): a Uint8Array in the page. Any thread.
@@ -162,7 +162,7 @@ void webapp_emit(int window, string event, string json) {
     String message;
     defer String_free(&message);
     String_append(&message, "{\"kind\":\"event\",\"event\":");
-    webapp_quote(&message, event);
+    _webapp_quote(&message, event);
     String_appendf(&message, ",\"window\":%d,\"payload\":%s}", window, json == null || json[0] == 0 ? "null" : json);
     webapp_send(window, message.data);
 }

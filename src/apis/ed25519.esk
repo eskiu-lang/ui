@@ -42,10 +42,10 @@ void ui_sha512_init(UiSha512* self) {
 }
 
 // `x` rotated right by `n` bits (internal).
-uint64 ui_rotr64(uint64 x, int n) { return (x >> n) | (x << (64 - n)); }
+uint64 _ui_rotr64(uint64 x, int n) { return (x >> n) | (x << (64 - n)); }
 
 // One 128-byte block into the state (internal).
-void ui_sha512_block(UiSha512* self, *uint8 p) {
+void _ui_sha512_block(UiSha512* self, *uint8 p) {
     uint64[80] w;
     for (int i = 0; i < 16; i++) {
         uint64 v = 0;
@@ -53,15 +53,15 @@ void ui_sha512_block(UiSha512* self, *uint8 p) {
         w[i] = v;
     }
     for (int i = 16; i < 80; i++) {
-        uint64 s0 = ui_rotr64(w[i - 15], 1) ^ ui_rotr64(w[i - 15], 8) ^ (w[i - 15] >> 7);
-        uint64 s1 = ui_rotr64(w[i - 2], 19) ^ ui_rotr64(w[i - 2], 61) ^ (w[i - 2] >> 6);
+        uint64 s0 = _ui_rotr64(w[i - 15], 1) ^ _ui_rotr64(w[i - 15], 8) ^ (w[i - 15] >> 7);
+        uint64 s1 = _ui_rotr64(w[i - 2], 19) ^ _ui_rotr64(w[i - 2], 61) ^ (w[i - 2] >> 6);
         w[i] = w[i - 16] + s0 + w[i - 7] + s1;
     }
     uint64 a = self.h[0]; uint64 b = self.h[1]; uint64 c = self.h[2]; uint64 d = self.h[3];
     uint64 e = self.h[4]; uint64 f = self.h[5]; uint64 g = self.h[6]; uint64 h = self.h[7];
     for (int i = 0; i < 80; i++) {
-        uint64 t1 = h + (ui_rotr64(e, 14) ^ ui_rotr64(e, 18) ^ ui_rotr64(e, 41)) + ((e & f) ^ (~e & g)) + ui_sha512_k[i] + w[i];
-        uint64 t2 = (ui_rotr64(a, 28) ^ ui_rotr64(a, 34) ^ ui_rotr64(a, 39)) + ((a & b) ^ (a & c) ^ (b & c));
+        uint64 t1 = h + (_ui_rotr64(e, 14) ^ _ui_rotr64(e, 18) ^ _ui_rotr64(e, 41)) + ((e & f) ^ (~e & g)) + ui_sha512_k[i] + w[i];
+        uint64 t2 = (_ui_rotr64(a, 28) ^ _ui_rotr64(a, 34) ^ _ui_rotr64(a, 39)) + ((a & b) ^ (a & c) ^ (b & c));
         h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
     }
     self.h[0] += a; self.h[1] += b; self.h[2] += c; self.h[3] += d;
@@ -74,7 +74,7 @@ void ui_sha512_update(UiSha512* self, *uint8 data, int64 n) {
     int64 i = 0;
     while (i < n) {
         if (self.waiting == 0 && n - i >= 128) {
-            ui_sha512_block(self, data + i);
+            _ui_sha512_block(self, data + i);
             i += 128;
             continue;
         }
@@ -82,7 +82,7 @@ void ui_sha512_update(UiSha512* self, *uint8 data, int64 n) {
         self.waiting++;
         i++;
         if (self.waiting == 128) {
-            ui_sha512_block(self, &self.buf[0]);
+            _ui_sha512_block(self, &self.buf[0]);
             self.waiting = 0;
         }
     }
@@ -167,7 +167,7 @@ void ui_fe_pack(*uint8 o, *int64 n) {
 }
 
 // 1 when 32 bytes differ (internal).
-int ui_bytes_differ(*uint8 a, *uint8 b, int n) {
+int _ui_bytes_differ(*uint8 a, *uint8 b, int n) {
     int d = 0;
     for (int i = 0; i < n; i++) { d |= (int)(a[i] ^ b[i]); }
     return d != 0 ? 1 : 0;
@@ -179,7 +179,7 @@ int ui_fe_neq(*int64 a, *int64 b) {
     uint8[32] d;
     ui_fe_pack(&c[0], a);
     ui_fe_pack(&d[0], b);
-    return ui_bytes_differ(&c[0], &d[0], 32);
+    return _ui_bytes_differ(&c[0], &d[0], 32);
 }
 
 // The lowest bit of the reduced element.
@@ -237,7 +237,7 @@ void ui_fe_pow2523(*int64 o, *int64 i) {
 // ---- points: extended coordinates (X, Y, Z, T), 64 limbs ----
 
 // p += q (internal).
-void ui_ed_add(*int64 p, *int64 q) {
+void _ui_ed_add(*int64 p, *int64 q) {
     int64[16] a; int64[16] b; int64[16] c; int64[16] d; int64[16] t;
     int64[16] e; int64[16] f; int64[16] g; int64[16] h;
     ui_fe_sub(&a[0], &p[16], &p[0]); ui_fe_sub(&t[0], &q[16], &q[0]); ui_fe_mul(&a[0], &a[0], &t[0]);
@@ -251,12 +251,12 @@ void ui_ed_add(*int64 p, *int64 q) {
 }
 
 // Swaps the points p and q when b is 1, in constant time (internal).
-void ui_ed_swap(*int64 p, *int64 q, int b) {
+void _ui_ed_swap(*int64 p, *int64 q, int b) {
     for (int i = 0; i < 4; i++) { ui_fe_swap(&p[i * 16], &q[i * 16], b); }
 }
 
 // A point as 32 bytes: y, with x's parity in the top bit (internal).
-void ui_ed_pack(*uint8 r, *int64 p) {
+void _ui_ed_pack(*uint8 r, *int64 p) {
     int64[16] tx; int64[16] ty; int64[16] zi;
     ui_fe_inverse(&zi[0], &p[32]);
     ui_fe_mul(&tx[0], &p[0], &zi[0]);
@@ -270,10 +270,10 @@ void ui_ed_scalarmult(*int64 p, *int64 q, *uint8 s) {
     ui_fe_set(&p[0], 0); ui_fe_set(&p[16], 1); ui_fe_set(&p[32], 1); ui_fe_set(&p[48], 0);
     for (int i = 255; i >= 0; i--) {
         int b = (int)((s[i / 8] >> (i & 7)) & 1);
-        ui_ed_swap(p, q, b);
-        ui_ed_add(q, p);
-        ui_ed_add(p, p);
-        ui_ed_swap(p, q, b);
+        _ui_ed_swap(p, q, b);
+        _ui_ed_add(q, p);
+        _ui_ed_add(p, p);
+        _ui_ed_swap(p, q, b);
     }
 }
 
@@ -293,7 +293,7 @@ int64[32] ui_ed_l = {0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c,
                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10};
 
 // r = x mod L, from 64 limbs of a byte each (internal).
-void ui_ed_mod_l(*uint8 r, *int64 x) {
+void _ui_ed_mod_l(*uint8 r, *int64 x) {
     for (int i = 63; i >= 32; i--) {
         int64 carry = 0;
         int j = i - 32;
@@ -320,14 +320,14 @@ void ui_ed_mod_l(*uint8 r, *int64 x) {
 }
 
 // A 64-byte hash reduced mod L into its first 32 bytes (internal).
-void ui_ed_reduce(*uint8 r) {
+void _ui_ed_reduce(*uint8 r) {
     int64[64] x;
     for (int i = 0; i < 64; i++) { x[i] = (int64)r[i]; r[i] = 0; }
-    ui_ed_mod_l(r, &x[0]);
+    _ui_ed_mod_l(r, &x[0]);
 }
 
 // -A from a public key, or false when the bytes are not a point (internal).
-bool ui_ed_unpack_neg(*int64 r, *uint8 p) {
+bool _ui_ed_unpack_neg(*int64 r, *uint8 p) {
     int64[16] t; int64[16] chk; int64[16] num; int64[16] den;
     int64[16] den2; int64[16] den4; int64[16] den6;
     ui_fe_set(&r[32], 1);
@@ -369,7 +369,7 @@ void ui_ed25519_public_key(*uint8 seed, *uint8 public_key) {
     ui_sha512(seed, 32, &d[0]);
     d[0] &= 248; d[31] &= 127; d[31] |= 64;
     ui_ed_scalarbase(&p[0], &d[0]);
-    ui_ed_pack(public_key, &p[0]);
+    _ui_ed_pack(public_key, &p[0]);
 }
 
 // Signs `n` bytes with a 32-byte secret seed: the 64-byte signature into `signature`.
@@ -388,21 +388,21 @@ void ui_ed25519_sign(*uint8 seed, *uint8 message, int64 n, *uint8 signature) {
     ui_sha512_update(&hr, &d[32], 32);
     ui_sha512_update(&hr, message, n);
     ui_sha512_final(&hr, &r[0]);
-    ui_ed_reduce(&r[0]);
+    _ui_ed_reduce(&r[0]);
     ui_ed_scalarbase(&p[0], &r[0]);
-    ui_ed_pack(signature, &p[0]);
+    _ui_ed_pack(signature, &p[0]);
     UiSha512 hh;
     ui_sha512_init(&hh);
     ui_sha512_update(&hh, signature, 32);
     ui_sha512_update(&hh, &public_key[0], 32);
     ui_sha512_update(&hh, message, n);
     ui_sha512_final(&hh, &h[0]);
-    ui_ed_reduce(&h[0]);
+    _ui_ed_reduce(&h[0]);
     for (int i = 0; i < 32; i++) { x[i] = (int64)r[i]; }
     for (int i = 0; i < 32; i++) {
         for (int j = 0; j < 32; j++) { x[i + j] += (int64)h[i] * (int64)d[j]; }
     }
-    ui_ed_mod_l(&signature[32], &x[0]);
+    _ui_ed_mod_l(&signature[32], &x[0]);
 }
 
 // Whether `signature` (64 bytes) is `public_key`'s (32 bytes) over `n` bytes of `message`.
@@ -416,7 +416,7 @@ bool ui_ed25519_verify(*uint8 public_key, *uint8 message, int64 n, *uint8 signat
     }
     int64[64] p;
     int64[64] q;
-    if (!ui_ed_unpack_neg(&q[0], public_key)) { return false; }
+    if (!_ui_ed_unpack_neg(&q[0], public_key)) { return false; }
     uint8[64] h;
     UiSha512 hh;
     ui_sha512_init(&hh);
@@ -424,11 +424,11 @@ bool ui_ed25519_verify(*uint8 public_key, *uint8 message, int64 n, *uint8 signat
     ui_sha512_update(&hh, public_key, 32);
     ui_sha512_update(&hh, message, n);
     ui_sha512_final(&hh, &h[0]);
-    ui_ed_reduce(&h[0]);
+    _ui_ed_reduce(&h[0]);
     ui_ed_scalarmult(&p[0], &q[0], &h[0]);
     ui_ed_scalarbase(&q[0], &signature[32]);
-    ui_ed_add(&p[0], &q[0]);
+    _ui_ed_add(&p[0], &q[0]);
     uint8[32] t;
-    ui_ed_pack(&t[0], &p[0]);
-    return ui_bytes_differ(signature, &t[0], 32) == 0;
+    _ui_ed_pack(&t[0], &p[0]);
+    return _ui_bytes_differ(signature, &t[0], 32) == 0;
 }

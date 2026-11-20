@@ -15,31 +15,31 @@ void ui_set_timer_host(escaping fn(int, int, bool)->void start, escaping fn(int)
 }
 
 // Starts a timer with the host (internal).
-void ui_timer_arm(*UiTimer timer) {
+void _ui_timer_arm(*UiTimer timer) {
     if (timer.ms <= 0 || !ui.has_timer_host) { return; }
     timer.armed = true;
     ui.timer_start(timer.token, timer.ms, timer.repeat);
 }
 
 // Stops a timer with the host (internal).
-void ui_timer_disarm(*UiTimer timer) {
+void _ui_timer_disarm(*UiTimer timer) {
     if (!timer.armed) { return; }
     timer.armed = false;
     if (ui.has_timer_host) { ui.timer_stop(timer.token); }
 }
 
 // Stops and removes a timer (internal).
-void ui_drop_timer(*UiTimer timer) {
+void _ui_drop_timer(*UiTimer timer) {
     if (timer.removed) { return; }
     timer.removed = true;
-    ui_timer_disarm(timer);
+    _ui_timer_disarm(timer);
     for (int i = ui.timers.size - 1; i >= 0; i--) {
         if (ui.timers.data[i] == timer) { ui.timers.remove(i); break; }
     }
 }
 
 // The hook behind use_interval and use_timeout (internal).
-void ui_use_timer(int ms, bool repeat, escaping fn()->void handler) {
+void _ui_use_timer(int ms, bool repeat, escaping fn()->void handler) {
     static int tag;
     *Slot slot = ui_slot(7, &tag);
     *UiTimer timer = (*UiTimer)slot.data;
@@ -50,35 +50,35 @@ void ui_use_timer(int ms, bool repeat, escaping fn()->void handler) {
         timer.repeat = repeat;
         slot.data = timer;
         ui.timers.push(timer);
-        slot.dispose = void() { ui_drop_timer(timer); ui_release_closure(timer.handler); free(timer); };
+        slot.dispose = void() { _ui_drop_timer(timer); ui_release_closure(timer.handler); free(timer); };
         timer.handler = handler;
-        ui_timer_arm(timer);
+        _ui_timer_arm(timer);
         return;
     }
     ui_release_closure(timer.handler);
     timer.handler = handler;
     if (timer.ms != ms || timer.repeat != repeat) {
-        ui_timer_disarm(timer);
+        _ui_timer_disarm(timer);
         timer.ms = ms;
         timer.repeat = repeat;
-        ui_timer_arm(timer);
+        _ui_timer_arm(timer);
     }
 }
 
 // `handler` every `ms` milliseconds while the scope is mounted; 0 or less pauses it, and a
 // new period restarts it.
-void use_interval(int ms, escaping fn()->void handler) { ui_use_timer(ms, true, handler); }
+void use_interval(int ms, escaping fn()->void handler) { _ui_use_timer(ms, true, handler); }
 
 // `handler` once, `ms` milliseconds after the scope mounts (or after `ms` last changed).
-void use_timeout(int ms, escaping fn()->void handler) { ui_use_timer(ms, false, handler); }
+void use_timeout(int ms, escaping fn()->void handler) { _ui_use_timer(ms, false, handler); }
 
 // The host's side: the timer with `token` fired.
 bool ui_event_timer(int token) { return ui_post(Event{token, 0, 12, 0, null}); }
 
 // Runs the handler of the timer that fired, or a frame when it is the frame timer
 // (internal).
-bool ui_dispatch_timer_event(*Event event) {
-    if (ui.frame_timer != 0 && event.id == ui.frame_timer) { return ui_run_frames(ui.last_frame_time < 0 ? 0 : ui.last_frame_time + 0.016); }
+bool _ui_dispatch_timer_event(*Event event) {
+    if (ui.frame_timer != 0 && event.id == ui.frame_timer) { return _ui_run_frames(ui.last_frame_time < 0 ? 0 : ui.last_frame_time + 0.016); }
     for (i in 0..ui.timers.size) {
         *UiTimer timer = ui.timers.data[i];
         if (timer.token != event.id || timer.removed || !timer.armed) { continue; }

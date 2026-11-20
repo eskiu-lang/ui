@@ -60,7 +60,7 @@ struct Node {
     int runs;
     int loop_frames;
     bool render_write;
-    *Observer observer;
+    *_Observer observer;
     fn()->void block;
     fn()->void handler;
     fn()->void handler_cleanup;
@@ -95,7 +95,7 @@ struct Node {
     // An image's source, or a native view's type.
     string source;
     // A native view: the named props last sent and its event handler.
-    List<NativePair> native_props;
+    List<_NativePair> native_props;
     fn(string, string)->void on_view;
     // ui_on_layout's handler, told the node's frame after the host lays it out.
     fn(Frame)->void on_layout;
@@ -142,7 +142,7 @@ struct Node {
 
 
 // Appends a create, text, insert or move record for `node` to the commit (internal).
-void ui_emit(int op, *Node node, int before) {
+void _ui_emit(int op, *Node node, int before) {
     *Commit c = &ui.commit;
     c.u8(op);
     c.u32(node.id);
@@ -160,10 +160,10 @@ void ui_emit(int op, *Node node, int before) {
 }
 
 // Appends an int prop record to the commit (internal).
-void ui_emit_prop(*Node node, int prop, int value) {
+void _ui_emit_prop(*Node node, int prop, int value) {
     ui.commit.u8(2); ui.commit.u32(node.id); ui.commit.u8(prop); ui.commit.u32(value);
 #ifdef UI_TEST
-    ui_driver_note_prop(node, prop);
+    _ui_driver_note_prop(node, prop);
 #endif
 }
 
@@ -174,11 +174,11 @@ void ui_prop(*Node node, bool fresh, int code, int64 value, int64 unset) {
     if (fresh) { node.props[code] = unset; }
     if (node.props[code] == value) { return; }
     node.props[code] = value;
-    ui_emit_prop(node, code, value == -1 && unset == -1 ? 0 : (int)value);
+    _ui_emit_prop(node, code, value == -1 && unset == -1 ? 0 : (int)value);
 }
 
 // Appends a string prop record to the commit (null is "") (internal).
-void ui_emit_string_prop(*Node node, int prop, string value) {
+void _ui_emit_string_prop(*Node node, int prop, string value) {
     *Commit c = &ui.commit;
     c.u8(9); c.u32(node.id); c.u8(prop);
     if (value == null) { value = ""; }
@@ -207,14 +207,14 @@ bool ui_update_string(*string slot, string value) {
 }
 
 // Removes `node` from a list of nodes, if it is there (internal).
-void ui_drop_from(List<*Node>* list, *Node node) {
+void _ui_drop_from(List<*Node>* list, *Node node) {
     for (int i = list.size - 1; i >= 0; i--) {
         if (list.data[i] == node) { list.remove(i); return; }
     }
 }
 
 // Schedules `node`'s block to run in the next frame (once) (internal).
-void ui_schedule(*Node node) {
+void _ui_schedule(*Node node) {
     if (node.next) { return; }
     node.next = true;
     ui.next_nodes.push(node);
@@ -247,7 +247,7 @@ List<bool> ui_kept(List<int>* seq) {
 
 // Runs `node`'s block: its children are matched by key, then kind and position, new ones
 // created, moved ones moved with the fewest moves, and the rest unmounted (internal).
-void ui_run(*Node node) {
+void _ui_run(*Node node) {
     node.running = true;
     node.current = false;
     node.runs++;
@@ -286,7 +286,7 @@ void ui_run(*Node node) {
         }
     }
     *Node previous_builder = ui.builder;
-    *Observer previous_tracking = ui.tracking;
+    *_Observer previous_tracking = ui.tracking;
     ui.builder = node;
     ui_untrack(node.observer);
     ui.tracking = node.observer;
@@ -331,8 +331,8 @@ void ui_run(*Node node) {
     int before = 0;
     for (int i = node.emitted.size - 1; i >= 0; i--) {
         *Node child = node.emitted.data[i];
-        if (child.fresh) { ui_emit(4, child, before); }
-        else if (!ordered && !kept.data[i]) { ui_emit(5, child, before); }
+        if (child.fresh) { _ui_emit(4, child, before); }
+        else if (!ordered && !kept.data[i]) { _ui_emit(5, child, before); }
         child.fresh = false;
         before = child.id;
     }
@@ -350,29 +350,29 @@ void ui_unmount(*Node node) {
     // In a rollback, a node made after the cut never reaches the host: no removal, and its id
     // is free at once.
     bool known = ui_known(node);
-    if (known) { ui_emit(6, node, 0); }
+    if (known) { _ui_emit(6, node, 0); }
     if (ui.phase == 1) { ui.pass_unmounted.push(node); }
     for (int i = node.children.size - 1; i >= 0; i--) { ui_unmount(node.children.data[i]); }
-    if (node.next) { ui_drop_from(&ui.next_nodes, node); node.next = false; }
-    if (node.render_write) { ui_drop_from(&ui.render_writes, node); node.render_write = false; }
-    if (node.loop_frames > 0) { ui_drop_from(&ui.looping, node); node.loop_frames = 0; }
+    if (node.next) { _ui_drop_from(&ui.next_nodes, node); node.next = false; }
+    if (node.render_write) { _ui_drop_from(&ui.render_writes, node); node.render_write = false; }
+    if (node.loop_frames > 0) { _ui_drop_from(&ui.looping, node); node.loop_frames = 0; }
     node.current = false;
     node.seen = false;
     // Detach dependencies immediately, destroy resources after renderer completion.
     ui_untrack(node.observer);
     for (i in 0..node.slots.size) {
-        *Observer hook = node.slots.data[i].observer;
+        *_Observer hook = node.slots.data[i].observer;
         if (hook != null) {
             ui_untrack(hook);
-            ui_unqueue(hook.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, hook);
+            _ui_unqueue(hook.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, hook);
         }
     }
     for (i in 0..node.slots.size) {
         Slot slot = node.slots.data[i];
-        if (slot.kind == 4) { ui_drop_back((*BackEntry)slot.data); }
-        if (slot.kind == 5) { ui_drop_native((*NativeHandler)slot.data); }
+        if (slot.kind == 4) { _ui_drop_back((*_BackEntry)slot.data); }
+        if (slot.kind == 5) { _ui_drop_native((*_NativeHandler)slot.data); }
     }
-    if (node.kind == 12) { ui_drop_from(&ui.modals, node); }
+    if (node.kind == 12) { _ui_drop_from(&ui.modals, node); }
     ui.by_id.data[node.id] = null;
     if (known) { ui.retired_ids.push(node.id); } else { ui.free_ids.push(node.id); }
     // Every unmount cleanup runs while ALL retired state is still alive. A cleanup
@@ -381,7 +381,7 @@ void ui_unmount(*Node node) {
         for (i in 0..node.slots.size) {
             Slot slot = node.slots.data[i];
             if (slot.kind == 2) {
-                *Observer effect = (*Observer)slot.data;
+                *_Observer effect = (*_Observer)slot.data;
                 if (effect.has_cleanup) {
                     ui_guard_cleanup(effect.cleanup); ui_release_closure(effect.cleanup);
                     effect.has_cleanup = false;
@@ -395,7 +395,7 @@ void ui_unmount(*Node node) {
             Slot slot = node.slots.data[i];
             slot.dispose(); ui_release_closure(slot.dispose);
         }
-        ui_drop_observer(node.observer);
+        _ui_drop_observer(node.observer);
         ui_release_closure(node.block);
         ui_release_closure(node.handler);
         ui_release_closure(node.handler_cleanup);
@@ -409,7 +409,7 @@ void ui_unmount(*Node node) {
 #ifdef UI_TEST
         free(node.test_id);
 #endif
-        ui_free_pairs(&node.native_props);
+        _ui_free_pairs(&node.native_props);
         ui_release_view(node.on_view);
         if (node.has_on_layout) { ui_release_frame(node.on_layout); }
         if (node.has_on_hover) { ui_release_bool(node.on_hover); }
@@ -418,23 +418,23 @@ void ui_unmount(*Node node) {
         if (node.has_on_submit) { ui_release_text(node.on_submit); }
         if (node.has_on_image) { ui_release_bool(node.on_image); }
         if (node.kind == 15) { ui_release_int(node.on_value); }
-        if (node.boundary != null) { ui_free_boundary(node.boundary); }
+        if (node.boundary != null) { _ui_free_boundary(node.boundary); }
         node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
         free(node);
     });
 }
 
 // What Switch adds to an element (internal).
-struct SwitchExtra { bool value; fn(bool)->void on_change; }
+struct _SwitchExtra { bool value; fn(bool)->void on_change; }
 
 // What Slider adds to an element (internal).
-struct SliderExtra { int value; int min; int max; fn(int)->void on_change; }
+struct _SliderExtra { int value; int min; int max; fn(int)->void on_change; }
 
 // What a RefreshControl adds to the scroll after it (internal).
-struct RefreshExtra { bool refreshing; fn()->void on_refresh; }
+struct _RefreshExtra { bool refreshing; fn()->void on_refresh; }
 
 // What a virtualized list adds to its scroll (internal).
-struct ListExtra { int count; int item_height; int header_height; *List<int> sizes;
+struct _ListExtra { int count; int item_height; int header_height; *List<int> sizes;
     fn(int)->void on_item; fn(int, int)->void on_cell; }
 
 // What an input element adds to an element: set by TextInput before ui_element.
@@ -489,18 +489,18 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             String_appendf(&message, "duplicate key %lld at child %d", k, parent.emitted.size);
 #ifdef UI_SRCLOC
             // The duplicate's own call.
-            if (!ui.lenient) { ui_fail_where(message.data, parent, ui.next_at); }
+            if (!ui.lenient) { _ui_fail_where(message.data, parent, ui.next_at); }
 #else
             if (!ui.lenient) { ui_fail(message.data); }
 #endif
             String_append(&message, ", treated as unkeyed\n  in ");
             ui_scope_path(&message);
 #ifdef UI_SRCLOC
-            ui_source_at(&message, ui.next_at);
+            _ui_source_at(&message, ui.next_at);
 #endif
             print_err("ui: warning: "); println_err(message.data);
 #ifdef UI_TEST
-            ui_driver_log("warning", message.data);
+            _ui_driver_log("warning", message.data);
 #endif
             String_free(&message);
             style.key = Key{};
@@ -535,14 +535,14 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     bool fresh = node == null;
     if (fresh) {
         node = alloc<Node>(1);
-        ui_assign_id(node);
+        _ui_assign_id(node);
         node.kind = kind; node.key = style.key; node.parent = parent;
         node.depth = parent.depth + 1;
         node.fresh = true;
-        node.observer = ui_observer(0, node);
+        node.observer = _ui_observer(0, node);
         node.born = ui.commit.len;
         node.born_seq = ui.sequence;
-        ui_emit(1, node, 0);
+        _ui_emit(1, node, 0);
     } else {
         fn()->void old_block = node.block;
         fn()->void old_handler = node.handler;
@@ -608,10 +608,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     // A transition first, so the changes after it in this commit are animated by it.
     ui_prop(node, fresh, 39, style.transition_ms, 0);
     ui_prop(node, fresh, 40, style.easing, 0);
-    if (fresh || node.gap != style.gap) { node.gap = style.gap; ui_emit_prop(node, 1, style.gap); }
+    if (fresh || node.gap != style.gap) { node.gap = style.gap; _ui_emit_prop(node, 1, style.gap); }
     if (fresh || node.padding != style.padding) {
         node.padding = style.padding;
-        ui_emit_prop(node, 2, style.padding);
+        _ui_emit_prop(node, 2, style.padding);
     }
     // Sizes are sent when set or changed, so most elements send none.
     // Props left at their default are not sent, so most elements send none.
@@ -653,10 +653,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 54, style.grid_column_span, 0);
     ui_prop(node, fresh, 55, style.grid_row, 0);
     ui_prop(node, fresh, 56, style.grid_row_span, 0);
-    if (ui_update_string(&node.label, style.label)) { ui_emit_string_prop(node, 1, node.label); }
-    if (ui_update_string(&node.font, style.font)) { ui_emit_string_prop(node, 5, node.font); }
-    if (ui_update_string(&node.grid_columns, style.grid_columns)) { ui_emit_string_prop(node, 6, node.grid_columns); }
-    if (ui_update_string(&node.grid_rows, style.grid_rows)) { ui_emit_string_prop(node, 7, node.grid_rows); }
+    if (ui_update_string(&node.label, style.label)) { _ui_emit_string_prop(node, 1, node.label); }
+    if (ui_update_string(&node.font, style.font)) { _ui_emit_string_prop(node, 5, node.font); }
+    if (ui_update_string(&node.grid_columns, style.grid_columns)) { _ui_emit_string_prop(node, 6, node.grid_columns); }
+    if (ui_update_string(&node.grid_rows, style.grid_rows)) { _ui_emit_string_prop(node, 7, node.grid_rows); }
     // Accessibility and disabled.
     ui_prop(node, fresh, 57, style.role, 0);
     ui_prop(node, fresh, 58, style.checked, 0);
@@ -679,8 +679,8 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 81, style.text_align, 0);
     ui_prop(node, fresh, 82, style.max_lines, 0);
     ui_prop(node, fresh, 83, style.shrink, 0);
-    if (ui_update_string(&node.value, style.value)) { ui_emit_string_prop(node, 8, node.value); }
-    if (ui_update_string(&node.hint, style.hint)) { ui_emit_string_prop(node, 9, node.hint); }
+    if (ui_update_string(&node.value, style.value)) { _ui_emit_string_prop(node, 8, node.value); }
+    if (ui_update_string(&node.hint, style.hint)) { _ui_emit_string_prop(node, 9, node.hint); }
 #ifdef UI_TEST
     ui_update_string(&node.test_id, style.test_id);
 #endif
@@ -723,11 +723,11 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         node.on_bool = extra.on_focus;
         node.has_on_bool = extra.has_on_focus;
         if (ui_update_string(&node.placeholder, extra.placeholder)) {
-            ui_emit_string_prop(node, 2, node.placeholder);
+            _ui_emit_string_prop(node, 2, node.placeholder);
         }
         if (extra.focused >= 0 && (fresh || extra.focused != node.focused)) {
             node.focused = extra.focused;
-            ui_emit_prop(node, 3, extra.focused);
+            _ui_emit_prop(node, 3, extra.focused);
         }
         ui_prop(node, fresh, 65, extra.secure ? 1 : 0, 0);
         ui_prop(node, fresh, 66, extra.keyboard, 0);
@@ -740,10 +740,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     if (kind == 7) {
         string source = ui.next_source;
         ui.next_source = null;
-        if (ui_update_string(&node.source, source)) { ui_emit_string_prop(node, 3, node.source); }
+        if (ui_update_string(&node.source, source)) { _ui_emit_string_prop(node, 3, node.source); }
     }
     if (kind == 9) {
-        *SwitchExtra toggle = ui.next_switch;
+        *_SwitchExtra toggle = ui.next_switch;
         ui.next_switch = null;
         node.on_bool = toggle.on_change;
         node.has_on_bool = true;
@@ -753,7 +753,7 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         ui_prop(node, fresh, 19, ui.next_animating ? 1 : 0, -1);
     }
     if (kind == 15) {
-        *SliderExtra slider = ui.next_slider;
+        *_SliderExtra slider = ui.next_slider;
         ui.next_slider = null;
         node.on_value = slider.on_change;
         // The range before the value, so the value lands inside it.
@@ -774,7 +774,7 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     if (kind == 14) { ui_prop(node, fresh, 23, ui.next_active ? 1 : 0, -1); }
     if (kind == 13) { ui_native_view_props(node, fresh); }
     if (kind == 6 && ui.next_list != null) {
-        *ListExtra list = ui.next_list;
+        *_ListExtra list = ui.next_list;
         ui.next_list = null;
         node.virtual = true;
         node.row_count = list.count;
@@ -784,15 +784,15 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
         node.on_item = list.on_item;
         node.on_cell = list.on_cell;
     }
-    if (kind == 4 || kind == 5 || kind == 8 || kind == 9 || kind == 12 || kind == 15 || node.virtual) { ui_emit(7, node, 0); }
+    if (kind == 4 || kind == 5 || kind == 8 || kind == 9 || kind == 12 || kind == 15 || node.virtual) { _ui_emit(7, node, 0); }
     if (text != null && (node.text == null || strcmp(text, node.text) != 0)) {
         string previous = node.text;
         if (previous != null) { ui_retire(void() { free(previous); }); }
         node.text = ui_copy(text);
-        ui_emit(3, node, 0);
+        _ui_emit(3, node, 0);
     }
     parent.emitted.push(node);
-    ui_run(node);
+    _ui_run(node);
     return node;
 }
 
@@ -824,7 +824,7 @@ void ui_finish_owned(List<fn()->void> owned) {
 }
 
 // Gives `node` a free id and the next generation for that id (internal).
-void ui_assign_id(*Node node) {
+void _ui_assign_id(*Node node) {
     if (ui.free_ids.size > 0) {
         node.id = ui.free_ids.data[--ui.free_ids.size];
     } else {
