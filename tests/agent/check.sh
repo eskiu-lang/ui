@@ -145,7 +145,7 @@ echo "PASS $HOST: a reload keeps the state"
 # A runtime check that fails stops the app; on the web the agent still tells its message.
 # (the tap may answer before the frame that fails, or fail itself: the next op tells)
 if [ "$HOST" = web ]; then
-    "$UI" agent "$HOST" --json "tap break" > /dev/null 2>&1 || true
+    "$UI" agent "$HOST" --json "tap break" "clock +16" > /dev/null 2>&1 || true
     refused tree 'duplicate key'
 fi
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
