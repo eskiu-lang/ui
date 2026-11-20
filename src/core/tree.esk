@@ -34,7 +34,7 @@ struct Node {
     int gap;
     int padding;
     // The value last sent for each int prop (by code), so only a change is sent again.
-    int64[57] props;
+    int64[73] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -109,6 +109,12 @@ struct Node {
     // ui_on_pan's handler.
     fn(Pan)->void on_pan;
     bool has_on_pan;
+    // ui_on_submit's handler (a TextInput's return key).
+    fn(string)->void on_submit;
+    bool has_on_submit;
+    // Style.value and Style.hint, for a screen reader.
+    string value;
+    string hint;
     // A Slider's handler.
     fn(int)->void on_value;
     int focused;
@@ -396,7 +402,7 @@ void ui_unmount(*Node node) {
         ui_release_item(node.on_item);
         ui_release_cell(node.on_cell);
         free(node.text); free(node.label); free(node.placeholder); free(node.font); free(node.source);
-        free(node.grid_columns); free(node.grid_rows);
+        free(node.grid_columns); free(node.grid_rows); free(node.value); free(node.hint);
 #ifdef UI_TEST
         free(node.test_id);
 #endif
@@ -406,6 +412,7 @@ void ui_unmount(*Node node) {
         if (node.has_on_hover) { ui_release_bool(node.on_hover); }
         if (node.has_on_long_press) { ui_release_closure(node.on_long_press); }
         if (node.has_on_pan) { ui_release_pan(node.on_pan); }
+        if (node.has_on_submit) { ui_release_text(node.on_submit); }
         if (node.kind == 15) { ui_release_int(node.on_value); }
         if (node.boundary != null) { ui_free_boundary(node.boundary); }
         node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
@@ -428,7 +435,8 @@ struct ListExtra { int count; int item_height; int header_height; *List<int> siz
 
 // What an input element adds to an element: set by TextInput before ui_element.
 struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_on_focus;
-    string placeholder; int focused; }
+    string placeholder; int focused;
+    bool secure; int keyboard; int return_key; bool multiline; int capitalize; bool autocorrect; int autofill; }
 
 // The element call every component ends in: finds or creates the child of `kind` for this
 // position in the running block, sends what changed of its style and text, keeps its
@@ -562,6 +570,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             fn(Pan)->void old_pan = node.on_pan;
             ui_retire(void() { ui_release_pan(old_pan); });
         }
+        if (node.has_on_submit) {
+            fn(string)->void old_submit = node.on_submit;
+            ui_retire(void() { ui_release_text(old_submit); });
+        }
         if (kind == 15) {
             fn(int)->void old_value = node.on_value;
             ui_retire(void() { ui_release_int(old_value); });
@@ -637,6 +649,17 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     if (ui_update_string(&node.font, style.font)) { ui_emit_string_prop(node, 5, node.font); }
     if (ui_update_string(&node.grid_columns, style.grid_columns)) { ui_emit_string_prop(node, 6, node.grid_columns); }
     if (ui_update_string(&node.grid_rows, style.grid_rows)) { ui_emit_string_prop(node, 7, node.grid_rows); }
+    // Accessibility and disabled.
+    ui_prop(node, fresh, 57, style.role, 0);
+    ui_prop(node, fresh, 58, style.checked, 0);
+    ui_prop(node, fresh, 59, style.selected ? 1 : 0, 0);
+    ui_prop(node, fresh, 60, style.expanded, 0);
+    ui_prop(node, fresh, 61, style.disabled ? 1 : 0, 0);
+    ui_prop(node, fresh, 63, style.value_min, 0);
+    ui_prop(node, fresh, 64, style.value_max, 0);
+    ui_prop(node, fresh, 62, style.value_now, 0);
+    if (ui_update_string(&node.value, style.value)) { ui_emit_string_prop(node, 8, node.value); }
+    if (ui_update_string(&node.hint, style.hint)) { ui_emit_string_prop(node, 9, node.hint); }
 #ifdef UI_TEST
     ui_update_string(&node.test_id, style.test_id);
 #endif
@@ -657,6 +680,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     node.on_pan = ui.next_pan;
     ui.has_next_pan = false;
     ui_prop(node, fresh, 41, node.has_on_pan ? 1 : 0, 0);
+    node.has_on_submit = ui.has_next_submit;
+    node.on_submit = ui.next_submit;
+    ui.has_next_submit = false;
+    ui_prop(node, fresh, 72, node.has_on_submit ? 1 : 0, 0);
     // What the caller gave this element to free with its block.
     for (i in 0..ui.next_owned.size) { node.owned.push(ui.next_owned.data[i]); }
     ui.next_owned.size = 0;
@@ -677,6 +704,13 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             node.focused = extra.focused;
             ui_emit_prop(node, 3, extra.focused);
         }
+        ui_prop(node, fresh, 65, extra.secure ? 1 : 0, 0);
+        ui_prop(node, fresh, 66, extra.keyboard, 0);
+        ui_prop(node, fresh, 67, extra.return_key, 0);
+        ui_prop(node, fresh, 68, extra.multiline ? 1 : 0, 0);
+        ui_prop(node, fresh, 69, extra.capitalize, 0);
+        ui_prop(node, fresh, 70, extra.autocorrect ? 1 : 0, 1);
+        ui_prop(node, fresh, 71, extra.autofill, 0);
     }
     if (kind == 7) {
         string source = ui.next_source;

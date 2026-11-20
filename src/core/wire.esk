@@ -11,7 +11,8 @@
 //   6 remove   (nothing)
 //   7 listen, 8 unlisten
 //   9 string prop  prop u8 (1 label, 2 placeholder, 3 image source, 4 native view type,
-//                  5 font file, 6 grid columns, 7 grid rows),
+//                  5 font file, 6 grid columns, 7 grid rows, 8 accessibility value,
+//                  9 accessibility hint),
 //                  length u32, the bytes, a NUL
 //  11 named prop  (a native view's) name: length u32, the bytes, a NUL; value: the same
 //  10 command  (the id is a request id, not a node) command u8 (1 alert: title, message,
@@ -39,7 +40,14 @@
 // image scales without smoothing), 49 long press listener (1: the host reports a long press), 50 gradient end
 // color (RGBA, 0: none; from the background), 51 gradient angle (degrees, as CSS; 180 down),
 // 52 backdrop blur, 53 grid column, 54 grid column span, 55 grid row, 56 grid row span (lines
-// from 1, 0: auto; spans 0 or 1: one track).
+// from 1, 0: auto; spans 0 or 1: one track). Accessibility: 57 role (Role), 58 checked
+// (CheckState), 59 selected (1 or 0), 60 expanded (Disclosure), 61 disabled (1: the element
+// and what is in it take no input and read as unavailable), 62 value now, 63 value minimum,
+// 64 value maximum (a range when the maximum is above the minimum). A text input's editing:
+// 65 secure (1: hide what is typed), 66 keyboard (Keyboard), 67 return key (ReturnKey),
+// 68 multiline (1 or 0), 69 capitalize (Capitalize), 70 autocorrect (1 on, the default; 0
+// off), 71 autofill (Autofill), 72 submit listener (1: the host reports return with
+// ui_dispatch_submit).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal

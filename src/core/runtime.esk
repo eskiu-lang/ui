@@ -13,8 +13,10 @@
 // the request), 16 fetch (a request finished: value the status, text the body or the error,
 // name the headers), 17 pan (value the phase, extra dx, width dy, height the x velocity,
 // extra2 the y velocity), 18 display frame (no node; the time in seconds in `value`, the microseconds in `extra`), 19 the app
-// went to the foreground (value 1) or the background (value 0; no node), 20 long press. A layout's window
-// position is in extra2 and extra3.
+// went to the foreground (value 1) or the background (value 0; no node), 20 long press, 21 submit (a TextInput's return key; text the field's text). A
+// layout's window position is in extra2 and extra3. A user's event (a press, an edit, a
+// toggle, a value, a refresh, a gesture, a submit) on a disabled node or one inside a
+// disabled node is dropped.
 struct Event { int id; int generation; int kind; int value; string text; int extra; string name; int width; int height;
                int extra2; int extra3; }
 
@@ -110,6 +112,8 @@ struct Ui {
     bool has_next_pan;
     fn()->void next_long_press;
     bool has_next_long_press;
+    fn(string)->void next_submit;
+    bool has_next_submit;
     // Destructors for the next element (ui_own).
     List<fn()->void> next_owned;
     // The RefreshControl for the next Scroll or FlatList.
@@ -458,6 +462,12 @@ bool ui_event_text(int id, int generation, string text) {
     return ui_post(Event{id, generation, 2, 0, text});
 }
 
+// The host's side: the user pressed return in a text input (ui_on_submit); `text` is its text,
+// only read during the call.
+bool ui_event_submit(int id, int generation, string text) {
+    return ui_post(Event{id, generation, 21, 0, text});
+}
+
 // The host's side: a text input gained or lost focus.
 bool ui_event_focus(int id, int generation, bool focused) {
     return ui_post(Event{id, generation, 3, focused ? 1 : 0, null});
@@ -521,6 +531,20 @@ bool ui_dispatch_event(*Event event) {
     return handled;
 }
 
+// True for the events a user's action makes: a press, an edit, a toggle, a refresh, a value,
+// a gesture, a long press, a submit (internal).
+bool ui_user_event(int kind) {
+    return kind == 1 || kind == 2 || kind == 4 || kind == 7 || kind == 14 || kind == 17 || kind == 20 || kind == 21;
+}
+
+// True when node or one of its ancestors is disabled (Style.disabled) (internal).
+bool ui_node_disabled(*Node node) {
+    for (*Node n = node; n != null; n = n.parent) {
+        if (n.props[61] != 0) { return true; }
+    }
+    return false;
+}
+
 // Runs the handler an event is for; false when the node or request is gone (internal).
 bool ui_dispatch_now(*Event event) {
     if (event.kind == 8) {
@@ -554,6 +578,8 @@ bool ui_dispatch_now(*Event event) {
     if (id <= 0 || id >= ui.by_id.size) { return false; }
     *Node node = ui.by_id.data[id];
     if (node == null || node.generation != event.generation) { return false; }
+    // What the user does to a disabled element (or one inside it) does nothing.
+    if (ui_user_event(event.kind) && ui_node_disabled(node)) { return false; }
     // A press on a modal is the user asking to close it (Escape, a back gesture).
     if (event.kind == 1 && (node.kind == 4 || node.kind == 8 || node.kind == 12)) { node.handler(); return true; }
     // What the user changed is what the renderer shows now: recorded as sent, so a render
@@ -588,6 +614,7 @@ bool ui_dispatch_now(*Event event) {
     }
     if (event.kind == 13 && node.has_on_hover) { node.on_hover(event.value != 0); return true; }
     if (event.kind == 20 && node.has_on_long_press) { node.on_long_press(); return true; }
+    if (event.kind == 21 && node.has_on_submit) { node.on_submit(event.text == null ? "" : event.text); return true; }
     if (event.kind == 11 && node.has_on_layout) {
         node.on_layout(Frame{event.value, event.extra, event.width, event.height, event.extra2, event.extra3});
         return true;
@@ -640,6 +667,7 @@ void ui_shutdown() {
     if (ui.has_next_hover) { ui_release_bool(ui.next_hover); }
     if (ui.has_next_long_press) { ui_release_closure(ui.next_long_press); }
     if (ui.has_next_pan) { ui_release_pan(ui.next_pan); }
+    if (ui.has_next_submit) { ui_release_text(ui.next_submit); }
     ui.timers.free();
     ui_frames_shutdown();
     ui.app_state_handlers.free();

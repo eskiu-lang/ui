@@ -43,6 +43,15 @@ Key key(int64 value) { return Key{true, value}; }
 // `test_id` names the element for tests and the driver (`ui agent web tap add`): it is not the
 // accessibility label and never reaches the screen or a screen reader; a release build ignores
 // it.
+// Accessibility, beyond `label`: `role` says what the element is to a screen reader (a Role:
+// a checkbox, a tab, a heading...), `checked` its CheckState (a checkbox, a switch, a radio
+// button), `selected` whether it is the chosen one (a tab, a radio button, a list row),
+// `expanded` its Disclosure (a section that opens), `value` what it holds as words ("3 of 5",
+// "40%"), `hint` what using it does ("Opens the settings"). `value_min`, `value_max` and
+// `value_now` give a progress bar's or an adjustable element's range (when value_max is above
+// value_min). `disabled` turns the element and what is in it off: the platform shows and
+// announces it as unavailable, and its handlers (presses, edits, toggles, gestures) are not
+// called.
 struct Style {
     Key key; int gap = 8; int padding = 0; string label;
     int width; int height; int grow; bool wrap;
@@ -63,7 +72,22 @@ struct Style {
     string test_id;
     string grid_columns; string grid_rows;
     int grid_column; int grid_column_span; int grid_row; int grid_row_span;
+    int role; int checked; bool selected; int expanded; string value; string hint;
+    int value_min; int value_max; int value_now;
+    bool disabled;
 }
+
+// What an element is to a screen reader (Style.role). RoleNone: what its kind says (a Button
+// is a button, a TextInput a text field, the rest a group or plain text).
+enum Role { RoleNone, RoleButton, RoleLink, RoleHeader, RoleImage, RoleCheckbox, RoleRadio, RoleRadioGroup, RoleSwitch,
+    RoleTab, RoleTabList, RoleSlider, RoleProgress, RoleMenu, RoleMenuItem, RoleList, RoleListItem, RoleAlert, RoleSearch }
+
+// Whether a checkbox, a switch or a radio button is checked (Style.checked): not one, off, on,
+// or mixed (some of what it stands for is on).
+enum CheckState { CheckNone, CheckOff, CheckOn, CheckMixed }
+
+// Whether an element opens and closes (Style.expanded): not one, closed, open.
+enum Disclosure { DisclosureNone, DisclosureCollapsed, DisclosureExpanded }
 
 // The curve of a transition or animation: ease in and out, ease out, ease in, linear, or a
 // spring that overshoots a little.
