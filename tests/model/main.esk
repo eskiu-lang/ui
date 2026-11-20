@@ -48,6 +48,7 @@ int main() {
     input_options(); printf("PASS input options\n");
     kit_access(); printf("PASS kit access\n");
     layout_props(); printf("PASS layout props\n");
+    driver_access(); printf("PASS driver access\n");
     textf_texts(); printf("PASS textf\n");
     ergonomics(); printf("PASS ergonomics\n");
     fonts(); printf("PASS fonts\n");

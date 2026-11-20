@@ -130,3 +130,21 @@ void layout_props() {
     check(image_failures == 1 && image_loads == 1, "the image listener hears both");
     ui_shutdown(); balanced("layout props leak");
 }
+
+// The driver's tree shows the role, the states and the hint (`ui agent tree`).
+void driver_access() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        Row(Style{label: "Agree", role: RoleCheckbox, checked: CheckOn, hint: "Accepts the terms", disabled: true}) {}
+    }
+    ui_frame();
+    String out;
+    _ui_driver_tree_node(&out, ui.root);
+    string json = (string)out.data;
+    check(strstr(json, "\"role\": 5") != null && strstr(json, "\"checked\": 2") != null, "the tree has the role and checked");
+    check(strstr(json, "\"disabled\": 1") != null && strstr(json, "\"hint\": \"Accepts the terms\"") != null,
+        "the tree has disabled and the hint");
+    String_free(&out);
+    ui_shutdown(); balanced("driver access leak");
+}
