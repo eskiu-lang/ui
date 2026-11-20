@@ -145,8 +145,11 @@ echo "PASS $HOST: a reload keeps the state"
 # A runtime check that fails stops the app; on the web the agent still tells its message.
 # (the tap may answer before the frame that fails, or fail itself: the next op tells)
 if [ "$HOST" = web ]; then
-    "$UI" agent "$HOST" --json "tap break" "clock +16" > /dev/null 2>&1 || true
-    refused tree 'duplicate key'
+    "$UI" agent "$HOST" --json "tap break" "clock +16" > "$OUT/break.json" 2>&1 || true
+    "$UI" agent "$HOST" --json tree > "$OUT/last.json" 2> "$OUT/last.err" && {
+        cat "$OUT/break.json" "$OUT/last.json" "$OUT/last.err"; fail "a failed runtime check: the app went on"; }
+    grep -q 'duplicate key' "$OUT/last.json" || { cat "$OUT/break.json" "$OUT/last.json" "$OUT/last.err"; fail "a failed runtime check: no message"; }
+    echo "PASS $HOST: a failed runtime check tells its message"
 fi
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
 [ "$HOST" = ios ] && { xcrun simctl status_bar booted clear > /dev/null 2>&1 || true; }
