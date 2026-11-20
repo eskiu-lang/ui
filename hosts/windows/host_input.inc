@@ -59,6 +59,14 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
     } else if (node->kind == 5) {
         double line = lineHeight(fontOf(node)) / scale + 2;
         w = 120;
+        if (node->multiline) {
+            // Its text wrapped at the width it may take, at least a line.
+            double across = limitW < 1e8 ? limitW - (node->styled ? 0 : 2 * kFieldInsetX) : w;
+            std::wstring text = node->text;
+            if (!text.empty() && text.back() == L'\n') text += L' ';
+            SIZE size = measureText(fontOf(node), text, std::max(1, (int)std::floor(across * scale)), true);
+            line = std::max(line, size.cy / scale + 2);
+        }
         h = node->styled ? line : line + 2 * kFieldInsetY;
     } else if (node->kind == 7) {
         if (node->image) { w = node->image->GetWidth(); h = node->image->GetHeight(); }

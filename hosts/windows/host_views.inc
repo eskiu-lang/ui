@@ -183,17 +183,17 @@ static LRESULT notifyChild(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, bo
         if (node->kind == 9 && code == BN_CLICKED) {
             *handled = true;
             node->on = !node->on;
-            accessibleState(node->hwnd, node->on ? STATE_SYSTEM_CHECKED : 0);
+            applyAccessStates(node);
             InvalidateRect(node->hwnd, nullptr, FALSE);
             ui_dispatch_toggle(node->id, node->generation, node->on ? 1 : 0);
             return 0;
         }
         if (node->kind == 5 && control == node->inner) {
             if (code == EN_CHANGE && !node->settingText) {
-                int n = GetWindowTextLengthW(control);
-                std::wstring text(n, L'\0');
-                if (n) GetWindowTextW(control, &text[0], n + 1);
+                std::wstring text = editText(node);
                 node->text = text;
+                // A multiline field grows with its text.
+                if (node->multiline) { YGNodeMarkDirty(node->yoga); relayout(); }
                 ui_dispatch_text(node->id, node->generation, narrow(text.c_str()).c_str());
             } else if (code == EN_SETFOCUS || code == EN_KILLFOCUS) {
                 InvalidateRect(node->hwnd, nullptr, FALSE);

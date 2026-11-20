@@ -201,7 +201,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             }
             case 18:
                 node->on = v != 0;
-                accessibleState(node->hwnd, node->on ? STATE_SYSTEM_CHECKED : 0);
+                applyAccessStates(node);
                 if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE);
                 break;
             case 19:
@@ -244,17 +244,21 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             case 50: node->gradientTo = v; applyButtonStyle(node); if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE); break;
             case 51: node->gradientAngle = v; if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE); break;
             case 52: node->blur = v; break;
-            default: break;
+            default:
+                // 57 to 64 accessibility, 65 to 72 a text input's editing (host_access.inc).
+                if (kind >= 57 && kind <= 64) applyAccessProp(node, kind, v);
+                else if (kind >= 65 && kind <= 72) applyInputProp(node, kind, v);
+                break;
         }
     } else if (op == 9) {
         std::wstring value = wide(text);
         if (kind == 4 && node->kind == 13) mountNative(node, text ? text : "");
         else if (kind == 1) {
             node->label = value;
-            int role = 0;
-            if ((node->kind == 1 || node->kind == 2 || node->kind == 13 || node->kind == 14) && !value.empty()) role = ROLE_SYSTEM_GROUPING;
-            accessible(node->kind == 5 ? node->inner : node->hwnd, role, &value);
-        } else if (kind == 5) { node->fontFile = value; applyFont(node); }
+            accessible(accessibleOf(node), 0, &value);
+            applyAccessRole(node);
+        } else if (kind == 8 || kind == 9) applyAccessText(node, kind, value);
+        else if (kind == 5) { node->fontFile = value; applyFont(node); }
         else if (kind == 2 && node->kind == 5 && node->inner) {
             node->placeholder = value;
             SendMessageW(node->inner, EM_SETCUEBANNER, TRUE, (LPARAM)value.c_str());
@@ -262,16 +266,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
     } else if (op == 3) {
         std::wstring value = wide(text);
         node->text = value;
-        if (node->kind == 5 && node->inner) {
-            int n = GetWindowTextLengthW(node->inner);
-            std::wstring now(n, L'\0');
-            if (n) GetWindowTextW(node->inner, &now[0], n + 1);
-            if (now != value) {
-                node->settingText = true;
-                SetWindowTextW(node->inner, value.c_str());
-                node->settingText = false;
-            }
-        } else if (node->hwnd && (node->kind == 3 || node->kind == 4)) {
+        if (node->kind == 5 && node->inner) setEditText(node, value);
+        else if (node->hwnd && (node->kind == 3 || node->kind == 4)) {
             SetWindowTextW(node->hwnd, value.c_str());
             InvalidateRect(node->hwnd, nullptr, TRUE);
         }
@@ -300,6 +296,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         }
         YGNodeInsertChild(parentYoga, node->yoga, index);
         insertWindow(node, containerOf(parentNode), next);
+        // Under a disabled element it is disabled too.
+        refreshEnabled(node);
     } else if (op == 6) {
         removeNode(node);
     } else if (op == 7 || op == 8) {
@@ -348,6 +346,14 @@ static void place(YGNodeRef yoga) {
             int line = lineHeight(fontOf(node)) + px(2);
             int width = std::max(0, px(node->w - left - right));
             int top = (px(node->h) - line) / 2;
+            if (node->multiline) {
+                // A multiline field's EDIT fills its content box from the top.
+                double above = YGNodeLayoutGetPadding(child, YGEdgeTop) + YGNodeLayoutGetBorder(child, YGEdgeTop);
+                double below = YGNodeLayoutGetPadding(child, YGEdgeBottom) + YGNodeLayoutGetBorder(child, YGEdgeBottom);
+                if (!node->styled) above += kFieldInsetY, below += kFieldInsetY;
+                top = px(above);
+                line = std::max(line, px(node->h - above - below));
+            }
             SetWindowPos(node->inner, nullptr, px(left), top, width, line, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         if (node->layoutListening) {
@@ -605,7 +611,7 @@ static void reportSystem() {
     SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
     SystemParametersInfoW(SPI_GETSCREENREADER, 0, &reader, 0);
     (void)contrast;
-    ui_report_accessibility(reader ? 1 : 0, animations ? 0 : 1, 100);
+    ui_report_accessibility(reader ? 1 : 0, animations ? 0 : 1, (int)std::lround(textScale * 100));
     wchar_t locale[LOCALE_NAME_MAX_LENGTH] = L"en-US";
     GetUserDefaultLocaleName(locale, LOCALE_NAME_MAX_LENGTH);
     DWORD reading = 0;

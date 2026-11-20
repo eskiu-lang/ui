@@ -26,6 +26,7 @@
 #include <shlwapi.h>
 #include <oleacc.h>
 #include <psapi.h>
+#include <inputscope.h>
 #include <winhttp.h>
 #include <algorithm>
 namespace Gdiplus {
@@ -147,6 +148,14 @@ struct Node {
     RECT placed = {INT32_MIN, 0, 0, 0};
     bool pressed = false;
     bool settingText = false;
+    // Accessibility (Style's role, checked, selected, expanded, range, disabled; the spoken
+    // value and the hint).
+    int role = 0, checked = 0, selected = 0, expanded = 0, rangeNow = 0, rangeMin = 0, rangeMax = 0;
+    bool disabled = false;
+    std::wstring valueText, hint;
+    // A text input's editing options (props 65, 66, 68, 70, 72).
+    int secure = 0, keyboard = 0, autocorrect = 1;
+    bool multiline = false, submitListening = false;
 };
 
 static std::unordered_map<int, Node *> nodes;
@@ -255,6 +264,9 @@ static std::wstring familyOf(const std::wstring &file) {
 
 // The default text size, as the other hosts'.
 static const int kTextSize = 16;
+// The system's text size (Settings, Accessibility, Text size: 100 to 225 percent), which the
+// app's text sizes are multiplied by; the system's own fonts follow it already.
+static double textScale = 1;
 
 static std::map<std::tuple<int, int, std::wstring, int>, HFONT> fonts;
 static HFONT fontFor(int size, int weight, const std::wstring &family) {
@@ -271,7 +283,7 @@ static HFONT fontFor(int size, int weight, const std::wstring &family) {
     return fonts[key] = CreateFontIndirectW(&lf);
 }
 static HFONT fontOf(Node *node) {
-    return fontFor(node->fontSize > 0 ? node->fontSize : kTextSize, node->fontWeight,
+    return fontFor((int)std::lround((node->fontSize > 0 ? node->fontSize : kTextSize) * textScale), node->fontWeight,
                    node->fontFile.empty() ? std::wstring() : familyOf(node->fontFile));
 }
 // The system's control font (a plain button's), at the window's DPI.
@@ -530,6 +542,7 @@ static void buffered(HWND hwnd, HDC hdc, F paint) {
 }
 
 #include "host_input.inc"
+#include "host_access.inc"
 #include "host_views.inc"
 #include "host_commit.inc"
 #include "host_main.inc"

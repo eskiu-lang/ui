@@ -133,7 +133,13 @@ static std::string driverCarry(const std::string &d) {
     if (op == "type") {
         if (node->kind != 5 || !node->inner) return "error: not a text field";
         SetFocus(node->inner);
-        SetWindowTextW(node->inner, wide(driverText(d, "text").c_str()).c_str());
+        std::wstring typed = wide(driverText(d, "text").c_str());
+        if (node->multiline) {
+            std::wstring shown;
+            for (wchar_t c : typed) { if (c == L'\n') shown += L'\r'; shown += c; }
+            typed = shown;
+        }
+        SetWindowTextW(node->inner, typed.c_str());
         return "";
     }
     if (op == "scroll") {
@@ -250,7 +256,8 @@ static LRESULT CALLBACK mainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             for (auto &entry : nodes) {
                 Node *node = entry.second;
                 if (node->kind == 3 || node->kind == 4 || node->kind == 5) applyFont(node);
-                YGNodeMarkDirty(node->yoga);
+                // Yoga aborts on marking a node without a measure function.
+                if (YGNodeHasMeasureFunc(node->yoga)) YGNodeMarkDirty(node->yoga);
             }
             RECT *suggested = (RECT *)lParam;
             SetWindowPos(hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
@@ -261,6 +268,7 @@ static LRESULT CALLBACK mainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         }
         case WM_SETTINGCHANGE:
             if (lParam && wcscmp((const wchar_t *)lParam, L"ImmersiveColorSet") == 0) applyAppearance();
+            applyTextScale();
             reportSystem();
             return 0;
         case WM_ACTIVATEAPP: ui_report_active(wParam ? 1 : 0); return 0;
@@ -409,6 +417,7 @@ int main() {
     rootYoga = YGNodeNew();
     YGNodeStyleSetFlexDirection(rootYoga, YGFlexDirectionColumn);
     applyAppearance();
+    textScale = systemTextScale();
     // The app's data directory, before the app starts (ui_data_dir).
     ui_report_data_dir(narrow(dataDir().c_str()).c_str());
     if (!link.empty()) ui_report_link(link.c_str());
@@ -436,6 +445,8 @@ int main() {
             ui_report_back();
             continue;
         }
+        // Return in a one-line field the app submits on (before the dialog manager takes it).
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_RETURN && submitReturn(msg.hwnd)) continue;
         if (TranslateAcceleratorW(mainWindow, accelerators, &msg)) continue;
         if (IsDialogMessageW(mainWindow, &msg)) continue;
         TranslateMessage(&msg);
