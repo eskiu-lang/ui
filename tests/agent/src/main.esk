@@ -20,6 +20,7 @@ void App() {
         *Signal<bool> done = use_signal<bool>(false);
         *Signal<int> goal = use_signal<int>(0);
         *Signal<bool> open = use_signal<bool>(false);
+        *Signal<bool> broken = use_signal<bool>(false);
         Number("count", "Count: ", count.get());
         ButtonWith(Style{test_id: "add"}, "Add") { count.set(count.get() + 1); }
         TextInput(Input{value: title.get(), placeholder: "Title", style: Style{test_id: "title"}},
@@ -42,6 +43,13 @@ void App() {
         ButtonWith(Style{test_id: "open"}, "Open") { open.set(true); }
         Modal(open.get(), void() { open.set(false); }) {
             Column(Style{padding: 24, background: rgb(255, 255, 255)}) { TextWith(Style{test_id: "sheet"}, "A modal"); }
+        }
+        // A runtime check that fails (two children with one key): the app stops, and the agent
+        // tells why (check.sh, the web's last step).
+        ButtonWith(Style{test_id: "break"}, "Break") { broken.set(true); }
+        if (broken.get()) {
+            Row(Style{key: key(1)}) {}
+            Row(Style{key: key(1)}) {}
         }
         // A navigator: pushing a route changes the page's URL on the web.
         Column(Style{height: 40}) {

@@ -59,7 +59,7 @@ fi
 op tree '"test_id":"add"' '"text":"Count: 0"' '"kind":"TextInput","test_id":"title"'
 # A build with source positions (a compiler with src_line()): each element's call.
 if grep -q UI_SRCLOC build/ui/entry.esk 2>/dev/null; then
-    op tree '"test_id":"add","text":"Add","file":"src/main.esk","line":22,"col":9'
+    op tree '"test_id":"add","text":"Add","file":"src/main.esk","line":25,"col":9'
 fi
 op "tap add" '"ok":true,"op":"tap","target":"add"'
 op "tap Add" '"kind":"Button"'
@@ -142,6 +142,12 @@ for pattern in '"text":"Edited: Milk bread"' '"text":"Count: 2"' '"text":"Done"'
     grep -q -- "$pattern" "$OUT/last.json" || { cat "$OUT/last.json"; fail "reload: no $pattern"; }
 done
 echo "PASS $HOST: a reload keeps the state"
+# A runtime check that fails stops the app; on the web the agent still tells its message.
+# (the tap may answer before the frame that fails, or fail itself: the next op tells)
+if [ "$HOST" = web ]; then
+    "$UI" agent "$HOST" --json "tap break" > /dev/null 2>&1 || true
+    refused tree 'duplicate key'
+fi
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
 [ "$HOST" = ios ] && { xcrun simctl status_bar booted clear > /dev/null 2>&1 || true; }
 [ "$HOST" = android ] && adb shell am broadcast -a com.android.systemui.demo -e command exit > /dev/null 2>&1
