@@ -5,7 +5,9 @@
 // extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value,
 // 15 an answer (the request in id, its text), 16 a fetch's answer (status in value, the body
 // in text, the headers in extra), 17 a pan (the phase in value, then dx, dy, vx, vy), 20 a
-// long press.
+// long press, 21 submit (a text input's text when return is pressed).
+import {aria, setRole, disabledAbove, applyDisabled, setMultiline, focusTrap, INPUT_MODES, ENTER_HINTS, CAPITALIZE, AUTOFILL} from './access.mjs';
+
 // Style.font: a font file loaded once as its own family, with the system font behind it while
 // it loads (or when it does not).
 const fontFamilies = new Map();
@@ -45,6 +47,7 @@ export function withStrings(app, strings, call) {
 export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0, extra = 0, width = 0, height = 0, more = 0, rest = 0) {
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) withStrings(app, [text], t => app._ui_dispatch_text(id, generation, t));
+  else if (kind === 21) withStrings(app, [text], t => app._ui_dispatch_submit(id, generation, t));
   else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
   else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
@@ -257,6 +260,7 @@ export function createHost(root, dispatch, views = {}) {
   const kindOf = node => Number(node.dataset.kind);
   // Open modals, newest last: Escape asks the newest to close.
   const modals = [];
+  const trap = focusTrap();
   if (typeof document.addEventListener === 'function') {
     document.addEventListener('keydown', event => {
       const modal = modals.at(-1);
@@ -273,6 +277,13 @@ export function createHost(root, dispatch, views = {}) {
     if (target?.dataset?.kind === '12' && target.dataset.listening === 'true') dispatch(...ids(target), 1);
   });
   root.addEventListener('keydown', event => {
+    // Return in a one-line field with a submit listener (prop 72): ui_on_submit.
+    const field = listening(event, 'input[data-ui-id]');
+    if (field && kindOf(field) === 5 && field.dataset.submit === 'true' && event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault();
+      dispatch(...ids(field), 21, field.value);
+      return;
+    }
     const node = listening(event, 'div[data-ui-id]');
     if (node && kindOf(node) === 8 && (event.key === 'Enter' || event.key === ' ')) {
       event.preventDefault();
@@ -280,7 +291,7 @@ export function createHost(root, dispatch, views = {}) {
     }
   });
   root.addEventListener('input', event => {
-    const input = listening(event, 'input[data-ui-id]');
+    const input = listening(event, 'input[data-ui-id], textarea[data-ui-id]');
     if (input && kindOf(input) === 5) dispatch(...ids(input), 2, input.value);
     if (input && kindOf(input) === 15) dispatch(...ids(input), 14, null, Number(input.value));
   });
@@ -296,11 +307,11 @@ export function createHost(root, dispatch, views = {}) {
     if (node.dataset && kindOf(node) === 6 && node.dataset.listening === 'true') reportScroll(node);
   }, true);
   root.addEventListener('focusin', event => {
-    const input = listening(event, 'input[data-ui-id]');
+    const input = listening(event, 'input[data-ui-id], textarea[data-ui-id]');
     if (input && kindOf(input) === 5) dispatch(...ids(input), 3, null, 1);
   });
   root.addEventListener('focusout', event => {
-    const input = listening(event, 'input[data-ui-id]');
+    const input = listening(event, 'input[data-ui-id], textarea[data-ui-id]');
     if (input && kindOf(input) === 5) dispatch(...ids(input), 3, null, 0);
   });
   function parentNode(id) {
@@ -340,6 +351,8 @@ export function createHost(root, dispatch, views = {}) {
     if (m.kind === 11) node.style.display = 'none';
     if (m.kind === 13) node.style.overflow = 'hidden';
     if (m.kind === 12) { node.className = 'ui-modal'; node.setAttribute('role', 'dialog'); node.setAttribute('aria-modal', 'true'); modals.push(node); }
+    // The role the kind gives, for when Style.role goes back to RoleNone.
+    node.uiRole = node.getAttribute?.('role') ?? null;
     nodes.set(m.id, node);
   }
   // String props 6 and 7: a container with grid columns or rows is a CSS grid. Track sizes
@@ -390,6 +403,33 @@ export function createHost(root, dispatch, views = {}) {
         break;
       }
       case 51: node.uiAngle = value; paintGradient(node, s); break;
+      case 57: setRole(node, value); break;
+      case 58: aria(node, 'aria-checked', value ? ['false', 'true', 'mixed'][value - 1] : null); break;
+      case 59: {
+        const role = node.getAttribute?.('role');
+        aria(node, 'aria-selected', value ? 'true' : role === 'tab' || role === 'option' ? 'false' : null);
+        break;
+      }
+      case 60: aria(node, 'aria-expanded', value ? String(value === 2) : null); break;
+      case 61: node.uiDisabled = value !== 0; applyDisabled(node, root); break;
+      case 62: case 63: case 64: {
+        // A range, when the maximum is above the minimum.
+        const range = node.uiRange ??= {62: 0, 63: 0, 64: 0};
+        range[code] = value;
+        const on = range[64] > range[63];
+        aria(node, 'aria-valuenow', on ? String(range[62]) : null);
+        aria(node, 'aria-valuemin', on ? String(range[63]) : null);
+        aria(node, 'aria-valuemax', on ? String(range[64]) : null);
+        break;
+      }
+      case 65: node.uiSecure = value !== 0; if (node.tagName === 'INPUT') node.type = value ? 'password' : 'text'; break;
+      case 66: aria(node, 'inputmode', INPUT_MODES[value] ?? null); break;
+      case 67: aria(node, 'enterkeyhint', ENTER_HINTS[value] ?? null); break;
+      case 68: setMultiline(node, value !== 0, nodes); break;
+      case 69: aria(node, 'autocapitalize', CAPITALIZE[value] ?? null); break;
+      case 70: aria(node, 'autocorrect', value ? null : 'off'); node.spellcheck = value !== 0; break;
+      case 71: aria(node, 'autocomplete', AUTOFILL[value] ?? null); break;
+      case 72: node.dataset.submit = String(value !== 0); break;
       case 9: s.color = cssColor(value); break;
       case 10: s.fontSize = px(value); break;
       case 11: s.fontWeight = value ? String(value) : ''; break;
@@ -674,6 +714,8 @@ export function createHost(root, dispatch, views = {}) {
         else if (m.op === 11) natives.get(m.id)?.set?.(m.name, m.text);
         else if (m.op === 9 && m.kind === 5) node.style.fontFamily = m.text ? fontFamily(m.text) : '';
         else if (m.op === 9 && (m.kind === 6 || m.kind === 7)) gridTracks(node, m.kind, m.text);
+        else if (m.op === 9 && m.kind === 8) aria(node, 'aria-valuetext', m.text || null);
+        else if (m.op === 9 && m.kind === 9) aria(node, 'aria-description', m.text || null);
         else if (m.op === 9) {
           // String props: 1 label (an image's alt text), 2 placeholder, 3 image source.
           const name = m.kind === 1 ? (kindOf(node) === 7 ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';
@@ -683,6 +725,7 @@ export function createHost(root, dispatch, views = {}) {
           const parent = parentNode(m.parent), before = m.before ? nodes.get(m.before) : null;
           // An adopted node is in its place already: moving it would reset its state.
           if (node.parentNode !== parent || node.nextSibling !== before) parent.insertBefore(node, before);
+          if (parent !== root && disabledAbove(parent, root)) applyDisabled(node, root);
         } else if (m.op === 6) {
           natives.get(m.id)?.dispose?.(); natives.delete(m.id); layouts.delete(m.id);
           node.remove(); nodes.delete(m.id);
@@ -698,6 +741,7 @@ export function createHost(root, dispatch, views = {}) {
       }
       pending.length = 0;
       adopting = null;
+      if ((modals.length || trap.active) && typeof document.body !== 'undefined') trap.update(modals);
       if (layouts.size) reportLayouts();
       if (!splashHeld) hideSplash();
     }

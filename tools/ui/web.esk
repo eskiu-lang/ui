@@ -41,6 +41,7 @@ string build_web(Project* p) {
     compile_app(&cmd);
     fs_copy(join(p.ui.data, "hosts/web/renderer.mjs"), join(out, "renderer.mjs"));
     fs_copy(join(p.ui.data, "hosts/web/scheduler.mjs"), join(out, "scheduler.mjs"));
+    fs_copy(join(p.ui.data, "hosts/web/access.mjs"), join(out, "access.mjs"));
     string driver = join(out, "driver.mjs");
     if (test) { fs_copy(join(p.ui.data, "hosts/web/driver.mjs"), driver); } else { fs_remove_all(driver); }
     write_web_native(p, out);
