@@ -5,8 +5,10 @@
 // extra, then width and height), 13 hover (1 entered, 0 left), 14 a slider's value,
 // 15 an answer (the request in id, its text), 16 a fetch's answer (status in value, the body
 // in text, the headers in extra), 17 a pan (the phase in value, then dx, dy, vx, vy), 20 a
-// long press, 21 submit (a text input's text when return is pressed).
-import {aria, setRole, disabledAbove, applyDisabled, setMultiline, focusTrap, INPUT_MODES, ENTER_HINTS, CAPITALIZE, AUTOFILL} from './access.mjs';
+// long press, 21 submit (a text input's text when return is pressed), 22 an image loaded (1) or
+// failed (0).
+import {aria, setRole, disabledAbove, applyDisabled, setMultiline, focusTrap, INPUT_MODES, ENTER_HINTS, CAPITALIZE, AUTOFILL,
+  TEXT_ALIGN, applyPadding, maxLines, watchImage} from './access.mjs';
 
 // Style.font: a font file loaded once as its own family, with the system font behind it while
 // it loads (or when it does not).
@@ -48,6 +50,7 @@ export function uiDispatch(app, id, generation, kind = 1, text = null, value = 0
   if (kind === 1) app._ui_dispatch(id, generation);
   else if (kind === 2) withStrings(app, [text], t => app._ui_dispatch_text(id, generation, t));
   else if (kind === 21) withStrings(app, [text], t => app._ui_dispatch_submit(id, generation, t));
+  else if (kind === 22) app._ui_dispatch_image(id, generation, value);
   else if (kind === 3) app._ui_dispatch_focus(id, generation, value);
   else if (kind === 4) app._ui_dispatch_toggle(id, generation, value);
   else if (kind === 5) app._ui_dispatch_scroll(id, generation, value, extra);
@@ -344,6 +347,11 @@ export function createHost(root, dispatch, views = {}) {
       if (m.kind === 6) { node.style.overflow = 'auto'; node.style.flexShrink = '1'; }
     }
     if (m.kind === 5) node.type = 'text';
+    // A word longer than its line breaks inside it rather than running out of the box.
+    if (m.kind === 3) node.style.overflowWrap = 'anywhere';
+    // An image that cannot be loaded shows nothing (not the browser's broken icon and its alt
+    // text), and tells the app when it listens (prop 84).
+    if (m.kind === 7) watchImage(node, (id, generation, loaded) => dispatch(id, generation, 22, null, loaded ? 1 : 0));
     if (m.kind === 15) { node.type = 'range'; node.step = '1'; }
     if (m.kind === 8) { node.setAttribute('role', 'button'); node.tabIndex = 0; node.style.cursor = 'pointer'; }
     if (m.kind === 9) { node.type = 'checkbox'; node.setAttribute('role', 'switch'); }
@@ -370,7 +378,18 @@ export function createHost(root, dispatch, views = {}) {
     const s = node.style;
     switch (code) {
       case 1: if (container) s.gap = `${value}px`; break;
-      case 2: if (container || kindOf(node) === 4 || kindOf(node) === 5) s.padding = `${value}px`; break;
+      case 2: case 73: case 74: case 75: case 76:
+        // The padding, and a side's own (kUnset: the padding's).
+        if (container || kindOf(node) === 4 || kindOf(node) === 5) applyPadding(node, code, value);
+        break;
+      case 77: s.marginTop = px(value); break;
+      case 78: s.marginRight = px(value); break;
+      case 79: s.marginBottom = px(value); break;
+      case 80: s.marginLeft = px(value); break;
+      case 81: s.textAlign = TEXT_ALIGN[value] ?? ''; break;
+      case 82: maxLines(node, value); break;
+      case 83: s.flexShrink = String(value); break;
+      case 84: node.uiListens = value !== 0; break;
       case 3: if (value) node.focus(); else node.blur(); break;
       case 4: s.width = px(value); ratioAlign(s); break;
       case 5: s.height = px(value); ratioAlign(s); break;

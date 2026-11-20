@@ -9,6 +9,7 @@ export const INPUT_MODES = {1: 'email', 2: 'numeric', 3: 'decimal', 4: 'tel', 5:
 export const ENTER_HINTS = {1: 'done', 2: 'go', 3: 'next', 4: 'search', 5: 'send'};
 export const CAPITALIZE = {1: 'none', 2: 'words', 3: 'sentences', 4: 'characters'};
 export const AUTOFILL = {1: 'username', 2: 'current-password', 3: 'new-password', 4: 'email', 5: 'one-time-code', 6: 'name', 7: 'tel'};
+export const TEXT_ALIGN = {1: 'start', 2: 'center', 3: 'end', 4: 'justify'};
 const CONTROLS = 'button[data-ui-id], input[data-ui-id], textarea[data-ui-id], div[data-kind="8"]';
 
 // An attribute, removed when value is null.
@@ -91,4 +92,36 @@ export function focusTrap() {
       }
     },
   };
+}
+
+// The padding (prop 2) and a side's own (props 73 to 76, top, right, bottom, left; 0: the
+// padding's), kept on the node so each change applies all four.
+export function applyPadding(node, code, value) {
+  const pad = node.uiPadding ??= {2: 0, 73: 0, 74: 0, 75: 0, 76: 0};
+  pad[code] = value;
+  const side = c => `${pad[c] === 0 ? pad[2] : pad[c]}px`;
+  const sides = [73, 74, 75, 76].some(c => pad[c] !== 0);
+  node.style.padding = sides ? `${side(73)} ${side(74)} ${side(75)} ${side(76)}` : `${pad[2]}px`;
+}
+
+// Style.max_lines (prop 82): a text cut after that many lines with an ellipsis; 0 no limit.
+export function maxLines(node, lines) {
+  const s = node.style;
+  if (lines > 0) {
+    s.display = '-webkit-box'; s.webkitBoxOrient = 'vertical'; s.webkitLineClamp = String(lines); s.overflow = 'hidden';
+  } else if (s.webkitLineClamp) {
+    s.display = ''; s.webkitBoxOrient = ''; s.webkitLineClamp = ''; s.overflow = '';
+  }
+}
+
+// An image: hidden while it cannot be loaded (no broken icon, no alt text spilling out of its
+// box), shown again when a new source loads; `report(id, generation, loaded)` when the app
+// listens (prop 84, node.uiListens).
+export function watchImage(node, report) {
+  const tell = loaded => {
+    node.style.visibility = loaded ? '' : 'hidden';
+    if (node.uiListens) report(Number(node.dataset.uiId), Number(node.dataset.generation), loaded);
+  };
+  node.addEventListener?.('load', () => tell(true));
+  node.addEventListener?.('error', () => tell(false));
 }
