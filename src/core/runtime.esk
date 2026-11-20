@@ -13,7 +13,8 @@
 // the request), 16 fetch (a request finished: value the status, text the body or the error,
 // name the headers), 17 pan (value the phase, extra dx, width dy, height the x velocity,
 // extra2 the y velocity), 18 display frame (no node; the time in seconds in `value`, the microseconds in `extra`), 19 the app
-// went to the foreground (value 1) or the background (value 0; no node), 20 long press, 21 submit (a TextInput's return key; text the field's text). A
+// went to the foreground (value 1) or the background (value 0; no node), 20 long press, 21 submit (a TextInput's return key; text the field's text), 22 image (value
+// 1 an Image loaded, 0 it could not be). A
 // layout's window position is in extra2 and extra3. A user's event (a press, an edit, a
 // toggle, a value, a refresh, a gesture, a submit) on a disabled node or one inside a
 // disabled node is dropped.
@@ -114,6 +115,8 @@ struct Ui {
     bool has_next_long_press;
     fn(string)->void next_submit;
     bool has_next_submit;
+    fn(bool)->void next_image;
+    bool has_next_image;
     // Destructors for the next element (ui_own).
     List<fn()->void> next_owned;
     // The RefreshControl for the next Scroll or FlatList.
@@ -468,6 +471,11 @@ bool ui_event_submit(int id, int generation, string text) {
     return ui_post(Event{id, generation, 21, 0, text});
 }
 
+// The host's side: an Image with a load listener loaded (true) or could not be loaded.
+bool ui_event_image(int id, int generation, bool loaded) {
+    return ui_post(Event{id, generation, 22, loaded ? 1 : 0, null});
+}
+
 // The host's side: a text input gained or lost focus.
 bool ui_event_focus(int id, int generation, bool focused) {
     return ui_post(Event{id, generation, 3, focused ? 1 : 0, null});
@@ -615,6 +623,7 @@ bool ui_dispatch_now(*Event event) {
     if (event.kind == 13 && node.has_on_hover) { node.on_hover(event.value != 0); return true; }
     if (event.kind == 20 && node.has_on_long_press) { node.on_long_press(); return true; }
     if (event.kind == 21 && node.has_on_submit) { node.on_submit(event.text == null ? "" : event.text); return true; }
+    if (event.kind == 22 && node.has_on_image) { node.on_image(event.value != 0); return true; }
     if (event.kind == 11 && node.has_on_layout) {
         node.on_layout(Frame{event.value, event.extra, event.width, event.height, event.extra2, event.extra3});
         return true;
@@ -668,6 +677,7 @@ void ui_shutdown() {
     if (ui.has_next_long_press) { ui_release_closure(ui.next_long_press); }
     if (ui.has_next_pan) { ui_release_pan(ui.next_pan); }
     if (ui.has_next_submit) { ui_release_text(ui.next_submit); }
+    if (ui.has_next_image) { ui_release_bool(ui.next_image); }
     ui.timers.free();
     ui_frames_shutdown();
     ui.app_state_handlers.free();

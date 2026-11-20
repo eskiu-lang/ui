@@ -47,7 +47,10 @@
 // 65 secure (1: hide what is typed), 66 keyboard (Keyboard), 67 return key (ReturnKey),
 // 68 multiline (1 or 0), 69 capitalize (Capitalize), 70 autocorrect (1 on, the default; 0
 // off), 71 autofill (Autofill), 72 submit listener (1: the host reports return with
-// ui_dispatch_submit).
+// ui_dispatch_submit). 73 padding top, 74 right, 75 bottom, 76 left (points; 0: the padding
+// of prop 2), 77 margin top, 78 right, 79 bottom, 80 left (points), 81 text align
+// (TextAlign), 82 maximum lines (0: no limit; cut with an ellipsis), 83 shrink (flex-shrink),
+// 84 image listener (1: the host reports an Image's load or failure with ui_dispatch_image).
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal

@@ -52,6 +52,13 @@ Key key(int64 value) { return Key{true, value}; }
 // value_min). `disabled` turns the element and what is in it off: the platform shows and
 // announces it as unavailable, and its handlers (presses, edits, toggles, gestures) are not
 // called.
+// `padding_top`, `padding_right`, `padding_bottom` and `padding_left` (points) replace `padding`
+// on one side; a side left at 0 takes `padding` (for 8 on three sides and none on the fourth,
+// give the three). `margin` is space outside the element on every side (points), and
+// `margin_top`, `margin_right`, `margin_bottom` and `margin_left` replace it on one the same way. `text_align` (a TextAlign) places a text's lines; `max_lines` (0: no limit) cuts a
+// text after that many lines, with an ellipsis. `shrink` (flex-shrink, 0 by default) lets the
+// element get smaller than its content's size when its parent has no room: give a text in a
+// row `shrink: 1` and it wraps instead of running out of the row.
 struct Style {
     Key key; int gap = 8; int padding = 0; string label;
     int width; int height; int grow; bool wrap;
@@ -75,7 +82,14 @@ struct Style {
     int role; int checked; bool selected; int expanded; string value; string hint;
     int value_min; int value_max; int value_now;
     bool disabled;
+    int padding_top; int padding_right; int padding_bottom; int padding_left;
+    int margin; int margin_top; int margin_right; int margin_bottom; int margin_left;
+    int text_align; int max_lines; int shrink;
 }
+
+// Where a text's lines sit (Style.text_align): the platform's default (the start), the start
+// edge, centered, the end edge, or justified.
+enum TextAlign { TextAlignDefault, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify }
 
 // What an element is to a screen reader (Style.role). RoleNone: what its kind says (a Button
 // is a button, a TextInput a text field, the rest a group or plain text).

@@ -2,7 +2,8 @@
 // Part of <ui> (src/ui.esk imports every part; they are not imported alone).
 
 // An image from an http(s) URL or a resource bundled with the app (its file name). Give it
-// a width and height; `label` is its text alternative.
+// a width and height; `label` is its text alternative. One that cannot be loaded shows
+// nothing (its background), and ui_on_image tells the app.
 void Image(Style style, string source UI_LOC) {
     UI_HERE
 #ifdef UI_UPDATES
@@ -11,6 +12,15 @@ void Image(Style style, string source UI_LOC) {
 #endif
     ui.next_source = source;
     ui_element(7, style, null, void() {}, void() {}) {}
+}
+
+// For the Image right after it: `handler` gets true when the image loaded and false when it
+// could not be (a bad URL, no network, a file that is not an image), so the app can show
+// something else.
+void ui_on_image(escaping fn(bool)->void handler) {
+    if (ui.has_next_image) { ui_release_bool(ui.next_image); }
+    ui.next_image = handler;
+    ui.has_next_image = true;
 }
 
 // The platform's busy indicator, spinning while `animating`.

@@ -34,7 +34,7 @@ struct Node {
     int gap;
     int padding;
     // The value last sent for each int prop (by code), so only a change is sent again.
-    int64[73] props;
+    int64[85] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -112,6 +112,9 @@ struct Node {
     // ui_on_submit's handler (a TextInput's return key).
     fn(string)->void on_submit;
     bool has_on_submit;
+    // ui_on_image's handler (an Image loaded, or failed to).
+    fn(bool)->void on_image;
+    bool has_on_image;
     // Style.value and Style.hint, for a screen reader.
     string value;
     string hint;
@@ -413,6 +416,7 @@ void ui_unmount(*Node node) {
         if (node.has_on_long_press) { ui_release_closure(node.on_long_press); }
         if (node.has_on_pan) { ui_release_pan(node.on_pan); }
         if (node.has_on_submit) { ui_release_text(node.on_submit); }
+        if (node.has_on_image) { ui_release_bool(node.on_image); }
         if (node.kind == 15) { ui_release_int(node.on_value); }
         if (node.boundary != null) { ui_free_boundary(node.boundary); }
         node.slots.free(); node.children.free(); node.emitted.free(); node.owned.free();
@@ -574,6 +578,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
             fn(string)->void old_submit = node.on_submit;
             ui_retire(void() { ui_release_text(old_submit); });
         }
+        if (node.has_on_image) {
+            fn(bool)->void old_image = node.on_image;
+            ui_retire(void() { ui_release_bool(old_image); });
+        }
         if (kind == 15) {
             fn(int)->void old_value = node.on_value;
             ui_retire(void() { ui_release_int(old_value); });
@@ -658,6 +666,19 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 63, style.value_min, 0);
     ui_prop(node, fresh, 64, style.value_max, 0);
     ui_prop(node, fresh, 62, style.value_now, 0);
+    // A side's padding and the margins, each side resolved (prop 2 is the padding of the sides
+    // not given).
+    ui_prop(node, fresh, 73, style.padding_top, 0);
+    ui_prop(node, fresh, 74, style.padding_right, 0);
+    ui_prop(node, fresh, 75, style.padding_bottom, 0);
+    ui_prop(node, fresh, 76, style.padding_left, 0);
+    ui_prop(node, fresh, 77, style.margin_top != 0 ? style.margin_top : style.margin, 0);
+    ui_prop(node, fresh, 78, style.margin_right != 0 ? style.margin_right : style.margin, 0);
+    ui_prop(node, fresh, 79, style.margin_bottom != 0 ? style.margin_bottom : style.margin, 0);
+    ui_prop(node, fresh, 80, style.margin_left != 0 ? style.margin_left : style.margin, 0);
+    ui_prop(node, fresh, 81, style.text_align, 0);
+    ui_prop(node, fresh, 82, style.max_lines, 0);
+    ui_prop(node, fresh, 83, style.shrink, 0);
     if (ui_update_string(&node.value, style.value)) { ui_emit_string_prop(node, 8, node.value); }
     if (ui_update_string(&node.hint, style.hint)) { ui_emit_string_prop(node, 9, node.hint); }
 #ifdef UI_TEST
@@ -684,6 +705,10 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     node.on_submit = ui.next_submit;
     ui.has_next_submit = false;
     ui_prop(node, fresh, 72, node.has_on_submit ? 1 : 0, 0);
+    node.has_on_image = ui.has_next_image;
+    node.on_image = ui.next_image;
+    ui.has_next_image = false;
+    ui_prop(node, fresh, 84, node.has_on_image ? 1 : 0, 0);
     // What the caller gave this element to free with its block.
     for (i in 0..ui.next_owned.size) { node.owned.push(ui.next_owned.data[i]); }
     ui.next_owned.size = 0;
