@@ -513,12 +513,7 @@ void run_android(Project* p) {
         installed.free();
         String_free(&found);
     }
-    if (android_reinstall) {
-        Cmd install;
-        install.add(adb()); install.add("install"); install.add("-r"); install.add(apk);
-        install.must(null);
-        install.free();
-    }
+    if (android_reinstall) { android_install(p, apk); }
     String activity;
     String_appendf(&activity, "%s/org.eskiu.ui.UiActivity", p.id.data);
     if (android_core == null) {
@@ -530,6 +525,34 @@ void run_android(Project* p) {
     }
     android_reload(p, false);
     println(android_reinstall ? "Installed and started the app" : "Restarted the app on the new build");
+}
+
+// Installs apk over the installed app. One signed with another key (another machine's debug
+// key) cannot be replaced: it is uninstalled first, and its data goes with it.
+void android_install(Project* p, string apk) {
+    List<string> argv;
+    defer argv.free();
+    argv.push(adb()); argv.push("install"); argv.push("-r"); argv.push(apk);
+    ProcessOptions options = ProcessOptions{merge_stderr: true};
+    ProcessResult result;
+    defer ProcessResult_free(&result);
+    bool ran = process_run(&argv, &options, &result) == 0;
+    string said = result.stdout.data == null ? "" : result.stdout.data;
+    if (ran && result.exit_code == 0) { return; }
+    if (ran && strstr(said, "INSTALL_FAILED_UPDATE_INCOMPATIBLE") != null) {
+        println_err("ui: the installed app is signed with another key: uninstalling it (its data goes with it)");
+        Cmd uninstall;
+        uninstall.add(adb()); uninstall.add("uninstall"); uninstall.add(p.id.data);
+        uninstall.must(null);
+        uninstall.free();
+        Cmd install;
+        install.add(adb()); install.add("install"); install.add(apk);
+        install.must(null);
+        install.free();
+        return;
+    }
+    print_err(said);
+    fail("adb install failed");
 }
 
 // A reload build: the app's library into the app's files (through run-as, which the
