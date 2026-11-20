@@ -2,23 +2,15 @@
 import <string>;
 import <ui>;
 
-// Text takes finished text; formatting goes through <string>, which -Wformat checks.
-void NumberText(string label, int value) {
-    String text;
-    defer String_free(&text);
-    String_format(&text, "%s%d", label, value);
-    Text(text.data);
-}
+// textf formats a text for this frame (freed with it); -Wformat checks its arguments.
+void NumberText(string label, int value) { Text(textf("%s%d", label, value)); }
 
 void Counter() {
     Column(Style{padding: 16}) {
         *Signal<int> count = use_signal<int>(0);
         Text("Eskiu counter");
         // A test_id: what tests/ui/counter.uitest finds it by.
-        String label;
-        defer String_free(&label);
-        String_format(&label, "Count: %d", count.get());
-        TextWith(Style{test_id: "count"}, label.data);
+        TextWith(Style{test_id: "count"}, textf("Count: %d", count.get()));
         Button("Increment") { count.set(count.get() + 1); }
     }
 }
