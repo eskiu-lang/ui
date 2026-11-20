@@ -45,6 +45,11 @@ void ui_dispatch_submit(int id, int generation, string text) {
     ui_event_submit(id, generation, text);
     if (ui_needs_frame()) { ui_host_schedule(); }
 }
+void ui_dispatch_image(int id, int generation, int loaded) {
+    if (!app_active) { return; }
+    ui_event_image(id, generation, loaded != 0);
+    if (ui_needs_frame()) { ui_host_schedule(); }
+}
 void ui_dispatch_focus(int id, int generation, int focused) {
     if (!app_active) { return; }
     ui_event_focus(id, generation, focused != 0);
