@@ -27,6 +27,7 @@ public final class UiActivity extends Activity {
     native void nativeStart(int example);
     native void nativeEvent(int id, int generation);
     native void nativeText(int id, int generation, String text);
+    native void nativeSubmit(int id, int generation, String text);
     native void nativeFocus(int id, int generation, int focused);
     native void nativeTick();
     native void nativeLayout(float width, float height);
@@ -75,11 +76,20 @@ public final class UiActivity extends Activity {
     // app keeps its state and hears about the change.
     @Override public void onConfigurationChanged(android.content.res.Configuration config) {
         super.onConfigurationChanged(config);
+        // Text sizes in SP follow the system's text size: each text view's is set again, and
+        // the core lays the tree out again (nativeSystem) when the scale changed.
+        if (config.fontScale != fontScale) {
+            props.rescaleFonts(nodes, config.fontScale / fontScale);
+            fontScale = config.fontScale;
+        }
         reportSystem();
     }
 
     final UiProps props = new UiProps(this);
+    final UiAccess access = new UiAccess();
+    final UiInput input = new UiInput(this);
     final UiTree tree = new UiTree(this);
+    private float fontScale = 1f;
     final UiCommands commands = new UiCommands(this);
     private final UiDriver driver = new UiDriver(this);
     private final UiSelfTest selfTest = new UiSelfTest(this);
@@ -276,6 +286,7 @@ public final class UiActivity extends Activity {
     }
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        fontScale = getResources().getConfiguration().fontScale;
         // A reload build (ui serve) loads the app's code from the library ui-reload names,
         // before anything here calls into it.
         String core = reloadPath();
@@ -361,7 +372,7 @@ public final class UiActivity extends Activity {
             if (view.getParent() instanceof ViewGroup) ((ViewGroup)view.getParent()).removeView(view);
         }
         root.removeAllViews();
-        nodes.clear(); generations.clear(); props.clear();
+        nodes.clear(); generations.clear(); props.clear(); access.clear(); input.clear();
         nativeViews.clear(); nativeTypes.clear(); tree.scrollViewports.clear(); tree.modalIds.clear();
         if (nativeReload(path) == 0) return;
         active = true;

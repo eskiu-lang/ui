@@ -139,13 +139,20 @@ final class UiTree {
             }
         } else if (op == 3) ((TextView)view).setText(text);
         else if (op == 9) {
-            // String props: 1 label, 2 placeholder, 3 image source, 4 native view type, 5 font file.
-            if (kind == 4 && view instanceof FrameLayout) a.mountNative(id, (FrameLayout)view, text);
+            // String props: 1 label, 2 placeholder, 3 image source, 4 native view type, 5 font file,
+            // 8 accessibility value, 9 accessibility hint.
+            if (kind == 8 || kind == 9) a.access.text(id, view, kind, text);
+            else if (kind == 4 && view instanceof FrameLayout) a.mountNative(id, (FrameLayout)view, text);
             else if (kind == 1) view.setContentDescription(text.isEmpty() ? null : text);
             else if (kind == 5) a.props.fontFile(id, view, text);
             else if (kind == 2 && view instanceof EditText) ((EditText)view).setHint(text);
             else if (kind == 3 && view instanceof ImageView) a.props.loadImage((ImageView)view, text);
-        } else if (op == 2) a.props.prop(id, view, kind, before);
+        } else if (op == 2) {
+            // 57 to 64 accessibility (UiAccess), 65 to 72 a text input's editing (UiInput).
+            if (kind >= 57 && kind <= 64) a.access.prop(id, view, kind, before);
+            else if (kind >= 65 && kind <= 72) { if (view instanceof EditText) a.input.prop(id, (EditText)view, kind, before); }
+            else a.props.prop(id, view, kind, before);
+        }
         else if (op == 4 || op == 5) {
             if (modalIds.contains(id)) {
                 // Over everything, outside the parent's layout.
@@ -159,6 +166,7 @@ final class UiTree {
             if (group instanceof ScrollView) group = (ViewGroup)group.getChildAt(0);
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
             group.addView(view, before == 0 ? group.getChildCount() : group.indexOfChild(nodes.get(before)));
+            a.access.placed(view);
         } else if (op == 6) {
             UiProps props = a.props;
             ViewGroup owner = (ViewGroup)view.getParent();
@@ -175,13 +183,13 @@ final class UiTree {
                 view.animate().translationX(a.root.getWidth()).setDuration(UiProps.kSlide)
                     .withEndAction(() -> { owner.removeView(view); props.leaving.remove(view); }).start();
             } else if (owner != null && !props.insideLeaving(view)) owner.removeView(view);
-            props.forget(id);
+            props.forget(id); a.access.forget(id, view); a.input.forget(id);
             nodes.remove(id); generations.remove(id);
             modalIds.remove(id); a.nativeViews.remove(id); a.nativeTypes.remove(id);
             scrollViewports.remove(id);
         } else if (op == 7 || op == 8) {
             if (view instanceof ScrollView) { if (op == 7) scrollViewports.put(id, -1); else scrollViewports.remove(id); }
-            else view.setEnabled(op == 7);
+            else a.access.listen(view, op == 7);
         }
     }
     long measure(int id, float width, int wm, float height, int hm) {

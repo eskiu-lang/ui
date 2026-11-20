@@ -144,11 +144,24 @@ final class UiProps {
         if (file.isEmpty()) fontFiles.remove(id); else fontFiles.put(id, file);
         applyFont(id, view);
     }
+    // The node's font again (a password input type changes the face).
+    void refreshFont(int id, View view) { applyFont(id, view); }
+    // The system's text size changed: sizes in SP are resolved when set, so each text view's
+    // again (by `ratio` where the app set none).
+    void rescaleFonts(java.util.Map<Integer, View> nodes, float ratio) {
+        for (java.util.Map.Entry<Integer, View> entry : nodes.entrySet()) {
+            if (!(entry.getValue() instanceof TextView)) continue;
+            TextView text = (TextView)entry.getValue();
+            if (fonts.containsKey(entry.getKey())) applyFont(entry.getKey(), text);
+            else text.setTextSize(TypedValue.COMPLEX_UNIT_PX, text.getTextSize() * ratio);
+        }
+    }
+    // Font sizes are in SP: the system's text size applies.
     private void applyFont(int id, View view) {
         if (!(view instanceof TextView)) return;
         int[] font = fonts.getOrDefault(id, new int[] {0, 0});
         TextView text = (TextView)view;
-        text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, font[0] > 0 ? font[0] : 18);
+        text.setTextSize(TypedValue.COMPLEX_UNIT_SP, font[0] > 0 ? font[0] : 18);
         String file = fontFiles.get(id);
         Typeface custom = file != null ? typeface(file) : null;
         if (custom != null) text.setTypeface(custom);

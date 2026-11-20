@@ -147,7 +147,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
                 if (!scrolls.count(id)) YGNodeStyleSetFlexShrink(node, before > 0 ? 1 : 0);
             }
             else if (kind == 7) YGNodeStyleSetFlexWrap(node, before ? YGWrapWrap : YGWrapNoWrap);
-            else if ((kind == 10 || kind == 11) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
+            // A font, or a text input's line mode and type (multiline, secure, keyboard), change
+            // the measured size.
+            else if ((kind == 10 || kind == 11 || kind == 65 || kind == 66 || kind == 68) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
             else if (kind == 12) YGNodeStyleSetBorder(node, YGEdgeAll, before);
             else if (kind == 23) YGNodeStyleSetDisplay(node, before ? YGDisplayFlex : YGDisplayNone);
             else if (kind == 30) { if (before) layouts[id] = {-1, -1, -1, -1, -1, -1}; else layouts.erase(id); }
@@ -351,6 +353,12 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeText(JNIEnv
     ui_dispatch_text(id, generation, chars);
     env->ReleaseStringUTFChars(text, chars);
 }
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeSubmit(JNIEnv *current, jobject, jint id, jint generation, jstring text) {
+    env = current;
+    const char *chars = env->GetStringUTFChars(text, nullptr);
+    ui_dispatch_submit(id, generation, chars);
+    env->ReleaseStringUTFChars(text, chars);
+}
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeFocus(JNIEnv *current, jobject, jint id, jint generation, jint focused) {
     env = current; ui_dispatch_focus(id, generation, focused);
 }
@@ -490,6 +498,14 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeValue(JNIEn
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeSystem(JNIEnv *current, jobject, jint dark, jint reader, jint still, jint scale, jstring locale, jint rtl) {
     env = current;
+    // Text sizes are in SP: when the system's text size changed, the measured views (already
+    // given their new size by the activity) are laid out again.
+    static int lastScale = 0;
+    if (lastScale && scale != lastScale && root) {
+        for (auto &entry : nodes) if (YGNodeHasMeasureFunc(entry.second)) YGNodeMarkDirty(entry.second);
+        ui_host_ready();
+    }
+    lastScale = scale;
     ui_report_appearance(dark);
     ui_report_accessibility(reader, still, scale);
     const char *tag = env->GetStringUTFChars(locale, nullptr);
