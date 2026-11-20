@@ -1,17 +1,19 @@
 // The theme every kit component reads, tones and variants, and option lists.
 // Part of <ui/kit> (src/kit.esk imports every part).
 
-// The theme: change its fields before mounting (colors are rgb()/rgba() values).
+// The theme: change its fields before mounting (colors are rgb()/rgba() values). `muted` text
+// meets WCAG AA (4.5:1) on `page` and `surface`, and `control`, the border of what takes input,
+// 3:1 on `surface`; `line` is for separators, which need not stand out.
 struct Theme {
     int64 primary = 0x4F46E5FF;
     int64 on_primary = 0xFFFFFFFF;
     int64 primary_soft = 0xE0E7FFFF;
     int64 ink = 0x111827FF;
-    int64 muted = 0x6B7280FF;
+    int64 muted = 0x667085FF;
     int64 page = 0xF5F6FAFF;
     int64 surface = 0xFFFFFFFF;
     int64 line = 0xE5E7EBFF;
-    int64 control = 0xCBD5E1FF;
+    int64 control = 0x878F9EFF;
     int64 track = 0xF1F2F6FF;
     int64 danger = 0xDC2626FF;
     int radius = 12;
@@ -30,13 +32,13 @@ struct Theme {
 
 Theme kit;
 
-// The light theme (Theme's defaults) and a dark one.
-Theme kit_light() { return Theme{}; }
+// The light theme (Theme's defaults) and a dark one: assign it (`kit = kit_light();`).
+must_use Theme kit_light() { return Theme{}; }
 
-// The dark theme: the same roles in dark colors, with `dark` set.
-Theme kit_dark() {
+// The dark theme: the same roles in dark colors, with `dark` set; assign it (`kit = kit_dark();`).
+must_use Theme kit_dark() {
     return Theme{primary: 0x818CF8FF, on_primary: 0x111827FF, primary_soft: 0x312E81FF, ink: 0xF3F4F6FF,
-                 muted: 0x9CA3AFFF, page: 0x0B0F19FF, surface: 0x161B26FF, line: 0x2A3140FF, control: 0x4B5563FF,
+                 muted: 0x9CA3AFFF, page: 0x0B0F19FF, surface: 0x161B26FF, line: 0x2A3140FF, control: 0x6B7280FF,
                  track: 0x1F2533FF, danger: 0xF87171FF, radius: 12, dark: true};
 }
 
