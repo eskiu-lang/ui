@@ -98,3 +98,35 @@ void kit_access() {
     check(count_prop(2, 58) == 3 && count_prop(2, 57) == 4, "a checkbox and two radios with their state, and the group");
     ui_shutdown(); balanced("kit access leak");
 }
+
+int image_loads;
+
+int image_failures;
+
+// Layout props: a side's padding only when set, margins resolved per side, text and shrink;
+// an Image's load listener.
+void layout_props() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    image_loads = 0;
+    image_failures = 0;
+    ui_mount() {
+        Row(Style{padding: 8, padding_left: 20}) {}
+        Row(Style{margin: 4, margin_top: 12}) {}
+        TextWith(Style{text_align: TextAlignCenter, max_lines: 2, shrink: 1}, "A long line");
+        Row(Style{}) {}
+        ui_on_image(void(bool loaded) { if (loaded) { image_loads++; } else { image_failures++; } });
+        Image(Style{label: "Photo", width: 40, height: 40}, "missing.png");
+    }
+    ui_frame();
+    check(count_prop(2, 76) == 1 && count_prop(2, 73) == 0, "only the side that is set");
+    check(count_prop(2, 77) == 1 && prop_value(2, 77) == 12 && count_prop(2, 78) == 1 && prop_value(2, 78) == 4,
+        "margins resolved per side");
+    check(count_prop(2, 81) == 1 && count_prop(2, 82) == 1 && count_prop(2, 83) == 1, "text align, lines, shrink");
+    check(count_prop(2, 84) == 1, "one image listener");
+    *Node image = find_label(ui.root, "Photo");
+    ui_event_image(image.id, image.generation, false);
+    ui_event_image(image.id, image.generation, true);
+    check(image_failures == 1 && image_loads == 1, "the image listener hears both");
+    ui_shutdown(); balanced("layout props leak");
+}
