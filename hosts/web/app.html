@@ -49,7 +49,10 @@
   const scheduler = createFrameScheduler(() => app._ui_tick());
   host.schedule = () => scheduler.request();
   host.cancel = () => scheduler.cancel();
-  app = await createApp({uiHost: host, uiEmit: emit});
+  // The app's output reaches whatever console is at the time it prints (in a dev build the
+  // driver keeps the page's lines, the runtime's last message before an abort among them).
+  app = await createApp({uiHost: host, uiEmit: emit,
+    print: text => console.log(text), printErr: text => console.error(text)});
   // The page's route is the link the app was opened with (the first Navigator shows it).
   app.ccall('ui_report_link', null, ['string'], [host.route()]);
 {{reload}}  app._ui_start(0);

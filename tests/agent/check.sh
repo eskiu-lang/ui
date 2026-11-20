@@ -143,12 +143,11 @@ for pattern in '"text":"Edited: Milk bread"' '"text":"Count: 2"' '"text":"Done"'
 done
 echo "PASS $HOST: a reload keeps the state"
 # A runtime check that fails stops the app; on the web the agent still tells its message.
-# (the tap may answer before the frame that fails, or fail itself: the next op tells)
+# (the tap or the frame after it fails, with the runtime's message)
 if [ "$HOST" = web ]; then
-    "$UI" agent "$HOST" --json "tap break" "clock +16" > "$OUT/break.json" 2>&1 || true
-    "$UI" agent "$HOST" --json tree > "$OUT/last.json" 2> "$OUT/last.err" && {
-        cat "$OUT/break.json" "$OUT/last.json" "$OUT/last.err"; fail "a failed runtime check: the app went on"; }
-    grep -q 'duplicate key' "$OUT/last.json" || { cat "$OUT/break.json" "$OUT/last.json" "$OUT/last.err"; fail "a failed runtime check: no message"; }
+    "$UI" agent "$HOST" --json "tap break" "clock +16" > "$OUT/last.json" 2> "$OUT/last.err" && {
+        cat "$OUT/last.json" "$OUT/last.err"; fail "a failed runtime check: the app went on"; }
+    grep -q 'duplicate key' "$OUT/last.json" || { cat "$OUT/last.json" "$OUT/last.err"; fail "a failed runtime check: no message"; }
     echo "PASS $HOST: a failed runtime check tells its message"
 fi
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
