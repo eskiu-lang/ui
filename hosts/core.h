@@ -6,6 +6,7 @@
     X(void, ui_start, (int example)) \
     X(void, ui_dispatch, (int id, int generation)) \
     X(void, ui_dispatch_text, (int id, int generation, const char *text)) \
+    X(void, ui_dispatch_submit, (int id, int generation, const char *text)) \
     X(void, ui_dispatch_focus, (int id, int generation, int focused)) \
     X(void, ui_dispatch_toggle, (int id, int generation, int on)) \
     X(void, ui_dispatch_scroll, (int id, int generation, int offset, int viewport)) \

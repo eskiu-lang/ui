@@ -21,7 +21,50 @@ void Slider(Style style, int value, int min, int max, escaping fn(int)->void on_
 // A controlled text field: `value` is what it shows, `on_change` gets each edit (the text
 // is borrowed for the call; keep it in owned state such as use_string). `focused` is 1 to
 // focus it, 0 to blur it, -1 to leave focus to the user.
-struct Input { Key key; string value; string placeholder; string label; int focused = -1; Style style; }
+// `secure` hides what is typed (a password). `keyboard` is the Keyboard a phone shows,
+// `return_key` the ReturnKey's label (ui_on_submit gets the text when it is pressed),
+// `multiline` takes several lines (return then starts a new one, and the field grows with
+// them up to its max_height). `capitalize` (a Capitalize) and `autocorrect` say how the
+// platform edits what is typed; `autofill` (an Autofill) says what the field is for, so the
+// platform can offer a saved password, a one-time code or a contact's email.
+struct Input { Key key; string value; string placeholder; string label; int focused = -1; Style style;
+    bool secure; int keyboard; int return_key; bool multiline; int capitalize; bool autocorrect = true; int autofill; }
+
+// The keyboard a phone shows for a field (Input.keyboard): text, an email address, a whole
+// number, a number with decimals, a phone number, a URL, or search.
+enum Keyboard { KeyboardText, KeyboardEmail, KeyboardNumber, KeyboardDecimal, KeyboardPhone, KeyboardUrl, KeyboardSearch }
+
+// The return key's label (Input.return_key): the platform's own, done, go, next, search, send.
+enum ReturnKey { ReturnDefault, ReturnDone, ReturnGo, ReturnNext, ReturnSearch, ReturnSend }
+
+// How typed text is capitalized (Input.capitalize): the platform's default (sentences on a
+// phone), none, each word, each sentence, every letter.
+enum Capitalize { CapitalizeDefault, CapitalizeNone, CapitalizeWords, CapitalizeSentences, CapitalizeAll }
+
+// What a field is for (Input.autofill), so the platform offers what it saved: nothing, a user
+// name, the current password, a new password, an email address, a one-time code, a name, a
+// phone number.
+enum Autofill { AutofillNone, AutofillUsername, AutofillPassword, AutofillNewPassword, AutofillEmail, AutofillOneTimeCode,
+    AutofillName, AutofillPhone }
+
+// For the TextInput right after it: `handler` gets the field's text when the user presses
+// return (the Input's return_key), not on a multiline field, whose return starts a new line.
+void ui_on_submit(escaping fn(string)->void handler) {
+    if (ui.has_next_submit) { ui_release_text(ui.next_submit); }
+    ui.next_submit = handler;
+    ui.has_next_submit = true;
+}
+
+// The Input's editing options into what the element sends (internal).
+void ui_input_options(*InputExtra extra, Input input) {
+    extra.secure = input.secure;
+    extra.keyboard = input.keyboard;
+    extra.return_key = input.return_key;
+    extra.multiline = input.multiline;
+    extra.capitalize = input.capitalize;
+    extra.autocorrect = input.autocorrect;
+    extra.autofill = input.autofill;
+}
 
 // The field's style, with the Input's key and label.
 Style ui_input_style(Input input) {
@@ -37,6 +80,7 @@ void TextInput(Input input, escaping fn(string)->void on_change UI_LOC) {
     UI_HERE
     InputExtra extra = InputExtra{on_text: on_change, placeholder: input.placeholder,
         focused: input.focused};
+    ui_input_options(&extra, input);
     ui.next_input = &extra;
     ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
         void() {}, void() {}) {}
@@ -48,6 +92,7 @@ void TextInput_bind(Input input, *StringState text UI_LOC) {
     UI_HERE
     InputExtra extra = InputExtra{on_text: void(string typed) { text.set(typed); }, placeholder: input.placeholder,
         focused: input.focused};
+    ui_input_options(&extra, input);
     ui.next_input = &extra;
     ui_element(5, ui_input_style(input), text.get(), void() {}, void() {}) {}
 }
@@ -57,6 +102,7 @@ void TextInput_focus(Input input, escaping fn(string)->void on_change, escaping 
     UI_HERE
     InputExtra extra = InputExtra{on_text: on_change, on_focus: on_focus, has_on_focus: true,
         placeholder: input.placeholder, focused: input.focused};
+    ui_input_options(&extra, input);
     ui.next_input = &extra;
     ui_element(5, ui_input_style(input), input.value == null ? "" : input.value,
         void() {}, void() {}) {}
