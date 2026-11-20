@@ -46,6 +46,7 @@ int main() {
     labels(); printf("PASS labels\n");
     accessibility(); printf("PASS accessibility\n");
     input_options(); printf("PASS input options\n");
+    kit_access(); printf("PASS kit access\n");
     textf_texts(); printf("PASS textf\n");
     ergonomics(); printf("PASS ergonomics\n");
     fonts(); printf("PASS fonts\n");

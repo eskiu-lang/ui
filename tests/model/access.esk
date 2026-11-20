@@ -76,3 +76,25 @@ void input_options() {
     ui_shutdown(); balanced("input options leak");
     String_free(&access_submitted);
 }
+
+// The kit's words: a date and a month in Spanish, weeks from Monday; a Checkbox and a Radio
+// say their state.
+void kit_access() {
+    kit_text = kit_text_spanish();
+    String text;
+    kit_text_fill(kit_text.date, 2026, 11, 15, &text);
+    check(strcmp((string)text.data, "15 de noviembre de 2026") == 0, "a Spanish date");
+    kit_text_item(kit_text.weekdays, 1, &text);
+    check(strcmp((string)text.data, "L") == 0 && kit_text.first_weekday == 1, "Spanish weekdays from Monday");
+    String_free(&text);
+    kit_text = kit_text_english();
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        Checkbox("Agree", true, void(bool on) {});
+        RadioGroup("One\nTwo", 1, void(int i) {});
+    }
+    ui_frame();
+    check(count_prop(2, 58) == 3 && count_prop(2, 57) == 4, "a checkbox and two radios with their state, and the group");
+    ui_shutdown(); balanced("kit access leak");
+}
