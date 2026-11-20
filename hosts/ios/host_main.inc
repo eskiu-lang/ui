@@ -15,7 +15,11 @@ static void reportSystem(UITraitCollection *traits) {
     [super traitCollectionDidChange:previous];
     if (rootView) reportSystem(self.traitCollection);
 }
-- (void)systemChanged:(NSNotification *)note { reportSystem(self.traitCollection); }
+- (void)systemChanged:(NSNotification *)note {
+    // A new system text size: the app's fonts again at the new scale (Dynamic Type).
+    if ([note.name isEqualToString:UIContentSizeCategoryDidChangeNotification]) rescaleFonts();
+    reportSystem(self.traitCollection);
+}
 - (UIStatusBarStyle)preferredStatusBarStyle {
     return barStyle == 1 ? UIStatusBarStyleLightContent : barStyle == 2 ? UIStatusBarStyleDarkContent : UIStatusBarStyleDefault;
 }
@@ -107,7 +111,7 @@ static NSString *roleOf(UIView *view) {
     if ([view isKindOfClass:UIButton.class]) return @"button";
     if ([view isKindOfClass:UISwitch.class]) return @"switch";
     if ([view isKindOfClass:UISlider.class]) return @"slider";
-    if ([view isKindOfClass:UITextField.class]) return @"textfield";
+    if ([view isKindOfClass:UITextField.class] || [view isKindOfClass:UITextView.class]) return @"textfield";
     if ([view isKindOfClass:UIControl.class]) return @"button";
     if ([view isKindOfClass:UIActivityIndicatorView.class]) return @"progressbar";
     if ([view isKindOfClass:UIImageView.class]) return @"image";
@@ -388,18 +392,18 @@ static std::string driverCarry(const std::string &d) {
             UISwitch *toggle = (UISwitch *)view;
             [toggle setOn:!toggle.on animated:NO];
             [toggle sendActionsForControlEvents:UIControlEventValueChanged];
-        } else if ([view isKindOfClass:UITextField.class]) [view becomeFirstResponder];
+        } else if (isTextInput(view)) [view becomeFirstResponder];
         else if (node.kind == 12) ui_dispatch(id, node.generation);
         else if ([view isKindOfClass:UIControl.class]) [(UIControl *)view sendActionsForControlEvents:UIControlEventTouchUpInside];
         else return "error: the view takes no press";
         return "";
     }
     if (op == "type") {
-        if (![view isKindOfClass:UITextField.class]) return "error: not a text field";
-        UITextField *field = (UITextField *)view;
-        [field becomeFirstResponder];
-        field.text = @(driverText(d, "text").c_str());
-        [field sendActionsForControlEvents:UIControlEventEditingChanged];
+        if (!isTextInput(view)) return "error: not a text field";
+        [view becomeFirstResponder];
+        setInputText(view, @(driverText(d, "text").c_str()));
+        if ([view isKindOfClass:UITextView.class]) [events textViewDidChange:(UITextView *)view];
+        else [(UITextField *)view sendActionsForControlEvents:UIControlEventEditingChanged];
         return "";
     }
     if (op == "scroll") {

@@ -55,18 +55,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             [button addTarget:events action:@selector(press:) forControlEvents:UIControlEventTouchUpInside];
             node.view = button;
         } else if (kind == 5) {
-            UITextField *field = [UITextField new];
-            field.borderStyle = UITextBorderStyleRoundedRect;
-            field.font = [UIFont systemFontOfSize:18];
-            field.tag = id;
-            [field addTarget:events action:@selector(edit:) forControlEvents:UIControlEventEditingChanged];
-            [field addTarget:events action:@selector(focus:) forControlEvents:UIControlEventEditingDidBegin];
-            [field addTarget:events action:@selector(blur:) forControlEvents:UIControlEventEditingDidEnd];
-            node.view = field;
+            node.view = makeTextField(id);
+            node.autocorrect = 1;
         } else if (kind == 3) {
             UILabel *label = [UILabel new];
             label.numberOfLines = 0;
-            label.font = [UIFont systemFontOfSize:18];
             node.view = label;
         } else if (kind == 7) {
             UIImageView *image = [UIImageView new];
@@ -133,6 +126,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         }
         YGNodeSetContext(node.yoga, (__bridge void *)node);
         if ((kind >= 3 && kind <= 5) || kind == 7 || kind == 9 || kind == 10 || kind == 15) YGNodeSetMeasureFunc(node.yoga, measure);
+        // After the measure function: marking the node dirty needs one.
+        if (kind == 3 || kind == 4) applyFont(node);
         nodes[@(id)] = node;
         return;
     }
@@ -143,15 +138,13 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
     if (op == 9 && node.yoga) ui_grid_tracks(node.yoga, kind, text);
     if (op == 2) {
         // Props: the code in kind (1 gap, 2 padding, 3 focused), the value in before.
-        if (kind == 1) YGNodeStyleSetGap(node.yoga, YGGutterAll, before);
+        if (accessProp(node, kind, before) || inputProp(node, kind, before)) {}
+        else if (kind == 1) YGNodeStyleSetGap(node.yoga, YGGutterAll, before);
         else if (kind == 2) {
             YGNodeStyleSetPadding(node.yoga, YGEdgeAll, before);
-            // A text field draws its text from its left edge: inset it by the padding.
-            if ([node.view isKindOfClass:UITextField.class]) {
-                UITextField *field = (UITextField *)node.view;
-                field.leftView = before ? [[UIView alloc] initWithFrame:CGRectMake(0, 0, before, 1)] : nil;
-                field.leftViewMode = before ? UITextFieldViewModeAlways : UITextFieldViewModeNever;
-            }
+            // An input draws its text from its edge: inset it by the padding.
+            node.padding = before;
+            applyInputPadding(node);
         }
         else if (kind == 3) {
             if (before) [node.view becomeFirstResponder]; else [node.view resignFirstResponder];
@@ -180,9 +173,9 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view.backgroundColor = node.gradient ? UIColor.clearColor : colorOf(node.gradientFrom);
         }
         else if (kind == 52) applyBlur(node, before);
-        else if (kind == 9) applyColor(node, colorOf(before));
-        else if (kind == 10) { node.fontSize = before; applyFont(node); }
-        else if (kind == 11) { node.fontWeight = before; applyFont(node); }
+        else if (kind == 9) { node.textColor = before; applyColor(node, colorOf(before)); }
+        else if (kind == 10) { node.fontSize = before; node.fontSet = true; applyFont(node); }
+        else if (kind == 11) { node.fontWeight = before; node.fontSet = true; applyFont(node); }
         else if (kind == 12) { node.view.layer.borderWidth = before; YGNodeStyleSetBorder(node.yoga, YGEdgeAll, before); }
         else if (kind == 13) node.view.layer.borderColor = colorOf(before).CGColor;
         else if (kind == 14) {
@@ -288,20 +281,24 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
     } else if (op == 9) {
         NSString *value = text && text[0] ? [NSString stringWithUTF8String:text] : nil;
         if (kind == 4 && node.kind == 13) mountNative(node, id, value);
-        else if (kind == 1) node.view.accessibilityLabel = value;
-        else if (kind == 5) { node.fontFile = value; applyFont(node); }
-        else if (kind == 2 && [node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).placeholder = value;
+        else if (kind == 1) {
+            node.labelled = value != nil;
+            node.view.accessibilityLabel = value;
+            if (node.access) applyAccess(node);
+        } else if (kind == 5) { node.fontFile = value; node.fontSet = true; applyFont(node); }
+        else if (kind == 2) { node.placeholder = value; applyPlaceholder(node); }
+        else if (accessText(node, kind, value)) {}
         else if (kind == 3 && [node.view isKindOfClass:UIImageView.class]) loadImage((UIImageView *)node.view, node.yoga, value);
     } else if (op == 3) {
         NSString *value = [NSString stringWithUTF8String:text ? text : ""];
-        if ([node.view isKindOfClass:UITextField.class]) {
-            UITextField *field = (UITextField *)node.view;
-            if (![field.text isEqualToString:value]) field.text = value;
-        } else if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).text = value;
+        if (isTextInput(node.view)) setInputText(node.view, value);
+        else if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).text = value;
         else [(UIButton *)node.view setTitle:value forState:UIControlStateNormal];
         YGNodeMarkDirty(node.yoga);
     } else if ((op == 4 || op == 5) && node.kind == 12) {
         // Over everything, outside the parent's layout.
+        node.parentId = parent;
+        if (disabledCount) refreshEnabled(node);
         [node.view removeFromSuperview];
         [rootView.superview addSubview:node.view];
         if (![modals containsObject:node]) [modals addObject:node];
@@ -323,7 +320,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             [parentView insertSubview:node.view belowSubview:next.view];
         } else [parentView addSubview:node.view];
         YGNodeInsertChild(parentYoga, node.yoga, index);
+        // Under a disabled element, what comes in is disabled too.
+        node.parentId = parent;
+        if (disabledCount) refreshEnabled(node);
     } else if (op == 6) {
+        if (node.disabled) disabledCount--;
         YGNodeRef parentYoga = YGNodeGetParent(node.yoga);
         if (parentYoga) YGNodeRemoveChild(parentYoga, node.yoga);
         if (!removeScreen(node) && !insideLeaving(node.view)) [node.view removeFromSuperview];

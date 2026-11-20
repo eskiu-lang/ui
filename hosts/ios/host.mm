@@ -60,6 +60,18 @@ static std::string driverCarry(const std::string &directive);
 @property(nonatomic, strong) UIVisualEffectView *blur;
 @property(nonatomic) CGRect reportedFrame;
 @property(nonatomic) CGPoint reportedWindow;
+// The parent the node was inserted in (0: the root), for disabled ancestors.
+@property(nonatomic) int parentId;
+// Accessibility (host_access.inc): Role, CheckState, selected, Disclosure, a range, Style.disabled,
+// the spoken value and hint, whether the app gave a label, and once any was set (`access`) the
+// traits and element flag the view had.
+@property(nonatomic) int role, checked, selected, expanded, rangeNow, rangeMin, rangeMax;
+@property(nonatomic) bool disabled, access, labelled, baseElement, fontSet;
+@property(nonatomic) UIAccessibilityTraits baseTraits;
+@property(nonatomic, copy) NSString *accessValue, *accessHint;
+// A text input's options (host_input.inc), and what a swap between field and text view keeps.
+@property(nonatomic) int secure, keyboard, returnKey, multiline, capitalize, autocorrect, autofill, submit, padding, textColor;
+@property(nonatomic, copy) NSString *placeholder;
 @end
 @implementation UiHostNode
 @end
@@ -88,6 +100,8 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
     CGSize limit = CGSizeMake(widthMode == YGMeasureModeUndefined ? CGFLOAT_MAX : width,
                               heightMode == YGMeasureModeUndefined ? CGFLOAT_MAX : height);
     CGSize size = [node.view sizeThatFits:limit];
+    // A text view's width is its text's: as wide as a field at least.
+    if ([node.view isKindOfClass:UITextView.class] && widthMode == YGMeasureModeUndefined) size.width = std::max<CGFloat>(size.width, 120);
     return {static_cast<float>(size.width), static_cast<float>(size.height)};
 }
 
@@ -273,57 +287,6 @@ static UIColor *colorOf(int value) {
                             blue:((v >> 8) & 255) / 255.0 alpha:(v & 255) / 255.0];
 }
 
-static UIFontWeight weightOf(int weight) {
-    if (weight <= 0) return UIFontWeightRegular;
-    const UIFontWeight weights[] = {UIFontWeightUltraLight, UIFontWeightThin, UIFontWeightLight, UIFontWeightRegular,
-        UIFontWeightMedium, UIFontWeightSemibold, UIFontWeightBold, UIFontWeightHeavy, UIFontWeightBlack};
-    return weights[std::min(8, std::max(0, weight / 100 - 1))];
-}
-
-// A font file from the bundle, registered once; its PostScript name, or nil when it does not load.
-static NSString *fontName(NSString *file) {
-    static NSMutableDictionary<NSString *, NSString *> *names;
-    if (!names) names = [NSMutableDictionary dictionary];
-    NSString *name = names[file];
-    if (name) return name.length ? name : nil;
-    name = @"";
-    NSString *path = [file hasPrefix:@"/"] ? file : [NSBundle.mainBundle pathForResource:file ofType:nil];
-    NSData *data = path ? [NSData dataWithContentsOfFile:path] : nil;
-    CGDataProviderRef provider = data ? CGDataProviderCreateWithCFData((__bridge CFDataRef)data) : NULL;
-    CGFontRef cgFont = provider ? CGFontCreateWithDataProvider(provider) : NULL;
-    if (cgFont) {
-        CFErrorRef error = NULL;
-        CFStringRef postScript = CGFontCopyPostScriptName(cgFont);
-        // Already registered (another file with the same font) is fine too.
-        if (postScript && (CTFontManagerRegisterGraphicsFont(cgFont, &error) || [UIFont fontWithName:(__bridge NSString *)postScript size:12]))
-            name = (__bridge NSString *)postScript;
-        if (postScript) CFRelease(postScript);
-        if (error) CFRelease(error);
-        CGFontRelease(cgFont);
-    }
-    if (provider) CGDataProviderRelease(provider);
-    if (!name.length) NSLog(@"ui: font %@ did not load", file);
-    names[file] = name;
-    return name.length ? name : nil;
-}
-
-static void applyFont(UiHostNode *node) {
-    CGFloat size = node.fontSize > 0 ? node.fontSize : 18;
-    NSString *custom = node.fontFile ? fontName(node.fontFile) : nil;
-    UIFont *font = custom ? [UIFont fontWithName:custom size:size] : nil;
-    if (!font) font = [UIFont systemFontOfSize:size weight:weightOf(node.fontWeight)];
-    if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).font = font;
-    else if ([node.view isKindOfClass:UIButton.class]) ((UIButton *)node.view).titleLabel.font = font;
-    else if ([node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).font = font;
-    YGNodeMarkDirty(node.yoga);
-}
-
-static void applyColor(UiHostNode *node, UIColor *color) {
-    if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).textColor = color ?: UIColor.labelColor;
-    else if ([node.view isKindOfClass:UIButton.class]) [(UIButton *)node.view setTitleColor:color forState:UIControlStateNormal];
-    else if ([node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).textColor = color ?: UIColor.labelColor;
-}
-
 // A bundled resource by file name, or an http(s) URL fetched in the background. The image
 // changes the node's measured size, so the layout runs again when it arrives.
 static void loadImage(UIImageView *view, YGNodeRef yoga, NSString *source) {
@@ -478,7 +441,8 @@ static void place(YGNodeRef yoga, UIView *parent) {
 // ends at the keyboard, so the scroll view only has to bring the field into its bounds.
 static void revealFocused(void) {
     for (UiHostNode *node in nodes.allValues) {
-        if (![node.view isKindOfClass:UITextField.class] || !node.view.isFirstResponder) continue;
+        bool input = [node.view isKindOfClass:UITextField.class] || [node.view isKindOfClass:UITextView.class];
+        if (!input || !node.view.isFirstResponder) continue;
         for (UIView *up = node.view.superview; up; up = up.superview) {
             if (![up isKindOfClass:UIScrollView.class]) continue;
             CGRect rect = CGRectInset([node.view convertRect:node.view.bounds toView:up], 0, -16);
@@ -575,5 +539,7 @@ static void revealFocused(void) {
 @end
 static UiEvents *events;
 
+#include "host_access.inc"
+#include "host_text.inc"
 #include "host_views.inc"
 #include "host_main.inc"
