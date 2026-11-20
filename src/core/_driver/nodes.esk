@@ -79,6 +79,34 @@ string _ui_driver_prop_name(int code) {
     if (code == 54) { return "grid_column_span"; }
     if (code == 55) { return "grid_row"; }
     if (code == 56) { return "grid_row_span"; }
+    if (code == 57) { return "role"; }
+    if (code == 58) { return "checked"; }
+    if (code == 59) { return "selected"; }
+    if (code == 60) { return "expanded"; }
+    if (code == 61) { return "disabled"; }
+    if (code == 62) { return "value_now"; }
+    if (code == 63) { return "value_min"; }
+    if (code == 64) { return "value_max"; }
+    if (code == 65) { return "secure"; }
+    if (code == 66) { return "keyboard"; }
+    if (code == 67) { return "return_key"; }
+    if (code == 68) { return "multiline"; }
+    if (code == 69) { return "capitalize"; }
+    if (code == 70) { return "autocorrect"; }
+    if (code == 71) { return "autofill"; }
+    if (code == 72) { return "on_submit"; }
+    if (code == 73) { return "padding_top"; }
+    if (code == 74) { return "padding_right"; }
+    if (code == 75) { return "padding_bottom"; }
+    if (code == 76) { return "padding_left"; }
+    if (code == 77) { return "margin_top"; }
+    if (code == 78) { return "margin_right"; }
+    if (code == 79) { return "margin_bottom"; }
+    if (code == 80) { return "margin_left"; }
+    if (code == 81) { return "text_align"; }
+    if (code == 82) { return "max_lines"; }
+    if (code == 83) { return "shrink"; }
+    if (code == 84) { return "on_image"; }
     return null;
 }
 
@@ -95,6 +123,7 @@ bool _ui_driver_prop_applies(int kind, int code, *int64 unset) {
     if (code == 15 || code == 37) { *unset = 100; }
     if (code == 51) { *unset = 180; }
     if (code >= 25 && code <= 28) { *unset = kUnset; }
+    if (code >= 65 && code <= 72) { if (code == 70) { *unset = 1; } return kind == 5; }
     return _ui_driver_prop_name(code) != null;
 }
 
@@ -124,13 +153,15 @@ void _ui_driver_tree_node(*String out, *Node node) {
     _ui_driver_identity(out, node);
     if (node.placeholder != null) { String_append(out, ", \"placeholder\": "); ui_json_string(out, node.placeholder); }
     if (node.source != null) { String_append(out, ", \"source\": "); ui_json_string(out, node.source); }
+    if (node.value != null) { String_append(out, ", \"value\": "); ui_json_string(out, node.value); }
+    if (node.hint != null) { String_append(out, ", \"hint\": "); ui_json_string(out, node.hint); }
     if (node.kind == 5 && node.focused == 1) { String_append(out, ", \"focused\": true"); }
     bool any = false;
     String props;
     defer String_free(&props);
     if (node.kind != 0 && node.gap != 8) { String_appendf(&props, "\"gap\": %d", node.gap); any = true; }
     if (node.padding != 0) { String_appendf(&props, "%s\"padding\": %d", any ? ", " : "", node.padding); any = true; }
-    for (code in 4..57) {
+    for (code in 4..85) {
         if (node == ui.root) { break; }
         int64 unset = 0;
         if (!_ui_driver_prop_applies(node.kind, code, &unset)) { continue; }
