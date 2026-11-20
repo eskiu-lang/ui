@@ -18,8 +18,8 @@ git clone https://github.com/eskiu-packages/ui
 eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
 ```
 
-ui 0.4 needs Eskiu 0.14.1 or newer, and 0.15 for source lines in `ui agent tree` and in
-runtime errors.
+ui 0.7 needs Eskiu 0.16.2 or newer: it compiles with 0.16.1 too, but 0.16.2 passes `Style`
+by pointer, which keeps a web app's module about a sixth smaller.
 
 What each platform needs:
 

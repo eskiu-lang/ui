@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+Needs Eskiu 0.16.2 (it compiles with 0.16.1, but 0.16.2 passes `Style` by pointer, which
+keeps a web app's module about a sixth smaller).
+
 ### Added
 
 - Accessibility in `Style`: `role` (a `Role`: button, link, header, image, checkbox, radio, radio
