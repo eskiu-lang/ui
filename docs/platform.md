@@ -76,11 +76,44 @@ user asked for less motion (on Android, animations turned off), and `ui_font_sca
 text size the user chose, in percent (100 by default). The web reports reduced motion from
 its media query and no screen reader.
 
+Text follows the system's text size by itself: font sizes are scaled on iOS (Dynamic Type),
+Android (sizes in sp), Linux (GNOME's text scaling factor) and Windows (the text size
+setting), and the layout runs again when the setting changes. macOS has no such setting; the
+browser zooms the web. Give text room to grow: avoid fixed heights around it.
+
+Every element has a role and states for screen readers through `Style`. An element's kind
+gives it one already (a `Button` is a button, a `TextInput` a text field); `role` says what a
+`Pressable` or a group is instead:
+
+```eskiu
+Pressable(Style{label: "Agree", role: RoleCheckbox, checked: agree.get() ? CheckOn : CheckOff},
+    void() { agree.set(!agree.get()); }) { ... }
+Row(Style{role: RoleTabList}) {
+    Pressable(Style{label: "Inbox", role: RoleTab, selected: tab.get() == 0}, void() { tab.set(0); }) { ... }
+}
+```
+
+The roles are `RoleButton`, `RoleLink`, `RoleHeader`, `RoleImage`, `RoleCheckbox`, `RoleRadio`,
+`RoleRadioGroup`, `RoleSwitch`, `RoleTab`, `RoleTabList`, `RoleSlider`, `RoleProgress`,
+`RoleMenu`, `RoleMenuItem`, `RoleList`, `RoleListItem`, `RoleAlert` and `RoleSearch`. The states
+are `checked` (`CheckOff`, `CheckOn`, `CheckMixed`), `selected`, `expanded`
+(`DisclosureCollapsed`, `DisclosureExpanded`), `value` (words: "3 of 5"), `value_min`,
+`value_max` and `value_now` (a range), and `hint` (what using it does). The kit's components
+set them: a `Checkbox` says whether it is checked, a `TabBar` which tab is selected, a
+`Collapsible` whether it is open, a `ProgressBar` its percent. Each host maps them to its own
+API (ARIA, UIAccessibility, AccessibilityNodeInfo, NSAccessibility, GTK's accessible states,
+MSAA); docs/hosts.md lists what a platform cannot say.
+
+`disabled: true` turns an element and everything inside it off: the platform shows and
+announces it as unavailable, its controls take no input, and its handlers (presses, edits,
+toggles, gestures, submits) are not called. An open `Modal` takes the keyboard on the web:
+what is under it is inert, and focus goes into it and back.
+
 ## The platform and the language
 
-`ui_platform()` is `PlatformIos`, `PlatformAndroid`, `PlatformWeb` or `PlatformDesktop` (macOS's
-AppKit host; its WKWebView host, Linux and Windows run the web host, so they are web), known
-when the app is compiled; `ui_platform_name()` spells it. `ui_locale()` is the
+`ui_platform()` is `PlatformIos`, `PlatformAndroid`, `PlatformWeb` (a build for the browser)
+or `PlatformDesktop` (the native macOS, Linux and Windows hosts), known when the app is
+compiled; `ui_platform_name()` spells it. `ui_locale()` is the
 user's language as a BCP 47 tag (`"es-MX"`), and `ui_is_rtl()` says whether it is written
 right to left. Layout does not mirror for a right-to-left language yet.
 

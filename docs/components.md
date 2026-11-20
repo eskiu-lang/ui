@@ -36,7 +36,8 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 | Element | What it is |
 |---|---|
 | `TextInput_bind(Input, *StringState)` | A text field whose text is the state: typing sets it, setting it changes the field. |
-| `TextInput(Input, fn(string)->void)` | A controlled text field. `Input{key, value, placeholder, label, focused, style}`: `value` is what it shows, the handler gets each edit (borrowed for the call). `focused` is 1 to focus it, 0 to blur it, -1 (the default) to leave focus to the user. |
+| `TextInput(Input, fn(string)->void)` | A controlled text field. `Input{key, value, placeholder, label, focused, style}`: `value` is what it shows, the handler gets each edit (borrowed for the call). `focused` is 1 to focus it, 0 to blur it, -1 (the default) to leave focus to the user. How it edits: `secure` hides what is typed (a password); `keyboard` is the keyboard a phone shows (`KeyboardEmail`, `KeyboardNumber`, `KeyboardDecimal`, `KeyboardPhone`, `KeyboardUrl`, `KeyboardSearch`); `return_key` labels return (`ReturnDone`, `ReturnGo`, `ReturnNext`, `ReturnSearch`, `ReturnSend`); `multiline` takes several lines and grows with them up to its `max_height`; `capitalize` (`CapitalizeNone`, `CapitalizeWords`, `CapitalizeSentences`, `CapitalizeAll`) and `autocorrect` (true by default); `autofill` says what the field is for, so the platform offers what it saved (`AutofillUsername`, `AutofillPassword`, `AutofillNewPassword`, `AutofillEmail`, `AutofillOneTimeCode`, `AutofillName`, `AutofillPhone`). |
+| `ui_on_submit(fn(string)->void)` | For the `TextInput` right after it: called with the field's text when the user presses return (not on a multiline field). |
 | `TextInput_focus(Input, on_change, fn(bool)->void on_focus)` | The same, told when the field gains or loses focus. |
 | `Switch(Style, bool value, fn(bool)->void)` | A controlled on/off switch. |
 | `Slider(Style, int value, int min, int max, fn(int)->void)` | A controlled slider in whole steps from `min` to `max`: `UISlider`, `SeekBar`, `<input type=range>`. |
@@ -49,7 +50,8 @@ view returns to it.
 
 | Element | What it is |
 |---|---|
-| `Image(Style, string source)` | An image from an `http(s)` URL, a file in `assets/` (by name) or a file by its absolute path (a photo the app saved; a `blob:` or `data:` URL on the web). Give it a width and height; `label` is its text alternative. |
+| `Image(Style, string source)` | An image from an `http(s)` URL, a file in `assets/` (by name) or a file by its absolute path (a photo the app saved; a `blob:` or `data:` URL on the web). Give it a width and height; `label` is its text alternative. One that cannot be loaded shows nothing but its background. |
+| `ui_on_image(fn(bool)->void)` | For the `Image` right after it: true when it loaded, false when it could not be (a bad URL, no network, not an image), so the app can show something else. |
 | `ActivityIndicator(Style, bool animating)` | The platform's busy indicator. |
 
 ### Lists
@@ -154,7 +156,7 @@ smaller (see density below).
 | `Badge(text, tone)` | A small label in a tone's colors. |
 | `Avatar(initials, size)`, `AvatarImage(source, size, label)` | Initials, or an image, in a circle. |
 | `Separator()`, `VSeparator()` | A hairline across a column, or down a row. |
-| `ProgressBar(value, max)` | `value` of `max` as a filled track, which moves to a new value. |
+| `ProgressBar(value, max)` | `value` of `max` as a filled track, which moves to a new value; read as a progress bar with its percent. |
 | `KitButton(text, variant, on_press)` | A button in a variant's style. |
 | `TextField(value, placeholder, on_change)` | A text field in the theme's style; the placeholder is its accessible name. |
 | `Checkbox(label, checked, fn(bool)->void)` | A checkbox and its label. |
@@ -170,16 +172,29 @@ smaller (see density below).
 | `Select(options, selected, fn(int)->void)` | A field showing the chosen option, with a menu to change it. |
 | `MenuItem(text, checked, on_press)` | A row of a menu, lit under a pointer. |
 | `Tooltip(text, content)` | `text` in a bubble above `content` while a pointer is over it. |
-| `kit_toast(text)`, `ToastHost()` | A short message at the bottom for a few seconds; the app puts `ToastHost()` last in its root. |
+| `kit_toast(text)`, `ToastHost()` | A short message at the bottom for a few seconds, announced to a screen reader; one shown while another is up waits its turn. The app puts `ToastHost()` last in its root. |
 | `Calendar(Date, fn(Date)->void)` | A month's days with arrows to the months around it. |
 | `DatePicker(Date, fn(Date)->void)` | A field showing a date that opens a `Calendar`. |
 | `ColorPicker(int64 color, fn(int64)->void)` | A swatch that opens a grid of colors. |
-| `SwipeToDelete(label, on_delete, content)` | A row the user drags left: past a third of its width, or flicked, it slides out and `on_delete` runs; short of that it springs back. Key each row. |
+| `SwipeToDelete(label, on_delete, content)` | A row the user drags left: past a third of its width, or flicked, it slides out and `on_delete` runs; short of that it springs back. Key each row. With a screen reader on it shows a delete button instead of needing the gesture, and a long press (a right click on the web) shows it for anyone. |
 | `Accordion(sections)` | Collapsibles in one card. |
 
-`kit_light()` and `kit_dark()` are the two themes; `kit_follow_system()` picks the one for the
+`kit_light()` and `kit_dark()` are the two themes, to assign (`kit = kit_dark();`; calling one
+alone does nothing, and the compiler says so); `kit_follow_system()` picks the one for the
 system's appearance ([the platform](platform.md)) and the density for the window's width.
-`examples/kit-gallery` shows every component, in both.
+`examples/kit-gallery` shows every component, in both. The themes' secondary text (`muted`)
+meets WCAG AA contrast on the page and on surfaces, and `control`, the border of what takes
+input, 3:1.
+
+The kit's words are `kit_text`, a `KitText`: month and weekday names, the first day of the
+week, how a date is written, and what its components say to a screen reader ("Previous month",
+"Progress", the colors' names, "Delete"). English by default; `kit_text = kit_text_spanish();`,
+or `kit_text = kit_text_for(ui_locale());` before mounting, or fields of your own:
+
+```eskiu
+kit_text = kit_text_for(ui_locale());
+kit_text.first_weekday = 1;
+```
 
 Density: the theme's `title_size`, `heading_size`, `body_size`, `secondary_size`,
 `caption_size` and `control_padding` hold the sizes for touch (34, 18, 16, 15, 13, 12).

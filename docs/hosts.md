@@ -14,6 +14,8 @@ shim: the app, its components and its state are the same Eskiu code everywhere.
 
 ## Elements per host
 
+Windows has a table of its own, under [Windows](#windows).
+
 | Kind | Web | iOS | Android | macOS | Linux |
 |---|---|---|---|---|---|
 | column, row | `div` (flex) | `UIView` | a `ViewGroup` that places its children from Yoga | a flipped, layer-backed `NSView` | a `UiBox`: a `GtkWidget` that places its children at Yoga's frames and paints the app's background, border, radius and shadow |
@@ -56,6 +58,23 @@ Labels become `aria-label` (an image's `alt`), `accessibilityLabel` (UIKit and A
 
 Each host also has a registry of native view types and a way for native code to post
 events from any thread: [native code](native.md).
+
+## Accessibility, disabled and text input per host
+
+Every host maps `Style`'s role and states, `disabled`, and `Input`'s editing options to its
+platform (the props are in docs/protocol.md and src/core/wire.esk). What a platform cannot do:
+
+| Host | What it cannot say or do |
+|---|---|
+| Web | No screen reader detection (`ui_screen_reader()` is false). Autocorrect off is Safari's attribute and `spellcheck`. |
+| iOS | No checkbox or radio trait: a checkbox's state is spoken as English words ("checked", "unchecked", "mixed"), and so are "expanded" and "collapsed" before iOS 18; an app can pass its own words in `Style.value`. A `RoleSlider` on a view that is not a slider is announced as adjustable without increment and decrement. A multiline field cannot be secure. |
+| Android | Roles with no widget class (link, tab, menu, menu item, alert, search) get an English role description. |
+| macOS | No keyboard type, return key label or capitalization. No system text size. Some autofill kinds need macOS 14. A multiline field cannot be secure. |
+| Linux | No autofill and no return key label; a multiline field has no placeholder. A role set after the element is on screen re-inserts it, which can move the focus. |
+| Windows | MSAA has no heading, switch or search role. No capitalization, autocorrect, autofill or return key label; the number keyboard takes digits only. A click on a disabled control inside a pressable can reach the pressable. |
+
+On Linux and Windows `disabled` does not reach a `Modal` opened inside the disabled element,
+since a modal is a window of its own there.
 
 ## The web
 

@@ -11,6 +11,9 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}) 
 | `key` | none | Identity among siblings: `key(id)`. See [state](state.md). |
 | `gap` | 8 | Space between children, in points. |
 | `padding` | 0 | Space inside the edges, in points. |
+| `padding_top`, `padding_right`, `padding_bottom`, `padding_left` | 0 | One side's padding, in points, in place of `padding`; a side left at 0 takes `padding` (for 8 on three sides and none on the fourth, give the three). |
+| `margin` | 0 | Space outside the edges, in points, on every side. |
+| `margin_top`, `margin_right`, `margin_bottom`, `margin_left` | 0 | One side's margin in place of `margin`, the same way. |
 | `label` | none | The accessible name: ARIA label on the web, `accessibilityLabel` on iOS, `contentDescription` on Android, an image's alternative text. |
 | `width`, `height` | 0 | Size in points; 0 lets the content and the parent decide. |
 | `grow` | 0 | How much of the parent's free space along its direction this child takes (flex-grow). |
@@ -42,6 +45,14 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}) 
 | `grid_column`, `grid_row` | 0 | The line a grid child starts on, from 1; 0 places it in the next free cell. |
 | `grid_column_span`, `grid_row_span` | 0 | How many tracks a grid child covers; 0 or 1 is one. |
 | `easing` | `EaseInOut` | The transition's curve: `EaseInOut`, `EaseOut`, `EaseIn`, `EaseLinear`, `EaseSpring`. |
+| `text_align` | `TextAlignDefault` | Where a text's lines sit: `TextAlignStart`, `TextAlignCenter`, `TextAlignEnd`, `TextAlignJustify`. |
+| `max_lines` | 0 | Cuts a text after this many lines, with an ellipsis; 0 is no limit. |
+| `shrink` | 0 | Lets the element get smaller than its content when the parent has no room (flex-shrink): a text in a row with `shrink: 1` wraps instead of running out of the row. A word longer than its line breaks inside it. |
+| `role` | `RoleNone` | What the element is to a screen reader. See [accessibility](platform.md#accessibility). |
+| `checked`, `selected`, `expanded` | `CheckNone`, false, `DisclosureNone` | Its state for a screen reader. |
+| `value`, `hint` | null | What it holds and what using it does, as words for a screen reader. |
+| `value_min`, `value_max`, `value_now` | 0 | A progress bar's or an adjustable element's range, when `value_max` is above `value_min`. |
+| `disabled` | false | Turns the element and what is in it off: shown and announced as unavailable, and its handlers are not called. |
 
 A field left at its default is not sent to the host, and changing one sends only that
 field. Styles are plain values, so shared styles are functions or globals:
