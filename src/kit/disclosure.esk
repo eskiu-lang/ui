@@ -7,7 +7,8 @@ void Collapsible(string title, escaping fn()->void content UI_LOC) {
     ui_own_fn(content);
     Scope("Collapsible", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
-        Pressable(Style{padding: 14, label: title}, void() { open.set(!open.get()); }) {
+        Pressable(Style{padding: 14, label: title, expanded: open.get() ? DisclosureExpanded : DisclosureCollapsed},
+            void() { open.set(!open.get()); }) {
             Row(Style{align: AlignCenter}) {
                 TextWith(Style{grow: 1, font_size: 16, font_weight: 600, color: kit.ink}, title);
                 // The plus turns into a cross as the section opens.

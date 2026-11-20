@@ -5,7 +5,7 @@
 void SegmentedControl(string options, int selected, escaping fn(int)->void on_change UI_LOC) {
     UI_HERE
     ui_own_fn(on_change);
-    Row(Style{background: kit.track, radius: kit.radius, padding: 4, gap: 4}) {
+    Row(Style{background: kit.track, radius: kit.radius, padding: 4, gap: 4, role: RoleTabList}) {
         List<String> items;
         kit_options(options, &items);
         for (i in 0..items.size) {
@@ -13,7 +13,7 @@ void SegmentedControl(string options, int selected, escaping fn(int)->void on_ch
             bool on = index == selected;
             string name = items.data[i].data;
             Pressable(Style{grow: 1, padding: 8, radius: kit.radius - 4, background: on ? kit.surface : -1,
-                            align: AlignCenter, label: name},
+                            align: AlignCenter, label: name, role: RoleTab, selected: on},
                 void() { on_change(index); }) {
                 TextWith(Style{font_size: kit.body_size - 2, font_weight: 600, color: on ? kit.ink : kit.muted}, name);
             }
@@ -26,14 +26,14 @@ void SegmentedControl(string options, int selected, escaping fn(int)->void on_ch
 void TabBar(string tabs, int selected, escaping fn(int)->void on_change UI_LOC) {
     UI_HERE
     ui_own_fn(on_change);
-    Row(Style{gap: 20}) {
+    Row(Style{gap: 20, role: RoleTabList}) {
         List<String> items;
         kit_options(tabs, &items);
         for (i in 0..items.size) {
             int index = i;
             bool on = index == selected;
             string name = items.data[i].data;
-            Pressable(Style{gap: 6, label: name}, void() { on_change(index); }) {
+            Pressable(Style{gap: 6, label: name, role: RoleTab, selected: on}, void() { on_change(index); }) {
                 TextWith(Style{font_size: kit.secondary_size, font_weight: 600, color: on ? kit.primary : kit.muted}, name);
                 Row(Style{height: 2, radius: 1, background: on ? kit.primary : -1}) {}
             }
@@ -53,8 +53,8 @@ void Toolbar(escaping fn()->void block UI_LOC) {
 void NavBar(string title, escaping fn()->void actions UI_LOC) {
     UI_HERE
     ui_own_fn(actions);
-    Row(Style{padding: 16, gap: 12, align: AlignCenter, background: kit.surface, label: title}) {
-        TextWith(Style{grow: 1, font_size: kit.heading_size + 2, font_weight: 700, color: kit.ink}, title);
+    Row(Style{padding: 16, gap: 12, align: AlignCenter, background: kit.surface}) {
+        TextWith(Style{grow: 1, font_size: kit.heading_size + 2, font_weight: 700, color: kit.ink, role: RoleHeader}, title);
         actions();
     }
 }

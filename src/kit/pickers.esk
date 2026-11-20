@@ -23,24 +23,11 @@ int kit_weekday(int year, int month, int day) {
     return (y + y / 4 - y / 100 + y / 400 + offsets[month - 1] + day) % 7;
 }
 
-// The English name of `month` (1 to 12).
-string kit_month_name(int month) {
-    if (month == 1) { return "January"; }
-    if (month == 2) { return "February"; }
-    if (month == 3) { return "March"; }
-    if (month == 4) { return "April"; }
-    if (month == 5) { return "May"; }
-    if (month == 6) { return "June"; }
-    if (month == 7) { return "July"; }
-    if (month == 8) { return "August"; }
-    if (month == 9) { return "September"; }
-    if (month == 10) { return "October"; }
-    if (month == 11) { return "November"; }
-    return "December";
-}
+// The name of `month` (1 to 12) in the kit's words (kit_text.months), into `out`.
+void kit_month_name(int month, String* out) { kit_text_item(kit_text.months, month - 1, out); }
 
-// A month's days, weeks from Sunday, with arrows to the months around it; `selected` is
-// circled, and on_select gets the day pressed. The seven columns share the width it gets, at
+// A month's days, weeks from the kit's first weekday (kit_text), with arrows to the months
+// around it; `selected` is circled and read as selected, and on_select gets the day pressed. The seven columns share the width it gets, at
 // least 280 points.
 void Calendar(Date selected, escaping fn(Date)->void on_select UI_LOC) {
     UI_HERE
@@ -54,24 +41,29 @@ void Calendar(Date selected, escaping fn(Date)->void on_select UI_LOC) {
             Row(Style{align: AlignCenter, gap: 4}) {
                 String title;
                 defer String_free(&title);
-                String_format(&title, "%s %d", kit_month_name(month), year);
-                TextWith(Style{grow: 1, font_size: 16, font_weight: 700, color: kit.ink}, title.data);
-                KitButton("‹", VariantGhost) { shown.set(shown.get() - 1); }
-                KitButton("›", VariantGhost) { shown.set(shown.get() + 1); }
+                kit_text_fill(kit_text.month_year, year, month, 1, &title);
+                TextWith(Style{grow: 1, font_size: 16, font_weight: 700, color: kit.ink, role: RoleHeader}, title.data);
+                Pressable(Style{width: 44, height: 44, radius: 22, align: AlignCenter, justify: JustifyCenter,
+                                label: kit_text.previous_month, role: RoleButton}, void() { shown.set(shown.get() - 1); }) {
+                    TextWith(Style{font_size: 20, color: kit.ink}, "‹");
+                }
+                Pressable(Style{width: 44, height: 44, radius: 22, align: AlignCenter, justify: JustifyCenter,
+                                label: kit_text.next_month, role: RoleButton}, void() { shown.set(shown.get() + 1); }) {
+                    TextWith(Style{font_size: 20, color: kit.ink}, "›");
+                }
             }
             Row(Style{gap: 0}) {
-                string names = "SMTWTFS";
                 for (i in 0..7) {
                     String letter;
                     defer String_free(&letter);
-                    String_push(&letter, names[i]);
+                    kit_text_item(kit_text.weekdays, (i + kit_text.first_weekday) % 7, &letter);
                     string text = letter.data;
                     Row(Style{width: 1, grow: 1, justify: JustifyCenter}) {
                         TextWith(Style{font_size: 12, font_weight: 600, color: kit.muted}, text);
                     }
                 }
             }
-            int first = kit_weekday(year, month, 1);
+            int first = (kit_weekday(year, month, 1) - kit_text.first_weekday + 7) % 7;
             int days = kit_days_in_month(year, month);
             int cells = (first + days + 6) / 7 * 7;
             for (int week = 0; week < cells / 7; week++) {
@@ -79,16 +71,20 @@ void Calendar(Date selected, escaping fn(Date)->void on_select UI_LOC) {
                     for (i in 0..7) {
                         int day = week * 7 + i - first + 1;
                         if (day < 1 || day > days) {
-                            Row(Style{key: key(i), width: 1, grow: 1, height: 40}) {}
+                            Row(Style{key: key(i), width: 1, grow: 1, height: 44}) {}
                             continue;
                         }
                         bool on = selected.year == year && selected.month == month && selected.day == day;
                         String number;
                         defer String_free(&number);
                         String_format(&number, "%d", day);
+                        // Read as the whole date, and as selected when it is.
+                        String spoken;
+                        defer String_free(&spoken);
+                        kit_text_fill(kit_text.date, year, month, day, &spoken);
                         Row(Style{key: key(i), width: 1, grow: 1, justify: JustifyCenter}) {
-                            Pressable(Style{width: 40, height: 40, radius: 20, align: AlignCenter, justify: JustifyCenter,
-                                            background: on ? kit.primary : -1, label: number.data},
+                            Pressable(Style{width: 44, height: 44, radius: 22, align: AlignCenter, justify: JustifyCenter,
+                                            background: on ? kit.primary : -1, label: spoken.data, role: RoleButton, selected: on},
                                 void() { on_select(Date{year, month, day}); }) {
                                 TextWith(Style{font_size: 15, font_weight: on ? 700 : 400, color: on ? kit.on_primary : kit.ink},
                                     number.data);
@@ -109,11 +105,12 @@ void DatePicker(Date value, escaping fn(Date)->void on_change UI_LOC) {
         *Signal<bool> open = use_signal<bool>(false);
         String text;
         defer String_free(&text);
-        String_format(&text, "%s %d, %d", kit_month_name(value.month), value.day, value.year);
+        kit_text_fill(kit_text.date, value.year, value.month, value.day, &text);
         string shown = text.data;
         Popover(open.get(), void() { open.set(false); }, void() {
-            Pressable(Style{padding: 12, radius: kit.radius, background: kit.surface, border_width: 1, border_color: kit.line,
-                            label: shown}, void() { open.set(true); }) {
+            Pressable(Style{padding: 12, radius: kit.radius, background: kit.surface, border_width: 1, border_color: kit.control,
+                            label: shown, role: RoleButton, expanded: open.get() ? DisclosureExpanded : DisclosureCollapsed},
+                void() { open.set(true); }) {
                 Body(shown);
             }
         }) {
@@ -136,8 +133,13 @@ void ColorPicker(int64 color, escaping fn(int64)->void on_change UI_LOC) {
     Scope("ColorPicker", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
         Popover(open.get(), void() { open.set(false); }, void() {
+            // Read as the kit's word for a color and the swatch's name (or nothing for another color).
+            String current;
+            defer String_free(&current);
+            for (i in 0..12) { if (kit_swatch(i) == color) { kit_text_item(kit_text.colors, i, &current); } }
             Pressable(Style{width: 44, height: 44, radius: 22, background: color, border_width: 2, border_color: kit.line,
-                            label: "Color"}, void() { open.set(true); }) {}
+                            label: kit_text.color, value: current.data, role: RoleButton,
+                            expanded: open.get() ? DisclosureExpanded : DisclosureCollapsed}, void() { open.set(true); }) {}
         }) {
             Row(Style{wrap: true, gap: 8, padding: 4}) {
                 for (i in 0..12) {
@@ -145,9 +147,9 @@ void ColorPicker(int64 color, escaping fn(int64)->void on_change UI_LOC) {
                     bool on = swatch == color;
                     String name;
                     defer String_free(&name);
-                    String_format(&name, "Color %d", i + 1);
-                    Pressable(Style{key: key(i), width: 36, height: 36, radius: 18, background: swatch,
-                                    border_width: on ? 3 : 0, border_color: kit.ink, label: name.data},
+                    kit_text_item(kit_text.colors, i, &name);
+                    Pressable(Style{key: key(i), width: 44, height: 44, radius: 22, background: swatch,
+                                    border_width: on ? 3 : 0, border_color: kit.ink, label: name.data, role: RoleButton, selected: on},
                         void() { open.set(false); on_change(swatch); }) {}
                 }
             }

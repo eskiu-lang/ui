@@ -6,14 +6,14 @@ void TextField(string value, string placeholder, escaping fn(string)->void on_ch
     UI_HERE
     TextInput(Input{value: value, placeholder: placeholder, label: placeholder,
                     style: Style{padding: kit.control_padding, radius: kit.radius, background: kit.surface, border_width: 1,
-                                 border_color: kit.line, font_size: kit.body_size, color: kit.ink}}, on_change);
+                                 border_color: kit.control, font_size: kit.body_size, color: kit.ink}}, on_change);
 }
 
 // A checkbox with its label; on_change gets the new state.
 void Checkbox(string label, bool checked, escaping fn(bool)->void on_change UI_LOC) {
     UI_HERE
     ui_own_fn(on_change);
-    Pressable(Style{label: label}, void() { on_change(!checked); }) {
+    Pressable(Style{label: label, role: RoleCheckbox, checked: checked ? CheckOn : CheckOff}, void() { on_change(!checked); }) {
         Row(Style{gap: 10, align: AlignCenter}) {
             Row(Style{width: 22, height: 22, radius: 6, border_width: 2,
                       border_color: checked ? kit.primary : kit.control, background: checked ? kit.primary : kit.surface,
@@ -29,14 +29,15 @@ void Checkbox(string label, bool checked, escaping fn(bool)->void on_change UI_L
 void RadioGroup(string options, int selected, escaping fn(int)->void on_change UI_LOC) {
     UI_HERE
     ui_own_fn(on_change);
-    Column(Style{gap: 10}) {
+    Column(Style{gap: 10, role: RoleRadioGroup}) {
         List<String> items;
         kit_options(options, &items);
         for (i in 0..items.size) {
             int index = i;
             bool on = index == selected;
             string name = items.data[i].data;
-            Pressable(Style{label: name}, void() { on_change(index); }) {
+            Pressable(Style{label: name, role: RoleRadio, checked: on ? CheckOn : CheckOff, selected: on},
+                void() { on_change(index); }) {
                 Row(Style{gap: 10, align: AlignCenter}) {
                     Row(Style{width: 22, height: 22, radius: 11, border_width: 2,
                               border_color: on ? kit.primary : kit.control, background: kit.surface,
