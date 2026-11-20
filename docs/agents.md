@@ -94,7 +94,7 @@ does not build, its errors come first as [JSON diagnostics](#diagnostics-as-json
 | `screenshot FILE` | the window's pixels as a PNG |
 | `tap ID` | a press: a button or pressable is clicked, a switch toggled, a field focused, a modal asked to close; a text inside a pressable presses the pressable |
 | `type ID TEXT` | the field's text becomes TEXT, as the platform's edit (it replaces what was there) |
-| `scroll ID DY` | the scroll at or around ID moves DY points down (negative: up) |
+| `scroll ID DY` | the scroll at or around ID moves by DY points from where it is, down (negative: up); the answer is the offset it ended at, so `scroll list 0` does nothing |
 | `back` | the platform's back: the newest modal closes, else a `use_back` handler or the router goes back |
 | `state` | the signals of each scope that has some, the router's routes, open modals, timers, display frames, fetches, the clock |
 | `logs` | what the app printed and the errors and warnings the core reported |
