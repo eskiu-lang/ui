@@ -69,6 +69,17 @@ static bool driverHostRequest(const std::string &request, std::string &answer);
 @property(nonatomic, strong) NSWindow *sheet;
 @property(nonatomic) CGRect reportedFrame;
 @property(nonatomic) CGPoint reportedWindow;
+// The parent the node was inserted in (0: the root), for disabled ancestors.
+@property(nonatomic) int parentId;
+// Accessibility (host_access.inc): Role, CheckState, selected, Disclosure, a range, Style.disabled,
+// the spoken value and hint, whether the app gave a label, and once any was set (`access`) the
+// role, subrole and element flag the view had.
+@property(nonatomic) int role, checked, selected, expanded, rangeNow, rangeMin, rangeMax;
+@property(nonatomic) bool disabled, access, labelled, baseElement, roleSet, valueSet, expandSet, selectSet;
+@property(nonatomic, copy) NSString *baseRole, *baseSubrole, *accessValue, *accessHint;
+// A text input's options (host_text.inc), and its placeholder, kept when its view changes.
+@property(nonatomic) int secure, multiline, autocorrect, autofill, submit;
+@property(nonatomic, copy) NSString *placeholder;
 @end
 @implementation UiHostNode
 @end
@@ -86,6 +97,10 @@ static std::vector<double> frameTimes;
 static bool tickScheduled;
 static void relayout(void);
 static UiHostNode *nodeOf(NSView *view) { return view ? [viewNodes objectForKey:view] : nil; }
+// From host_access.inc: Style.disabled on the node or above it, and what a view with an
+// element role and no label of its own reads (nil for other views).
+static bool disabledAbove(UiHostNode *node);
+static NSString *roleLabel(NSView *view);
 
 // Flipped (y down, as Yoga places), layer-backed views.
 @interface UiView : NSView
@@ -109,6 +124,10 @@ static UiHostNode *nodeOf(NSView *view) { return view ? [viewNodes objectForKey:
 - (void)mouseExited:(NSEvent *)event {
     UiHostNode *node = nodeOf(self);
     if (node) ui_dispatch_hover(node.nodeId, node.generation, 0);
+}
+- (NSString *)accessibilityLabel {
+    NSString *label = [super accessibilityLabel];
+    return label.length ? label : roleLabel(self);
 }
 @end
 
@@ -138,6 +157,8 @@ static void hoverListen(NSView *view, bool on) {
     return self;
 }
 - (void)mouseDown:(NSEvent *)event {
+    UiHostNode *node = nodeOf(self);
+    if (node && disabledAbove(node)) return;
     self.pressed = true;
     self.layer.opacity = self.alphaValue * 0.7;
 }
@@ -148,11 +169,9 @@ static void hoverListen(NSView *view, bool on) {
     NSPoint at = [self convertPoint:event.locationInWindow fromView:nil];
     if (NSPointInRect(at, self.bounds)) [self accessibilityPerformPress];
 }
-- (BOOL)isAccessibilityElement { return YES; }
-- (NSAccessibilityRole)accessibilityRole { return NSAccessibilityButtonRole; }
 - (BOOL)accessibilityPerformPress {
     UiHostNode *node = nodeOf(self);
-    if (node) ui_dispatch(node.nodeId, node.generation);
+    if (node && !disabledAbove(node)) ui_dispatch(node.nodeId, node.generation);
     return YES;
 }
 @end
@@ -178,13 +197,15 @@ static void hoverListen(NSView *view, bool on) {
 @interface UiFieldCell : NSTextFieldCell
 @property(nonatomic) CGFloat inset;
 @end
-@implementation UiFieldCell
-- (NSRect)adjusted:(NSRect)bounds {
-    NSRect rect = NSInsetRect(bounds, self.inset, 0);
-    CGFloat height = [super cellSizeForBounds:NSMakeRect(0, 0, rect.size.width, CGFLOAT_MAX)].height;
+// The text's rect in a field's bounds: inset, and centered vertically.
+static NSRect insetText(NSCell *cell, CGFloat inset, NSRect bounds) {
+    NSRect rect = NSInsetRect(bounds, inset, 0);
+    CGFloat height = [cell cellSizeForBounds:NSMakeRect(0, 0, rect.size.width, CGFLOAT_MAX)].height;
     if (height < rect.size.height) rect.origin.y += std::floor((rect.size.height - height) / 2), rect.size.height = height;
     return rect;
 }
+@implementation UiFieldCell
+- (NSRect)adjusted:(NSRect)bounds { return insetText(self, self.inset, bounds); }
 - (NSRect)drawingRectForBounds:(NSRect)bounds { return [self adjusted:[super drawingRectForBounds:bounds]]; }
 - (void)editWithFrame:(NSRect)frame inView:(NSView *)view editor:(NSText *)editor delegate:(id)delegate event:(NSEvent *)event {
     [super editWithFrame:[self adjusted:frame] inView:view editor:editor delegate:delegate event:event];
@@ -213,6 +234,86 @@ static void hoverListen(NSView *view, bool on) {
     if (node) ui_dispatch_focus(node.nodeId, node.generation, 0);
 }
 @end
+
+// A secure input (Input.secure): the same field, its text hidden.
+@interface UiSecureCell : NSSecureTextFieldCell
+@property(nonatomic) CGFloat inset;
+@end
+@implementation UiSecureCell
+- (NSRect)drawingRectForBounds:(NSRect)bounds { return insetText(self, self.inset, [super drawingRectForBounds:bounds]); }
+- (void)editWithFrame:(NSRect)frame inView:(NSView *)view editor:(NSText *)editor delegate:(id)delegate event:(NSEvent *)event {
+    [super editWithFrame:insetText(self, self.inset, frame) inView:view editor:editor delegate:delegate event:event];
+}
+- (void)selectWithFrame:(NSRect)frame inView:(NSView *)view editor:(NSText *)editor delegate:(id)delegate
+                  start:(NSInteger)start length:(NSInteger)length {
+    [super selectWithFrame:insetText(self, self.inset, frame) inView:view editor:editor delegate:delegate start:start length:length];
+}
+@end
+@interface UiSecureField : NSSecureTextField
+@end
+@implementation UiSecureField
++ (Class)cellClass { return UiSecureCell.class; }
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+- (BOOL)becomeFirstResponder {
+    BOOL ok = [super becomeFirstResponder];
+    UiHostNode *node = nodeOf(self);
+    if (ok && node) ui_dispatch_focus(node.nodeId, node.generation, 1);
+    return ok;
+}
+- (void)textDidEndEditing:(NSNotification *)note {
+    [super textDidEndEditing:note];
+    UiHostNode *node = nodeOf(self);
+    if (node) ui_dispatch_focus(node.nodeId, node.generation, 0);
+}
+@end
+
+// A multiline input (Input.multiline): a text view in a scroll view, growing with its text
+// until the layout bounds it (Style.max_height), then scrolling. The text view draws the
+// placeholder while it is empty.
+@interface UiTextView : NSTextView
+@property(nonatomic, copy) NSString *placeholder;
+@end
+@implementation UiTextView
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+- (BOOL)becomeFirstResponder {
+    BOOL ok = [super becomeFirstResponder];
+    UiHostNode *node = nodeOf(self);
+    if (ok && node) ui_dispatch_focus(node.nodeId, node.generation, 1);
+    return ok;
+}
+- (BOOL)resignFirstResponder {
+    BOOL ok = [super resignFirstResponder];
+    UiHostNode *node = nodeOf(self);
+    if (ok && node) ui_dispatch_focus(node.nodeId, node.generation, 0);
+    return ok;
+}
+- (void)drawRect:(NSRect)dirty {
+    [super drawRect:dirty];
+    if (self.string.length || !self.placeholder.length || !self.font) return;
+    NSPoint at = NSMakePoint(self.textContainerInset.width + self.textContainer.lineFragmentPadding, self.textContainerInset.height);
+    [self.placeholder drawAtPoint:at withAttributes:@{NSFontAttributeName: self.font,
+                                                      NSForegroundColorAttributeName: NSColor.placeholderTextColor}];
+}
+@end
+@interface UiTextArea : NSScrollView
+@property(nonatomic, strong) UiTextView *textView;
+@end
+@implementation UiTextArea
+@end
+
+static bool isField(NSView *view) { return [view isKindOfClass:UiTextField.class] || [view isKindOfClass:UiSecureField.class]; }
+static bool isTextArea(NSView *view) { return [view isKindOfClass:UiTextArea.class]; }
+
+// A text area's size at a width: its text's lines (one at least), the insets and the border.
+static NSSize textAreaSize(UiTextArea *area, CGFloat width) {
+    NSTextView *text = area.textView;
+    CGFloat border = area.borderType == NSNoBorder ? 0 : 2;
+    CGFloat side = 2 * text.textContainerInset.width + 2 * text.textContainer.lineFragmentPadding + border;
+    NSRect used = [text.textStorage boundingRectWithSize:NSMakeSize(std::max<CGFloat>(1, width - side), CGFLOAT_MAX)
+                                                 options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading];
+    CGFloat line = text.font ? [text.layoutManager defaultLineHeightForFont:text.font] : 17;
+    return NSMakeSize(width, std::max(used.size.height, line) + 2 * text.textContainerInset.height + border);
+}
 
 // An image, fitted in its box or covering it (cropped), smoothed or pixelated.
 @interface UiImageView : NSImageView
@@ -256,7 +357,9 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
     CGFloat limitH = heightMode == YGMeasureModeUndefined ? CGFLOAT_MAX : height;
     NSView *view = node.view;
     NSSize size = NSZeroSize;
-    if ([view isKindOfClass:UiTextField.class]) {
+    if (isTextArea(view)) {
+        size = textAreaSize((UiTextArea *)view, widthMode == YGMeasureModeUndefined ? 240 : width);
+    } else if (isField(view)) {
         NSTextField *field = (NSTextField *)view;
         UiFieldCell *cell = (UiFieldCell *)field.cell;
         CGFloat inset = cell.inset;
@@ -478,5 +581,20 @@ static NSMutableArray<UiHostNode *> *modals;
 // The alert on screen and how to answer it.
 static NSAlert *shownAlert;
 
+// From host_access.inc and host_text.inc, which follow host_views.inc (they use UiEvents).
+static bool accessProp(UiHostNode *node, int code, int value);
+static bool accessText(UiHostNode *node, int code, NSString *value);
+static void applyAccess(UiHostNode *node);
+static int disabledCount;
+static void refreshEnabled(UiHostNode *node);
+static NSView *makeInput(UiHostNode *node);
+static bool inputProp(UiHostNode *node, int code, int value);
+static void applyPlaceholder(UiHostNode *node);
+static NSString *inputText(NSView *view);
+static void setInputText(NSView *view, NSString *text);
+
+#include "host_style.inc"
 #include "host_views.inc"
+#include "host_access.inc"
+#include "host_text.inc"
 #include "host_main.inc"

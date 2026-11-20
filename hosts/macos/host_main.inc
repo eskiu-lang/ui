@@ -332,7 +332,8 @@ static std::string driverCarry(const std::string &d) {
             NSSwitch *toggle = (NSSwitch *)view;
             toggle.state = toggle.state == NSControlStateValueOn ? NSControlStateValueOff : NSControlStateValueOn;
             [toggle sendAction:toggle.action to:toggle.target];
-        } else if ([view isKindOfClass:UiTextField.class]) [view.window makeFirstResponder:view];
+        } else if (isField(view)) [view.window makeFirstResponder:view];
+        else if (isTextArea(view)) [view.window makeFirstResponder:((UiTextArea *)view).textView];
         else if (node.kind == 12) ui_dispatch(id, node.generation);
         else if ([view isKindOfClass:NSButton.class]) [(NSButton *)view sendAction:((NSButton *)view).action to:((NSButton *)view).target];
         else if ([view isKindOfClass:UiPressable.class]) [view accessibilityPerformPress];
@@ -340,7 +341,14 @@ static std::string driverCarry(const std::string &d) {
         return "";
     }
     if (op == "type") {
-        if (![view isKindOfClass:UiTextField.class]) return "error: not a text field";
+        if (isTextArea(view)) {
+            UiTextView *area = ((UiTextArea *)view).textView;
+            [area.window makeFirstResponder:area];
+            area.string = @(driverText(d, "text").c_str());
+            [NSNotificationCenter.defaultCenter postNotificationName:NSTextDidChangeNotification object:area];
+            return "";
+        }
+        if (!isField(view)) return "error: not a text field";
         NSTextField *field = (NSTextField *)view;
         [field.window makeFirstResponder:field];
         NSString *text = @(driverText(d, "text").c_str());
