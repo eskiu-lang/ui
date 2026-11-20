@@ -51,8 +51,11 @@
   host.cancel = () => scheduler.cancel();
   // The app's output reaches whatever console is at the time it prints (in a dev build the
   // driver keeps the page's lines, the runtime's last message before an abort among them).
+  // An abort (a failed runtime check) is kept: the module still answers calls after it, and
+  // the dev build's driver must not report a dead app as a working one.
   app = await createApp({uiHost: host, uiEmit: emit,
-    print: text => console.log(text), printErr: text => console.error(text)});
+    print: text => console.log(text), printErr: text => console.error(text),
+    onAbort: what => { globalThis.uiAborted = String(what ?? 'abort'); }});
   // The page's route is the link the app was opened with (the first Navigator shows it).
   app.ccall('ui_report_link', null, ['string'], [host.route()]);
   // A dev build's driver starts first: when the app fails as it starts (a runtime check), the

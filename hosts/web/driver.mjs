@@ -151,7 +151,10 @@ export function startDriver({app, host}) {
         }
         const request = await response.text();
         let text;
-        try { text = await answer(app, host, request); } catch (e) {
+        try {
+          if (globalThis.uiAborted) throw new Error(`Aborted(${globalThis.uiAborted})`);
+          text = await answer(app, host, request);
+        } catch (e) {
           const why = failure();
           text = JSON.stringify({ok: false, error: `the page failed: ${e.message || e}${why ? `\n${why}` : ''}`});
         }
