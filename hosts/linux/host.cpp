@@ -102,6 +102,15 @@ struct Node {
     bool cover = false, pixelated = false;
     std::string source;
     std::string nativeType;
+    // Accessibility (Style's role, checked, selected, expanded, range, disabled; the label, the
+    // spoken value and the hint), kept to apply again when a field changes widget.
+    int role = 0, checked = 0, selected = 0, expanded = 0, rangeNow = 0, rangeMin = 0, rangeMax = 0;
+    bool disabled = false;
+    std::string label, valueText, hint;
+    // A text input's editing options (props 65, 66, 68, 69, 70, 72) and its placeholder.
+    int secure = 0, keyboard = 0, capitalize = 0, autocorrect = 1;
+    bool multiline = false, submitListening = false;
+    std::string placeholder;
     // A pan in progress: started (past the slop), the last points for the velocity.
     bool panning = false;
     double panX = 0, panY = 0, panT = 0, velX = 0, velY = 0;
@@ -331,7 +340,8 @@ static void placeContent(Node *node, int width, int height) {
         y = std::max(0.0, (h - nat) / 2);
         h = nat;
     }
-    if (node->kind == 5) {
+    // A one-line field is centered; a multiline one fills its box from the top.
+    if (node->kind == 5 && !GTK_IS_TEXT_VIEW(content)) {
         gtk_widget_measure(content, GTK_ORIENTATION_VERTICAL, -1, &min, &nat, nullptr, nullptr);
         if (nat < h) { y += std::floor((h - nat) / 2); h = nat; }
     }
@@ -458,6 +468,12 @@ static GtkWidget *newBox(GtkAccessibleRole role, int kind, Node *node) {
 
 // The default text size, as the web host's.
 static const int kTextSize = 16;
+// The system's text scale (GtkSettings' gtk-xft-dpi over 96 dpi; GNOME's text scaling factor):
+// text sizes from the app are in points at a scale of 1.
+static double textScale = 1;
+static double fontPixels(Node *node) { return (node->fontSize > 0 ? node->fontSize : kTextSize) * textScale; }
+// A multiline field's font (host_access.inc).
+static void applyTextViewFont(Node *node);
 
 // A font file from the app's assets, added to fontconfig once; its family, or "" when it does
 // not load.
@@ -466,7 +482,7 @@ static std::string fontFamily(const std::string &file);
 // The attributes of a text in the node's font and color (sized when `sized`).
 static PangoAttrList *textAttributes(Node *node, bool sized, bool colored) {
     PangoAttrList *list = pango_attr_list_new();
-    if (sized) pango_attr_list_insert(list, pango_attr_size_new_absolute((node->fontSize > 0 ? node->fontSize : kTextSize) * PANGO_SCALE));
+    if (sized) pango_attr_list_insert(list, pango_attr_size_new_absolute((int)std::lround(fontPixels(node) * PANGO_SCALE)));
     if (node->fontWeight > 0) pango_attr_list_insert(list, pango_attr_weight_new((PangoWeight)node->fontWeight));
     if (!node->fontFile.empty()) {
         std::string family = fontFamily(node->fontFile);
@@ -499,6 +515,8 @@ static void applyFont(Node *node) {
         PangoAttrList *list = textAttributes(node, true, true);
         gtk_label_set_attributes(GTK_LABEL(node->content), list);
         pango_attr_list_unref(list);
+    } else if (node->kind == 5 && GTK_IS_TEXT_VIEW(node->content)) {
+        applyTextViewFont(node);
     } else if (node->kind == 5) {
         PangoAttrList *list = textAttributes(node, true, true);
         gtk_entry_set_attributes(GTK_ENTRY(node->content), list);
@@ -547,8 +565,10 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
         w = nat;
         if (node->kind == 5) w = std::max(w, 120.0);
         if (node->kind == 15) w = 160;
-        gtk_widget_measure(content, GTK_ORIENTATION_VERTICAL, node->kind == 5 || node->kind == 15 ? -1 : (int)std::min(w, limitW), &min, &nat,
-                           nullptr, nullptr);
+        // A multiline field wraps: its height at the width it may take.
+        bool wraps = node->kind == 5 && GTK_IS_TEXT_VIEW(content);
+        int across = wraps ? (int)std::min(limitW < 1e9 ? limitW : w, 1e6) : node->kind == 5 || node->kind == 15 ? -1 : (int)std::min(w, limitW);
+        gtk_widget_measure(content, GTK_ORIENTATION_VERTICAL, across, &min, &nat, nullptr, nullptr);
         h = nat;
     }
     return {(float)std::min(std::ceil(w), limitW), (float)std::min(std::ceil(h), limitH)};
@@ -558,5 +578,6 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
 static const int kUnset = -1000000;
 
 #include "host_views.inc"
+#include "host_access.inc"
 #include "host_commit.inc"
 #include "host_main.inc"

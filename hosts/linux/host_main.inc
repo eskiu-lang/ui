@@ -59,7 +59,7 @@ static void reportSystem(void) {
     g_free(theme);
     darkMode = dark;
     ui_report_appearance(dark ? 1 : 0);
-    ui_report_accessibility(0, userAnimations ? 0 : 1, 100);
+    ui_report_accessibility(0, userAnimations ? 0 : 1, (int)std::lround(textScale * 100));
     const char *const *languages = g_get_language_names();
     std::string tag = languages && languages[0] ? languages[0] : "en";
     tag = tag.substr(0, tag.find_first_of(".@"));
@@ -427,8 +427,8 @@ static std::string driverCarry(const std::string &d) {
         if (node->kind != 5 || !node->content) return "error: not a text field";
         gtk_widget_grab_focus(node->content);
         std::string text = driverText(d, "text");
-        gtk_editable_set_text(GTK_EDITABLE(node->content), text.c_str());
-        gtk_editable_set_position(GTK_EDITABLE(node->content), -1);
+        setInputText(node, text.c_str());
+        if (GTK_IS_EDITABLE(node->content)) gtk_editable_set_position(GTK_EDITABLE(node->content), -1);
         return "";
     }
     if (op == "scroll") {
@@ -466,6 +466,7 @@ int main(int argc, char **argv) {
     g_set_application_name(UI_APP_NAME);
     gtk_init();
     g_object_get(gtk_settings_get_default(), "gtk-enable-animations", &userAnimations, nullptr);
+    textScale = systemTextScale();
 #ifdef UI_TEST
     // The driver: the app's output kept for `logs` (and still printed), and its socket.
     int printed = dup(2);
@@ -534,6 +535,11 @@ int main(int argc, char **argv) {
          }) {
         g_signal_connect(settings, name, G_CALLBACK(+[](GObject *, GParamSpec *, gpointer) { reportSystem(); }), nullptr);
     }
+    // The system's text scale: the texts in their new size, and the factor to the core.
+    g_signal_connect(settings, "notify::gtk-xft-dpi", G_CALLBACK(+[](GObject *, GParamSpec *, gpointer) {
+        applyTextScale();
+        reportSystem();
+    }), nullptr);
 #ifdef UI_TEST
     g_signal_connect(window, "map", G_CALLBACK(+[](GtkWidget *, gpointer) { driverMapped(); }), nullptr);
 #endif

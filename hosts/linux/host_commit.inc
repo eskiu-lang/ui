@@ -30,16 +30,7 @@ static void createNode(int id, int generation, int kind) {
         gtk_button_set_child(GTK_BUTTON(content), label);
         g_signal_connect(content, "clicked", G_CALLBACK(onClicked), nullptr);
     } else if (kind == 5) {
-        content = gtk_entry_new();
-        gtk_editable_set_width_chars(GTK_EDITABLE(content), 1);
-        PangoAttrList *list = textAttributes(node, true, true);
-        gtk_entry_set_attributes(GTK_ENTRY(content), list);
-        pango_attr_list_unref(list);
-        g_signal_connect(content, "changed", G_CALLBACK(onText), nullptr);
-        GtkEventController *focus = gtk_event_controller_focus_new();
-        g_signal_connect(focus, "enter", G_CALLBACK(+[](GtkEventControllerFocus *c, gpointer) { onFocus(c, GINT_TO_POINTER(1)); }), nullptr);
-        g_signal_connect(focus, "leave", G_CALLBACK(+[](GtkEventControllerFocus *c, gpointer) { onFocus(c, GINT_TO_POINTER(0)); }), nullptr);
-        gtk_widget_add_controller(content, focus);
+        content = newEntry(node);
     } else if (kind == 3) {
         content = gtk_label_new("");
         gtk_label_set_wrap(GTK_LABEL(content), TRUE);
@@ -106,12 +97,6 @@ static void createNode(int id, int generation, int kind) {
     }
     if ((kind >= 3 && kind <= 5) || kind == 7 || kind == 9 || kind == 10 || kind == 15) YGNodeSetMeasureFunc(node->yoga, measure);
     nodes[id] = node;
-}
-
-// The widget that carries a node's accessible label: its control, else its box.
-static GtkWidget *accessibleOf(Node *node) {
-    if (node->content && node->kind != 6 && node->kind != 13) return node->content;
-    return node->box;
 }
 
 static void applyProp(Node *node, int code, int value) {
@@ -245,7 +230,11 @@ static void applyProp(Node *node, int code, int value) {
         break;
     }
     case 29: YGNodeStyleSetAspectRatio(yoga, value ? value / 1000.0f : YGUndefined); break;
-    default: break;
+    default:
+        // 57 to 64 accessibility, 65 to 72 a text input's editing (host_access.inc).
+        if (code >= 57 && code <= 64) applyAccessProp(node, code, value);
+        else if (code >= 65 && code <= 72) applyInputProp(node, code, value);
+        break;
     }
 }
 
@@ -266,18 +255,20 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
     else if (op == 9) {
         std::string value = text ? text : "";
         if (kind == 4 && node->kind == 13) mountNative(node, text);
-        else if (kind == 1) {
-            if (value.empty()) gtk_accessible_reset_property(GTK_ACCESSIBLE(accessibleOf(node)), GTK_ACCESSIBLE_PROPERTY_LABEL);
-            else gtk_accessible_update_property(GTK_ACCESSIBLE(accessibleOf(node)), GTK_ACCESSIBLE_PROPERTY_LABEL, value.c_str(), -1);
-        } else if (kind == 5) { node->fontFile = value; applyFont(node); }
-        else if (kind == 2 && node->kind == 5 && node->content) gtk_entry_set_placeholder_text(GTK_ENTRY(node->content), value.c_str());
+        else if (kind == 1) { node->label = value; applyLabel(node); }
+        else if (kind == 8 || kind == 9) applyAccessText(node, kind, value);
+        else if (kind == 5) { node->fontFile = value; applyFont(node); }
+        else if (kind == 2 && node->kind == 5 && node->content) {
+            // A multiline field (GtkTextView) has no placeholder: it is kept for a one-line one.
+            node->placeholder = value;
+            if (GTK_IS_ENTRY(node->content)) gtk_entry_set_placeholder_text(GTK_ENTRY(node->content), value.c_str());
+        }
         else if (kind == 3 && node->kind == 7) loadImage(node, text);
     } else if (op == 3) {
         const char *value = text ? text : "";
         if (node->kind == 4) { node->title = value; applyButtonTitle(node); }
         else if (node->kind == 3 && node->content) gtk_label_set_text(GTK_LABEL(node->content), value);
-        else if (node->kind == 5 && node->content && strcmp(gtk_editable_get_text(GTK_EDITABLE(node->content)), value) != 0)
-            gtk_editable_set_text(GTK_EDITABLE(node->content), value);
+        else if (node->kind == 5) setInputText(node, value);
         YGNodeMarkDirty(node->yoga);
     } else if ((op == 4 || op == 5) && node->kind == 12) {
         // A Modal is a layer over the window's content, outside the parent's layout.
@@ -307,6 +298,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             g_object_unref(node->box);
         } else gtk_widget_insert_before(node->box, container, sibling);
         YGNodeInsertChild(parentNode->yoga, node->yoga, index);
+        // Under a disabled element it reads as unavailable too.
+        refreshDisabled(node);
     } else if (op == 6) {
         if (node->yoga) {
             YGNodeRef parentYoga = YGNodeGetParent(node->yoga);
