@@ -118,6 +118,7 @@ The host calls the bridge, on the UI thread:
 |---|---|
 | `ui_dispatch(id, gen)` | a press (button, pressable; on a modal: a request to close) |
 | `ui_dispatch_text(id, gen, text)` | an input's text changed (read during the call) |
+| `ui_dispatch_submit(id, gen, text)` | the user pressed return in an input with a submit listener (prop 72); its text, read during the call |
 | `ui_dispatch_focus(id, gen, focused)` | an input gained (1) or lost (0) focus |
 | `ui_dispatch_toggle(id, gen, on)` | a switch was toggled |
 | `ui_dispatch_scroll(id, gen, offset, viewport)` | a scroll moved, in points |

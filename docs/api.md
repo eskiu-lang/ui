@@ -2599,8 +2599,10 @@ timer's token), 13 hover (value 1 when a pointer enters the node, 0 when it leav
 the request), 16 fetch (a request finished: value the status, text the body or the error,
 name the headers), 17 pan (value the phase, extra dx, width dy, height the x velocity,
 extra2 the y velocity), 18 display frame (no node; the time in seconds in `value`, the microseconds in `extra`), 19 the app
-went to the foreground (value 1) or the background (value 0; no node), 20 long press. A layout's window
-position is in extra2 and extra3.
+went to the foreground (value 1) or the background (value 0; no node), 20 long press, 21 submit (a TextInput's return key; text the field's text). A
+layout's window position is in extra2 and extra3. A user's event (a press, an edit, a
+toggle, a value, a refresh, a gesture, a submit) on a disabled node or one inside a
+disabled node is dropped.
 
 ### Insets
 
@@ -2681,6 +2683,8 @@ struct Ui {
     bool has_next_pan;
     fn()->void next_long_press;
     bool has_next_long_press;
+    fn(string)->void next_submit;
+    bool has_next_submit;
     List<fn()->void> next_owned;
     *RefreshExtra next_refresh;
     RefreshExtra refresh_slot;
@@ -2871,6 +2875,15 @@ bool ui_event_text(int id, int generation, string text)
 
 The text of an input changed; `text` is only read during the call.
 
+### ui_event_submit
+
+```eskiu
+bool ui_event_submit(int id, int generation, string text)
+```
+
+The host's side: the user pressed return in a text input (ui_on_submit); `text` is its text,
+only read during the call.
+
 ### ui_event_focus
 
 ```eskiu
@@ -2945,6 +2958,23 @@ bool ui_dispatch_event(*Event event)
 
 A handler that throws is reported and the app goes on; what it wrote before the throw
 stays written.
+
+### ui_user_event
+
+```eskiu
+bool ui_user_event(int kind)
+```
+
+True for the events a user's action makes: a press, an edit, a toggle, a refresh, a value,
+a gesture, a long press, a submit (internal).
+
+### ui_node_disabled
+
+```eskiu
+bool ui_node_disabled(*Node node)
+```
+
+True when node or one of its ancestors is disabled (Style.disabled) (internal).
 
 ### ui_dispatch_now
 
@@ -3101,7 +3131,7 @@ struct Node {
     string name;
     int gap;
     int padding;
-    int64[57] props;
+    int64[73] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -3157,6 +3187,10 @@ struct Node {
     bool has_on_long_press;
     fn(Pan)->void on_pan;
     bool has_on_pan;
+    fn(string)->void on_submit;
+    bool has_on_submit;
+    string value;
+    string hint;
     fn(int)->void on_value;
     int focused;
     string text;
@@ -3297,7 +3331,8 @@ What a virtualized list adds to its scroll (internal).
 
 ```eskiu
 struct InputExtra {
-    string placeholder; int focused; }
+    string placeholder; int focused;
+    bool secure; int keyboard; int return_key; bool multiline; int capitalize; bool autocorrect; int autofill; }
 }
 ```
 
@@ -3382,7 +3417,8 @@ A commit is one byte buffer, little-endian. Each record is an op byte and the no
   9 string prop  prop u8 (1 label, 2 placeholder, 3 image source, 4 native view type,
 
 ```eskiu
-             5 font file, 6 grid columns, 7 grid rows),
+             5 font file, 6 grid columns, 7 grid rows, 8 accessibility value,
+             9 accessibility hint),
              length u32, the bytes, a NUL
 ```
 
@@ -3416,7 +3452,14 @@ animates. 41 pan listener (1: the host reports drags on the node). 42 minimum wi
 image scales without smoothing), 49 long press listener (1: the host reports a long press), 50 gradient end
 color (RGBA, 0: none; from the background), 51 gradient angle (degrees, as CSS; 180 down),
 52 backdrop blur, 53 grid column, 54 grid column span, 55 grid row, 56 grid row span (lines
-from 1, 0: auto; spans 0 or 1: one track).
+from 1, 0: auto; spans 0 or 1: one track). Accessibility: 57 role (Role), 58 checked
+(CheckState), 59 selected (1 or 0), 60 expanded (Disclosure), 61 disabled (1: the element
+and what is in it take no input and read as unavailable), 62 value now, 63 value minimum,
+64 value maximum (a range when the maximum is above the minimum). A text input's editing:
+65 secure (1: hide what is typed), 66 keyboard (Keyboard), 67 return key (ReturnKey),
+68 multiline (1 or 0), 69 capitalize (Capitalize), 70 autocorrect (1 on, the default; 0
+off), 71 autofill (Autofill), 72 submit listener (1: the host reports return with
+ui_dispatch_submit).
 An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal
@@ -3760,12 +3803,75 @@ gets each value the user drags it to (a value the app does not take is sent back
 ### Input
 
 ```eskiu
-struct Input { Key key; string value; string placeholder; string label; int focused = -1; Style style; }
+struct Input {
+    bool secure; int keyboard; int return_key; bool multiline; int capitalize; bool autocorrect = true; int autofill; }
+}
 ```
 
 A controlled text field: `value` is what it shows, `on_change` gets each edit (the text
 is borrowed for the call; keep it in owned state such as use_string). `focused` is 1 to
 focus it, 0 to blur it, -1 to leave focus to the user.
+`secure` hides what is typed (a password). `keyboard` is the Keyboard a phone shows,
+`return_key` the ReturnKey's label (ui_on_submit gets the text when it is pressed),
+`multiline` takes several lines (return then starts a new one, and the field grows with
+them up to its max_height). `capitalize` (a Capitalize) and `autocorrect` say how the
+platform edits what is typed; `autofill` (an Autofill) says what the field is for, so the
+platform can offer a saved password, a one-time code or a contact's email.
+
+### Keyboard
+
+```eskiu
+enum Keyboard { KeyboardText, KeyboardEmail, KeyboardNumber, KeyboardDecimal, KeyboardPhone, KeyboardUrl, KeyboardSearch }
+```
+
+The keyboard a phone shows for a field (Input.keyboard): text, an email address, a whole
+number, a number with decimals, a phone number, a URL, or search.
+
+### ReturnKey
+
+```eskiu
+enum ReturnKey { ReturnDefault, ReturnDone, ReturnGo, ReturnNext, ReturnSearch, ReturnSend }
+```
+
+The return key's label (Input.return_key): the platform's own, done, go, next, search, send.
+
+### Capitalize
+
+```eskiu
+enum Capitalize { CapitalizeDefault, CapitalizeNone, CapitalizeWords, CapitalizeSentences, CapitalizeAll }
+```
+
+How typed text is capitalized (Input.capitalize): the platform's default (sentences on a
+phone), none, each word, each sentence, every letter.
+
+### Autofill
+
+```eskiu
+enum Autofill {
+    AutofillName, AutofillPhone }
+}
+```
+
+What a field is for (Input.autofill), so the platform offers what it saved: nothing, a user
+name, the current password, a new password, an email address, a one-time code, a name, a
+phone number.
+
+### ui_on_submit
+
+```eskiu
+void ui_on_submit(escaping fn(string)->void handler)
+```
+
+For the TextInput right after it: `handler` gets the field's text when the user presses
+return (the Input's return_key), not on a multiline field, whose return starts a new line.
+
+### ui_input_options
+
+```eskiu
+void ui_input_options(*InputExtra extra, Input input)
+```
+
+The Input's editing options into what the element sends (internal).
 
 ### ui_input_style
 
@@ -5538,6 +5644,9 @@ struct Style {
     string test_id;
     string grid_columns; string grid_rows;
     int grid_column; int grid_column_span; int grid_row; int grid_row_span;
+    int role; int checked; bool selected; int expanded; string value; string hint;
+    int value_min; int value_max; int value_now;
+    bool disabled;
 }
 ```
 
@@ -5576,6 +5685,43 @@ places it; `grid_column_span` and `grid_row_span` (0 or 1: one track) widen it.
 `test_id` names the element for tests and the driver (`ui agent web tap add`): it is not the
 accessibility label and never reaches the screen or a screen reader; a release build ignores
 it.
+Accessibility, beyond `label`: `role` says what the element is to a screen reader (a Role:
+a checkbox, a tab, a heading...), `checked` its CheckState (a checkbox, a switch, a radio
+button), `selected` whether it is the chosen one (a tab, a radio button, a list row),
+`expanded` its Disclosure (a section that opens), `value` what it holds as words ("3 of 5",
+"40%"), `hint` what using it does ("Opens the settings"). `value_min`, `value_max` and
+`value_now` give a progress bar's or an adjustable element's range (when value_max is above
+value_min). `disabled` turns the element and what is in it off: the platform shows and
+announces it as unavailable, and its handlers (presses, edits, toggles, gestures) are not
+called.
+
+### Role
+
+```eskiu
+enum Role {
+    RoleTab, RoleTabList, RoleSlider, RoleProgress, RoleMenu, RoleMenuItem, RoleList, RoleListItem, RoleAlert, RoleSearch }
+}
+```
+
+What an element is to a screen reader (Style.role). RoleNone: what its kind says (a Button
+is a button, a TextInput a text field, the rest a group or plain text).
+
+### CheckState
+
+```eskiu
+enum CheckState { CheckNone, CheckOff, CheckOn, CheckMixed }
+```
+
+Whether a checkbox, a switch or a radio button is checked (Style.checked): not one, off, on,
+or mixed (some of what it stands for is on).
+
+### Disclosure
+
+```eskiu
+enum Disclosure { DisclosureNone, DisclosureCollapsed, DisclosureExpanded }
+```
+
+Whether an element opens and closes (Style.expanded): not one, closed, open.
 
 ### Easing
 
