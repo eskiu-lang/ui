@@ -1,5 +1,5 @@
 // The app tests/agent/check.sh drives with `ui agent`: a counter, a field, a long list, a
-// timeout, an animated value, a transition and a modal, each with a test_id.
+// timeout, an animated value, a transition, a modal and a navigator, each with a test_id.
 import <string>;
 import <ui>;
 
@@ -9,6 +9,8 @@ void Number(string test_id, string label, int value) {
     String_format(&text, "%s%d", label, value);
     TextWith(Style{test_id: test_id}, text.data);
 }
+
+*Router router;
 
 void App() {
     Column(Style{grow: 1, padding: 16, gap: 8}) {
@@ -41,11 +43,21 @@ void App() {
         Modal(open.get(), void() { open.set(false); }) {
             Column(Style{padding: 24, background: rgb(255, 255, 255)}) { TextWith(Style{test_id: "sheet"}, "A modal"); }
         }
+        // A navigator: pushing a route changes the page's URL on the web.
+        Column(Style{height: 40}) {
+            Navigator(router, void(string route) {
+                if (strcmp(route, "/next") == 0) { TextWith(Style{test_id: "next"}, "Next page"); }
+                else { ButtonWith(Style{test_id: "push"}, "Push") { router.push("/next"); } }
+            });
+        }
         Scroll(Style{test_id: "list", grow: 1}) {
             for (i in 0..60) { Number("", "Row ", i); }
         }
     }
 }
 
-void ui_app_start(int which) { ui_mount(void() { App(); }); }
-void ui_app_stop() {}
+void ui_app_start(int which) {
+    router = router_new("/");
+    ui_mount(void() { App(); });
+}
+void ui_app_stop() { router.free(); }

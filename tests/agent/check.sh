@@ -103,9 +103,29 @@ fi
 op "scroll list 200" '"op":"scroll"' '"offset":[1-9]'
 op "tap open" '"ok":true'
 op state '"modals":1'
+# the modal covers the app's window, not the browser's: its content is centered in 390 points
+if [ "$HOST" = web ]; then
+    op layout '"test_id":"sheet"'
+    python3 -I -c 'import json,sys
+for line in open(sys.argv[1]):
+    a = json.loads(line)
+    for f in a.get("frames", []):
+        if f.get("test_id") == "sheet":
+            mid = f["x"] + f["width"] / 2
+            sys.exit(0 if abs(mid - 195) < 2 else "the modal is centered at %g, not 195" % mid)
+sys.exit("no sheet")' "$OUT/last.json" || fail "the modal does not fit the window"
+    echo "PASS $HOST: the modal fits the window"
+fi
 op back '"handled":true'
 op state '"modals":0'
 op back '"handled":false'
+# a pushed route: on the web the page's URL changes, and the agent still finds the page at its size
+op "tap push" '"ok":true'
+op tree '"test_id":"next"'
+op "screenshot $OUT/pushed.png" '"width":[1-9]'
+if [ "$HOST" = web ]; then op layout '"window":{"width":390,"height":844'; fi
+op back '"handled":true'
+op tree '"test_id":"push"'
 op logs '"core":\['
 op perf '"frames":[1-9]' '"memory_bytes":[1-9]'
 # the web counts what the allocator holds, and gives the wasm memory's size apart
