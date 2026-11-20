@@ -3,7 +3,9 @@
 
 // A row the user drags left to delete. Past a third of its width, or flicked, it slides out
 // and on_delete runs once it is gone; short of that it springs back. `label` shows on the red
-// band behind it.
+// band behind it. Without the gesture: with a screen reader on, the row has a delete button
+// (named `label`, or kit_text.delete); for anyone else a long press (a right click on the
+// web) shows it.
 void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->void content UI_LOC) {
     UI_HERE
     ui_own(void() { ui_release_closure(on_delete); ui_release_closure(content); });
@@ -12,6 +14,8 @@ void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->v
         *Signal<bool> dragging = use_signal<bool>(false);
         *Signal<bool> removing = use_signal<bool>(false);
         *Signal<int> width = use_signal<int>(0);
+        *Signal<bool> revealed = use_signal<bool>(false);
+        bool button = revealed.get() || ui_screen_reader();
         // Gone after the slide out.
         use_timeout(removing.get() ? 220 : 0) { on_delete(); }
         ui_on_layout(void(Frame f) { width.set(f.width); });
@@ -33,8 +37,18 @@ void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->v
                     offset.set(0);
                 }
             });
-            Column(Style{grow: 1, gap: 0, radius: kit.radius, background: kit.surface, translate_x: offset.get(),
-                         transition_ms: dragging.get() ? 0 : 220, easing: removing.get() ? EaseIn : EaseSpring}) { content(); }
+            ui_on_long_press(void() { revealed.set(!revealed.get()); });
+            Row(Style{grow: 1, gap: 0, radius: kit.radius, background: kit.surface, translate_x: offset.get(),
+                      transition_ms: dragging.get() ? 0 : 220, easing: removing.get() ? EaseIn : EaseSpring, align: AlignCenter}) {
+                Column(Style{grow: 1, gap: 0}) { content(); }
+                if (button) {
+                    Pressable(Style{padding: 12, min_width: 44, min_height: 44, align: AlignCenter, justify: JustifyCenter,
+                                    label: label != null && label[0] != 0 ? label : kit_text.delete, role: RoleButton},
+                        void() { offset.set(-width.get() - 24); removing.set(true); }) {
+                        TextWith(Style{font_size: 15, font_weight: 700, color: kit.danger}, kit_text.delete);
+                    }
+                }
+            }
         }
     }
 }
