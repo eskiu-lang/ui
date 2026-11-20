@@ -19,6 +19,16 @@ function capture() {
   addEventListener('unhandledrejection', e => note('error', [String(e.reason)]));
 }
 
+// The runtime's last failure message (ui_fail: "ui: MESSAGE" and the lines after it, "  in
+// PATH"), which it prints before it aborts; the wasm can tell nothing after that. "" for none.
+function failure() {
+  const at = logs.findLastIndex(line => /^\w+: ui: /.test(line));
+  if (at < 0) return '';
+  const lines = [logs[at].replace(/^\w+: /, '')];
+  for (let i = at + 1; i < logs.length && /^\w+: \s/.test(logs[i]); i++) lines.push(logs[i].replace(/^\w+: /, ''));
+  return lines.join('\n');
+}
+
 // The page's animations (CSS transitions and animations) while the driver owns the clock:
 // each is paused when it starts, at the driver's time then, and moved to the driver's time
 // after each request that moves it.
@@ -142,7 +152,8 @@ export function startDriver({app, host}) {
         const request = await response.text();
         let text;
         try { text = await answer(app, host, request); } catch (e) {
-          text = JSON.stringify({ok: false, error: `the page failed: ${e.message || e}`});
+          const why = failure();
+          text = JSON.stringify({ok: false, error: `the page failed: ${e.message || e}${why ? `\n${why}` : ''}`});
         }
         await fetch(`/__ui/agent/reply?page=${page}`, {method: 'POST', body: text, cache: 'no-store'});
       } catch {
