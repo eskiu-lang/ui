@@ -1,4 +1,4 @@
-// Phase-0 host glue. Components and state stay in Eskiu; UIKit owns native views.
+// The iOS host: the core (in Eskiu) sends commits, UIKit draws them as native views.
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CADisplayLink.h>
 #import <CoreText/CoreText.h>
