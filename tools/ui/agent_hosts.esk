@@ -99,6 +99,7 @@ void agent_attach(Project* p, bool real_clock) {
     // A first build of a mobile app installs it, which can take a few minutes.
     int64 until = time_monotonic_ms() + (strcmp(agent_host, "web") == 0 ? 120000 : 300000);
     bool said = false;
+    int64 failing_since = 0;
     while (true) {
         string source = agent_source(p);
         // While ui serve builds, the app may be about to restart on the new build.
@@ -110,6 +111,19 @@ void agent_attach(Project* p, bool real_clock) {
         *JsonValue answer = agent_request(hello);
         string built = agent_member(answer, "source");
         bool fresh = agent_ok(answer) && built != null && strcmp(built, source) == 0;
+        // The web page answers that the app failed (a runtime check as it started): nothing
+        // will change until the sources do. It must last 2 s: a page that failed before an
+        // edit answers so until ui serve reloads it.
+        string failed = agent_member(answer, "error");
+        if (failed != null && strncmp(failed, "the page failed", 15) == 0) {
+            if (failing_since == 0) { failing_since = time_monotonic_ms(); }
+            if (time_monotonic_ms() - failing_since > 2000) {
+                String message;
+                String_append(&message, failed);
+                JsonValue_free(answer);
+                agent_fail(message.data);
+            }
+        } else { failing_since = 0; }
         JsonValue_free(answer);
         if (fresh) { return; }
         *JsonValue now = agent_serve_status(p);

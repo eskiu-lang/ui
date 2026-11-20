@@ -55,7 +55,9 @@
     print: text => console.log(text), printErr: text => console.error(text)});
   // The page's route is the link the app was opened with (the first Navigator shows it).
   app.ccall('ui_report_link', null, ['string'], [host.route()]);
-{{reload}}  app._ui_start(0);
+  // A dev build's driver starts first: when the app fails as it starts (a runtime check), the
+  // agent still gets an answer, with the runtime's message.
+{{driver}}{{reload}}  app._ui_start(0);
   // The system: dark mode and reduced motion from media queries, the language from the browser.
   const dark = matchMedia('(prefers-color-scheme: dark)');
   const still = matchMedia('(prefers-reduced-motion: reduce)');
@@ -74,7 +76,7 @@
     agentWindow ? +agentWindow[2] : innerHeight, Math.round(devicePixelRatio * 100));
   reportWindow();
   addEventListener('resize', reportWindow);
-{{driver}}  if (new URLSearchParams(location.search).has('shot')) {
+  if (new URLSearchParams(location.search).has('shot')) {
     const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
     await frame(); await frame(); await frame();
     window.webkit?.messageHandlers?.results?.postMessage({status: 'PASS'});
