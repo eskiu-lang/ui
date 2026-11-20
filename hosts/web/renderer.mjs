@@ -585,7 +585,10 @@ export function createHost(root, dispatch, views = {}) {
   // router's stack, which the browser's back and forward report.
   const hasHistory = typeof history !== 'undefined' && typeof location !== 'undefined';
   const base = () => new URL(document.baseURI).pathname;
-  const toURL = route => base() + route.replace(/^\/+/, '');
+  // `ui agent`'s page keeps its #ui-agent:WxH hash on every route: the agent finds the page by
+  // it, and the page takes its window's size from it (app.html).
+  const agentHash = () => (location.hash.startsWith('#ui-agent') ? location.hash : '');
+  const toURL = route => base() + route.replace(/^\/+/, '') + agentHash();
   let historyIndex = 0;
   function route() {
     if (!hasHistory) return '/';

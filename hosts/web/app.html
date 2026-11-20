@@ -34,6 +34,9 @@
   if (agentWindow) {
     Object.assign(document.documentElement.style,
       {width: `${agentWindow[1]}px`, height: `${agentWindow[2]}px`, overflow: 'hidden'});
+    // what is fixed to the window (a modal, the splash) is fixed to the app's: the body is the
+    // containing block of fixed elements
+    document.body.style.contain = 'layout paint';
   }
   // Native code (native/web): views by type, and events on channels for use_native_event.
   const views = {};
