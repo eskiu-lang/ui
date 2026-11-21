@@ -434,6 +434,7 @@ static void paintView(HWND hwnd, HDC hdc) {
             Gdiplus::SolidBrush brush(colorOf(node->shownBackground));
             g.FillRectangle(&brush, (INT)rect.left, (INT)rect.top, (INT)rect.right, (INT)rect.bottom);
         }
+        paintChildEffects(hwnd, hdc);
         return;
     }
     if (node->kind == 5) {
