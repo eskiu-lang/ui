@@ -58,7 +58,8 @@ static void createNode(int id, int generation, int kind) {
         content = gtk_switch_new();
         g_signal_connect(content, "notify::active", G_CALLBACK(onSwitch), nullptr);
     } else if (kind == 10) {
-        content = gtk_spinner_new();
+        // A progress bar for assistive technologies (GTK 4.14's spinner has no role of its own).
+        content = GTK_WIDGET(g_object_new(GTK_TYPE_SPINNER, "accessible-role", GTK_ACCESSIBLE_ROLE_PROGRESS_BAR, nullptr));
     } else if (kind == 11) {
         gtk_widget_set_visible(node->box, FALSE);
         YGNodeStyleSetDisplay(node->yoga, YGDisplayNone);

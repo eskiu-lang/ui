@@ -244,7 +244,7 @@ static void setRefreshing(Node *node, bool on) {
     node->refreshing = on;
     if (!on) node->pulled = false;
     if (on && !node->refreshSpinner) {
-        node->refreshSpinner = gtk_spinner_new();
+        node->refreshSpinner = GTK_WIDGET(g_object_new(GTK_TYPE_SPINNER, "accessible-role", GTK_ACCESSIBLE_ROLE_PROGRESS_BAR, nullptr));
         gtk_widget_insert_before(node->refreshSpinner, node->box, nullptr);
     }
     if (node->refreshSpinner) {
