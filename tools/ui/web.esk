@@ -43,6 +43,7 @@ string build_web(Project* p) {
     fs_copy(join(p.ui.data, "hosts/web/scheduler.mjs"), join(out, "scheduler.mjs"));
     fs_copy(join(p.ui.data, "hosts/web/access.mjs"), join(out, "access.mjs"));
     fs_copy(join(p.ui.data, "hosts/web/style.mjs"), join(out, "style.mjs"));
+    fs_copy(join(p.ui.data, "hosts/web/updates.mjs"), join(out, "updates.mjs"));
     string driver = join(out, "driver.mjs");
     if (test) { fs_copy(join(p.ui.data, "hosts/web/driver.mjs"), driver); } else { fs_remove_all(driver); }
     write_web_native(p, out);
