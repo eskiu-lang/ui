@@ -101,6 +101,7 @@ static void createNode(int id, int generation, int kind) {
 
 static void applyProp(Node *node, int code, int value) {
     YGNodeRef yoga = node->yoga;
+    if (styleProp(node, code, value)) return;
     switch (code) {
     case 1: YGNodeStyleSetGap(yoga, YGGutterAll, value); break;
     case 2:
@@ -118,7 +119,7 @@ static void applyProp(Node *node, int code, int value) {
     case 5: if (value) YGNodeStyleSetHeight(yoga, value); else YGNodeStyleSetHeightAuto(yoga); break;
     case 6:
         YGNodeStyleSetFlexGrow(yoga, value);
-        if (node->kind != 6) YGNodeStyleSetFlexShrink(yoga, value > 0 ? 1 : 0);
+        if (node->kind != 6 && !node->shrinkSet) YGNodeStyleSetFlexShrink(yoga, value > 0 ? 1 : 0);
         break;
     case 7: YGNodeStyleSetFlexWrap(yoga, value ? YGWrapWrap : YGWrapNoWrap); break;
     case 8: {
@@ -136,6 +137,7 @@ static void applyProp(Node *node, int code, int value) {
     case 9:
         node->textColor = value;
         applyFont(node);
+        applyAccent(node);
         break;
     case 10: node->fontSize = value; applyFont(node); break;
     case 11: node->fontWeight = value; applyFont(node); break;
@@ -185,6 +187,7 @@ static void applyProp(Node *node, int code, int value) {
     }
     case 18: if (node->kind == 9 && node->content) gtk_switch_set_active(GTK_SWITCH(node->content), value != 0); break;
     case 19: if (node->kind == 10 && node->content) gtk_spinner_set_spinning(GTK_SPINNER(node->content), value != 0); break;
+    case 22: setRefreshing(node, value != 0); break;
     case 23: screenActive(node, value); break;
     case 32: case 33: case 34:
         if (node->kind == 15 && node->content) {
@@ -272,6 +275,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         YGNodeMarkDirty(node->yoga);
     } else if ((op == 4 || op == 5) && node->kind == 12) {
         // A Modal is a layer over the window's content, outside the parent's layout.
+        node->parentId = parent;
+        refreshDisabled(node);
         if (std::find(modals.begin(), modals.end(), node) != modals.end()) return;
         modals.push_back(node);
         if (gtk_widget_get_parent(node->box)) gtk_widget_unparent(node->box);
@@ -298,6 +303,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             g_object_unref(node->box);
         } else gtk_widget_insert_before(node->box, container, sibling);
         YGNodeInsertChild(parentNode->yoga, node->yoga, index);
+        restack(container);
         // Under a disabled element it reads as unavailable too.
         refreshDisabled(node);
     } else if (op == 6) {
@@ -529,6 +535,7 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
     applying = false;
     relayout();
     slideScreens();
+    appearModals();
 }
 
 static double hostNow(void) {

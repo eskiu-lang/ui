@@ -42,7 +42,6 @@ static std::string fontFamily(const std::string &file) {
 static std::string fontFamily(const std::string &) { return ""; }
 #endif
 
-static bool userAnimations = true;
 
 // The system's appearance, accessibility settings and language, to the core.
 static void reportSystem(void) {
@@ -67,6 +66,13 @@ static void reportSystem(void) {
     std::replace(tag.begin(), tag.end(), '_', '-');
     bool rtl = gtk_widget_get_default_direction() == GTK_TEXT_DIR_RTL;
     ui_report_locale(tag.c_str(), rtl ? 1 : 0);
+    // Right to left: Yoga mirrors rows, start and end (GTK's widgets follow the default
+    // direction on their own).
+    if (rtl != ui_layout_rtl()) {
+        ui_layout_rtl() = rtl;
+        for (auto &entry : nodes) applyLabelLayout(entry.second);
+        if (root) relayout();
+    }
 }
 
 static int scaleFactor(void) { return window ? gtk_widget_get_scale_factor(window) : 1; }
@@ -135,6 +141,7 @@ static void addActions(GtkWidget *target) {
         {"quit", []() { gtk_window_close(GTK_WINDOW(window)); }},
         {"close", []() { gtk_window_close(GTK_WINDOW(window)); }},
         {"back", back},
+        {"refresh", refreshShown},
         {"fullscreen", []() {
              if (gtk_window_is_fullscreen(GTK_WINDOW(window))) gtk_window_unfullscreen(GTK_WINDOW(window));
              else gtk_window_fullscreen(GTK_WINDOW(window));
@@ -161,7 +168,8 @@ static void addActions(GtkWidget *target) {
         const char *trigger, *action;
     };
     static const Key keys[] = {{"<Control>q", "app.quit"}, {"<Control>w", "app.close"}, {"Escape", "app.back"},
-                               {"<Alt>Left", "app.back"}, {"F11", "app.fullscreen"}};
+                               {"<Alt>Left", "app.back"}, {"F11", "app.fullscreen"}, {"F5", "app.refresh"},
+                               {"<Control>r", "app.refresh"}};
     for (const Key &key : keys) {
         gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(shortcuts),
             gtk_shortcut_new(gtk_shortcut_trigger_parse_string(key.trigger), gtk_named_action_new(key.action)));
@@ -196,6 +204,7 @@ static GtkWidget *menuBar(void) {
     g_menu_append_submenu(bar, "Edit", G_MENU_MODEL(edit));
     GMenu *view = g_menu_new();
     item(view, "Back", "app.back", "<Alt>Left");
+    item(view, "Refresh", "app.refresh", "F5");
     item(view, "Full Screen", "app.fullscreen", "F11");
     g_menu_append_submenu(bar, "View", G_MENU_MODEL(view));
     GtkWidget *widget = gtk_popover_menu_bar_new_from_model(G_MENU_MODEL(bar));

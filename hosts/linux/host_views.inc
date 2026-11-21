@@ -12,6 +12,8 @@ static std::string assetFile(const std::string &name) {
 }
 
 static void httpGet(const std::string &url, std::function<void(int status, std::string body)> done);
+static void imageReport(Node *node, bool loaded);
+static void moveTo(Node *node, double x, double y, double w, double h);
 
 static void setTexture(Node *node, GdkTexture *texture) {
     if (node->texture) g_object_unref(node->texture);
@@ -35,14 +37,16 @@ static void loadImage(Node *node, const char *text) {
                 GdkTexture *texture = gdk_texture_new_from_bytes(bytes, nullptr);
                 g_bytes_unref(bytes);
                 if (texture) { setTexture(node, texture); relayout(); }
-            }
+                imageReport(node, texture != nullptr);
+            } else if (!node->removed && node->source == source) imageReport(node, false);
             release(node);
         });
         return;
     }
     std::string path = source.rfind("file://", 0) == 0 ? source.substr(7) : source[0] == '/' ? source : assetFile(source);
-    if (path.empty()) return;
-    setTexture(node, gdk_texture_new_from_filename(path.c_str(), nullptr));
+    GdkTexture *texture = path.empty() ? nullptr : gdk_texture_new_from_filename(path.c_str(), nullptr);
+    if (texture) setTexture(node, texture);
+    imageReport(node, texture != nullptr);
 }
 
 // ---- native views ----
@@ -215,7 +219,7 @@ static void place(YGNodeRef yoga) {
         Node *node = (Node *)YGNodeGetContext(child);
         double x = YGNodeLayoutGetLeft(child), y = YGNodeLayoutGetTop(child), w = YGNodeLayoutGetWidth(child), h = YGNodeLayoutGetHeight(child);
         if (x != node->x || y != node->y || w != node->w || h != node->h) {
-            node->x = x; node->y = y; node->w = w; node->h = h;
+            moveTo(node, x, y, w, h);
             moved = true;
             if (node->box) gtk_widget_queue_allocate(node->box);
         }
@@ -265,13 +269,13 @@ static void reportWindows(void) {
 static int stageWidth = 900, stageHeight = 700;
 
 static void relayout(void) {
-    ui_grid_calculate(root->yoga, stageWidth, stageHeight, YGDirectionLTR);
+    ui_grid_calculate(root->yoga, stageWidth, stageHeight, ui_layout_direction());
     root->w = stageWidth; root->h = stageHeight;
     place(root->yoga);
     for (Node *modal : modals) {
         modal->x = modal->y = 0;
         modal->w = stageWidth; modal->h = stageHeight;
-        ui_grid_calculate(modal->yoga, stageWidth, stageHeight, YGDirectionLTR);
+        ui_grid_calculate(modal->yoga, stageWidth, stageHeight, ui_layout_direction());
         place(modal->yoga);
         if (modal->box) gtk_widget_queue_allocate(modal->box);
     }

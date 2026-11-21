@@ -89,23 +89,35 @@ static void applyStates(Node *node) {
 // Disabled (61) makes the box insensitive: GTK gives no input to it or to anything inside it,
 // now or placed later, and it is sensitive again when nothing above it is disabled. GTK tells
 // assistive technologies only about the insensitive widget itself, so the accessible state of
-// what is inside says it too.
+// what is inside says it too. A modal's box is the stage's child, not its parent's: it is
+// insensitive itself while an element above it in the app's tree is disabled.
 static bool anyDisabled;
 static void disableTree(Node *node, bool above) {
     bool off = above || node->disabled;
+    if (node->kind == 12 && node->box) gtk_widget_set_sensitive(node->box, !off);
     GtkWidget *target = accessibleOf(node);
     if (target != node->box || !node->disabled) gtk_accessible_update_state(GTK_ACCESSIBLE(target), GTK_ACCESSIBLE_STATE_DISABLED, off ? TRUE : FALSE, -1);
     for (size_t i = 0; node->yoga && i < YGNodeGetChildCount(node->yoga); ++i)
         disableTree((Node *)YGNodeGetContext(YGNodeGetChild(node->yoga, i)), off);
 }
+// Whether an element above `node` is disabled: its Yoga parents, and past a modal (a root of
+// its own) the element the modal was placed in.
+static bool disabledAbove(Node *node) {
+    for (Node *at = node; at && at->yoga;) {
+        YGNodeRef up = YGNodeGetParent(at->yoga);
+        Node *owner = up ? (Node *)YGNodeGetContext(up) : nullptr;
+        if (!owner && at->kind == 12 && at->parentId) {
+            auto found = nodes.find(at->parentId);
+            owner = found == nodes.end() ? nullptr : found->second;
+        }
+        if (owner && owner->disabled) return true;
+        at = owner;
+    }
+    return false;
+}
 static void refreshDisabled(Node *node) {
     if (!anyDisabled || !node->yoga) return;
-    bool above = false;
-    for (YGNodeRef up = YGNodeGetParent(node->yoga); up && !above; up = YGNodeGetParent(up)) {
-        Node *owner = (Node *)YGNodeGetContext(up);
-        above = owner && owner->disabled;
-    }
-    disableTree(node, above);
+    disableTree(node, disabledAbove(node));
 }
 
 // Props 57 to 64.
@@ -115,6 +127,8 @@ static void applyAccessProp(Node *node, int code, int value) {
         if (node->disabled) anyDisabled = true;
         gtk_widget_set_sensitive(node->box, !node->disabled);
         refreshDisabled(node);
+        // The modals placed under it.
+        for (Node *modal : modals) refreshDisabled(modal);
         return;
     }
     if (code == 57) { node->role = value; applyRole(node); }
