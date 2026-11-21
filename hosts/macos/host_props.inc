@@ -109,6 +109,41 @@ static void applyAccent(UiHostNode *node) {
     hideSystemLook(node.view, color != nil);
 }
 
+// A Text: a wrapping label whose text sits inside the node's padding (Yoga measures the text
+// without it and adds it to the frame).
+@interface UiLabelCell : NSTextFieldCell
+@property(nonatomic) YGNodeRef yoga;
+@end
+@implementation UiLabelCell
+- (NSRect)drawingRectForBounds:(NSRect)bounds {
+    NSRect rect = [super drawingRectForBounds:bounds];
+    if (!self.yoga) return rect;
+    CGFloat left = YGNodeLayoutGetPadding(self.yoga, YGEdgeLeft), top = YGNodeLayoutGetPadding(self.yoga, YGEdgeTop);
+    CGFloat right = YGNodeLayoutGetPadding(self.yoga, YGEdgeRight), bottom = YGNodeLayoutGetPadding(self.yoga, YGEdgeBottom);
+    return NSMakeRect(rect.origin.x + left, rect.origin.y + top, std::max<CGFloat>(0, rect.size.width - left - right),
+                      std::max<CGFloat>(0, rect.size.height - top - bottom));
+}
+@end
+@interface UiLabel : NSTextField
+@end
+@implementation UiLabel
++ (Class)cellClass { return UiLabelCell.class; }
+@end
+static NSTextField *makeLabel(YGNodeRef yoga) {
+    UiLabel *label = [UiLabel new];
+    label.editable = NO;
+    label.selectable = NO;
+    label.bezeled = NO;
+    label.bordered = NO;
+    label.drawsBackground = NO;
+    label.lineBreakMode = NSLineBreakByWordWrapping;
+    label.cell.wraps = YES;
+    label.cell.scrollable = NO;
+    label.usesSingleLineMode = NO;
+    ((UiLabelCell *)label.cell).yoga = yoga;
+    return label;
+}
+
 // Style.text_align: the start (the default, as on the web) and the end follow the layout's
 // direction.
 static NSTextAlignment alignmentOf(int align) {
@@ -284,4 +319,53 @@ static void appearModals(void) {
         move.timingFunction = curve;
         [panel.view.layer addAnimation:move forKey:@"appear"];
     }
+}
+
+// Pull to refresh (a scroll with a RefreshControl, prop 22). A desktop has no pull gesture of
+// its own: pulling the scroll past its top by 60 points (the trackpad's or the wheel's elastic
+// overscroll), or View > Refresh (Cmd+R) for the refreshable scroll on top, asks the app to
+// refresh, and a spinner at the top of the scroll shows while the app says it is refreshing.
+static const CGFloat kPull = 60;
+
+static void placeRefreshSpinner(UiHostNode *node) {
+    if (!node.refreshSpinner) return;
+    NSSize size = node.view.bounds.size;
+    node.refreshSpinner.frame = NSMakeRect(std::floor((size.width - 20) / 2), 8, 20, 20);
+}
+
+static void setRefreshing(UiHostNode *node, bool on) {
+    node.refreshable = true;
+    node.refreshing = on;
+    if (on && !node.refreshSpinner) {
+        NSProgressIndicator *spinner = [NSProgressIndicator new];
+        spinner.style = NSProgressIndicatorStyleSpinning;
+        spinner.controlSize = NSControlSizeSmall;
+        spinner.displayedWhenStopped = NO;
+        node.refreshSpinner = spinner;
+        [node.view addSubview:spinner];
+        placeRefreshSpinner(node);
+    }
+    if (on) [node.refreshSpinner startAnimation:nil];
+    else [node.refreshSpinner stopAnimation:nil];
+}
+
+// The scroll moved: past its top by kPull it asks once, until it is back at the top.
+static void pullChecked(UiHostNode *node, CGFloat offset) {
+    if (!node.refreshable) return;
+    if (offset >= 0) { node.pulled = false; return; }
+    if (offset > -kPull || node.pulled || node.refreshing) return;
+    node.pulled = true;
+    ui_dispatch_refresh(node.nodeId, node.generation);
+}
+
+// View > Refresh: the refreshable scroll that shows, in the newest modal or else in the window.
+static void refreshShown(void) {
+    UiHostNode *found = nil;
+    NSView *top = modals.count ? modals.lastObject.view : rootView;
+    for (UiHostNode *node in nodes.allValues) {
+        if (!node.refreshable || node.refreshing || !node.view.window || node.view.hiddenOrHasHiddenAncestor) continue;
+        if (![node.view isDescendantOf:top]) continue;
+        if (!found || node.nodeId > found.nodeId) found = node;
+    }
+    if (found) ui_dispatch_refresh(found.nodeId, found.generation);
 }

@@ -138,6 +138,7 @@ static void relayout(void) {
 @implementation UiWindow
 - (void)cancelOperation:(id)sender { ui_report_back(); }
 - (void)back:(id)sender { ui_report_back(); }
+- (void)refresh:(id)sender { refreshShown(); }
 @end
 
 // The window's content: the root fills it, and reports its size to the app.
@@ -411,6 +412,7 @@ static void setupMenu(NSString *name) {
     [bar addItemWithTitle:@"Edit" action:nil keyEquivalent:@""].submenu = edit;
     NSMenu *view = [[NSMenu alloc] initWithTitle:@"View"];
     menuItem(view, @"Back", @selector(back:), @"[", 0);
+    menuItem(view, @"Refresh", @selector(refresh:), @"r", 0);
     menuItem(view, @"Enter Full Screen", @selector(toggleFullScreen:), @"f", NSEventModifierFlagCommand | NSEventModifierFlagControl);
     [bar addItemWithTitle:@"View" action:nil keyEquivalent:@""].submenu = view;
     NSMenu *window = [[NSMenu alloc] initWithTitle:@"Window"];

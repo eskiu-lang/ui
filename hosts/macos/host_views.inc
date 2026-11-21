@@ -11,10 +11,12 @@ static void place(YGNodeRef yoga) {
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
         if (!animated) node.view.frame = NSMakeRect(x, y, w, h);
+        if (node.kind == 3) node.view.needsDisplay = YES;
         // A radius past half the shorter side: a pill asks for 999.
         if (node.radius > 0) node.view.layer.cornerRadius = std::min<CGFloat>(node.radius, std::min(w, h) / 2);
         if (node.blur) node.blur.layer.cornerRadius = node.view.layer.cornerRadius;
         if (node.gradient) node.gradient.frame = CGRectMake(0, 0, w, h);
+        placeRefreshSpinner(node);
         [CATransaction commit];
         // AppKit sets a layer-backed view's layer geometry with its frame: the transform again.
         if (hasTransform(node) && ![node.view.layer animationForKey:@"transform"]) applyTransform(node, false);
@@ -93,6 +95,7 @@ static void reportWindows(void) {
     NSClipView *clip = note.object;
     reportWindows();
     UiHostNode *node = nodeOf(clip.superview);
+    if (node) pullChecked(node, clip.bounds.origin.y);
     if (!node || !node.listening) return;
     node.reportedViewport = clip.bounds.size.height;
     ui_dispatch_scroll(node.nodeId, node.generation, (int)std::lround(clip.bounds.origin.y), (int)std::lround(clip.bounds.size.height));
@@ -228,8 +231,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             node.autocorrect = 1;
             node.view = makeInput(node);
         } else if (kind == 3) {
-            NSTextField *label = [NSTextField wrappingLabelWithString:@""];
-            label.selectable = NO;
+            NSTextField *label = makeLabel(node.yoga);
             label.font = [NSFont systemFontOfSize:kTextSize];
             label.textColor = NSColor.labelColor;
             node.view = label;
@@ -401,7 +403,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         else if (kind == 19) {
             NSProgressIndicator *spinner = (NSProgressIndicator *)node.view;
             if (before) [spinner startAnimation:nil]; else [spinner stopAnimation:nil];
-        } else if (kind == 23) screenActive(node, before);
+        } else if (kind == 22 && [node.view isKindOfClass:NSScrollView.class]) setRefreshing(node, before);
+        else if (kind == 23) screenActive(node, before);
         else if (kind >= 32 && kind <= 34 && [node.view isKindOfClass:NSSlider.class]) {
             NSSlider *slider = (NSSlider *)node.view;
             if (kind == 33) slider.minValue = before;
