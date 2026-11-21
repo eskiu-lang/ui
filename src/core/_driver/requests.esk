@@ -104,6 +104,10 @@ string _ui_driver_answer(*JsonValue request, string source) {
                 ui_json_string(&ui_drv.out, ui.router.stack.data[i].data);
             }
         }
+        // Every Navigator's stack, the first one (the platform's, as "routes") included.
+        String_append(&ui_drv.out, "], \"navigators\": [");
+        bool first_nav = true;
+        _ui_driver_navigators(&ui_drv.out, ui.root, &first_nav);
         int armed = 0;
         for (i in 0..ui.timers.size) { if (ui.timers.data[i].armed) { armed++; } }
         String_appendf(&ui_drv.out, "], \"modals\": %d, \"timers\": %d, \"frames\": %s, \"fetches\": %d, \"clock\": \"%s\", \"now\": ",

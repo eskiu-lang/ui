@@ -47,10 +47,13 @@ int _ui_animate(int target, int ms, int easing, bool has_done, escaping fn()->vo
         } else { _ui_release_done(done.on_done); }
         done.on_done = on_done;
     } else { _ui_release_done(on_done); }
+    // The hook's own signals, not the app's (left out of `ui agent state`).
+    ui.hidden_signals++;
     *Signal<int> shown = use_signal<int>(target);
     *Signal<int> goal = use_signal<int>(target);
     *Signal<int> from = use_signal<int>(target);
     *Signal<double> elapsed = use_signal<double>(0);
+    ui.hidden_signals--;
     if (goal.value != target) {
         from.set(shown.value);
         goal.set(target);
@@ -73,8 +76,10 @@ int _ui_animate(int target, int ms, int easing, bool has_done, escaping fn()->vo
 // again: `count` times (0: forever), each other time back from `to` when `reverse` (a pulse,
 // a bob). It starts again when any argument changes, and stops at the end of the last time.
 int use_repeat(int from, int to, int ms, int easing, int count, bool reverse) {
+    ui.hidden_signals++;
     *Signal<double> elapsed = use_signal<double>(0);
     *Signal<int64> key = use_signal<int64>(0);
+    ui.hidden_signals--;
     int64 now_key = ((int64)from * 31 + to) * 31 + ((int64)ms * 31 + easing) * 7 + count * 3 + (reverse ? 1 : 0);
     if (key.value != now_key) {
         key.value = now_key;
@@ -99,8 +104,10 @@ struct Keyframe { int value; int ms; int easing; }
 // delay), then moves to each next one's over its `ms`. The whole runs `count` times (0:
 // forever), starting again when the steps change; it stops on the last value.
 int use_sequence(*Keyframe steps, int n, int count) {
+    ui.hidden_signals++;
     *Signal<double> elapsed = use_signal<double>(0);
     *Signal<int64> key = use_signal<int64>(0);
+    ui.hidden_signals--;
     int64 now_key = count;
     int total = 0;
     for (i in 0..n) {

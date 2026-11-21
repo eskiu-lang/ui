@@ -47,6 +47,8 @@ struct Slot { int kind; *void tag; *void data; fn()->void dispose; *_Observer ob
     // use_signal_keyed signal keeps across reloads (a copy, freed with the slot).
     int vtype;
     string key;
+    // A signal a hook keeps for itself (use_animated's, use_repeat's): left out of `state`.
+    bool hidden;
 #endif
 }
 
@@ -260,6 +262,7 @@ struct Signal<T> { T value; Source source; }
         slot.data = signal;
 #ifdef UI_TEST
         slot.vtype = ui_driver_value_type<T>();
+        slot.hidden = ui.hidden_signals > 0;
         string kept = key == null ? null : ui_copy(key);
         slot.key = kept;
         _ui_reload_take(slot, key, (*void)&signal.value);

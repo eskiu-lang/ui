@@ -237,3 +237,20 @@ void driver_gestures() {
         "a drag on an element nothing listens around says so");
     ui_shutdown(); balanced("gestures leak");
 }
+
+// `state` lists the app's signals, not the ones use_animated keeps for itself.
+void driver_state_hidden() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        Scope("Meter", Key{}) {
+            *Signal<int> level = use_signal<int>(7);
+            int shown = use_animated(level.get(), 300, EaseOut);
+            Text(textf("%d", shown));
+        }
+    }
+    ui_frame();
+    string answer = drive("{\"op\": \"state\"}");
+    check(has(answer, "\"signals\": [7]"), "only the app's signal, not use_animated's four");
+    ui_shutdown(); balanced("state hidden leak");
+}

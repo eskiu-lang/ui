@@ -290,7 +290,10 @@ void _ui_driver_value(*String out, Slot slot) {
 // The scopes holding signals, for `state` (internal).
 void _ui_driver_state_node(*String out, *Node node, *bool first) {
     bool has = false;
-    for (i in 0..node.slots.size) { if (node.slots.data[i].kind == 0 || node.slots.data[i].kind == 3) { has = true; } }
+    for (i in 0..node.slots.size) {
+        Slot one = node.slots.data[i];
+        if ((one.kind == 0 || one.kind == 3) && !one.hidden) { has = true; }
+    }
     if (has) {
         String_append(out, *first ? "" : ", ");
         *first = false;
@@ -305,7 +308,7 @@ void _ui_driver_state_node(*String out, *Node node, *bool first) {
         bool comma = false;
         for (i in 0..node.slots.size) {
             Slot slot = node.slots.data[i];
-            if (slot.kind != 0 && slot.kind != 3) { continue; }
+            if ((slot.kind != 0 && slot.kind != 3) || slot.hidden) { continue; }
             if (comma) { String_append(out, ", "); }
             comma = true;
             _ui_driver_value(out, slot);
@@ -313,4 +316,26 @@ void _ui_driver_state_node(*String out, *Node node, *bool first) {
         String_append(out, "]}");
     }
     for (i in 0..node.children.size) { _ui_driver_state_node(out, node.children.data[i], first); }
+}
+
+// Each Navigator under `node` with its scope path and its stack, for `state` (internal).
+void _ui_driver_navigators(*String out, *Node node, *bool first) {
+    for (i in 0..node.slots.size) {
+        Slot slot = node.slots.data[i];
+        if (slot.kind != 6 || slot.data == null) { continue; }
+        *Router router = (*Router)slot.data;
+        String_append(out, *first ? "{\"path\": " : ", {\"path\": ");
+        *first = false;
+        String path;
+        ui_node_path(node, &path);
+        ui_json_string(out, path.data);
+        String_free(&path);
+        String_append(out, ", \"routes\": [");
+        for (r in 0..router.stack.size) {
+            if (r > 0) { String_append(out, ", "); }
+            ui_json_string(out, router.stack.data[r].data);
+        }
+        String_append(out, "]}");
+    }
+    for (i in 0..node.children.size) { _ui_driver_navigators(out, node.children.data[i], first); }
 }

@@ -182,6 +182,9 @@ void navigation_covered() {
     while (at != null && at.kind != 14) { at = at.parent; }
     check(at != null && at.props[23] == 1, "the Go found is on the screen that shows");
     String_free(&error);
+    string st = drive("{\"op\": \"state\"}");
+    check(has(st, "\"navigators\": [{\"path\": \"Navigator[0]\", \"routes\": [\"/\", \"/next\"]}]"),
+        "state lists each navigator's stack");
     ui_shutdown();
     nav_covered_router.free();
     balanced("navigation covered leak");
