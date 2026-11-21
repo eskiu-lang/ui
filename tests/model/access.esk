@@ -91,6 +91,8 @@ void kit_access() {
     check(strcmp((string)text.data, "15 de noviembre de 2026") == 0, "a Spanish date");
     kit_text_item(kit_text.weekdays, 1, &text);
     check(strcmp((string)text.data, "L") == 0 && kit_text.first_weekday == 1, "Spanish weekdays from Monday");
+    kit_text_item(kit_text.weekday_names, 3, &text);
+    check(strcmp((string)text.data, "miércoles") == 0, "a weekday's name for a screen reader");
     String_free(&text);
     kit_text = kit_text_english();
     Ui runtime;

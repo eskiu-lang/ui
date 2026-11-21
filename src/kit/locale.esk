@@ -3,13 +3,14 @@
 // Part of <ui/kit> (src/kit.esk imports every part).
 
 // The words the kit shows and says, English by default. Lists are comma separated. `weekdays`
-// are the initials from Sunday; `first_weekday` is the day a Calendar's weeks start on (0
+// are the initials from Sunday, and `weekday_names` the names a screen reader says for them; `first_weekday` is the day a Calendar's weeks start on (0
 // Sunday, 1 Monday). `date` and `month_year` are patterns with {day}, {month} and {year}.
 // `colors` names ColorPicker's swatches in order. Set `kit_text` before mounting:
 // `kit_text = kit_text_for(ui_locale());`, or fields of your own.
 struct KitText {
     string months = "January,February,March,April,May,June,July,August,September,October,November,December";
     string weekdays = "S,M,T,W,T,F,S";
+    string weekday_names = "Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday";
     int first_weekday = 0;
     string date = "{month} {day}, {year}";
     string month_year = "{month} {year}";
@@ -29,7 +30,8 @@ KitText kit_text_english() { return KitText{}; }
 // The kit's words in Spanish, weeks from Monday.
 KitText kit_text_spanish() {
     return KitText{months: "enero,febrero,marzo,abril,mayo,junio,julio,agosto,septiembre,octubre,noviembre,diciembre",
-                   weekdays: "D,L,M,M,J,V,S", first_weekday: 1, date: "{day} de {month} de {year}",
+                   weekdays: "D,L,M,M,J,V,S", weekday_names: "domingo,lunes,martes,miércoles,jueves,viernes,sábado",
+                   first_weekday: 1, date: "{day} de {month} de {year}",
                    month_year: "{month} de {year}", previous_month: "Mes anterior", next_month: "Mes siguiente",
                    progress: "Progreso", color: "Color",
                    colors: "Rojo,Naranja,Ámbar,Lima,Verde,Cian,Azul,Índigo,Violeta,Rosa,Gris,Negro", delete: "Eliminar"};

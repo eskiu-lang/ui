@@ -56,9 +56,14 @@ void Calendar(Date selected, escaping fn(Date)->void on_select UI_LOC) {
                 for (i in 0..7) {
                     String letter;
                     defer String_free(&letter);
-                    kit_text_item(kit_text.weekdays, (i + kit_text.first_weekday) % 7, &letter);
+                    String name;
+                    defer String_free(&name);
+                    int day = (i + kit_text.first_weekday) % 7;
+                    kit_text_item(kit_text.weekdays, day, &letter);
+                    kit_text_item(kit_text.weekday_names, day, &name);
                     string text = letter.data;
-                    Row(Style{width: 1, grow: 1, justify: JustifyCenter}) {
+                    // The initial on screen, the day's name to a screen reader.
+                    Row(Style{width: 1, grow: 1, justify: JustifyCenter, label: name.data}) {
                         TextWith(Style{font_size: 12, font_weight: 600, color: kit.muted}, text);
                     }
                 }

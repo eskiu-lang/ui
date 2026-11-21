@@ -15,7 +15,8 @@ void SegmentedControl(string options, int selected, escaping fn(int)->void on_ch
             Pressable(Style{grow: 1, padding: 8, min_height: 44, radius: kit.radius - 2, background: on ? kit.surface : -1,
                             align: AlignCenter, justify: JustifyCenter, label: name, role: RoleTab, selected: on},
                 void() { on_change(index); }) {
-                TextWith(Style{font_size: kit.body_size - 2, font_weight: 600, color: on ? kit.ink : kit.muted}, name);
+                // Both in ink (muted on the track falls under 4.5:1); the raised one is bolder.
+                TextWith(Style{font_size: kit.body_size - 2, font_weight: on ? 600 : 500, color: kit.ink}, name);
             }
         }
         kit_free_options(&items);
