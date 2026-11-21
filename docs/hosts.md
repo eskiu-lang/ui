@@ -67,8 +67,8 @@ platform (the props are in docs/protocol.md and src/core/wire.esk). What a platf
 | Host | What it cannot say or do |
 |---|---|
 | Web | No screen reader detection (`ui_screen_reader()` is false). Autocorrect off is Safari's attribute and `spellcheck`. |
-| iOS | No checkbox or radio trait: a checkbox's state is spoken as English words ("checked", "unchecked", "mixed"), and so are "expanded" and "collapsed" before iOS 18; an app can pass its own words in `Style.value`. A `RoleSlider` on a view that is not a slider is announced as adjustable without increment and decrement. A multiline field cannot be secure. |
-| Android | Roles with no widget class (link, tab, menu, menu item, alert, search) get an English role description. |
+| iOS | A checkbox is a toggle button, its state "on" or "off" in the user's language (a radio and a checked menu item are "selected"); with words of the app's in `Style.value` it says those, and "selected" when checked. UIKit has no word for a mixed check, nor for "expanded" and "collapsed" before iOS 18: those are said in English only to a user whose language is English, and otherwise come from `Style.value` or are not said. A `RoleSlider` on a view that is not a slider is announced as adjustable without increment and decrement. A multiline field cannot be secure. |
+| Android | Roles are widget classes TalkBack names in the user's language: a link and a menu item are buttons, a tab is ActionBar's tab, a tab list a `TabWidget`. Android has no class for a menu, an alert, a search landmark, a link or a menu item as such, nor a state for a mixed check or a disclosure: those words are said in English only to a user whose language is English (a role description, the state description), and otherwise come from `Style.value` or are left to TalkBack's expand and collapse actions. |
 | macOS | No keyboard type, return key label or capitalization. No system text size. Some autofill kinds need macOS 14. A multiline field cannot be secure. |
 | Linux | No autofill and no return key label; a multiline field has no placeholder. A role set after the element is on screen re-inserts it, which can move the focus. |
 | Windows | MSAA has no heading, switch or search role. No capitalization, autocorrect, autofill or return key label; the number keyboard takes digits only. A click on a disabled control inside a pressable can reach the pressable. |
@@ -349,6 +349,22 @@ and serves a web front end in the platform's webview (`hosts/macos/webapp.m`,
 the program's URL schemes, dialogs and windows, and nothing of the commit protocol. See
 [web apps](webapp.md).
 
+## Direction, text color and text size on iOS and Android
+
+- **Right to left.** When the user's language is written right to left, Yoga lays the tree out
+  right to left: rows, `justify` and `align` start and end, and grids mirror, and so do the
+  screens' slides and, on iOS, the back swipe (from the right edge). `left`, `right` and the
+  sides' padding and margin stay physical, as CSS's do under `dir="rtl"`. iOS forces each view's
+  `semanticContentAttribute` (UIKit follows the app's own localizations, which an app may not
+  have); Android sets the window's layout direction, with `supportsRtl` in the manifest.
+- **Text with no color.** iOS draws it in `labelColor`. Android draws it in the platform theme's
+  primary text color for the current night mode, and again when dark mode turns on or off while
+  the app runs (the activity handles `uiMode` itself); the window behind the app follows too,
+  and the splash's theme has a night variant (`values-night`).
+- **Text size.** iOS scales every font, custom ones too, with `UIFontMetrics` and sets them
+  again on `UIContentSizeCategoryDidChangeNotification`; a line height scales with them.
+  Android sizes text in sp. Both lay the tree out again after a change.
+
 ## The driver
 
 A dev build (`ui serve`) has the driver `ui agent` talks to ([agents](agents.md)). The core
@@ -364,6 +380,9 @@ driver's clock.
 | screenshot (by `ui agent`) | the headless browser's DevTools | `simctl io screenshot` | `adb exec-out screencap` | the host draws its content view into a bitmap (`cacheDisplayInRect:`), in sRGB | the host snapshots its content (`gtk_widget_snapshot_child`) and renders it with the window's GSK renderer |
 | memory (`perf`) | the wasm heap | the process's footprint | the native and Java heaps | the process's footprint | the process's resident set |
 | start (`perf`'s cold start) | `performance.timeOrigin` | the process's start time (`sysctl`) | the process's start time (`/proc/self/stat`) | the process's start time (`sysctl`) | the process's start time (`/proc/self/stat`) |
+
+On iOS and Android `layout`'s `visible` is false for a view that is hidden, outside the window or
+outside a scroll view's viewport (scrolled away).
 
 On Windows the channel is TCP on 127.0.0.1:8770 in the app (`hosts/driver.h` over Winsock);
 tap is a button's `BM_CLICK` (a switch's too), a pressable's or a modal's press, a field's focus;

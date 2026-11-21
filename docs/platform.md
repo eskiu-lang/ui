@@ -115,7 +115,9 @@ what is under it is inert, and focus goes into it and back.
 or `PlatformDesktop` (the native macOS, Linux and Windows hosts), known when the app is
 compiled; `ui_platform_name()` spells it. `ui_locale()` is the
 user's language as a BCP 47 tag (`"es-MX"`), and `ui_is_rtl()` says whether it is written
-right to left. Layout does not mirror for a right-to-left language yet.
+right to left. On iOS and Android the layout then mirrors: rows run from the right, `justify`
+and `align` start and end mirror, and so do grids; `left`, `right` and the sides' padding and
+margin stay where they are, as in CSS (docs/hosts.md has the details).
 
 ## The window
 
