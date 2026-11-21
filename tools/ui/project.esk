@@ -358,3 +358,14 @@ void Project_native_archives(Project* self, string platform, List<String>* out) 
         String_free(&text);
     }
 }
+
+// The driver's port of a desktop dev app of the project at `root` (UI_AGENT_PORT when set):
+// one of its own, from its path, so an app another project left running never answers.
+// ui serve's launch passes it to the app and `ui agent` connects to it.
+int desktop_driver_port(string root) {
+    string value = env_get("UI_AGENT_PORT");
+    if (value != null && value[0] != 0) { return atoi(value); }
+    uint64 h = 1469598103934665603;
+    for (int i = 0; root != null && root[i] != 0; i++) { h = (h ^ (uint64)(uint8)root[i]) * 1099511628211; }
+    return 20000 + (int)(h % 20000);
+}
