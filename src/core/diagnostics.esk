@@ -49,6 +49,20 @@ void ui_node_path(*Node node, *String out) {
     steps.free();
 }
 
+// "FILE:LINE:COL" of the app's code that made `node` (in a UI_SRCLOC build; a package's
+// element gives the app's call that led to it), else null; the caller frees it (internal).
+string _ui_at_text(*Node node) {
+#ifdef UI_SRCLOC
+    UiSourceLoc at = _ui_app_at(node);
+    if (at.file == null) { return null; }
+    String text;
+    String_appendf(&text, "%s:%d:%d", _ui_source_file(at.file), at.line, at.col);
+    return text.data;
+#else
+    return null;
+#endif
+}
+
 // Prints `message` and the running block's scope path to stderr, then aborts.
 void ui_fail(string message) { ui_fail_node(message, ui == null ? null : ui.builder); }
 

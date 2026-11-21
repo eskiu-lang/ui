@@ -77,13 +77,18 @@ string ui_where_name(int where) {
 
 // Hands an error to the ui_on_error handler (an exception it throws is ignored), or prints
 // it to stderr when there is none.
-void ui_report_error(UiError error) {
+void ui_report_error(UiError error) { _ui_report_error_at(error, null); }
+
+// ui_report_error with "\n  at FILE:LINE:COL" after the scope path when `at` is known (a
+// UI_SRCLOC build) (internal).
+void _ui_report_error_at(UiError error, string at) {
     if (ui.has_on_error) {
         try { ui.on_error(error); } catch (_) {}
         return;
     }
     String message;
     String_appendf(&message, "ui: error in %s: %s\n  in %s", ui_where_name(error.where), error.text, error.path);
+    if (at != null) { String_appendf(&message, "\n  at %s", at); }
     println_err(message.data);
 #ifdef UI_TEST
     _ui_driver_log("error", &message.data[4]);
@@ -107,14 +112,17 @@ void ui_boundary_block() {
         bool ok = true;
         string text = null;
         String path;
+        string at = null;
         try { state.content(); } catch (_) {
             ok = false;
             text = ui_copy(exception_text());
             ui_scope_path(&path);
+            at = _ui_at_text(ui.builder);
         }
         if (ok) { return; }
         ui_rollback(node, from, writes, journal, evaluating);
-        _ui_boundary_fail(node, text, path.data);
+        _ui_boundary_fail(node, text, path.data, at);
+        free(at);
         free(text);
         String_free(&path);
     }
@@ -134,8 +142,10 @@ void ui_boundary_block() {
     }
     String path;
     ui_scope_path(&path);
+    string at = _ui_at_text(ui.builder);
     ui_rollback(boundary, from, writes, journal, evaluating);
-    _ui_boundary_fail(boundary, text, path.data);
+    _ui_boundary_fail(boundary, text, path.data, at);
+    free(at);
     String_free(&path);
     boundary.current = true;
     return boundary;
@@ -143,7 +153,7 @@ void ui_boundary_block() {
 
 // Marks the boundary `node` as failed with the error's text and scope path (copied; the
 // old ones are freed after the commit) and reports it (internal).
-void _ui_boundary_fail(*Node node, string text, string path) {
+void _ui_boundary_fail(*Node node, string text, string path, string at) {
     *Boundary state = node.boundary;
     string old_text = state.text;
     string old_path = state.path;
@@ -152,7 +162,7 @@ void _ui_boundary_fail(*Node node, string text, string path) {
     state.where = 1;
     state.text = ui_copy(text);
     state.path = ui_copy(path);
-    ui_report_error(UiError{1, state.path, state.text, node.id});
+    _ui_report_error_at(UiError{1, state.path, state.text, node.id}, at);
 }
 
 // Undo what a failed render did since its save point, then empty the boundary: the commit is
