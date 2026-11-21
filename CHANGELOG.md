@@ -79,6 +79,23 @@ keeps a web app's module about a sixth smaller).
 - A runtime error in a build with source positions ends with the app's line (`at
   src/main.esk:12:5`), and an element a package made points at the app's call that led to it
   in the tree (`file`, `line`), with the package's own line as `made_at`.
+- The macOS, Linux and Windows hosts take the layout and text props (padding per side,
+  margins, `text_align`, `max_lines`, `shrink`, padding on a Text), `line_height`, `italic`,
+  `z_index`, `clip`, `layout_ms`, a ModalWith's presentation and appearance, `ui_on_image`,
+  and a Switch's or Slider's accent.
+- Right to left on macOS, Linux and Windows: with a right-to-left system language the layout
+  mirrors (rows, start and end, grids) and the text starts from the right.
+- Pull to refresh on the desktops: the scroll pulled past its top (a trackpad's or the wheel's
+  elastic scroll on macOS, GTK's overshoot on Linux, the wheel turned up at the top on
+  Windows), or View > Refresh, with a spinner at the top of the scroll.
+- Linux: a real backdrop blur (what is behind the box drawn again and blurred), and a share
+  dialog that copies or sends an email through the desktop portal.
+- Windows: shadows, scale and rotation (a transformed picture of the window, which still
+  takes clicks), a backdrop blur, announcements through UI Automation's notification event, and
+  UI Automation's heading level, switch type and search landmark.
+- The desktop hosts' own conformance runs (`python3 tools/conformance.py --host-only HOST`) and
+  asset updates on the native desktop hosts (`tests/desktop/updates.py`), in CI on macOS, Linux
+  and Windows; CI also compiles the Win32 host's source with MSVC.
 
 ### Changed
 
@@ -123,6 +140,10 @@ keeps a web app's module about a sixth smaller).
 
 ### Fixed
 
+- Linux and Windows: `disabled` above a Modal reaches what is in it.
+- Windows: a click on a disabled control inside a pressable no longer presses the pressable.
+- `ui build windows` on Windows compiles packages' native code (an object's name kept the
+  drive's colon and the backslashes).
 - An app that fails as it starts (a `RefreshControl` before no `Scroll`, a duplicate key on
   the first frame) tells `ui agent` and `ui test` why at once on the web; before they waited
   80 seconds with no message.
