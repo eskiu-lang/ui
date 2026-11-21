@@ -38,6 +38,8 @@ final class UiProps {
     final HashMap<Integer, GradientDrawable> paints = new HashMap<>();
     final HashMap<Integer, int[]> borders = new HashMap<>();
     private final HashMap<Integer, int[]> fonts = new HashMap<>();
+    // Italic texts (Style.italic).
+    private final java.util.HashSet<Integer> italics = new java.util.HashSet<>();
     // The nodes with a Style.blur, and the translucent fill that stands in for it.
     private final java.util.HashSet<Integer> blurs = new java.util.HashSet<>();
     // Background gradients (Style.gradient) by node: from, to (RGBA) and the angle.
@@ -60,13 +62,13 @@ final class UiProps {
     // A removed node's state.
     void forget(int id) {
         activeScreens.remove(id);
-        paints.remove(id); borders.remove(id); fonts.remove(id); fontFiles.remove(id); blurs.remove(id); gradients.remove(id); backgrounds.remove(id);
+        paints.remove(id); borders.remove(id); fonts.remove(id); italics.remove(id); fontFiles.remove(id); blurs.remove(id); gradients.remove(id); backgrounds.remove(id);
         refreshers.remove(id);
         shownScreens.remove(id); sliderRanges.remove(id); transforms.remove(id); motions.remove(id); pans.remove(id);
     }
     // Every node's state, when a new build of the app's code starts.
     void clear() {
-        paints.clear(); borders.clear(); fonts.clear(); fontFiles.clear(); blurs.clear(); gradients.clear(); backgrounds.clear();
+        paints.clear(); borders.clear(); fonts.clear(); italics.clear(); fontFiles.clear(); blurs.clear(); gradients.clear(); backgrounds.clear();
         pans.clear(); sliderRanges.clear(); transforms.clear();
         motions.clear(); refreshers.clear(); activeScreens.clear(); leaving.clear();
     }
@@ -81,7 +83,9 @@ final class UiProps {
         pans.put(id, tracker);
         view.setOnTouchListener(tracker::touch);
     }
-    private android.animation.TimeInterpolator interpolator(int easing) {
+    // The node's easing (prop 40), for its transition and its layout animation.
+    int easingOf(int id) { int[] motion = motions.get(id); return motion == null ? 0 : motion[1]; }
+    android.animation.TimeInterpolator interpolator(int easing) {
         if (easing == 1) return new android.view.animation.DecelerateInterpolator();
         if (easing == 2) return new android.view.animation.AccelerateInterpolator();
         if (easing == 3) return new android.view.animation.LinearInterpolator();
@@ -154,7 +158,13 @@ final class UiProps {
             TextView text = (TextView)entry.getValue();
             if (fonts.containsKey(entry.getKey())) applyFont(entry.getKey(), text);
             else text.setTextSize(TypedValue.COMPLEX_UNIT_PX, text.getTextSize() * ratio);
+            activity.style.rescale(entry.getKey(), text);
         }
+    }
+    // Style.italic: the face slanted.
+    void italic(int id, View view, boolean on) {
+        if (on) italics.add(id); else italics.remove(id);
+        applyFont(id, view);
     }
     // Font sizes are in SP: the system's text size applies.
     private void applyFont(int id, View view) {
@@ -164,9 +174,10 @@ final class UiProps {
         text.setTextSize(TypedValue.COMPLEX_UNIT_SP, font[0] > 0 ? font[0] : 18);
         String file = fontFiles.get(id);
         Typeface custom = file != null ? typeface(file) : null;
-        if (custom != null) text.setTypeface(custom);
-        else if (Build.VERSION.SDK_INT >= 28) text.setTypeface(Typeface.create(Typeface.DEFAULT, font[1] > 0 ? font[1] : 400, false));
-        else text.setTypeface(Typeface.DEFAULT);
+        boolean italic = italics.contains(id);
+        if (custom != null) text.setTypeface(italic ? Typeface.create(custom, Typeface.ITALIC) : custom);
+        else if (Build.VERSION.SDK_INT >= 28) text.setTypeface(Typeface.create(Typeface.DEFAULT, font[1] > 0 ? font[1] : 400, italic));
+        else text.setTypeface(Typeface.defaultFromStyle(italic ? Typeface.ITALIC : Typeface.NORMAL));
     }
 
     // An int prop: the code in kind, the value in before.
@@ -230,10 +241,6 @@ final class UiProps {
             return;
         }
         if (code == 3) { if (value != 0) view.requestFocus(); else view.clearFocus(); }
-        else if (code == 2 && (view instanceof EditText || (view instanceof Button && !(view instanceof Switch)))) {
-            int p = Math.round(value * d);
-            if (value > 0) view.setPadding(p, p, p, p);
-        }
         else if (code == 50 || code == 51 || (code == 8 && gradients.containsKey(id))) {
             int[] g = gradients.computeIfAbsent(id, k -> new int[] {backgrounds.getOrDefault(id, 0), 0, 180});
             if (code == 8) g[0] = value; else if (code == 50) g[1] = value; else g[2] = value;
@@ -269,11 +276,7 @@ final class UiProps {
                 fade.start();
             }
         }
-        else if (code == 9 && view instanceof TextView) {
-            if (value != 0) ((TextView)view).setTextColor(argb(value));
-            // A field's placeholder: its text color, faded.
-            if (value != 0 && view instanceof EditText) ((EditText)view).setHintTextColor((argb(value) & 0x00ffffff) | 0x80000000);
-        } else if (code == 10 || code == 11) {
+        else if (code == 10 || code == 11) {
             int[] font = fonts.computeIfAbsent(id, k -> new int[] {0, 0});
             font[code - 10] = value;
             applyFont(id, view);
@@ -366,18 +369,20 @@ final class UiProps {
         android.graphics.drawable.Drawable drawable = view.getDrawable();
         if (drawable != null) { drawable.setFilterBitmap(!pixelated.contains(view)); view.invalidate(); }
     }
-    private void showImage(ImageView view, Bitmap bitmap) {
+    private void showImage(int id, ImageView view, Bitmap bitmap) {
+        if (activity.nodes.get(id) != view) return;
         view.setImageBitmap(bitmap);
         filterImage(view);
+        activity.style.imageLoaded(id, bitmap != null);
     }
-    void loadImage(ImageView view, String source) {
+    void loadImage(int id, ImageView view, String source) {
         view.setImageDrawable(null);
         if (source.isEmpty()) return;
         if (source.startsWith("/") || source.startsWith("file://")) {
             String path = source.startsWith("file://") ? source.substring(7) : source;
             new Thread(() -> {
                 Bitmap bitmap = BitmapFactory.decodeFile(path);
-                activity.runOnUiThread(() -> showImage(view, bitmap));
+                activity.runOnUiThread(() -> showImage(id, view, bitmap));
             }).start();
             return;
         }
@@ -385,13 +390,22 @@ final class UiProps {
             new Thread(() -> {
                 try (java.io.InputStream in = new java.net.URL(source).openStream()) {
                     Bitmap bitmap = BitmapFactory.decodeStream(in);
-                    activity.runOnUiThread(() -> showImage(view, bitmap));
-                } catch (Exception error) { /* a failed load leaves the view empty */ }
+                    activity.runOnUiThread(() -> showImage(id, view, bitmap));
+                } catch (Exception error) {
+                    // A failed load leaves the view empty.
+                    activity.runOnUiThread(() -> showImage(id, view, null));
+                }
             }).start();
             return;
         }
+        Bitmap bitmap = null;
         try (java.io.InputStream in = activity.getAssets().open(source)) {
-            showImage(view, BitmapFactory.decodeStream(in));
+            bitmap = BitmapFactory.decodeStream(in);
         } catch (Exception error) { /* a missing asset leaves the view empty */ }
+        // Shown now, for this commit's layout; reported after the commit, as the web does.
+        view.setImageBitmap(bitmap);
+        filterImage(view);
+        boolean loaded = bitmap != null;
+        view.post(() -> { if (activity.nodes.get(id) == view) activity.style.imageLoaded(id, loaded); });
     }
 }

@@ -37,10 +37,12 @@ final class UiTree {
                 view = button;
             } else if (kind == 3) {
                 TextView label = new TextView(a); label.setTextSize(18); view = label;
+                a.style.defaultColor(id, label);
             } else if (kind == 5) {
                 EditText field = new EditText(a);
                 field.setSingleLine(true);
                 field.setTextSize(18);
+                a.style.defaultColor(id, field);
                 field.addTextChangedListener(new TextWatcher() {
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -146,12 +148,12 @@ final class UiTree {
             else if (kind == 1) view.setContentDescription(text.isEmpty() ? null : text);
             else if (kind == 5) a.props.fontFile(id, view, text);
             else if (kind == 2 && view instanceof EditText) ((EditText)view).setHint(text);
-            else if (kind == 3 && view instanceof ImageView) a.props.loadImage((ImageView)view, text);
+            else if (kind == 3 && view instanceof ImageView) a.props.loadImage(id, (ImageView)view, text);
         } else if (op == 2) {
             // 57 to 64 accessibility (UiAccess), 65 to 72 a text input's editing (UiInput).
             if (kind >= 57 && kind <= 64) a.access.prop(id, view, kind, before);
             else if (kind >= 65 && kind <= 72) { if (view instanceof EditText) a.input.prop(id, (EditText)view, kind, before); }
-            else a.props.prop(id, view, kind, before);
+            else if (!a.style.prop(id, view, kind, before)) a.props.prop(id, view, kind, before);
         }
         else if (op == 4 || op == 5) {
             if (modalIds.contains(id)) {
@@ -159,6 +161,7 @@ final class UiTree {
                 if (view.getParent() == null) {
                     ((FrameLayout)a.findViewById(android.R.id.content)).addView(view,
                         new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                    a.style.modalInserted(id);
                 }
                 return;
             }
@@ -183,7 +186,7 @@ final class UiTree {
                 view.animate().translationX(a.root.getWidth()).setDuration(UiProps.kSlide)
                     .withEndAction(() -> { owner.removeView(view); props.leaving.remove(view); }).start();
             } else if (owner != null && !props.insideLeaving(view)) owner.removeView(view);
-            props.forget(id); a.access.forget(id, view); a.input.forget(id);
+            props.forget(id); a.access.forget(id, view); a.input.forget(id); a.style.forget(id);
             nodes.remove(id); generations.remove(id);
             modalIds.remove(id); a.nativeViews.remove(id); a.nativeTypes.remove(id);
             scrollViewports.remove(id);
@@ -210,6 +213,8 @@ final class UiTree {
         view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
         // The root's own children sit inside its padding.
         if (view.getParent() == root) { l += root.getPaddingLeft(); t += root.getPaddingTop(); }
+        // Style.layout_ms moves it there over time.
+        if (activity.style.place(id, view, l, t, w, h)) return;
         view.layout(l, t, l + w, t + h);
     }
     private void reportScroll(int id, ScrollView view) {

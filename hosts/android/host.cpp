@@ -45,6 +45,10 @@ static std::vector<int> modals;
 // (ui_on_layout): x, y, width, height in points, relative to the parent.
 static std::unordered_map<int, int> generations;
 static std::unordered_map<int, std::array<int, 6>> layouts;
+// Style.shrink per node, kept with a growing child's shrink (prop 6).
+static std::unordered_map<int, int> shrinks;
+// The layout's direction: right to left when the user's language is written so.
+static YGDirection direction = YGDirectionLTR;
 
 // An edge offset that is not set (kUnset in src/core/state.esk).
 static const int kUnset = -1000000;
@@ -144,12 +148,25 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             else if (kind == 6) {
                 // A growing child also shrinks to its parent, so a scroll under it stays in the window.
                 YGNodeStyleSetFlexGrow(node, before);
-                if (!scrolls.count(id)) YGNodeStyleSetFlexShrink(node, before > 0 ? 1 : 0);
+                if (!scrolls.count(id)) YGNodeStyleSetFlexShrink(node, std::max(shrinks[id], before > 0 ? 1 : 0));
             }
             else if (kind == 7) YGNodeStyleSetFlexWrap(node, before ? YGWrapWrap : YGWrapNoWrap);
             // A font, or a text input's line mode and type (multiline, secure, keyboard), change
             // the measured size.
-            else if ((kind == 10 || kind == 11 || kind == 65 || kind == 66 || kind == 68) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
+            else if ((kind == 10 || kind == 11 || kind == 65 || kind == 66 || kind == 68 || kind == 81 || kind == 82 || kind == 85 ||
+                      kind == 86) && YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
+            // A side's padding (0: prop 2's) and the margins; a measured view pads itself.
+            else if (kind >= 73 && kind <= 76) {
+                const YGEdge edges[] = {YGEdgeTop, YGEdgeRight, YGEdgeBottom, YGEdgeLeft};
+                YGNodeStyleSetPadding(node, edges[kind - 73], YGNodeHasMeasureFunc(node) || !before ? YGUndefined : static_cast<float>(before));
+                if (YGNodeHasMeasureFunc(node)) YGNodeMarkDirty(node);
+            } else if (kind >= 77 && kind <= 80) {
+                const YGEdge edges[] = {YGEdgeTop, YGEdgeRight, YGEdgeBottom, YGEdgeLeft};
+                YGNodeStyleSetMargin(node, edges[kind - 77], before);
+            } else if (kind == 83) {
+                shrinks[id] = before;
+                if (!scrolls.count(id)) YGNodeStyleSetFlexShrink(node, std::max<float>(before, YGNodeStyleGetFlexGrow(node) > 0 ? 1 : 0));
+            }
             else if (kind == 12) YGNodeStyleSetBorder(node, YGEdgeAll, before);
             else if (kind == 23) YGNodeStyleSetDisplay(node, before ? YGDisplayFlex : YGDisplayNone);
             else if (kind == 30) { if (before) layouts[id] = {-1, -1, -1, -1, -1, -1}; else layouts.erase(id); }
@@ -182,7 +199,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             YGNodeInsertChild(owner, node, index);
         } else if (op == 6) {
             if (YGNodeGetParent(node)) YGNodeRemoveChild(YGNodeGetParent(node), node);
-            ui_grid_free(node); nodes.erase(id); scrolls.erase(id); generations.erase(id); layouts.erase(id);
+            ui_grid_free(node); nodes.erase(id); scrolls.erase(id); generations.erase(id); layouts.erase(id); shrinks.erase(id);
             modals.erase(std::remove(modals.begin(), modals.end(), id), modals.end());
         }
     }
@@ -207,7 +224,7 @@ static void ui_host_command(int request, int command, int count, const char **st
 static void layoutModals() {
     float width = env->CallFloatMethod(activity, screenWidthMethod), height = env->CallFloatMethod(activity, screenHeightMethod);
     checked();
-    for (int id : modals) { ui_grid_calculate(nodes.at(id), width, height, YGDirectionLTR); place(nodes.at(id)); }
+    for (int id : modals) { ui_grid_calculate(nodes.at(id), width, height, direction); place(nodes.at(id)); }
 }
 static void ui_host_named(int id, const char *name, const char *value) {
     jstring n = env->NewStringUTF(name), v = env->NewStringUTF(value);
@@ -220,7 +237,7 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
     ui_host_ready();
 }
 extern "C" void ui_host_ready() {
-    ui_grid_calculate(root, env->CallFloatMethod(activity, widthMethod), env->CallFloatMethod(activity, heightMethod), YGDirectionLTR);
+    ui_grid_calculate(root, env->CallFloatMethod(activity, widthMethod), env->CallFloatMethod(activity, heightMethod), direction);
     checked(); place(root);
     layoutModals();
     env->CallVoidMethod(activity, committedMethod); checked();
@@ -359,6 +376,9 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeSubmit(JNIE
     ui_dispatch_submit(id, generation, chars);
     env->ReleaseStringUTFChars(text, chars);
 }
+extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeImage(JNIEnv *current, jobject, jint id, jint generation, jint loaded) {
+    env = current; ui_dispatch_image(id, generation, loaded);
+}
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeFocus(JNIEnv *current, jobject, jint id, jint generation, jint focused) {
     env = current; ui_dispatch_focus(id, generation, focused);
 }
@@ -385,7 +405,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeWindow(JNIE
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeTick(JNIEnv *current, jobject) { env = current; ui_tick(); }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeLayout(JNIEnv *current, jobject, jfloat width, jfloat height) {
-    env = current; ui_grid_calculate(root, width, height, YGDirectionLTR); place(root); layoutModals();
+    env = current; ui_grid_calculate(root, width, height, direction); place(root); layoutModals();
 }
 extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeRefresh(JNIEnv *current, jobject, jint id, jint generation) {
     env = current; ui_dispatch_refresh(id, generation);
@@ -429,7 +449,7 @@ extern "C" JNIEXPORT jint JNICALL Java_org_eskiu_ui_UiActivity_nativeReload(JNIE
 #ifdef UI_RELOAD
     env = current;
     for (auto &entry : nodes) ui_grid_free(entry.second);
-    nodes.clear(); scrolls.clear(); modals.clear(); generations.clear(); layouts.clear();
+    nodes.clear(); scrolls.clear(); modals.clear(); generations.clear(); layouts.clear(); shrinks.clear();
     const char *chars = env->GetStringUTFChars(path, nullptr);
     bool loaded = loadCore(chars);
     env->ReleaseStringUTFChars(path, chars);
@@ -506,6 +526,12 @@ extern "C" JNIEXPORT void JNICALL Java_org_eskiu_ui_UiActivity_nativeSystem(JNIE
         ui_host_ready();
     }
     lastScale = scale;
+    // A new direction: the tree laid out again, mirrored or back.
+    YGDirection now = rtl ? YGDirectionRTL : YGDirectionLTR;
+    if (now != direction) {
+        direction = now;
+        if (root) ui_host_ready();
+    }
     ui_report_appearance(dark);
     ui_report_accessibility(reader, still, scale);
     const char *tag = env->GetStringUTFChars(locale, nullptr);

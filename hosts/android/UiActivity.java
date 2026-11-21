@@ -29,6 +29,7 @@ public final class UiActivity extends Activity {
     native void nativeText(int id, int generation, String text);
     native void nativeSubmit(int id, int generation, String text);
     native void nativeFocus(int id, int generation, int focused);
+    native void nativeImage(int id, int generation, int loaded);
     native void nativeTick();
     native void nativeLayout(float width, float height);
     native void nativeStop();
@@ -69,6 +70,7 @@ public final class UiActivity extends Activity {
         float animations = android.provider.Settings.Global.getFloat(getContentResolver(), android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
         java.util.Locale locale = config.getLocales().get(0);
         boolean rtl = android.text.TextUtils.getLayoutDirectionFromLocale(locale) == View.LAYOUT_DIRECTION_RTL;
+        style.direction(rtl);
         nativeSystem(dark ? 1 : 0, reader ? 1 : 0, animations == 0f ? 1 : 0, Math.round(config.fontScale * 100),
                      locale.toLanguageTag(), rtl ? 1 : 0);
     }
@@ -82,6 +84,9 @@ public final class UiActivity extends Activity {
             props.rescaleFonts(nodes, config.fontScale / fontScale);
             fontScale = config.fontScale;
         }
+        // Dark mode on or off: text with no color of its own and the window follow it.
+        int night = config.uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        if (night != nightMode) { nightMode = night; style.nightChanged(); }
         reportSystem();
     }
 
@@ -90,6 +95,8 @@ public final class UiActivity extends Activity {
     final UiInput input = new UiInput(this);
     final UiTree tree = new UiTree(this);
     private float fontScale = 1f;
+    private int nightMode;
+    final UiStyle style = new UiStyle(this);
     final UiCommands commands = new UiCommands(this);
     private final UiDriver driver = new UiDriver(this);
     private final UiSelfTest selfTest = new UiSelfTest(this);
@@ -287,6 +294,7 @@ public final class UiActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         fontScale = getResources().getConfiguration().fontScale;
+        nightMode = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
         // A reload build (ui serve) loads the app's code from the library ui-reload names,
         // before anything here calls into it.
         String core = reloadPath();
@@ -372,7 +380,7 @@ public final class UiActivity extends Activity {
             if (view.getParent() instanceof ViewGroup) ((ViewGroup)view.getParent()).removeView(view);
         }
         root.removeAllViews();
-        nodes.clear(); generations.clear(); props.clear(); access.clear(); input.clear();
+        nodes.clear(); generations.clear(); props.clear(); access.clear(); input.clear(); style.clear();
         nativeViews.clear(); nativeTypes.clear(); tree.scrollViewports.clear(); tree.modalIds.clear();
         if (nativeReload(path) == 0) return;
         active = true;
@@ -447,6 +455,7 @@ public final class UiActivity extends Activity {
     }
     public void committed() {
         commits++; root.invalidate();
+        style.appear();
         if (splash != null && !splashHeld) hideSplash();
     }
     // The splash (ui.toml [splash]: the activity's org.eskiu.ui.splash color and the assets'
@@ -464,11 +473,7 @@ public final class UiActivity extends Activity {
         splash = new FrameLayout(this);
         if (color instanceof Integer) splash.setBackgroundColor((Integer)color);
         else if (color instanceof String) splash.setBackgroundColor(android.graphics.Color.parseColor((String)color));
-        else {
-            android.content.res.TypedArray a = getTheme().obtainStyledAttributes(new int[] {android.R.attr.colorBackground});
-            splash.setBackgroundColor(a.getColor(0, 0xffffffff));
-            a.recycle();
-        }
+        else splash.setBackgroundColor(style.background());
         try (java.io.InputStream in = getAssets().open("ui-splash.png")) {
             // A third of its pixels in dp, as the launch screen's xxhdpi bitmap.
             android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
@@ -487,10 +492,8 @@ public final class UiActivity extends Activity {
         splash = null;
         splashHeld = false;
         if (view == null) return;
-        // The theme's splash window background goes back to the platform's.
-        android.content.res.TypedArray a = getTheme().obtainStyledAttributes(new int[] {android.R.attr.colorBackground});
-        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(a.getColor(0, 0xffffffff)));
-        a.recycle();
+        // The theme's splash window background goes back to the platform's, light or dark.
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(style.background()));
         view.animate().alpha(0).setDuration(200).withEndAction(() -> {
             if (view.getParent() != null) ((ViewGroup)view.getParent()).removeView(view);
         });

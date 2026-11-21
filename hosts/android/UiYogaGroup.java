@@ -17,6 +17,25 @@ final class UiYogaGroup extends ViewGroup {
         // through the outline).
         setClipChildren(false);
         setClipToPadding(false);
+        // Children drawn, and touched, in z index order (Style.z_index).
+        setChildrenDrawingOrderEnabled(true);
+    }
+    // The children's order by z index, the children's own order among equals; null until
+    // asked for again after a change.
+    private int[] order;
+    void restack() { order = null; invalidate(); }
+    @Override public void onViewAdded(android.view.View child) { super.onViewAdded(child); order = null; }
+    @Override public void onViewRemoved(android.view.View child) { super.onViewRemoved(child); order = null; }
+    @Override protected int getChildDrawingOrder(int count, int i) {
+        if (order == null || order.length != count) {
+            Integer[] sorted = new Integer[count];
+            for (int k = 0; k < count; k++) sorted[k] = k;
+            java.util.Arrays.sort(sorted, (x, y) -> Integer.compare(UiStyle.zIndex.getOrDefault(getChildAt(x), 0),
+                                                                   UiStyle.zIndex.getOrDefault(getChildAt(y), 0)));
+            order = new int[count];
+            for (int k = 0; k < count; k++) order[k] = sorted[k];
+        }
+        return i < order.length ? order[i] : i;
     }
     @Override public boolean onInterceptTouchEvent(MotionEvent e) {
         UiPanTracker tracker = activity.props.pans.get(nodeId);
