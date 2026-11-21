@@ -1,16 +1,23 @@
 // The Windows desktop host with --webview: the web build in a WebView2 window. The tool compiles it with
 // the WebView2 SDK's header (its NuGet package, which tools/ui/windows.esk fetches) and puts
 // WebView2Loader.dll next to the executable. With no argument it shows the app bundled in
-// web/ beside the executable, served as https://app.assets/; an argument is a URL to open
-// instead (ui serve's). UI_RELEASE builds turn the developer tools off.
+// web/ beside the executable, served as https://app.assets/ through WebResourceRequested (a
+// path with no extension is a route and gets the page); an argument is a URL to open instead
+// (ui serve's). With asset updates (docs/updates.md, hosts/webview_updates.h) a file of the
+// bundle in use comes from %APPDATA%\NAME\ui-updates instead. UI_RELEASE builds turn the
+// developer tools off.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlwapi.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <winhttp.h>
 #include <stdio.h>
 #include <wchar.h>
+#include <string>
+#include <vector>
 #include <WebView2.h>
+#include "../webview_updates.h"
 
 typedef HRESULT(STDAPICALLTYPE* CreateEnvironmentFn)(
     PCWSTR browserExecutableFolder, PCWSTR userDataFolder, ICoreWebView2EnvironmentOptions* options,
@@ -19,6 +26,7 @@ typedef HRESULT(STDAPICALLTYPE* CreateEnvironmentFn)(
 static HWND g_hwnd = NULL;
 static ICoreWebView2Controller* g_controller = NULL;
 static ICoreWebView2* g_webview = NULL;
+static ICoreWebView2Environment* g_environment = NULL;
 static WCHAR g_target_url[2048] = {0};
 static WCHAR g_local_web_dir[MAX_PATH] = {0};
 static WCHAR g_name[MAX_PATH] = L"app";
@@ -96,6 +104,8 @@ public:
     }
 };
 
+#include "webview_serve.inc"
+
 class ControllerCreated : public Handler<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler> {
 public:
     ControllerCreated() : Handler(IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler) {}
@@ -132,16 +142,18 @@ public:
         g_webview->add_DocumentTitleChanged(title, &token);
         title->Release();
         if (g_local_web_dir[0] != 0) {
-            ICoreWebView2_3* wv3 = NULL;
-            HRESULT hr = g_webview->QueryInterface(IID_ICoreWebView2_3, (void**)&wv3);
-            if (FAILED(hr) || !wv3) {
-                report(L"This WebView2 Runtime is too old to show the bundled app", hr);
-                return S_OK;
-            }
-            wv3->SetVirtualHostNameToFolderMapping(L"app.assets", g_local_web_dir,
-                                                  COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
-            wv3->Release();
+            g_webview->AddWebResourceRequestedFilter(L"https://app.assets/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+            ResourceRequested* resources = new ResourceRequested();
+            g_webview->add_WebResourceRequested(resources, &token);
+            resources->Release();
         }
+#ifndef UI_RELEASE
+        // The page's console on standard output.
+        g_webview->AddScriptToExecuteOnDocumentCreated(UI_CONSOLE_SCRIPT, NULL);
+        MessageReceived* messages = new MessageReceived();
+        g_webview->add_WebMessageReceived(messages, &token);
+        messages->Release();
+#endif
         g_webview->Navigate(g_target_url);
         return S_OK;
     }
@@ -155,6 +167,8 @@ public:
             report(L"WebView2 could not start", errorCode);
             return S_OK;
         }
+        g_environment = environment;
+        g_environment->AddRef();
         ControllerCreated* created = new ControllerCreated();
         HRESULT hr = environment->CreateCoreWebView2Controller(g_hwnd, created);
         created->Release();
@@ -171,6 +185,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 GetClientRect(hwnd, &bounds);
                 g_controller->put_Bounds(bounds);
             }
+            return 0;
+        case WM_UI_UPDATE_DONE:
+            finishUpdate((UpdateJob*)lParam);
             return 0;
         case WM_DESTROY:
             if (g_webview) {
@@ -206,6 +223,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     PathCombineW(webDir, exeDir, L"web");
     WCHAR indexPath[MAX_PATH] = {0};
     PathCombineW(indexPath, webDir, L"index.html");
+    // Asset updates: %APPDATA%\NAME\ui-updates, as the Win32 host's data directory.
+    PWSTR roaming = NULL;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &roaming)) && roaming) {
+        g_updates_dir = std::wstring(roaming) + L"\\" + g_name + L"\\ui-updates";
+        CoTaskMemFree(roaming);
+        std::string state;
+        if (readAll(g_updates_dir + L"\\state", state)) ui_updates_parse(&g_updates, state.c_str());
+    }
     if (argc > 1 && argv[1][0]) {
         wcsncpy(g_target_url, argv[1], 2047);
     } else if (PathFileExistsW(indexPath)) {
