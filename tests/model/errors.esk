@@ -19,6 +19,8 @@ int error_where;
 int error_boundary;
 
 char[128] error_text;
+char[160] error_path;
+int timer_token;
 
 int fallback_runs;
 
@@ -57,6 +59,7 @@ void note_error(UiError error) {
     error_where = error.where;
     error_boundary = error.boundary;
     snprintf(&error_text[0], 128, "%s", error.text);
+    snprintf(&error_path[0], 160, "%s", error.path);
 }
 
 void strict_start(*Ui runtime) {
@@ -272,6 +275,25 @@ void handler_error() {
     strict_end("handler error leak");
 }
 
+// A timer's handler that throws is reported with the scope that made the timer.
+void timer_error() {
+    Ui runtime;
+    strict_start(&runtime);
+    ui_set_timer_host(void(int token, int ms, bool repeat) { timer_token = token; }, void(int token) {});
+    ui_mount() {
+        Scope("Clock", Key{}) {
+            use_timeout(10) { throw 3; }
+            Text("tick");
+        }
+    }
+    ui_frame();
+    ui_event_timer(timer_token);
+    ui_frame();
+    check(error_count == 1 && strstr((string)&error_path[0], "Clock") != null && strstr((string)&error_path[0], "(a timer)") != null,
+        "a timer's error names the scope that made it");
+    strict_end("timer error leak");
+}
+
 // An effect that throws is reported and keeps no cleanup; the effects after it run.
 void effect_error() {
     Ui runtime;
@@ -327,6 +349,7 @@ void errors() {
     boundary_cascade();
     boundary_memo();
     handler_error();
+    timer_error();
     effect_error();
     cleanup_error();
 }

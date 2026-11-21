@@ -536,8 +536,13 @@ bool ui_dispatch_event(*Event event) {
         ui.phase = phase;
         String path;
         *Node node = event.id > 0 && event.id < ui.by_id.size ? ui.by_id.data[event.id] : null;
-        if (node != null && node.generation == event.generation) { ui_node_path(node, &path); }
-        else { String_append(&path, "a handler"); }
+        // A timer's event carries its token, not a node: its scope is the one that made it.
+        *Node owner = event.kind == 12 ? _ui_timer_owner(event.id) : null;
+        if (owner != null) {
+            ui_node_path(owner, &path);
+            String_append(&path, " (a timer)");
+        } else if (event.kind != 12 && node != null && node.generation == event.generation) { ui_node_path(node, &path); }
+        else { String_append(&path, event.kind == 12 ? "a timer" : "a handler"); }
         ui_report_error(UiError{2, path.data, text, 0});
         String_free(&path);
         free(text);

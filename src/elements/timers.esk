@@ -3,7 +3,7 @@
 
 // A timer while its scope is mounted. The host keeps the clock (ui_set_timer_host); its
 // tick reaches the handler as an event, so the handler may set signals.
-struct UiTimer { int token; int ms; bool repeat; fn()->void handler; bool armed; bool removed; }
+struct UiTimer { int token; int ms; bool repeat; fn()->void handler; bool armed; bool removed; *Node owner; }
 
 // The host's side: start(token, ms, repeat) arms a timer, stop(token) disarms it; each tick
 // comes back as ui_event_timer(token). With none set, timers never fire.
@@ -48,6 +48,8 @@ void _ui_use_timer(int ms, bool repeat, escaping fn()->void handler) {
         timer.token = ++ui.next_timer;
         timer.ms = ms;
         timer.repeat = repeat;
+        // The scope that made it, for an error its handler throws (freed with that scope).
+        timer.owner = ui.builder;
         slot.data = timer;
         ui.timers.push(timer);
         slot.dispose = void() { _ui_drop_timer(timer); ui_release_closure(timer.handler); free(timer); };
@@ -77,6 +79,16 @@ bool ui_event_timer(int token) { return ui_post(Event{token, 0, 12, 0, null}); }
 
 // Runs the handler of the timer that fired, or a frame when it is the frame timer
 // (internal).
+// The scope of the live timer with `token` (its use_interval or use_timeout), or null
+// (internal).
+*Node _ui_timer_owner(int token) {
+    for (i in 0..ui.timers.size) {
+        *UiTimer timer = ui.timers.data[i];
+        if (timer.token == token && !timer.removed) { return timer.owner; }
+    }
+    return null;
+}
+
 bool _ui_dispatch_timer_event(*Event event) {
     if (ui.frame_timer != 0 && event.id == ui.frame_timer) { return _ui_run_frames(ui.last_frame_time < 0 ? 0 : ui.last_frame_time + 0.016); }
     for (i in 0..ui.timers.size) {
