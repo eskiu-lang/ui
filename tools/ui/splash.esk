@@ -96,37 +96,35 @@ string ios_splash_plist(Project* p) {
 
 // The launch theme in `out`/res (UiSplash: the window's background is the color with the image
 // centered, and Android 12's splash takes the color), or nothing when [splash] is not set;
-// true when it wrote them.
+// true when it wrote them. In night mode (values-night) the theme is the dark one, so a splash
+// without a color of its own is dark when the system is.
 bool android_splash_res(Project* p, string out) {
     string res = join(out, "res");
-    string[4] files = {"values/ui_splash.xml", "values-v31/ui_splash.xml", "drawable/ui_splash.xml",
-                       "drawable-xxhdpi/ui_splash_image.png"};
-    for (i in 0..4) { fs_remove(join(res, files[i])); }
+    string[6] files = {"values/ui_splash.xml", "values-v31/ui_splash.xml", "values-night/ui_splash.xml",
+                       "values-night-v31/ui_splash.xml", "drawable/ui_splash.xml", "drawable-xxhdpi/ui_splash_image.png"};
+    for (i in 0..6) { fs_remove(join(res, files[i])); }
     if (!splash_set(p)) { return false; }
     string color = splash_background(p);
     string image = splash_image(p);
     string fill = color != null ? color : "?android:attr/colorBackground";
-    fs_mkdir_p(join(res, "values"));
-    fs_mkdir_p(join(res, "values-v31"));
     fs_mkdir_p(join(res, "drawable"));
     String text;
     defer String_free(&text);
-    String_appendf(&text, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
-        "  <style name=\"UiSplash\" parent=\"@android:style/Theme.Material.Light.NoActionBar\">\n"
-        "    <item name=\"android:windowBackground\">@drawable/ui_splash</item>\n  </style>\n</resources>\n");
-    fs_write_text(join(res, files[0]), text.data);
-    String_free(&text);
-    String_appendf(&text, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
-        "  <style name=\"UiSplash\" parent=\"@android:style/Theme.Material.Light.NoActionBar\">\n"
-        "    <item name=\"android:windowBackground\">@drawable/ui_splash</item>\n%s  </style>\n</resources>\n",
-        color != null ? "    <item name=\"android:windowSplashScreenBackground\">@color/ui_splash_background</item>\n" : "");
-    fs_write_text(join(res, files[1]), text.data);
-    String_free(&text);
+    for (i in 0..4) {
+        fs_mkdir_p(join(res, i == 0 ? "values" : i == 1 ? "values-v31" : i == 2 ? "values-night" : "values-night-v31"));
+        String_appendf(&text, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
+            "  <style name=\"UiSplash\" parent=\"@android:style/Theme.Material%s.NoActionBar\">\n"
+            "    <item name=\"android:windowBackground\">@drawable/ui_splash</item>\n%s  </style>\n</resources>\n",
+            i < 2 ? ".Light" : "",
+            (i == 1 || i == 3) && color != null ? "    <item name=\"android:windowSplashScreenBackground\">@color/ui_splash_background</item>\n" : "");
+        fs_write_text(join(res, files[i]), text.data);
+        String_free(&text);
+    }
     String_appendf(&text, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
         "<layer-list xmlns:android=\"http://schemas.android.com/apk/res/android\">\n"
         "  <item><color android:color=\"%s\"/></item>\n%s</layer-list>\n", fill,
         image != null ? "  <item><bitmap android:src=\"@drawable/ui_splash_image\" android:gravity=\"center\"/></item>\n" : "");
-    fs_write_text(join(res, files[2]), text.data);
+    fs_write_text(join(res, files[4]), text.data);
     String_free(&text);
     // The color by name, which windowSplashScreenBackground needs.
     fs_remove(join(res, "values/ui_splash_colors.xml"));
@@ -137,7 +135,7 @@ bool android_splash_res(Project* p, string out) {
     }
     if (image != null) {
         fs_mkdir_p(join(res, "drawable-xxhdpi"));
-        fs_copy(image, join(res, files[3]));
+        fs_copy(image, join(res, files[5]));
     }
     return true;
 }
