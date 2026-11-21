@@ -86,6 +86,9 @@ static bool driverHostRequest(const std::string &request, std::string &answer);
 @property(nonatomic) int textAlign, maxLines, lineHeight, zIndex, layoutMs, presentation, appear;
 @property(nonatomic) bool italic, clip, shrinkSet, imageListening, appeared;
 @property(nonatomic, copy) NSString *text;
+// A scroll with a RefreshControl (prop 22): refreshing, pulled past its top, its spinner.
+@property(nonatomic) bool refreshable, refreshing, pulled;
+@property(nonatomic, strong) NSProgressIndicator *refreshSpinner;
 @end
 @implementation UiHostNode
 @end
