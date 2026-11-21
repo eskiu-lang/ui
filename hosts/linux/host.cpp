@@ -10,6 +10,7 @@
 #include <yoga/Yoga.h>
 #include "../commit.h"
 #include "../grid.h"
+#include "../layout.h"
 #include "ui_native.h"
 #include <algorithm>
 #include <cmath>
@@ -62,8 +63,8 @@ static bool driverHostRequest(const std::string &request, std::string &answer);
 // ---- nodes ----
 
 // The values a transition animates: opacity, the background (RGBA), the transform (translate
-// x, y, scale, rotate) and a screen's slide.
-enum { kOpacity, kBackground, kTransform, kSlideX, kAnimated };
+// x, y, scale, rotate), a screen's slide and the frame (a layout animation, prop 90).
+enum { kOpacity, kBackground, kTransform, kSlideX, kFrame, kAnimated };
 
 struct Anim {
     bool on = false;
@@ -114,11 +115,21 @@ struct Node {
     // A pan in progress: started (past the slop), the last points for the velocity.
     bool panning = false;
     double panX = 0, panY = 0, panT = 0, velX = 0, velY = 0;
+    // Props 81 to 91 (host_props.inc); whether the app set shrink and listens to its image; a
+    // modal's parent (for disabled above it) and whether it appeared; a refreshable scroll's
+    // state and spinner; the widgets a backdrop blur drew last.
+    int textAlign = 0, maxLines = 0, lineHeight = 0, zIndex = 0, layoutMs = 0, presentation = 0, appear = 0, parentId = 0;
+    bool italic = false, clip = false, shrinkSet = false, imageListening = false, appeared = false;
+    bool refreshable = false, refreshing = false, pulled = false;
+    GtkWidget *refreshSpinner = nullptr;
+    std::vector<GdkPaintable *> backdrop;
 };
 
+static void dropBackdrop(Node *node);
 static void release(Node *node) {
     if (--node->refs > 0) return;
     if (node->texture) g_object_unref(node->texture);
+    dropBackdrop(node);
     delete node;
 }
 
@@ -206,6 +217,8 @@ static void targetOf(Node *node, int which, double out[4]) {
     else if (which == kBackground) rgbaOf(node->background, out);
     else if (which == kTransform) {
         out[0] = node->translateX; out[1] = node->translateY; out[2] = node->scalePercent / 100.0; out[3] = node->rotateDegrees;
+    } else if (which == kFrame) {
+        out[0] = node->x; out[1] = node->y; out[2] = node->w; out[3] = node->h;
     } else { out[0] = node->slide; out[1] = out[2] = out[3] = 0; }
 }
 
@@ -290,15 +303,16 @@ static void tickAnimations(void) {
 
 // The node's transform about its center, after its position (and a screen's slide).
 static GskTransform *transformOf(Node *node) {
-    double t[4], s[4];
+    double t[4], s[4], f[4];
     valueOf(node, kTransform, t);
     valueOf(node, kSlideX, s);
-    GskTransform *out = gsk_transform_translate(nullptr, addr(point((float)(node->x + s[0]), (float)node->y)));
+    valueOf(node, kFrame, f);
+    GskTransform *out = gsk_transform_translate(nullptr, addr(point((float)(f[0] + s[0]), (float)f[1])));
     if (t[0] == 0 && t[1] == 0 && t[2] == 1 && t[3] == 0) return out;
-    out = gsk_transform_translate(out, addr(point((float)(node->w / 2 + t[0]), (float)(node->h / 2 + t[1]))));
+    out = gsk_transform_translate(out, addr(point((float)(f[2] / 2 + t[0]), (float)(f[3] / 2 + t[1]))));
     out = gsk_transform_scale(out, (float)t[2], (float)t[2]);
     out = gsk_transform_rotate(out, (float)t[3]);
-    return gsk_transform_translate(out, addr(point((float)(-node->w / 2), (float)(-node->h / 2))));
+    return gsk_transform_translate(out, addr(point((float)(-f[2] / 2), (float)(-f[3] / 2))));
 }
 
 static void ui_box_init(UiBox *self) { self->node = nullptr; self->role = kBoxNode; }
@@ -332,6 +346,13 @@ static void placeContent(Node *node, int width, int height) {
     if (!content || !gtk_widget_get_visible(content)) return;
     double x = 0, y = 0, w = width, h = height;
     if (node->kind == 5 && node->styled) { x = y = node->padding; w -= 2 * node->padding; h -= 2 * node->padding; }
+    // A Text's label sits inside its padding (Yoga measured it without).
+    if (node->kind == 3 && node->yoga) {
+        x = YGNodeLayoutGetPadding(node->yoga, YGEdgeLeft);
+        y = YGNodeLayoutGetPadding(node->yoga, YGEdgeTop);
+        w -= x + YGNodeLayoutGetPadding(node->yoga, YGEdgeRight);
+        h -= y + YGNodeLayoutGetPadding(node->yoga, YGEdgeBottom);
+    }
     int min = 0, nat = 0;
     if (node->kind == 9) {
         gtk_widget_measure(content, GTK_ORIENTATION_HORIZONTAL, -1, &min, &nat, nullptr, nullptr);
@@ -366,10 +387,13 @@ static void ui_box_size_allocate(GtkWidget *widget, int width, int height, int) 
         if (!gtk_widget_get_visible(child)) continue;
         Node *node = nodeOfBox(child);
         if (node) {
-            allocateChild(child, 0, 0, node->w, node->h, transformOf(node));
+            double f[4];
+            valueOf(node, kFrame, f);
+            allocateChild(child, 0, 0, f[2], f[3], transformOf(node));
             continue;
         }
         if (self->role == kBoxNode && owner && child == owner->content) placeContent(owner, width, height);
+        else if (owner && child == owner->refreshSpinner) allocateChild(child, std::floor((width - 20) / 2.0), 8, 20, 20, nullptr);
         else allocateChild(child, 0, 0, width, height, nullptr);
     }
 }
@@ -383,6 +407,9 @@ static GskRoundedRect outline(double w, double h, int r) {
 }
 
 static bool darkMode;
+// Whether GTK's animations are on (gtk-enable-animations: off asks for reduced motion).
+static bool userAnimations = true;
+static void paintBackdrop(Node *node, GtkWidget *widget, GtkSnapshot *snapshot, double w, double h);
 
 static void ui_box_snapshot(GtkWidget *widget, GtkSnapshot *snapshot) {
     UiBox *self = UI_BOX(widget);
@@ -397,17 +424,13 @@ static void ui_box_snapshot(GtkWidget *widget, GtkSnapshot *snapshot) {
             gtk_snapshot_append_outset_shadow(snapshot, &shape, &far, 0, node->shadow / 2.f, 0, node->shadow * 2.f);
             gtk_snapshot_append_outset_shadow(snapshot, &shape, &near, 0, 1, 0, 2);
         }
-        // A radius clips what is inside (a raised view's shadow stays outside).
-        clipped = node->radius > 0;
+        // A radius or Style.clip clips what is inside (a raised view's shadow stays outside).
+        clipped = node->radius > 0 || node->clip;
         if (clipped) gtk_snapshot_push_rounded_clip(snapshot, &shape);
         double bg[4];
         valueOf(node, kBackground, bg);
-        // A backdrop blur has no backdrop to blur here: the window's color, as the web's
-        // fallback, under the app's own.
-        if (node->blur && !node->background) {
-            GdkRGBA glass = darkMode ? GdkRGBA{0.12f, 0.12f, 0.12f, 0.65f} : GdkRGBA{1, 1, 1, 0.65f};
-            gtk_snapshot_append_color(snapshot, &glass, addr(rect(0, 0, (float)w, (float)h)));
-        }
+        // A backdrop blur: what is behind the box, blurred (host_props.inc).
+        if (node->blur) paintBackdrop(node, widget, snapshot, w, h);
         if (node->gradientTo) {
             double to[4];
             rgbaOf(node->gradientTo, to);
@@ -464,120 +487,13 @@ static GtkWidget *newBox(GtkAccessibleRole role, int kind, Node *node) {
     return box;
 }
 
-// ---- fonts and text ----
-
-// The default text size, as the web host's.
-static const int kTextSize = 16;
-// The system's text scale (GtkSettings' gtk-xft-dpi over 96 dpi; GNOME's text scaling factor):
-// text sizes from the app are in points at a scale of 1.
-static double textScale = 1;
-static double fontPixels(Node *node) { return (node->fontSize > 0 ? node->fontSize : kTextSize) * textScale; }
-// A multiline field's font (host_access.inc).
-static void applyTextViewFont(Node *node);
-
-// A font file from the app's assets, added to fontconfig once; its family, or "" when it does
-// not load.
-static std::string fontFamily(const std::string &file);
-
-// The attributes of a text in the node's font and color (sized when `sized`).
-static PangoAttrList *textAttributes(Node *node, bool sized, bool colored) {
-    PangoAttrList *list = pango_attr_list_new();
-    if (sized) pango_attr_list_insert(list, pango_attr_size_new_absolute((int)std::lround(fontPixels(node) * PANGO_SCALE)));
-    if (node->fontWeight > 0) pango_attr_list_insert(list, pango_attr_weight_new((PangoWeight)node->fontWeight));
-    if (!node->fontFile.empty()) {
-        std::string family = fontFamily(node->fontFile);
-        if (!family.empty()) pango_attr_list_insert(list, pango_attr_family_new(family.c_str()));
-    }
-    if (colored && node->textColor) {
-        uint32_t v = (uint32_t)node->textColor;
-        pango_attr_list_insert(list, pango_attr_foreground_new((guint16)((v >> 24) * 257), (guint16)(((v >> 16) & 255) * 257),
-                                                               (guint16)(((v >> 8) & 255) * 257)));
-        pango_attr_list_insert(list, pango_attr_foreground_alpha_new((guint16)((v & 255) * 257)));
-    }
-    return list;
-}
-
-// A button's title: the theme's for a plain button, else in the node's font and color.
-static void applyButtonTitle(Node *node) {
-    if (!node->content) return;
-    GtkWidget *label = gtk_button_get_child(GTK_BUTTON(node->content));
-    gtk_label_set_text(GTK_LABEL(label), node->title.c_str());
-    bool plain = !node->styled && !node->textColor && !node->fontSize && !node->fontWeight && node->fontFile.empty();
-    PangoAttrList *list = plain ? pango_attr_list_new() : textAttributes(node, node->styled || node->fontSize, true);
-    gtk_label_set_attributes(GTK_LABEL(label), list);
-    pango_attr_list_unref(list);
-}
-
-static void applyFont(Node *node) {
-    if (!node->content) return;
-    if (node->kind == 4) applyButtonTitle(node);
-    else if (node->kind == 3) {
-        PangoAttrList *list = textAttributes(node, true, true);
-        gtk_label_set_attributes(GTK_LABEL(node->content), list);
-        pango_attr_list_unref(list);
-    } else if (node->kind == 5 && GTK_IS_TEXT_VIEW(node->content)) {
-        applyTextViewFont(node);
-    } else if (node->kind == 5) {
-        PangoAttrList *list = textAttributes(node, true, true);
-        gtk_entry_set_attributes(GTK_ENTRY(node->content), list);
-        pango_attr_list_unref(list);
-    }
-    if (node->yoga) YGNodeMarkDirty(node->yoga);
-}
-
-// A field or a button the app gives a background, a border or a radius loses the theme's
-// frame (the CSS class ui-styled), and its box paints what the app asked.
-static void applyStyled(Node *node) {
-    if (!node->content || (node->kind != 4 && node->kind != 5)) return;
-    bool styled = node->background || node->borderWidth || node->radius;
-    if (styled) gtk_widget_add_css_class(node->content, "ui-styled");
-    else gtk_widget_remove_css_class(node->content, "ui-styled");
-    node->styled = styled;
-    applyFont(node);
-    if (node->yoga) YGNodeMarkDirty(node->yoga);
-    gtk_widget_queue_allocate(node->box);
-}
-
-static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode) {
-    Node *node = (Node *)YGNodeGetContext(yoga);
-    double limitW = widthMode == YGMeasureModeUndefined ? 1e9 : width, limitH = heightMode == YGMeasureModeUndefined ? 1e9 : height;
-    double w = 0, h = 0;
-    GtkWidget *content = node->content;
-    if (node->kind == 3 && content) {
-        // The label's text in its font, wrapped at the width it may take.
-        PangoLayout *layout = gtk_widget_create_pango_layout(content, gtk_label_get_text(GTK_LABEL(content)));
-        PangoAttrList *list = textAttributes(node, true, false);
-        pango_layout_set_attributes(layout, list);
-        pango_attr_list_unref(list);
-        pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
-        if (limitW < 1e9) pango_layout_set_width(layout, (int)(limitW * PANGO_SCALE));
-        PangoRectangle logical;
-        pango_layout_get_pixel_extents(layout, nullptr, &logical);
-        g_object_unref(layout);
-        w = logical.width; h = logical.height;
-    } else if (node->kind == 7) {
-        if (node->texture) { w = gdk_texture_get_width(node->texture); h = gdk_texture_get_height(node->texture); }
-    } else if (node->kind == 10) {
-        w = h = 20;
-    } else if (content) {
-        int min = 0, nat = 0;
-        gtk_widget_measure(content, GTK_ORIENTATION_HORIZONTAL, -1, &min, &nat, nullptr, nullptr);
-        w = nat;
-        if (node->kind == 5) w = std::max(w, 120.0);
-        if (node->kind == 15) w = 160;
-        // A multiline field wraps: its height at the width it may take.
-        bool wraps = node->kind == 5 && GTK_IS_TEXT_VIEW(content);
-        int across = wraps ? (int)std::min(limitW < 1e9 ? limitW : w, 1e6) : node->kind == 5 || node->kind == 15 ? -1 : (int)std::min(w, limitW);
-        gtk_widget_measure(content, GTK_ORIENTATION_VERTICAL, across, &min, &nat, nullptr, nullptr);
-        h = nat;
-    }
-    return {(float)std::min(std::ceil(w), limitW), (float)std::min(std::ceil(h), limitH)};
-}
+#include "host_text.inc"
 
 // An edge offset that is not set (kUnset in src/core/state.esk).
 static const int kUnset = -1000000;
 
 #include "host_views.inc"
+#include "host_props.inc"
 #include "host_access.inc"
 #include "host_commit.inc"
 #include "host_main.inc"
