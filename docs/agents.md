@@ -357,7 +357,7 @@ docker run --rm -it ghcr.io/eskiu-lang/agent sh -c 'cd /tmp && ui new hello && c
 On a machine of its own, an agent installs the same tools with
 `curl -fsSL https://eskiu-lang.org/install.sh | sh -s -- --with-ui`.
 
-An agent with no computer uses the Eskiu MCP server, `https://eskiu-mcp-9450.orvex.cloud/mcp`,
+An agent with no computer uses the Eskiu MCP server, `https://mcp.eskiu-lang.org/mcp`,
 which runs code on a worker built from that image:
 
 | Tool | What it does |
