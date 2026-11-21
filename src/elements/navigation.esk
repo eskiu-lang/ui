@@ -364,3 +364,14 @@ void Navigator(*Router router, escaping fn(string)->void screen UI_LOC) {
         }
     }, void() {}) {}
 }
+
+// `block` kept mounted while `active` is false, hidden, with its state and scroll positions:
+// a tab's content stays as it was when the user comes back to it. Give each its own key when
+// several sit side by side: `KeepAlive(key(0), tab.get() == 0) { InboxTab(); }`. It fills its
+// parent as a Navigator's screen does, and only the active ones show.
+void KeepAlive(Key key, bool active, escaping fn()->void block UI_LOC) {
+    UI_HERE
+    ui.next_active = active;
+    ui.next_name = "KeepAlive";
+    ui_element(14, Style{key: key, grow: 1, gap: 0}, null, block, void() {}) {}
+}

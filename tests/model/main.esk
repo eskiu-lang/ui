@@ -98,6 +98,7 @@ int main() {
     owned_strings(); printf("PASS owned snapshots\n");
     navigation(); printf("PASS navigation\n");
     navigation_covered(); printf("PASS navigation covered\n");
+    keep_alive(); printf("PASS keep alive\n");
     errors(); printf("PASS error recovery\n");
     driver(); printf("PASS driver\n");
     reload_keeps_state(); printf("PASS reload keeps state\n");

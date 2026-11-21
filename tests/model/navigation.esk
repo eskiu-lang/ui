@@ -189,3 +189,30 @@ void navigation_covered() {
     nav_covered_router.free();
     balanced("navigation covered leak");
 }
+
+*Signal<int> keep_tab;
+
+// KeepAlive keeps a tab's state while another shows: only the active one is active (prop 23).
+void keep_alive() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        keep_tab = use_signal<int>(0);
+        KeepAlive(key(0), keep_tab.get() == 0) {
+            *Signal<int> local = use_signal<int>(0);
+            ButtonWith(Style{label: "Bump"}, textf("A %d", local.get())) { local.set(local.get() + 1); }
+        }
+        KeepAlive(key(1), keep_tab.get() == 1) { Text("B"); }
+    }
+    ui_frame();
+    press_label("Bump");
+    keep_tab.set(1); ui_frame();
+    keep_tab.set(0); ui_frame();
+    *Node bump = find_label(ui.root, "Bump");
+    check(bump != null && strcmp(bump.text, "A 1") == 0, "the first tab kept its count across a switch");
+    String screens;
+    nav_screens(&screens);
+    check(String_eq_cstr(&screens, "10") == 1, "only the active tab is active");
+    String_free(&screens);
+    ui_shutdown(); balanced("keep alive leak");
+}
