@@ -158,3 +158,31 @@ void navigation() {
     nav_router.free();
     balanced("navigation leak");
 }
+
+*Router nav_covered_router;
+
+// `ui agent tap Go` with a "Go" on the screen under the top one and on the top one: the one
+// that shows is found, not "2 elements match".
+void navigation_covered() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    nav_covered_router = router_new("/");
+    ui_mount() {
+        Navigator(nav_covered_router, void(string route) {
+            Column(Style{}) { ButtonWith(Style{label: "Go"}, "Go") {} }
+        });
+    }
+    ui_frame();
+    nav_covered_router.push("/next");
+    ui_frame();
+    String error;
+    *Node found = _ui_driver_find("Go", &error);
+    check(found != null, "one Go found, on the top screen");
+    *Node at = found;
+    while (at != null && at.kind != 14) { at = at.parent; }
+    check(at != null && at.props[23] == 1, "the Go found is on the screen that shows");
+    String_free(&error);
+    ui_shutdown();
+    nav_covered_router.free();
+    balanced("navigation covered leak");
+}

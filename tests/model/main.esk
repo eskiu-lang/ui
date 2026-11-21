@@ -93,6 +93,7 @@ int main() {
     model_signal(); printf("PASS model signal\n");
     owned_strings(); printf("PASS owned snapshots\n");
     navigation(); printf("PASS navigation\n");
+    navigation_covered(); printf("PASS navigation covered\n");
     errors(); printf("PASS error recovery\n");
     driver(); printf("PASS driver\n");
     reload_keeps_state(); printf("PASS reload keeps state\n");

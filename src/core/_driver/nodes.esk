@@ -193,14 +193,16 @@ string _ui_driver_name(*Node node) {
 
 // Collects the nodes whose test_id (by_name false) or accessible name (true) is `target`
 // (internal). An element found by its accessible name is one element to a screen reader,
-// what is inside it included: a Checkbox's label text is not a second match.
-void _ui_driver_collect(*Node node, string target, bool by_name, List<*Node>* found) {
+// what is inside it included: a Checkbox's label text is not a second match. With `covered`
+// false, the screens a Navigator keeps under its top one are skipped.
+void _ui_driver_collect(*Node node, string target, bool by_name, bool covered, List<*Node>* found) {
+    if (!covered && node.kind == 14 && node.props[23] == 0) { return; }
     string value = by_name ? _ui_driver_name(node) : node.test_id;
     if (node != ui.root && value != null && strcmp(value, target) == 0) {
         found.push(node);
         if (by_name) { return; }
     }
-    for (i in 0..node.children.size) { _ui_driver_collect(node.children.data[i], target, by_name, found); }
+    for (i in 0..node.children.size) { _ui_driver_collect(node.children.data[i], target, by_name, covered, found); }
 }
 
 // The node `target` names: "#N" is node N; otherwise the element whose test_id is `target`,
@@ -216,8 +218,12 @@ void _ui_driver_collect(*Node node, string target, bool by_name, List<*Node>* fo
     }
     List<*Node> found;
     defer found.free();
-    _ui_driver_collect(ui.root, target, false, &found);
-    if (found.size == 0) { _ui_driver_collect(ui.root, target, true, &found); }
+    // What shows first: an element on a screen under the top one counts only when nothing
+    // that shows matches.
+    for (int pass = 0; pass < 2 && found.size == 0; pass++) {
+        _ui_driver_collect(ui.root, target, false, pass == 1, &found);
+        if (found.size == 0) { _ui_driver_collect(ui.root, target, true, pass == 1, &found); }
+    }
     if (found.size == 1) { return found.data[0]; }
     if (found.size == 0) {
         String_appendf(error, "no element with test_id or accessible name '%s'", target);
