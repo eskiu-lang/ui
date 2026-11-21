@@ -4,6 +4,9 @@ How a ui app should look and behave so that it reads as a finished product on ev
 platform, and works for everyone who uses it. It is written for people and for coding agents
 building screens; [app structure](app-structure.md) covers where the code goes.
 
+For what the app does, how it speaks, permissions, trust, and its store listing, see the
+[product guide](product.md).
+
 The short version: build from the kit (`<ui/kit>`), take every color and size from its theme,
 keep to the spacing scale, give every screen its loading, empty and error states, and check
 it in dark mode, at a large text size, and in a wide window.

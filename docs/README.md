@@ -8,6 +8,7 @@ windows on macOS, Linux and Windows.
 |---|---|
 | [Getting started](getting-started.md) | Installing the `ui` tool, a first app, running it on each platform, a project's layout |
 | [App structure](app-structure.md) | How to lay out an app that grows: model, services, components, screens, words, tests, and what may use what |
+| [Product guide](product.md) | The job before the screens, the first minute, words, permissions and notifications, trust, measuring, retention without tricks, the store listing and the web |
 | [Design guide](design.md) | Color roles, type, spacing, touch targets, the loading, empty and error states, forms, motion, accessibility, dark mode |
 | [Architecture](architecture.md) | The layers (core, elements, kit, hosts, tool), what happens in a frame, the repository's layout |
 | [State](state.md) | Signals, memos, effects, model signals, owned strings, saved data, timers, the hooks rule, errors and `ErrorBoundary` |
