@@ -64,23 +64,23 @@ const double kDriverFrame = 16.666666666666668;
 const double kDriverSettle = 60000.0;
 
 // A per-type address (as the hooks' tags), to tell a signal's type at run time.
-*void ui_driver_tag<T>() { static int value; return &value; }
+*void _ui_driver_tag<T>() { static int value; return &value; }
 
 // A signal's value type, by T: 1 int, 2 int64, 3 bool, 4 double, 5 float, 6 string, 7 uint8,
 // 8 char, 9 int16, 10 uint, 11 uint64, 0 any other (shown by its size).
-int ui_driver_value_type<T>() {
-    *void t = ui_driver_tag<T>();
-    if (t == ui_driver_tag<int>()) { return 1; }
-    if (t == ui_driver_tag<int64>()) { return 2; }
-    if (t == ui_driver_tag<bool>()) { return 3; }
-    if (t == ui_driver_tag<double>()) { return 4; }
-    if (t == ui_driver_tag<float>()) { return 5; }
-    if (t == ui_driver_tag<string>()) { return 6; }
-    if (t == ui_driver_tag<uint8>()) { return 7; }
-    if (t == ui_driver_tag<char>()) { return 8; }
-    if (t == ui_driver_tag<int16>()) { return 9; }
-    if (t == ui_driver_tag<uint>()) { return 10; }
-    if (t == ui_driver_tag<uint64>()) { return 11; }
+int _ui_driver_value_type<T>() {
+    *void t = _ui_driver_tag<T>();
+    if (t == _ui_driver_tag<int>()) { return 1; }
+    if (t == _ui_driver_tag<int64>()) { return 2; }
+    if (t == _ui_driver_tag<bool>()) { return 3; }
+    if (t == _ui_driver_tag<double>()) { return 4; }
+    if (t == _ui_driver_tag<float>()) { return 5; }
+    if (t == _ui_driver_tag<string>()) { return 6; }
+    if (t == _ui_driver_tag<uint8>()) { return 7; }
+    if (t == _ui_driver_tag<char>()) { return 8; }
+    if (t == _ui_driver_tag<int16>()) { return 9; }
+    if (t == _ui_driver_tag<uint>()) { return 10; }
+    if (t == _ui_driver_tag<uint64>()) { return 11; }
     return 0;
 }
 
@@ -92,7 +92,7 @@ extern int QueryPerformanceFrequency(*int64 frequency);
 #endif
 
 // A monotonic clock in ms, for the frame times `perf` reports.
-double ui_driver_clock_ms() {
+double _ui_driver_clock_ms() {
 #ifdef _WIN32
     let count: int64 = 0;
     let frequency: int64 = 1;
@@ -110,7 +110,7 @@ double ui_driver_clock_ms() {
 double ui_driver_now() { return ui_drv.now; }
 
 // Whether the driver owns the clock.
-bool ui_driver_virtual() { return ui_drv.virtual; }
+bool _ui_driver_virtual() { return ui_drv.virtual; }
 
 // Notes a core error or warning for `logs` (internal).
 void _ui_driver_log(string level, string text) {
@@ -265,7 +265,7 @@ bool _ui_driver_step(double until) {
 
 // Moves the virtual clock forward `ms`, running each timer and frame due on the way at its
 // own time, with the renders they cause; how many ran.
-int ui_driver_advance(double ms) {
+int _ui_driver_advance(double ms) {
     _ui_driver_take_clock();
     ui_drv.fired = 0;
     double until = ui_drv.now + (ms < 0 ? 0 : ms);
@@ -293,7 +293,7 @@ bool _ui_driver_is_idle() {
 
 // Runs the virtual clock until idle (_ui_driver_is_idle), at most kDriverSettle ms; true when
 // it got there.
-bool ui_driver_settle() {
+bool _ui_driver_settle() {
     _ui_driver_take_clock();
     ui_drv.fired = 0;
     double limit = ui_drv.now + kDriverSettle;

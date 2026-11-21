@@ -288,7 +288,7 @@ void _ui_run(*Node node) {
     *Node previous_builder = ui.builder;
     *_Observer previous_tracking = ui.tracking;
     ui.builder = node;
-    ui_untrack(node.observer);
+    _ui_untrack(node.observer);
     ui.tracking = node.observer;
     node.block();
 #ifdef UI_SRCLOC
@@ -359,11 +359,11 @@ void ui_unmount(*Node node) {
     node.current = false;
     node.seen = false;
     // Detach dependencies immediately, destroy resources after renderer completion.
-    ui_untrack(node.observer);
+    _ui_untrack(node.observer);
     for (i in 0..node.slots.size) {
         *_Observer hook = node.slots.data[i].observer;
         if (hook != null) {
-            ui_untrack(hook);
+            _ui_untrack(hook);
             _ui_unqueue(hook.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, hook);
         }
     }

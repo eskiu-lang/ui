@@ -208,126 +208,6 @@ void ui_sha512(*uint8 data, int64 n, *uint8 out)
 
 The SHA-512 of `n` bytes into `out` (64 bytes).
 
-### ui_fe_copy
-
-```eskiu
-void ui_fe_copy(*int64 r, *int64 a)
-```
-
-r = a (internal; the field helpers below are all internal).
-
-### ui_fe_set
-
-```eskiu
-void ui_fe_set(*int64 r, int64 v)
-```
-
-r = v, a small number.
-
-### ui_fe_carry
-
-```eskiu
-void ui_fe_carry(*int64 o)
-```
-
-Carries each limb into the next, so each fits 16 bits again.
-
-### ui_fe_swap
-
-```eskiu
-void ui_fe_swap(*int64 p, *int64 q, int b)
-```
-
-Swaps p and q when b is 1, in constant time.
-
-### ui_fe_pack
-
-```eskiu
-void ui_fe_pack(*uint8 o, *int64 n)
-```
-
-The element reduced mod p, as 32 little-endian bytes.
-
-### ui_fe_neq
-
-```eskiu
-int ui_fe_neq(*int64 a, *int64 b)
-```
-
-1 when a and b are different elements.
-
-### ui_fe_parity
-
-```eskiu
-int ui_fe_parity(*int64 a)
-```
-
-The lowest bit of the reduced element.
-
-### ui_fe_unpack
-
-```eskiu
-void ui_fe_unpack(*int64 o, *uint8 n)
-```
-
-An element from 32 little-endian bytes (the top bit ignored).
-
-### ui_fe_add
-
-```eskiu
-void ui_fe_add(*int64 o, *int64 a, *int64 b)
-```
-
-o = a + b.
-
-### ui_fe_sub
-
-```eskiu
-void ui_fe_sub(*int64 o, *int64 a, *int64 b)
-```
-
-o = a - b.
-
-### ui_fe_mul
-
-```eskiu
-void ui_fe_mul(*int64 o, *int64 a, *int64 b)
-```
-
-o = a * b.
-
-### ui_fe_inverse
-
-```eskiu
-void ui_fe_inverse(*int64 o, *int64 i)
-```
-
-o = 1 / i.
-
-### ui_fe_pow2523
-
-```eskiu
-void ui_fe_pow2523(*int64 o, *int64 i)
-```
-
-o = i ^ ((p - 5) / 8), for square roots.
-
-### ui_ed_scalarmult
-
-```eskiu
-void ui_ed_scalarmult(*int64 p, *int64 q, *uint8 s)
-```
-
-p = s * q, for a 32-byte little-endian scalar (q is clobbered).
-
-### ui_ed_scalarbase
-
-```eskiu
-void ui_ed_scalarbase(*int64 p, *uint8 s)
-```
-
-p = s * B, the base point.
-
 ### ui_ed25519_public_key
 
 ```eskiu
@@ -571,14 +451,6 @@ void ui_cached_file(string url, escaping fn(string)->void on_done)
 from the cache after that (when it is there already, on_done runs before this returns), or
 null when the download failed or the app stopped first. The path is borrowed for the call.
 iOS and Android: the web has no files (null).
-
-### ui_answer_cache
-
-```eskiu
-void ui_answer_cache(*_PendingCache pending, string path)
-```
-
-Each handler waiting for `pending` gets `path`, then it is freed.
 
 ### CachedFile
 
@@ -897,26 +769,6 @@ void ui_boundary_block()
 
 The block of a boundary node (ui.builder while it runs).
 
-### ui_render_failed
-
-```eskiu
-*Node ui_render_failed(*Node node, string text, int from, int writes, int journal, *_Observer evaluating)
-```
-
-A render run by the frame (not inside a boundary's own block) threw: the nearest boundary
-above `node` takes it, and is returned to run with its fallback. The root's fallback
-failing is an error nothing can show, so it stops.
-
-### ui_rollback
-
-```eskiu
-void ui_rollback(*Node node, int from, int writes, int journal, *_Observer evaluating)
-```
-
-Undo what a failed render did since its save point, then empty the boundary: the commit is
-cut back to `from`, the removals cut with it are sent again for the nodes the host knows,
-and the boundary's children and hooks go (nodes made after the cut without a removal).
-
 ### ui_known
 
 ```eskiu
@@ -925,15 +777,6 @@ bool ui_known(*Node node)
 
 Whether the host has heard (or will, with this commit) of the node. Outside a rollback
 every node counts as known.
-
-### ui_unwind_evaluating
-
-```eskiu
-void ui_unwind_evaluating(*_Observer depth)
-```
-
-Observers a throw left evaluating (down to `depth`, the one computing when the work began)
-are dirty again, to be computed when next read.
 
 ### ui_drop_staged
 
@@ -1304,31 +1147,6 @@ const double kDriverSettle = 60000.0;
 
 How far `clock settle` goes looking for idle, in virtual ms.
 
-### ui_driver_tag
-
-```eskiu
-*void ui_driver_tag<T>()
-```
-
-A per-type address (as the hooks' tags), to tell a signal's type at run time.
-
-### ui_driver_value_type
-
-```eskiu
-int ui_driver_value_type<T>()
-```
-
-A signal's value type, by T: 1 int, 2 int64, 3 bool, 4 double, 5 float, 6 string, 7 uint8,
-8 char, 9 int16, 10 uint, 11 uint64, 0 any other (shown by its size).
-
-### ui_driver_clock_ms
-
-```eskiu
-double ui_driver_clock_ms()
-```
-
-A monotonic clock in ms, for the frame times `perf` reports.
-
 ### ui_driver_now
 
 ```eskiu
@@ -1337,32 +1155,6 @@ double ui_driver_now()
 
 The driver's time in ms (0 when the clock was taken), for the hosts' animations.
 
-### ui_driver_virtual
-
-```eskiu
-bool ui_driver_virtual()
-```
-
-Whether the driver owns the clock.
-
-### ui_driver_advance
-
-```eskiu
-int ui_driver_advance(double ms)
-```
-
-Moves the virtual clock forward `ms`, running each timer and frame due on the way at its
-own time, with the renders they cause; how many ran.
-
-### ui_driver_settle
-
-```eskiu
-bool ui_driver_settle()
-```
-
-Runs the virtual clock until idle (_ui_driver_is_idle), at most kDriverSettle ms; true when
-it got there.
-
 ### ui_json_string
 
 ```eskiu
@@ -1370,22 +1162,6 @@ void ui_json_string(*String out, string text)
 ```
 
 `text` as a JSON string, appended to `out` (null as "").
-
-### ui_driver_error
-
-```eskiu
-string ui_driver_error(string op, string error)
-```
-
-An answer that the request failed with `error`.
-
-### ui_driver_clock_directive
-
-```eskiu
-string ui_driver_clock_directive(string op, bool settle)
-```
-
-The clock directive: the hosts move their own animations to the driver's time.
 
 ### ui_driver_request
 
@@ -1467,15 +1243,6 @@ Sets the node of `key`, growing the table when it would be more than half full
 Signals, memos and effects: subscriptions as indexed edges, dirty queues, hooks.
 Part of `<ui>` (src/ui.esk imports every part; they are not imported alone).
 
-### Reader
-
-```eskiu
-struct Reader { *_Observer observer; int at; }
-```
-
-A subscription is one entry on each side, each holding the other's index, so either
-side removes it in O(1) by swapping in its last entry.
-
 ### Edge
 
 ```eskiu
@@ -1489,7 +1256,7 @@ readers (internal).
 
 ```eskiu
 struct Source {
-    List<Reader> readers;
+    List<_Reader> readers;
     *_Observer memo;
     *_Observer marked;
     int64 marked_epoch;
@@ -1511,14 +1278,6 @@ struct Slot {
 
 A hook's state in its scope: the hook kind and its type's tag, the data, how to free it,
 and its observer if any. ui_slot gives one to a package's own hooks.
-
-### ui_untrack
-
-```eskiu
-void ui_untrack(*_Observer observer)
-```
-
-Drop every subscription of the observer; a new run subscribes again.
 
 ### ui_detach_source
 
@@ -1757,6 +1516,7 @@ struct Ui {
     Insets insets;
     bool inactive;
     *Signal<int> environment;
+    *Signal<int> theme;
     *Node builder;
     *_Observer tracking;
     List<*Node> by_id;
@@ -1794,6 +1554,8 @@ struct Ui {
     int next_presentation;
     int next_appear;
     int hidden_signals;
+    Style next_style;
+    bool has_next_style;
     List<*UiTimer> timers;
     int next_timer;
     fn(int, int, bool)->void timer_start;
@@ -1922,14 +1684,6 @@ void ui_complete(int sequence)
 
 The host's side: the commit `sequence` has been applied. Frees what waited for it, runs
 the effects, then the events that arrived meanwhile.
-
-### RenderSave
-
-```eskiu
-struct RenderSave { *Node node; int from; int writes; int journal; *_Observer evaluating; }
-```
-
-Where a render started, for the rollback if it throws.
 
 ### ui_frame
 
@@ -4145,6 +3899,17 @@ must_use Theme kit_dark()
 
 The dark theme: the same roles in dark colors, with `dark` set; assign it (`kit = kit_dark();`).
 
+### kit_set
+
+```eskiu
+void kit_set(Theme theme)
+```
+
+Makes `theme` the kit's, at any time (a settings screen, a handler): every kit component
+shows it right away, and text and controls with no color of their own take its ink and
+primary color (ui_text_color, ui_accent_color). Assigning `kit` directly works only at the
+top of the root block, before anything reads it.
+
 ### kit_dense
 
 ```eskiu
@@ -4645,6 +4410,17 @@ int64 rgba(int r, int g, int b, int a)
 ```
 
 A color with alpha, each channel 0 to 255, as 0xRRGGBBAA.
+
+### ui_style_next
+
+```eskiu
+void ui_style_next(Style extra)
+```
+
+For the next element made (a component's first that is not a Scope: its root), the fields `extra` gives on top
+of its own Style: key, test_id, label, hint, disabled, the margins, width, height and their
+bounds, grow, shrink and z_index. A component that takes no Style (a kit component) gets a
+test_id, a margin or a size this way: `ui_style_next(Style{test_id: "save"}); KitButton(...)`.
 
 
 ## `<ui/webapp>`

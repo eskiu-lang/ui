@@ -20,17 +20,17 @@ string _ui_driver_gesture(string op, string target, int dx, int dy, int ms, bool
     String error;
     defer String_free(&error);
     *Node node = _ui_driver_find(target, &error);
-    if (node == null) { return ui_driver_error(op, error.data); }
+    if (node == null) { return _ui_driver_error(op, error.data); }
     int kind = strcmp(op, "drag") == 0 ? 17 : strcmp(op, "long_press") == 0 ? 20 : 13;
     *Node at = _ui_driver_listener(node, kind);
     if (at == null) {
         String_appendf(&error, "'%s' is a %s (#%d), and neither it nor an element around it has %s", target,
             ui_kind_name(node.kind), node.id, kind == 17 ? "ui_on_pan" : kind == 20 ? "ui_on_long_press" : "ui_on_hover");
-        return ui_driver_error(op, error.data);
+        return _ui_driver_error(op, error.data);
     }
     if (_ui_node_disabled(at)) {
         String_appendf(&error, "'%s' is disabled (Style.disabled, on it or on an element around it)", target);
-        return ui_driver_error(op, error.data);
+        return _ui_driver_error(op, error.data);
     }
     if (kind == 17) {
         if (ms <= 0) { ms = 300; }

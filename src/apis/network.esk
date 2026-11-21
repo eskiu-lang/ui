@@ -116,7 +116,7 @@ void ui_cached_file(string url, escaping fn(string)->void on_done) {
             _PendingCache done = ui.caching.data[i];
             ui.caching.remove(i);
             bool ok = result.status >= 200 && result.status < 300 && fs_exists(done.path.data) == 1;
-            ui_answer_cache(&done, ok ? done.path.data : null);
+            _ui_answer_cache(&done, ok ? done.path.data : null);
             return;
         }
     });
@@ -124,7 +124,7 @@ void ui_cached_file(string url, escaping fn(string)->void on_done) {
 #endif
 
 // Each handler waiting for `pending` gets `path`, then it is freed.
-void ui_answer_cache(*_PendingCache pending, string path) {
+void _ui_answer_cache(*_PendingCache pending, string path) {
     for (k in 0..pending.waiting.size) {
         pending.waiting.data[k](path);
         ui_release_string(pending.waiting.data[k]);

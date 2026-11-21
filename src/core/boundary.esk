@@ -120,7 +120,7 @@ void ui_boundary_block() {
             at = _ui_at_text(ui.builder);
         }
         if (ok) { return; }
-        ui_rollback(node, from, writes, journal, evaluating);
+        _ui_rollback(node, from, writes, journal, evaluating);
         _ui_boundary_fail(node, text, path.data, at);
         free(at);
         free(text);
@@ -132,7 +132,7 @@ void ui_boundary_block() {
 // A render run by the frame (not inside a boundary's own block) threw: the nearest boundary
 // above `node` takes it, and is returned to run with its fallback. The root's fallback
 // failing is an error nothing can show, so it stops.
-*Node ui_render_failed(*Node node, string text, int from, int writes, int journal, *_Observer evaluating) {
+*Node _ui_render_failed(*Node node, string text, int from, int writes, int journal, *_Observer evaluating) {
     *Node boundary = node.parent;
     while (boundary != null && boundary.boundary == null) { boundary = boundary.parent; }
     if (boundary == null) {
@@ -143,7 +143,7 @@ void ui_boundary_block() {
     String path;
     ui_scope_path(&path);
     string at = _ui_at_text(ui.builder);
-    ui_rollback(boundary, from, writes, journal, evaluating);
+    _ui_rollback(boundary, from, writes, journal, evaluating);
     _ui_boundary_fail(boundary, text, path.data, at);
     free(at);
     String_free(&path);
@@ -168,8 +168,8 @@ void _ui_boundary_fail(*Node node, string text, string path, string at) {
 // Undo what a failed render did since its save point, then empty the boundary: the commit is
 // cut back to `from`, the removals cut with it are sent again for the nodes the host knows,
 // and the boundary's children and hooks go (nodes made after the cut without a removal).
-void ui_rollback(*Node node, int from, int writes, int journal, *_Observer evaluating) {
-    ui_unwind_evaluating(evaluating);
+void _ui_rollback(*Node node, int from, int writes, int journal, *_Observer evaluating) {
+    _ui_unwind_evaluating(evaluating);
     ui.builder = node.running ? node : null;
     ui.tracking = node.running ? node.observer : null;
     for (i in writes..ui.writes.size) { ui_release_closure(ui.writes.data[i]); }
@@ -194,7 +194,7 @@ bool ui_known(*Node node) {
 
 // Observers a throw left evaluating (down to `depth`, the one computing when the work began)
 // are dirty again, to be computed when next read.
-void ui_unwind_evaluating(*_Observer depth) {
+void _ui_unwind_evaluating(*_Observer depth) {
     while (ui.evaluating != null && ui.evaluating != depth) {
         *_Observer observer = ui.evaluating;
         observer.evaluating = false;
@@ -247,7 +247,7 @@ void ui_boundary_clear(*Node node) {
     for (i in 0..doomed.size) { ui_settle(doomed.data[i]); }
     for (i in 0..doomed.size) { ui_unmount(doomed.data[i]); }
     doomed.free();
-    ui_untrack(node.observer);
+    _ui_untrack(node.observer);
     ui_discard_slots(node);
 }
 
@@ -290,7 +290,7 @@ void ui_discard_slots_from(*Node node, int from) {
     for (i in 0..slots.size) {
         Slot slot = slots.data[i];
         if (slot.observer != null) {
-            ui_untrack(slot.observer);
+            _ui_untrack(slot.observer);
             _ui_unqueue(slot.observer.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, slot.observer);
         }
         if (slot.kind == 4) { _ui_drop_back((*_BackEntry)slot.data); }
@@ -333,7 +333,7 @@ void _ui_free_boundary(*Boundary boundary) {
 void ui_guard_cleanup(fn()->void callback) {
     try { callback(); } catch (_) {
         string text = ui_copy(exception_text());
-        ui_unwind_evaluating(null);
+        _ui_unwind_evaluating(null);
         ui.tracking = null;
         ui_report_error(UiError{3, "a cleanup", text, 0});
         free(text);

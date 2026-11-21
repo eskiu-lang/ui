@@ -14,12 +14,17 @@ change in any release, and an app or a package should not use them.
 A few internal names have no `_` because hosts or packages reach them, and they are not part
 of the promise either:
 
-- The runtime's own types: `Ui`, `Node`, `Source`, `Edge`, `Pending`, `KeyTable` and its
-  methods. A package that needs one (a hook built on `ui_slot`, a native module) is tied to the
+- The runtime's own types: `Ui`, `Node`, `Source`, `Edge`, `Pending`, `KeyTable`, `Commit`
+  and their methods. A package that needs one (a hook built on `ui_slot`, a native module) is tied to the
   ui release it was built for, and says so in its `eskiu.toml`.
 - The host ABI: what `hosts/core.h` lists (`ui_start`, `ui_dispatch_*`, `ui_report_*`,
   `ui_tick`, `ui_splash`...) and the commit format of `src/core/wire.esk`. They change with
   the hosts in this repository, which are built from the same release.
+
+Some names without `_` are public for the authors of components, packages and tests rather
+than for apps, and are part of the promise: `ui_own`, `ui_own_fn` and the `ui_release_*`
+functions (a component that keeps closures frees them with these), `ui_slot` (a hook's
+storage), and `ui_decode` with `Mutation` (a test reads a commit with them).
 
 ## Versions
 

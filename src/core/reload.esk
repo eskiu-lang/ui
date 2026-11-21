@@ -35,7 +35,7 @@ struct _UiReloadState {
 
 _UiReloadState ui_rl;
 
-// The name a signal's type is saved under (ui_driver_value_type's codes), or null when its
+// The name a signal's type is saved under (_ui_driver_value_type's codes), or null when its
 // values are not saved (internal).
 string _ui_reload_type(int vtype) {
     if (vtype == 1) { return "int"; }

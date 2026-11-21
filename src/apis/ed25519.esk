@@ -112,19 +112,19 @@ void ui_sha512(*uint8 data, int64 n, *uint8 out) {
 
 // ---- the field, mod 2^255 - 19: 16 limbs of 16 bits ----
 
-int64[16] ui_ed_d = {0x78a3, 0x1359, 0x4dca, 0x75eb, 0xd8ab, 0x4141, 0x0a4d, 0x0070, 0xe898, 0x7779, 0x4079, 0x8cc7, 0xfe73, 0x2b6f, 0x6cee, 0x5203};
-int64[16] ui_ed_d2 = {0xf159, 0x26b2, 0x9b94, 0xebd6, 0xb156, 0x8283, 0x149a, 0x00e0, 0xd130, 0xeef3, 0x80f2, 0x198e, 0xfce7, 0x56df, 0xd9dc, 0x2406};
-int64[16] ui_ed_x = {0xd51a, 0x8f25, 0x2d60, 0xc956, 0xa7b2, 0x9525, 0xc760, 0x692c, 0xdc5c, 0xfdd6, 0xe231, 0xc0a4, 0x53fe, 0xcd6e, 0x36d3, 0x2169};
-int64[16] ui_ed_y = {0x6658, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666};
-int64[16] ui_ed_i = {0xa0b0, 0x4a0e, 0x1b27, 0xc4ee, 0xe478, 0xad2f, 0x1806, 0x2f43, 0xd7a7, 0x3dfb, 0x0099, 0x2b4d, 0xdf0b, 0x4fc1, 0x2480, 0x2b83};
+int64[16] _ui_ed_d = {0x78a3, 0x1359, 0x4dca, 0x75eb, 0xd8ab, 0x4141, 0x0a4d, 0x0070, 0xe898, 0x7779, 0x4079, 0x8cc7, 0xfe73, 0x2b6f, 0x6cee, 0x5203};
+int64[16] _ui_ed_d2 = {0xf159, 0x26b2, 0x9b94, 0xebd6, 0xb156, 0x8283, 0x149a, 0x00e0, 0xd130, 0xeef3, 0x80f2, 0x198e, 0xfce7, 0x56df, 0xd9dc, 0x2406};
+int64[16] _ui_ed_x = {0xd51a, 0x8f25, 0x2d60, 0xc956, 0xa7b2, 0x9525, 0xc760, 0x692c, 0xdc5c, 0xfdd6, 0xe231, 0xc0a4, 0x53fe, 0xcd6e, 0x36d3, 0x2169};
+int64[16] _ui_ed_y = {0x6658, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666};
+int64[16] _ui_ed_i = {0xa0b0, 0x4a0e, 0x1b27, 0xc4ee, 0xe478, 0xad2f, 0x1806, 0x2f43, 0xd7a7, 0x3dfb, 0x0099, 0x2b4d, 0xdf0b, 0x4fc1, 0x2480, 0x2b83};
 
 // r = a (internal; the field helpers below are all internal).
-void ui_fe_copy(*int64 r, *int64 a) { for (int i = 0; i < 16; i++) { r[i] = a[i]; } }
+void _ui_fe_copy(*int64 r, *int64 a) { for (int i = 0; i < 16; i++) { r[i] = a[i]; } }
 // r = v, a small number.
-void ui_fe_set(*int64 r, int64 v) { for (int i = 0; i < 16; i++) { r[i] = 0; } r[0] = v; }
+void _ui_fe_set(*int64 r, int64 v) { for (int i = 0; i < 16; i++) { r[i] = 0; } r[0] = v; }
 
 // Carries each limb into the next, so each fits 16 bits again.
-void ui_fe_carry(*int64 o) {
+void _ui_fe_carry(*int64 o) {
     for (int i = 0; i < 16; i++) {
         o[i] += (int64)1 << 16;
         int64 c = o[i] >> 16;
@@ -134,7 +134,7 @@ void ui_fe_carry(*int64 o) {
 }
 
 // Swaps p and q when b is 1, in constant time.
-void ui_fe_swap(*int64 p, *int64 q, int b) {
+void _ui_fe_swap(*int64 p, *int64 q, int b) {
     int64 c = ~((int64)b - 1);
     for (int i = 0; i < 16; i++) {
         int64 t = c & (p[i] ^ q[i]);
@@ -144,11 +144,11 @@ void ui_fe_swap(*int64 p, *int64 q, int b) {
 }
 
 // The element reduced mod p, as 32 little-endian bytes.
-void ui_fe_pack(*uint8 o, *int64 n) {
+void _ui_fe_pack(*uint8 o, *int64 n) {
     int64[16] m;
     int64[16] t;
-    ui_fe_copy(&t[0], n);
-    ui_fe_carry(&t[0]); ui_fe_carry(&t[0]); ui_fe_carry(&t[0]);
+    _ui_fe_copy(&t[0], n);
+    _ui_fe_carry(&t[0]); _ui_fe_carry(&t[0]); _ui_fe_carry(&t[0]);
     for (int j = 0; j < 2; j++) {
         m[0] = t[0] - 0xffed;
         for (int i = 1; i < 15; i++) {
@@ -158,7 +158,7 @@ void ui_fe_pack(*uint8 o, *int64 n) {
         m[15] = t[15] - 0x7fff - ((m[14] >> 16) & 1);
         int b = (int)((m[15] >> 16) & 1);
         m[14] &= 0xffff;
-        ui_fe_swap(&t[0], &m[0], 1 - b);
+        _ui_fe_swap(&t[0], &m[0], 1 - b);
     }
     for (int i = 0; i < 16; i++) {
         o[2 * i] = (uint8)(t[i] & 0xff);
@@ -174,64 +174,64 @@ int _ui_bytes_differ(*uint8 a, *uint8 b, int n) {
 }
 
 // 1 when a and b are different elements.
-int ui_fe_neq(*int64 a, *int64 b) {
+int _ui_fe_neq(*int64 a, *int64 b) {
     uint8[32] c;
     uint8[32] d;
-    ui_fe_pack(&c[0], a);
-    ui_fe_pack(&d[0], b);
+    _ui_fe_pack(&c[0], a);
+    _ui_fe_pack(&d[0], b);
     return _ui_bytes_differ(&c[0], &d[0], 32);
 }
 
 // The lowest bit of the reduced element.
-int ui_fe_parity(*int64 a) {
+int _ui_fe_parity(*int64 a) {
     uint8[32] d;
-    ui_fe_pack(&d[0], a);
+    _ui_fe_pack(&d[0], a);
     return (int)(d[0] & 1);
 }
 
 // An element from 32 little-endian bytes (the top bit ignored).
-void ui_fe_unpack(*int64 o, *uint8 n) {
+void _ui_fe_unpack(*int64 o, *uint8 n) {
     for (int i = 0; i < 16; i++) { o[i] = (int64)n[2 * i] + ((int64)n[2 * i + 1] << 8); }
     o[15] &= 0x7fff;
 }
 
 // o = a + b.
-void ui_fe_add(*int64 o, *int64 a, *int64 b) { for (int i = 0; i < 16; i++) { o[i] = a[i] + b[i]; } }
+void _ui_fe_add(*int64 o, *int64 a, *int64 b) { for (int i = 0; i < 16; i++) { o[i] = a[i] + b[i]; } }
 // o = a - b.
-void ui_fe_sub(*int64 o, *int64 a, *int64 b) { for (int i = 0; i < 16; i++) { o[i] = a[i] - b[i]; } }
+void _ui_fe_sub(*int64 o, *int64 a, *int64 b) { for (int i = 0; i < 16; i++) { o[i] = a[i] - b[i]; } }
 
 // o = a * b.
-void ui_fe_mul(*int64 o, *int64 a, *int64 b) {
+void _ui_fe_mul(*int64 o, *int64 a, *int64 b) {
     int64[31] t;
     for (int i = 0; i < 16; i++) {
         for (int j = 0; j < 16; j++) { t[i + j] += a[i] * b[j]; }
     }
     for (int i = 0; i < 15; i++) { t[i] += 38 * t[i + 16]; }
     for (int i = 0; i < 16; i++) { o[i] = t[i]; }
-    ui_fe_carry(o);
-    ui_fe_carry(o);
+    _ui_fe_carry(o);
+    _ui_fe_carry(o);
 }
 
 // o = 1 / i.
-void ui_fe_inverse(*int64 o, *int64 i) {
+void _ui_fe_inverse(*int64 o, *int64 i) {
     int64[16] c;
-    ui_fe_copy(&c[0], i);
+    _ui_fe_copy(&c[0], i);
     for (int a = 253; a >= 0; a--) {
-        ui_fe_mul(&c[0], &c[0], &c[0]);
-        if (a != 2 && a != 4) { ui_fe_mul(&c[0], &c[0], i); }
+        _ui_fe_mul(&c[0], &c[0], &c[0]);
+        if (a != 2 && a != 4) { _ui_fe_mul(&c[0], &c[0], i); }
     }
-    ui_fe_copy(o, &c[0]);
+    _ui_fe_copy(o, &c[0]);
 }
 
 // o = i ^ ((p - 5) / 8), for square roots.
-void ui_fe_pow2523(*int64 o, *int64 i) {
+void _ui_fe_pow2523(*int64 o, *int64 i) {
     int64[16] c;
-    ui_fe_copy(&c[0], i);
+    _ui_fe_copy(&c[0], i);
     for (int a = 250; a >= 0; a--) {
-        ui_fe_mul(&c[0], &c[0], &c[0]);
-        if (a != 1) { ui_fe_mul(&c[0], &c[0], i); }
+        _ui_fe_mul(&c[0], &c[0], &c[0]);
+        if (a != 1) { _ui_fe_mul(&c[0], &c[0], i); }
     }
-    ui_fe_copy(o, &c[0]);
+    _ui_fe_copy(o, &c[0]);
 }
 
 // ---- points: extended coordinates (X, Y, Z, T), 64 limbs ----
@@ -240,34 +240,34 @@ void ui_fe_pow2523(*int64 o, *int64 i) {
 void _ui_ed_add(*int64 p, *int64 q) {
     int64[16] a; int64[16] b; int64[16] c; int64[16] d; int64[16] t;
     int64[16] e; int64[16] f; int64[16] g; int64[16] h;
-    ui_fe_sub(&a[0], &p[16], &p[0]); ui_fe_sub(&t[0], &q[16], &q[0]); ui_fe_mul(&a[0], &a[0], &t[0]);
-    ui_fe_add(&b[0], &p[0], &p[16]); ui_fe_add(&t[0], &q[0], &q[16]); ui_fe_mul(&b[0], &b[0], &t[0]);
-    ui_fe_mul(&c[0], &p[48], &q[48]); ui_fe_mul(&c[0], &c[0], &ui_ed_d2[0]);
-    ui_fe_mul(&d[0], &p[32], &q[32]); ui_fe_add(&d[0], &d[0], &d[0]);
-    ui_fe_sub(&e[0], &b[0], &a[0]); ui_fe_sub(&f[0], &d[0], &c[0]);
-    ui_fe_add(&g[0], &d[0], &c[0]); ui_fe_add(&h[0], &b[0], &a[0]);
-    ui_fe_mul(&p[0], &e[0], &f[0]); ui_fe_mul(&p[16], &h[0], &g[0]);
-    ui_fe_mul(&p[32], &g[0], &f[0]); ui_fe_mul(&p[48], &e[0], &h[0]);
+    _ui_fe_sub(&a[0], &p[16], &p[0]); _ui_fe_sub(&t[0], &q[16], &q[0]); _ui_fe_mul(&a[0], &a[0], &t[0]);
+    _ui_fe_add(&b[0], &p[0], &p[16]); _ui_fe_add(&t[0], &q[0], &q[16]); _ui_fe_mul(&b[0], &b[0], &t[0]);
+    _ui_fe_mul(&c[0], &p[48], &q[48]); _ui_fe_mul(&c[0], &c[0], &_ui_ed_d2[0]);
+    _ui_fe_mul(&d[0], &p[32], &q[32]); _ui_fe_add(&d[0], &d[0], &d[0]);
+    _ui_fe_sub(&e[0], &b[0], &a[0]); _ui_fe_sub(&f[0], &d[0], &c[0]);
+    _ui_fe_add(&g[0], &d[0], &c[0]); _ui_fe_add(&h[0], &b[0], &a[0]);
+    _ui_fe_mul(&p[0], &e[0], &f[0]); _ui_fe_mul(&p[16], &h[0], &g[0]);
+    _ui_fe_mul(&p[32], &g[0], &f[0]); _ui_fe_mul(&p[48], &e[0], &h[0]);
 }
 
 // Swaps the points p and q when b is 1, in constant time (internal).
 void _ui_ed_swap(*int64 p, *int64 q, int b) {
-    for (int i = 0; i < 4; i++) { ui_fe_swap(&p[i * 16], &q[i * 16], b); }
+    for (int i = 0; i < 4; i++) { _ui_fe_swap(&p[i * 16], &q[i * 16], b); }
 }
 
 // A point as 32 bytes: y, with x's parity in the top bit (internal).
 void _ui_ed_pack(*uint8 r, *int64 p) {
     int64[16] tx; int64[16] ty; int64[16] zi;
-    ui_fe_inverse(&zi[0], &p[32]);
-    ui_fe_mul(&tx[0], &p[0], &zi[0]);
-    ui_fe_mul(&ty[0], &p[16], &zi[0]);
-    ui_fe_pack(r, &ty[0]);
-    r[31] ^= (uint8)(ui_fe_parity(&tx[0]) << 7);
+    _ui_fe_inverse(&zi[0], &p[32]);
+    _ui_fe_mul(&tx[0], &p[0], &zi[0]);
+    _ui_fe_mul(&ty[0], &p[16], &zi[0]);
+    _ui_fe_pack(r, &ty[0]);
+    r[31] ^= (uint8)(_ui_fe_parity(&tx[0]) << 7);
 }
 
 // p = s * q, for a 32-byte little-endian scalar (q is clobbered).
-void ui_ed_scalarmult(*int64 p, *int64 q, *uint8 s) {
-    ui_fe_set(&p[0], 0); ui_fe_set(&p[16], 1); ui_fe_set(&p[32], 1); ui_fe_set(&p[48], 0);
+void _ui_ed_scalarmult(*int64 p, *int64 q, *uint8 s) {
+    _ui_fe_set(&p[0], 0); _ui_fe_set(&p[16], 1); _ui_fe_set(&p[32], 1); _ui_fe_set(&p[48], 0);
     for (int i = 255; i >= 0; i--) {
         int b = (int)((s[i / 8] >> (i & 7)) & 1);
         _ui_ed_swap(p, q, b);
@@ -278,18 +278,18 @@ void ui_ed_scalarmult(*int64 p, *int64 q, *uint8 s) {
 }
 
 // p = s * B, the base point.
-void ui_ed_scalarbase(*int64 p, *uint8 s) {
+void _ui_ed_scalarbase(*int64 p, *uint8 s) {
     int64[64] q;
-    ui_fe_copy(&q[0], &ui_ed_x[0]);
-    ui_fe_copy(&q[16], &ui_ed_y[0]);
-    ui_fe_set(&q[32], 1);
-    ui_fe_mul(&q[48], &ui_ed_x[0], &ui_ed_y[0]);
-    ui_ed_scalarmult(p, &q[0], s);
+    _ui_fe_copy(&q[0], &_ui_ed_x[0]);
+    _ui_fe_copy(&q[16], &_ui_ed_y[0]);
+    _ui_fe_set(&q[32], 1);
+    _ui_fe_mul(&q[48], &_ui_ed_x[0], &_ui_ed_y[0]);
+    _ui_ed_scalarmult(p, &q[0], s);
 }
 
 // ---- scalars mod L, the group's order ----
 
-int64[32] ui_ed_l = {0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
+int64[32] _ui_ed_l = {0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10};
 
 // r = x mod L, from 64 limbs of a byte each (internal).
@@ -298,7 +298,7 @@ void _ui_ed_mod_l(*uint8 r, *int64 x) {
         int64 carry = 0;
         int j = i - 32;
         while (j < i - 12) {
-            x[j] += carry - 16 * x[i] * ui_ed_l[j - (i - 32)];
+            x[j] += carry - 16 * x[i] * _ui_ed_l[j - (i - 32)];
             carry = (x[j] + 128) >> 8;
             x[j] -= carry << 8;
             j++;
@@ -308,11 +308,11 @@ void _ui_ed_mod_l(*uint8 r, *int64 x) {
     }
     int64 carry = 0;
     for (int j = 0; j < 32; j++) {
-        x[j] += carry - (x[31] >> 4) * ui_ed_l[j];
+        x[j] += carry - (x[31] >> 4) * _ui_ed_l[j];
         carry = x[j] >> 8;
         x[j] &= 255;
     }
-    for (int j = 0; j < 32; j++) { x[j] -= carry * ui_ed_l[j]; }
+    for (int j = 0; j < 32; j++) { x[j] -= carry * _ui_ed_l[j]; }
     for (int i = 0; i < 32; i++) {
         x[i + 1] += x[i] >> 8;
         r[i] = (uint8)(x[i] & 255);
@@ -330,33 +330,33 @@ void _ui_ed_reduce(*uint8 r) {
 bool _ui_ed_unpack_neg(*int64 r, *uint8 p) {
     int64[16] t; int64[16] chk; int64[16] num; int64[16] den;
     int64[16] den2; int64[16] den4; int64[16] den6;
-    ui_fe_set(&r[32], 1);
-    ui_fe_unpack(&r[16], p);
-    ui_fe_mul(&num[0], &r[16], &r[16]);
-    ui_fe_mul(&den[0], &num[0], &ui_ed_d[0]);
-    ui_fe_sub(&num[0], &num[0], &r[32]);
-    ui_fe_add(&den[0], &r[32], &den[0]);
-    ui_fe_mul(&den2[0], &den[0], &den[0]);
-    ui_fe_mul(&den4[0], &den2[0], &den2[0]);
-    ui_fe_mul(&den6[0], &den4[0], &den2[0]);
-    ui_fe_mul(&t[0], &den6[0], &num[0]);
-    ui_fe_mul(&t[0], &t[0], &den[0]);
-    ui_fe_pow2523(&t[0], &t[0]);
-    ui_fe_mul(&t[0], &t[0], &num[0]);
-    ui_fe_mul(&t[0], &t[0], &den[0]);
-    ui_fe_mul(&t[0], &t[0], &den[0]);
-    ui_fe_mul(&r[0], &t[0], &den[0]);
-    ui_fe_mul(&chk[0], &r[0], &r[0]);
-    ui_fe_mul(&chk[0], &chk[0], &den[0]);
-    if (ui_fe_neq(&chk[0], &num[0]) != 0) { ui_fe_mul(&r[0], &r[0], &ui_ed_i[0]); }
-    ui_fe_mul(&chk[0], &r[0], &r[0]);
-    ui_fe_mul(&chk[0], &chk[0], &den[0]);
-    if (ui_fe_neq(&chk[0], &num[0]) != 0) { return false; }
-    if (ui_fe_parity(&r[0]) == (int)(p[31] >> 7)) {
+    _ui_fe_set(&r[32], 1);
+    _ui_fe_unpack(&r[16], p);
+    _ui_fe_mul(&num[0], &r[16], &r[16]);
+    _ui_fe_mul(&den[0], &num[0], &_ui_ed_d[0]);
+    _ui_fe_sub(&num[0], &num[0], &r[32]);
+    _ui_fe_add(&den[0], &r[32], &den[0]);
+    _ui_fe_mul(&den2[0], &den[0], &den[0]);
+    _ui_fe_mul(&den4[0], &den2[0], &den2[0]);
+    _ui_fe_mul(&den6[0], &den4[0], &den2[0]);
+    _ui_fe_mul(&t[0], &den6[0], &num[0]);
+    _ui_fe_mul(&t[0], &t[0], &den[0]);
+    _ui_fe_pow2523(&t[0], &t[0]);
+    _ui_fe_mul(&t[0], &t[0], &num[0]);
+    _ui_fe_mul(&t[0], &t[0], &den[0]);
+    _ui_fe_mul(&t[0], &t[0], &den[0]);
+    _ui_fe_mul(&r[0], &t[0], &den[0]);
+    _ui_fe_mul(&chk[0], &r[0], &r[0]);
+    _ui_fe_mul(&chk[0], &chk[0], &den[0]);
+    if (_ui_fe_neq(&chk[0], &num[0]) != 0) { _ui_fe_mul(&r[0], &r[0], &_ui_ed_i[0]); }
+    _ui_fe_mul(&chk[0], &r[0], &r[0]);
+    _ui_fe_mul(&chk[0], &chk[0], &den[0]);
+    if (_ui_fe_neq(&chk[0], &num[0]) != 0) { return false; }
+    if (_ui_fe_parity(&r[0]) == (int)(p[31] >> 7)) {
         int64[16] zero;
-        ui_fe_sub(&r[0], &zero[0], &r[0]);
+        _ui_fe_sub(&r[0], &zero[0], &r[0]);
     }
-    ui_fe_mul(&r[48], &r[0], &r[16]);
+    _ui_fe_mul(&r[48], &r[0], &r[16]);
     return true;
 }
 
@@ -368,7 +368,7 @@ void ui_ed25519_public_key(*uint8 seed, *uint8 public_key) {
     int64[64] p;
     ui_sha512(seed, 32, &d[0]);
     d[0] &= 248; d[31] &= 127; d[31] |= 64;
-    ui_ed_scalarbase(&p[0], &d[0]);
+    _ui_ed_scalarbase(&p[0], &d[0]);
     _ui_ed_pack(public_key, &p[0]);
 }
 
@@ -389,7 +389,7 @@ void ui_ed25519_sign(*uint8 seed, *uint8 message, int64 n, *uint8 signature) {
     ui_sha512_update(&hr, message, n);
     ui_sha512_final(&hr, &r[0]);
     _ui_ed_reduce(&r[0]);
-    ui_ed_scalarbase(&p[0], &r[0]);
+    _ui_ed_scalarbase(&p[0], &r[0]);
     _ui_ed_pack(signature, &p[0]);
     UiSha512 hh;
     ui_sha512_init(&hh);
@@ -411,8 +411,8 @@ bool ui_ed25519_verify(*uint8 public_key, *uint8 message, int64 n, *uint8 signat
     // S < L, compared from the most significant byte.
     for (int i = 31; i >= 0; i--) {
         int64 s = (int64)signature[32 + i];
-        if (s < ui_ed_l[i]) { break; }
-        if (s > ui_ed_l[i] || i == 0) { return false; }
+        if (s < _ui_ed_l[i]) { break; }
+        if (s > _ui_ed_l[i] || i == 0) { return false; }
     }
     int64[64] p;
     int64[64] q;
@@ -425,8 +425,8 @@ bool ui_ed25519_verify(*uint8 public_key, *uint8 message, int64 n, *uint8 signat
     ui_sha512_update(&hh, message, n);
     ui_sha512_final(&hh, &h[0]);
     _ui_ed_reduce(&h[0]);
-    ui_ed_scalarmult(&p[0], &q[0], &h[0]);
-    ui_ed_scalarbase(&q[0], &signature[32]);
+    _ui_ed_scalarmult(&p[0], &q[0], &h[0]);
+    _ui_ed_scalarbase(&q[0], &signature[32]);
     _ui_ed_add(&p[0], &q[0]);
     uint8[32] t;
     _ui_ed_pack(&t[0], &p[0]);

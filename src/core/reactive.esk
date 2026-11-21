@@ -3,7 +3,7 @@
 
 // A subscription is one entry on each side, each holding the other's index, so either
 // side removes it in O(1) by swapping in its last entry.
-struct Reader { *_Observer observer; int at; }
+struct _Reader { *_Observer observer; int at; }
 
 // An observer's side of a subscription: the source it reads and its index in the source's
 // readers (internal).
@@ -12,7 +12,7 @@ struct Edge { *Source source; int at; }
 // Something observers read (a signal, or a memo's value): its readers, the memo computing
 // it if any, and the last run that subscribed (internal).
 struct Source {
-    List<Reader> readers;
+    List<_Reader> readers;
     *_Observer memo;
     // The observer run that last subscribed: a second read in the same run is not a new edge.
     *_Observer marked;
@@ -43,7 +43,7 @@ struct _Observer {
 // and its observer if any. ui_slot gives one to a package's own hooks.
 struct Slot { int kind; *void tag; *void data; fn()->void dispose; *_Observer observer;
 #ifdef UI_TEST
-    // A signal's value type for the driver's `state` (ui_driver_value_type), and the key a
+    // A signal's value type for the driver's `state` (_ui_driver_value_type), and the key a
     // use_signal_keyed signal keeps across reloads (a copy, freed with the slot).
     int vtype;
     string key;
@@ -57,7 +57,7 @@ struct Slot { int kind; *void tag; *void data; fn()->void dispose; *_Observer ob
 void _ui_remove_reader(*Source source, int at) {
     int last = source.readers.size - 1;
     if (at != last) {
-        Reader moved = source.readers.data[last];
+        _Reader moved = source.readers.data[last];
         source.readers.data[at] = moved;
         moved.observer.deps.data[moved.at].at = at;
     }
@@ -76,7 +76,7 @@ void _ui_remove_edge(*_Observer observer, int at) {
 }
 
 // Drop every subscription of the observer; a new run subscribes again.
-void ui_untrack(*_Observer observer) {
+void _ui_untrack(*_Observer observer) {
     for (int i = observer.deps.size - 1; i >= 0; i--) {
         Edge edge = observer.deps.data[i];
         _ui_remove_reader(edge.source, edge.at);
@@ -101,7 +101,7 @@ void _ui_track(*Source source) {
     source.marked = observer;
     source.marked_epoch = observer.epoch;
     observer.deps.push(Edge{source, source.readers.size});
-    source.readers.push(Reader{observer, observer.deps.size - 1});
+    source.readers.push(_Reader{observer, observer.deps.size - 1});
 }
 
 // Adds an observer to a dirty list once (internal).
@@ -157,7 +157,7 @@ void _ui_stale_memos(*Source source) {
 // Forget a source that is being freed: no observer keeps it as a dependency.
 void ui_detach_source(*Source source) {
     for (int i = source.readers.size - 1; i >= 0; i--) {
-        Reader reader = source.readers.data[i];
+        _Reader reader = source.readers.data[i];
         _ui_remove_edge(reader.observer, reader.at);
     }
     source.readers.free();
@@ -174,7 +174,7 @@ void _ui_validate(*_Observer observer) {
     observer.below = ui.evaluating;
     ui.evaluating = observer;
     *_Observer previous = ui.tracking;
-    ui_untrack(observer);
+    _ui_untrack(observer);
     ui.tracking = observer;
     observer.dirty = false;
     observer.compute();
@@ -194,7 +194,7 @@ void _ui_validate(*_Observer observer) {
 
 // Unsubscribes and frees an observer, running its cleanup first (internal).
 void _ui_drop_observer(*_Observer observer) {
-    ui_untrack(observer);
+    _ui_untrack(observer);
     _ui_unqueue(observer.kind == 1 ? &ui.dirty_memos : &ui.dirty_effects, observer);
     if (observer.has_cleanup) { observer.cleanup(); ui_release_closure(observer.cleanup); }
     if (observer.kind != 0) { ui_release_closure(observer.compute); }
@@ -261,7 +261,7 @@ struct Signal<T> { T value; Source source; }
         signal.value = initial;
         slot.data = signal;
 #ifdef UI_TEST
-        slot.vtype = ui_driver_value_type<T>();
+        slot.vtype = _ui_driver_value_type<T>();
         slot.hidden = ui.hidden_signals > 0;
         string kept = key == null ? null : ui_copy(key);
         slot.key = kept;

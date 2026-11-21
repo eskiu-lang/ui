@@ -8,7 +8,7 @@ void _ui_driver_begin(string op) {
 }
 
 // An answer that the request failed with `error`.
-string ui_driver_error(string op, string error) {
+string _ui_driver_error(string op, string error) {
     String_clear(&ui_drv.out);
     String_append(&ui_drv.out, "{\"ok\": false, \"op\": ");
     ui_json_string(&ui_drv.out, op == null ? "" : op);
@@ -30,7 +30,7 @@ void _ui_driver_directive(string op, *Node node) {
 }
 
 // The clock directive: the hosts move their own animations to the driver's time.
-string ui_driver_clock_directive(string op, bool settle) {
+string _ui_driver_clock_directive(string op, bool settle) {
     _ui_driver_directive(op, null);
     String_append(&ui_drv.out, ", \"now\": ");
     _ui_json_number(&ui_drv.out, ui_drv.now);
@@ -65,7 +65,7 @@ string ui_driver_request(string line, string source) {
     *JsonValue request = json_parse(line);
     if (request == null || request.kind != JObject) {
         JsonValue_free(request);
-        return ui_driver_error(null, "a request is one JSON object with an \"op\"");
+        return _ui_driver_error(null, "a request is one JSON object with an \"op\"");
     }
     string answer = _ui_driver_answer(request, source);
     JsonValue_free(request);
@@ -75,15 +75,15 @@ string ui_driver_request(string line, string source) {
 // Answers a parsed request (internal).
 string _ui_driver_answer(*JsonValue request, string source) {
     string op = _ui_driver_text(request, "op");
-    if (op == null) { return ui_driver_error(null, "a request needs an \"op\""); }
-    if (ui == null) { return ui_driver_error(op, "the app is not running"); }
+    if (op == null) { return _ui_driver_error(null, "a request needs an \"op\""); }
+    if (ui == null) { return _ui_driver_error(op, "the app is not running"); }
     _ui_driver_flush();
     if (strcmp(op, "hello") == 0) {
         string clock = _ui_driver_text(request, "clock");
         if (clock != null && strcmp(clock, "real") == 0) { _ui_driver_release_clock(); }
         else if (clock == null || strcmp(clock, "virtual") == 0) { _ui_driver_take_clock(); }
         String_clear(&ui_drv.target); String_append(&ui_drv.target, source == null ? "" : source);
-        return ui_driver_clock_directive("hello", false);
+        return _ui_driver_clock_directive("hello", false);
     }
     if (strcmp(op, "tree") == 0) {
         _ui_driver_begin(op);
@@ -129,18 +129,18 @@ string _ui_driver_answer(*JsonValue request, string source) {
         String error;
         defer String_free(&error);
         *Node node = _ui_driver_find(target, &error);
-        if (node == null) { return ui_driver_error(op, error.data); }
+        if (node == null) { return _ui_driver_error(op, error.data); }
         if (node.kind != 5) {
             String_appendf(&error, "'%s' is a %s (#%d), not a TextInput", target, ui_kind_name(node.kind), node.id);
-            return ui_driver_error(op, error.data);
+            return _ui_driver_error(op, error.data);
         }
         if (_ui_node_disabled(node)) {
             String_appendf(&error, "'%s' is disabled (Style.disabled, on it or on an element around it)", target);
-            return ui_driver_error(op, error.data);
+            return _ui_driver_error(op, error.data);
         }
         if (!node.has_on_submit) {
             String_appendf(&error, "'%s' has no ui_on_submit listener", target);
-            return ui_driver_error(op, error.data);
+            return _ui_driver_error(op, error.data);
         }
         ui_event_submit(node.id, node.generation, node.text == null ? "" : node.text);
         _ui_driver_flush();
@@ -161,19 +161,19 @@ string _ui_driver_answer(*JsonValue request, string source) {
         if (_ui_driver_flag(request, "real")) {
             _ui_driver_release_clock();
             ui_drv.advanced = 0;
-            return ui_driver_clock_directive("clock", false);
+            return _ui_driver_clock_directive("clock", false);
         }
         double before = ui_drv.virtual ? ui_drv.now : 0;
         bool settle = _ui_driver_flag(request, "settle");
-        if (settle) { ui_driver_settle(); }
+        if (settle) { _ui_driver_settle(); }
         else {
             double ms = _ui_driver_number(request, "ms", -1);
-            if (ms < 0) { return ui_driver_error(op, "clock takes +MS (a number of milliseconds) or settle"); }
-            ui_driver_advance(ms);
+            if (ms < 0) { return _ui_driver_error(op, "clock takes +MS (a number of milliseconds) or settle"); }
+            _ui_driver_advance(ms);
             ui_drv.idle = _ui_driver_is_idle();
         }
         ui_drv.advanced = ui_drv.now - before;
-        return ui_driver_clock_directive("clock", settle);
+        return _ui_driver_clock_directive("clock", settle);
     }
     if (strcmp(op, "logs") == 0 || strcmp(op, "perf") == 0 || strcmp(op, "layout") == 0) {
         _ui_driver_directive(op, null);
@@ -185,7 +185,7 @@ string _ui_driver_answer(*JsonValue request, string source) {
         String error;
         defer String_free(&error);
         *Node node = _ui_driver_find(target, &error);
-        if (node == null) { return ui_driver_error(op, error.data); }
+        if (node == null) { return _ui_driver_error(op, error.data); }
         *Node reached = node;
         if (strcmp(op, "tap") == 0) { reached = _ui_driver_tappable(node); }
         else if (strcmp(op, "scroll") == 0) { reached = _ui_driver_scrollable(node); }
@@ -194,13 +194,13 @@ string _ui_driver_answer(*JsonValue request, string source) {
             String_appendf(&error, "'%s' is a %s (#%d), which %s", target, ui_kind_name(node.kind), node.id,
                 strcmp(op, "tap") == 0 ? "takes no press and is inside nothing that does"
                 : strcmp(op, "scroll") == 0 ? "is not a scroll or inside one" : "is not a TextInput");
-            return ui_driver_error(op, error.data);
+            return _ui_driver_error(op, error.data);
         }
         // A disabled element (or one inside a disabled one) takes nothing the user does: say
         // so rather than report a press that did nothing.
         if (strcmp(op, "scroll") != 0 && _ui_node_disabled(reached)) {
             String_appendf(&error, "'%s' is disabled (Style.disabled, on it or on an element around it)", target);
-            return ui_driver_error(op, error.data);
+            return _ui_driver_error(op, error.data);
         }
         String_clear(&ui_drv.target); String_append(&ui_drv.target, target);
         _ui_driver_directive(op, reached);
@@ -218,7 +218,7 @@ string _ui_driver_answer(*JsonValue request, string source) {
     }
     String message;
     String_appendf(&message, "unknown op '%s'", op);
-    string answer = ui_driver_error(op, message.data);
+    string answer = _ui_driver_error(op, message.data);
     String_free(&message);
     return answer;
 }
@@ -263,7 +263,7 @@ void _ui_driver_layout_node(*String out, *Node node, List<double>* rows, *bool f
 // could not). Renders what the host's input scheduled and answers the request.
 string ui_driver_finish(string result) {
     string op = ui_drv.pending.data;
-    if (op == null || op[0] == 0) { return ui_driver_error(null, "no request is waiting for the host"); }
+    if (op == null || op[0] == 0) { return _ui_driver_error(null, "no request is waiting for the host"); }
     String op_text;
     String_from(&op_text, op);
     defer String_free(&op_text);
@@ -272,8 +272,8 @@ string ui_driver_finish(string result) {
     if (result == null) { result = ""; }
     // What `logs` reports is the app's own output, whose lines can start with "error: " (the
     // web host's console.error, a program's own message): it is never a failure of the host.
-    if (strcmp(op, "logs") != 0 && strncmp(result, "error: ", 7) == 0) { return ui_driver_error(op, &result[7]); }
-    if (ui == null) { return ui_driver_error(op, "the app stopped"); }
+    if (strcmp(op, "logs") != 0 && strncmp(result, "error: ", 7) == 0) { return _ui_driver_error(op, &result[7]); }
+    if (ui == null) { return _ui_driver_error(op, "the app stopped"); }
     _ui_driver_flush();
     _ui_driver_begin(op);
     if (strcmp(op, "hello") == 0 || strcmp(op, "clock") == 0) {

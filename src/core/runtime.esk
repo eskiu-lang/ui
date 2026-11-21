@@ -260,7 +260,7 @@ void ui_run_effects() {
     while (at < order.size) {
         try { _ui_effects_from(&due, &order, &at, &effect); } catch (_) {
             string text = ui_copy(exception_text());
-            ui_unwind_evaluating(null);
+            _ui_unwind_evaluating(null);
             ui.tracking = null;
             if (effect.has_cleanup) { ui_release_closure(effect.cleanup); effect.has_cleanup = false; }
             String path;
@@ -347,16 +347,16 @@ void _ui_memos_from(*int at, **_Observer current) {
 }
 
 // Where a render started, for the rollback if it throws.
-struct RenderSave { *Node node; int from; int writes; int journal; *_Observer evaluating; }
+struct _RenderSave { *Node node; int from; int writes; int journal; *_Observer evaluating; }
 
 // Runs the scheduled blocks from `at` on, noting where each started for a rollback
 // (internal).
-void _ui_renders_from(List<*Node>* run, *int at, *RenderSave save) {
+void _ui_renders_from(List<*Node>* run, *int at, *_RenderSave save) {
     while (*at < run.size) {
         *Node node = run.data[*at];
         *at = *at + 1;
         if (!node.current) { continue; }
-        *save = RenderSave{node, ui.commit.len, ui.writes.size, ui.pass_unmounted.size, ui.evaluating};
+        *save = _RenderSave{node, ui.commit.len, ui.writes.size, ui.pass_unmounted.size, ui.evaluating};
         _ui_run(node);
     }
 }
@@ -365,7 +365,7 @@ void _ui_renders_from(List<*Node>* run, *int at, *RenderSave save) {
 // the commit to `apply`. False when there was nothing to do.
 bool ui_frame() {
 #ifdef UI_TEST
-    double started = ui_driver_clock_ms();
+    double started = _ui_driver_clock_ms();
 #endif
     ui_require_consistent();
     ui_require(!ui.in_flight, "frame while commit in flight");
@@ -377,7 +377,7 @@ bool ui_frame() {
     *_Observer memo = null;
     while (next_memo < ui.dirty_memos.size) {
         try { _ui_memos_from(&next_memo, &memo); } catch (_) {
-            ui_unwind_evaluating(null);
+            _ui_unwind_evaluating(null);
             ui.tracking = null;
             _ui_changed(memo.output);
         }
@@ -405,11 +405,11 @@ bool ui_frame() {
     // A throw no boundary inside the node caught goes to the nearest boundary above it,
     // which runs again with its fallback (a boundary's own content is caught in its block).
     int at = 0;
-    RenderSave save;
+    _RenderSave save;
     while (at < run.size) {
         try { _ui_renders_from(&run, &at, &save); } catch (_) {
             string text = ui_copy(exception_text());
-            run.push(ui_render_failed(save.node, text, save.from, save.writes, save.journal, save.evaluating));
+            run.push(_ui_render_failed(save.node, text, save.from, save.writes, save.journal, save.evaluating));
             free(text);
         }
     }
@@ -448,7 +448,7 @@ bool ui_frame() {
 #endif
     ui.apply(ui.commit.data, ui.commit.len);
 #ifdef UI_TEST
-    _ui_driver_note_frame(ui_driver_clock_ms() - started, bytes);
+    _ui_driver_note_frame(_ui_driver_clock_ms() - started, bytes);
 #endif
     return true;
 }
@@ -539,7 +539,7 @@ bool ui_dispatch_event(*Event event) {
     bool handled = true;
     try { handled = _ui_dispatch_now(event); } catch (_) {
         string text = ui_copy(exception_text());
-        ui_unwind_evaluating(evaluating);
+        _ui_unwind_evaluating(evaluating);
         ui.builder = builder;
         ui.tracking = tracking;
         ui.phase = phase;
@@ -714,7 +714,7 @@ void ui_shutdown() {
     for (i in 0..ui.fetches.size) { ui_release_fetch(ui.fetches.data[i].on_done); }
     ui.fetches.free(); ui.modals.free(); ui.next_owned.free();
     // Downloads the app stopped before: their handlers get null.
-    for (i in 0..ui.caching.size) { ui_answer_cache(&ui.caching.data[i], null); }
+    for (i in 0..ui.caching.size) { _ui_answer_cache(&ui.caching.data[i], null); }
     ui.caching.free();
     free(ui.link);
     free(ui.locale);
