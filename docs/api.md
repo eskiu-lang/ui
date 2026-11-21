@@ -159,6 +159,29 @@ bool ui_event_answer(int request, string text)
 
 The host's side: the text a request asked for (event 15).
 
+### UiWords
+
+```eskiu
+struct UiWords {
+    string mixed = "mixed"; string expanded = "expanded"; string collapsed = "collapsed";
+    string menu = "menu"; string menu_item = "menu item"; string alert = "alert";
+    string search = "search"; string link = "link";
+}
+```
+
+Words a screen reader says that the platform has no translation of: a checkbox's mixed
+state, a disclosure's expanded and collapsed (before iOS 18), and the names Android gives a
+menu, a menu item, an alert, a search field and a link. English by default; the kit sets
+them with its words (kit_use_text).
+
+### ui_set_words
+
+```eskiu
+void ui_set_words(UiWords words)
+```
+
+Hands the hosts the words of `words` (command 13), for what they say to a screen reader.
+
 
 ## `<ui/apis/ed25519>`
 
@@ -2161,8 +2184,10 @@ A commit is one byte buffer, little-endian. Each record is an op byte and the no
          "replace" path, "back", "reset" paths...; 4 hide the keyboard; 5 share: text,
          URL; 6 copy: text; 7 paste (answered by event 15); 8 haptic: its kind;
          9 announce: text; 10 fetch: URL, method, headers, body, timeout in ms, whether
-         there is a body, answered by event 16), u8 count, then that many strings, each a
-         length u32, the bytes and a NUL
+         there is a body, answered by event 16; 11 splash; 12 updates; 13 the words a
+         screen reader says that the platform has no translation of, in UiWords' order:
+         mixed, expanded, collapsed, menu, menu item, alert, search, link), u8 count, then
+         that many strings, each a length u32, the bytes and a NUL
 ```
 
 Int props: 1 gap, 2 padding, 3 focused (1 focus, 0 blur), 4 width, 5 height, 6 grow,
@@ -3542,14 +3567,16 @@ struct KitText {
     string color = "Color";
     string colors = "Red,Orange,Amber,Lime,Green,Cyan,Blue,Indigo,Violet,Pink,Gray,Black";
     string delete = "Delete";
+    UiWords access;
 }
 ```
 
 The words the kit shows and says, English by default. Lists are comma separated. `weekdays`
 are the initials from Sunday, and `weekday_names` the names a screen reader says for them; `first_weekday` is the day a Calendar's weeks start on (0
 Sunday, 1 Monday). `date` and `month_year` are patterns with {day}, {month} and {year}.
-`colors` names ColorPicker's swatches in order. Set `kit_text` before mounting:
-`kit_text = kit_text_for(ui_locale());`, or fields of your own.
+`colors` names ColorPicker's swatches in order; `access` holds what a screen reader says
+that the platform does not translate. Set them before mounting with
+`kit_use_text(kit_text_for(ui_locale()));` (or fields of your own).
 
 ### kit_text_english
 
@@ -3566,6 +3593,15 @@ KitText kit_text_spanish()
 ```
 
 The kit's words in Spanish, weeks from Monday.
+
+### kit_use_text
+
+```eskiu
+void kit_use_text(KitText text)
+```
+
+Makes `text` the kit's words and hands the platform's untranslated ones to the hosts
+(ui_set_words): `kit_use_text(kit_text_for(ui_locale()));` in ui_app_start.
 
 ### kit_text_for
 
