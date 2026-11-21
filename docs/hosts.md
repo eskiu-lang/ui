@@ -386,7 +386,16 @@ A host needs to:
    `ui_host_schedule()` to ask for a frame and `ui_host_cancel()` to drop one, and
    `ui_host_timer_start(token, ms, repeat)` and `ui_host_timer_stop(token)` for timers,
    `ui_host_frames(on)` for the display clock (`use_frame`), and `ui_host_asset_path(name)`
-   for `ui_asset_path` (a path from `malloc`, or null).
+   for `ui_asset_path` (a path from `malloc`, or null). It also defines
+   `ui_host_storage_load()` (the saved values as text, from `malloc`, or null) and
+   `ui_host_storage_save(text)` for `ui_storage_*`.
+
+The functions the core calls on its host are this ABI, not API for apps (docs/stability.md):
+the ones above, declared in `hosts/core.h`, and the `uiw_*` functions a web app's window
+calls (`src/webapp.esk`: `uiw_init`, `uiw_window_open`, `uiw_eval`, `uiw_respond`, the
+dialogs...), which `hosts/webview_*` define per platform. `QueryPerformanceCounter` and
+`QueryPerformanceFrequency` are the Windows clock the driver reads, and `abort` stops the
+program after a failed runtime check; both come from the C library or the system.
 2. Call `ui_start(0)` at launch, `ui_tick()` for each scheduled frame and `ui_stop()` at
    the end.
 3. Report events and the environment with the `ui_dispatch_*` and `ui_report_*` calls
