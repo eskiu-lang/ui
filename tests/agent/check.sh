@@ -160,6 +160,19 @@ if [ "$HOST" = web ]; then
     grep -q 'RefreshControl must come right before' "$OUT/last.json" || { cat "$OUT/last.json" "$OUT/last.err"; fail "a failed start: no message"; }
     [ "$took" -lt 60 ] || fail "a failed start took $took s"
     echo "PASS $HOST: an app that fails as it starts tells why ($took s)"
+    # A new session starts from the app's own values: the page of an earlier session's build
+    # (here, a count from 40) never runs while ui serve makes the first build of the new
+    # sources, so nothing of it carries over the reload.
+    "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
+    awk '!d && sub(/use_signal<int>\(0\);/, "use_signal<int>(40);") { d = 1 } { print }' "$OUT/main.esk.orig" > src/main.esk
+    grep -q 'use_signal<int>(40)' src/main.esk || { restore; fail "could not edit the app"; }
+    "$UI" agent "$HOST" --json tree > "$OUT/last.json" 2> "$OUT/last.err" || { restore; cat "$OUT/last.json" "$OUT/last.err"; fail "a count from 40"; }
+    grep -q '"text":"Count: 40"' "$OUT/last.json" || { restore; cat "$OUT/last.json"; fail "a count from 40: no Count: 40"; }
+    "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
+    restore
+    "$UI" agent "$HOST" --json tree > "$OUT/last.json" 2> "$OUT/last.err" || { cat "$OUT/last.json" "$OUT/last.err"; fail "a new session"; }
+    grep -q '"text":"Count: 0"' "$OUT/last.json" || { cat "$OUT/last.json"; fail "a new session kept an earlier session's state"; }
+    echo "PASS $HOST: a new session starts from the app's own values"
 fi
 "$UI" agent "$HOST" --stop > /dev/null 2>&1 || true
 [ "$HOST" = ios ] && { xcrun simctl status_bar booted clear > /dev/null 2>&1 || true; }

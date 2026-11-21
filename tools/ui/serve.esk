@@ -493,9 +493,11 @@ void serve_dev_request(int client, String* path, String* query, String* body_in)
 }
 
 // The page at `path` with the script added; a bare page with it when there is none yet (the
-// first build failed).
+// first build failed) or while the first build runs: what build/ui/web holds then is an
+// earlier session's app, and running it would hand its signals to the new build's reload.
 void serve_page(string path, String* out) {
-    if (fs_read_text(path, out) != 0) {
+    bool first_build = atomic_load(&serve_version) == 0;
+    if (first_build || fs_read_text(path, out) != 0) {
         String_from(out, "<!doctype html>\n<meta charset=\"utf-8\">\n<title>ui serve</title>\n<body>\n");
     }
     // The build the page is, so the driver channel serves only a page of the latest one.
