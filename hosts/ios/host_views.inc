@@ -58,7 +58,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.view = makeTextField(id);
             node.autocorrect = 1;
         } else if (kind == 3) {
-            UILabel *label = [UILabel new];
+            UILabel *label = [UiLabel new];
             label.numberOfLines = 0;
             node.view = label;
         } else if (kind == 7) {

@@ -161,8 +161,21 @@ static UiTextView *makeTextView(int id) {
 
 // The node's padding inside the input: a field's text from its left edge, a text view's on
 // both sides.
+// A Text's label, drawn inside its padding (Yoga gives it the padded size).
+@interface UiLabel : UILabel
+@property(nonatomic) UIEdgeInsets insets;
+@end
+@implementation UiLabel
+- (void)drawTextInRect:(CGRect)rect { [super drawTextInRect:UIEdgeInsetsInsetRect(rect, self.insets)]; }
+@end
+
 static void applyInputPadding(UiHostNode *node) {
     int left = node.padLeft ?: node.padding, right = node.padRight ?: node.padding;
+    if ([node.view isKindOfClass:UiLabel.class]) {
+        ((UiLabel *)node.view).insets = UIEdgeInsetsMake(node.padTop ?: node.padding, left, node.padBottom ?: node.padding, right);
+        [node.view setNeedsDisplay];
+        return;
+    }
     if ([node.view isKindOfClass:UITextField.class]) {
         UITextField *field = (UITextField *)node.view;
         field.leftView = left ? [[UIView alloc] initWithFrame:CGRectMake(0, 0, left, 1)] : nil;
