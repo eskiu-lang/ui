@@ -104,9 +104,10 @@ the assets you edit are what you see; `[updates] dev = true` keeps them, to try 
 | iOS | the app's Application Support directory, `ui-updates/HASH.EXT` | Ed25519 and SHA-256 in Eskiu (`src/apis/ed25519.esk`, `<hash>`) |
 | Android | the app's files directory, `ui-updates/HASH.EXT` | the same |
 | Web | Cache Storage (`eskiu-ui-updates`), served by the service worker `ui-sw.js` | Ed25519 in Eskiu (the wasm module); each file's SHA-256 by WebCrypto |
-| macOS (AppKit) | Application Support/BUNDLE_ID, `ui-updates/HASH.EXT` (the iOS path; not yet run there) | as iOS |
-| Linux (GTK) | `$XDG_DATA_HOME/ID`, `ui-updates/HASH.EXT` (the iOS path; not yet run there) | as iOS |
-| Linux and macOS `--webview`, Windows | not yet: these run the web build from the app's own files, where a service worker does not run | |
+| macOS (AppKit) | Application Support/BUNDLE_ID, `ui-updates/HASH.EXT` | as iOS |
+| Linux (GTK) | `$XDG_DATA_HOME/ID`, `ui-updates/HASH.EXT` | as iOS |
+| Windows (Win32) | `%APPDATA%\NAME`, `ui-updates\HASH.EXT` | as iOS |
+| macOS, Linux and Windows `--webview` | not yet: these run the web build from the app's own files (a custom scheme or the bundle's directory), where a service worker does not run, and their hosts do not serve the downloaded files in its place | |
 
 The bundle in use and the waiting one are kept as their manifests in the app's saved data
 (`ui.update.active`, `ui.update.ready`); files no bundle needs are removed at the next check.

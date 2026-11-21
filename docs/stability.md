@@ -50,7 +50,7 @@ says so in its docs.
 |---|---|
 | The core, the elements, the kit, state and navigation | Leaving Preview with 1.0 |
 | The iOS, Android and web hosts | Leaving Preview with 1.0 |
-| The macOS, Linux and Windows hosts | Preview: no conformance runs of their own yet, and gaps listed in docs/hosts.md |
+| The macOS, Linux and Windows hosts | Preview: the gaps listed in docs/hosts.md (CI runs each one's own conformance run and asset updates) |
 | The device packages (ui-camera, ui-location, ui-notifications, ...) | Preview: tested against stand-ins, each package's own docs |
 | `ui agent` and `ui test` | Leaving Preview with 1.0 on the web, iOS and Android |
 

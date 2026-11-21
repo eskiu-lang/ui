@@ -168,9 +168,12 @@ python3 tools/conformance.py           # every available host: ui test, then the
 python3 tools/conformance.py ios web   # only these
 ```
 
-iOS, Android, the web, the macOS AppKit host, the Linux GTK host and the Win32 host pass (macOS,
-Linux and Windows have the UI tests; their own runs of the scene are not written yet, so `conformance.py macos` and
-`conformance.py linux` run the UI tests only, and Windows runs them through `ui test windows`). On Linux every frame the tests check matches
+iOS, Android, the web, the macOS AppKit host, the Linux GTK host and the Win32 host pass. The
+desktop hosts' own runs build `tests/conformance` with the driver (`UI_TEST=1`) and start it
+with `UI_CONFORMANCE=1`: the host drives the scene with its toolkit's input, reads the roles
+from its accessibility API (AppKit's, GTK's, MSAA's) and prints its report;
+`python3 tools/conformance.py --host-only macos` runs only that, as CI does after `ui test`.
+`tests/desktop/updates.py HOST` checks asset updates on a desktop host. On Linux every frame the tests check matches
 within the point with no exception: the text and the controls are measured by GTK in the
 system's font, and the frames that depend on them are the `_` sizes of the tests, as on the
 other hosts.
@@ -201,9 +204,9 @@ host checks, `tools/ci_host.sh HOST`, in six jobs:
 |---|---|---|---|
 | `host-web` | ubuntu-24.04 | headless Chrome (the runner's), emscripten from `setup-emsdk` (cached) | about 1.5 min |
 | `host-ios` | macos-15 | the first available iPhone simulator, booted by the job; Yoga's objects cached | about 10 min (the first build, then cached) |
-| `host-macos` | macos-15 | the AppKit host's window on the runner's display; Yoga's objects cached | about 1.5 min, a universal release of the conformance app included |
-| `host-linux` | ubuntu-24.04 | the GTK host's window on Xvfb (`xvfb-run`, a session bus from `dbus-run-session`), GTK 4.14 from apt; Yoga's objects cached | about 1 min (16 s of it installing GTK), a release of the conformance app included |
-| `host-windows` | windows-latest | the Win32 host's window on the runner's desktop, through Git Bash; llvm-mingw (pinned, checked by its SHA-256), Yoga's objects cached | about 2 min |
+| `host-macos` | macos-15 | the AppKit host's window on the runner's display; Yoga's objects cached | about 1.5 min, a universal release of the conformance app, the host's own conformance run and asset updates included |
+| `host-linux` | ubuntu-24.04 | the GTK host's window on Xvfb (`xvfb-run`, a session bus from `dbus-run-session`), GTK 4.14 from apt; Yoga's objects cached | about 1 min (16 s of it installing GTK), a release of the conformance app, the host's own conformance run and asset updates included |
+| `host-windows` | windows-latest | the Win32 host's window on the runner's desktop, through Git Bash; llvm-mingw (pinned, checked by its SHA-256), Yoga's objects cached; then the host's source with MSVC | about 2 min, the host's own conformance run and asset updates included |
 | `host-android` | ubuntu-24.04 with KVM | the emulator, API 35 x86_64 `google_apis` (`android-emulator-runner`, its snapshot cached), NDK 28.2 | about 3.5 min |
 
 Each runs `tests/agent/check.sh`, `ui test` on `tests/conformance`, and the speed budgets of

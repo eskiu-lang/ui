@@ -115,8 +115,8 @@ what is under it is inert, and focus goes into it and back.
 or `PlatformDesktop` (the native macOS, Linux and Windows hosts), known when the app is
 compiled; `ui_platform_name()` spells it. `ui_locale()` is the
 user's language as a BCP 47 tag (`"es-MX"`), and `ui_is_rtl()` says whether it is written
-right to left. On iOS and Android the layout then mirrors: rows run from the right, `justify`
-and `align` start and end mirror, and so do grids; `left`, `right` and the sides' padding and
+right to left. On iOS, Android, macOS, Linux and Windows the layout then mirrors: rows run
+from the right, `justify` and `align` start and end mirror, and so do grids; `left`, `right` and the sides' padding and
 margin stay where they are, as in CSS (docs/hosts.md has the details).
 
 ## The window
@@ -202,10 +202,10 @@ are commands: they reach the host with the next commit.
 | Call | What it does |
 |---|---|
 | `ui_keyboard_dismiss()` | Hides the software keyboard; the focused field loses focus. |
-| `ui_share(text, url)` | The system's share sheet with the text and an optional URL (`null`: none). The web uses `navigator.share`, or copies the text where there is none. |
+| `ui_share(text, url)` | The system's share sheet with the text and an optional URL (`null`: none). The web uses `navigator.share`, or copies the text where there is none. Linux, which has no share sheet, asks whether to copy it or send it by email (the desktop portal's Email); Windows copies it. |
 | `ui_clipboard_set(text)` | Puts text in the clipboard. |
 | `ui_clipboard_get(fn(string)->void)` | What the clipboard holds (`""` for nothing), as an event. |
-| `ui_haptic(Haptic)` | A touch of feedback: `HapticSelection`, `HapticLight`, `HapticMedium`, `HapticHeavy`, `HapticSuccess`, `HapticWarning`, `HapticError`. A short vibration on the web, where the device has one. |
+| `ui_haptic(Haptic)` | A touch of feedback: `HapticSelection`, `HapticLight`, `HapticMedium`, `HapticHeavy`, `HapticSuccess`, `HapticWarning`, `HapticError`. A short vibration on the web, where the device has one; a Mac's trackpad; nothing on Linux and Windows, which have no haptics API. |
 | `ui_announce(text)` | Reads the text aloud with the screen reader, if one runs (a live region on the web). |
 
 Like alerts, these are commands: they reach the host with the next commit.

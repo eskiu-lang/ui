@@ -28,7 +28,7 @@ Windows has a table of its own, under [Windows](#windows).
 | switch | `input type=checkbox role=switch` | `UISwitch` | `Switch` | `NSSwitch` | `GtkSwitch` (at its own size) |
 | slider | `input type=range` | `UISlider` | `SeekBar` (its progress counts from the minimum) | `NSSlider` | `GtkScale` |
 | activity indicator | a CSS spinner, `role=progressbar` | `UIActivityIndicatorView` | `ProgressBar` | `NSProgressIndicator` (spinning) | `GtkSpinner` |
-| refresh control | a pull at the top of the scroll | `UIRefreshControl` | a pull at the top of the scroll and a `ProgressBar` (the framework has no refresh view) | nothing (no pull on a desktop; `refreshing` is kept) | nothing, as on macOS |
+| refresh control | a pull at the top of the scroll | `UIRefreshControl` | a pull at the top of the scroll and a `ProgressBar` (the framework has no refresh view) | the scroll pulled past its top (the trackpad's or the wheel's elastic scroll) or View > Refresh (Cmd+R), and a spinner at the top of the scroll | the scroll pulled past its top (`edge-overshot`: a touchpad, or the wheel) or View > Refresh (F5, Ctrl+R), and a `GtkSpinner` at the top of the scroll |
 | modal | `div role=dialog` over the page | a view over the window | a view over the window | a sheet (`beginSheet`), as big as its content; an `Overlay` is a view over the window | a box over the window's content, dimmed, with the dialog role (as on iOS and Android) |
 | alert | `dialog` | `UIAlertController` | `AlertDialog` | `NSAlert` as a sheet | `GtkAlertDialog` |
 | status bar | nothing | the view controller's status bar | `WindowInsetsController` | nothing | nothing |
@@ -50,11 +50,12 @@ Labels become `aria-label` (an image's `alt`), `accessibilityLabel` (UIKit and A
 | network | `fetch` | `NSURLSession` | `HttpURLConnection` on a thread | `NSURLSession` | libcurl on a thread, loaded when first used (`dlopen`, no link-time dependency) |
 | storage | `localStorage` | Application Support | `getFilesDir()` | Application Support/BUNDLE_ID | `$XDG_DATA_HOME/ID` (`~/.local/share/ID`) |
 | clipboard | `navigator.clipboard` (or the page's copy) | `UIPasteboard` | `ClipboardManager` | `NSPasteboard` | `GdkClipboard` |
-| share | `navigator.share` (or a copy) | `UIActivityViewController` | `ACTION_SEND` chooser | `NSSharingServicePicker` | a copy (a Linux desktop has no share sheet) |
-| haptics | `navigator.vibrate` | feedback generators | `performHapticFeedback` | `NSHapticFeedbackManager` (a trackpad's) | nothing |
+| share | `navigator.share` (or a copy) | `UIActivityViewController` | `ACTION_SEND` chooser | `NSSharingServicePicker` | a small dialog of its own (a Linux desktop has no share sheet): Copy, or Email through the desktop portal (`org.freedesktop.portal.Email`, else a `mailto:` link) |
+| haptics | `navigator.vibrate` | feedback generators | `performHapticFeedback` | `NSHapticFeedbackManager` (a trackpad's) | nothing (no haptics API) |
 | announcements | a live region | `UIAccessibilityAnnouncementNotification` | `announceForAccessibility` | `NSAccessibilityAnnouncementRequestedNotification` | `gtk_accessible_announce` (GTK 4.14) |
 | appearance | `prefers-color-scheme`, `prefers-reduced-motion`, `navigator.language` | trait collection, `UIAccessibility`, `NSLocale` | configuration, `AccessibilityManager`, animator scale | `NSApp.effectiveAppearance` (dark mode), `NSWorkspace` accessibility options, `NSLocale` | `GtkSettings` (a dark theme or color scheme, `gtk-enable-animations`), the locale's language |
 | asset updates ([updates](updates.md)) | Cache Storage and a service worker | Application Support | `getFilesDir()` | Application Support/BUNDLE_ID | `$XDG_DATA_HOME/ID` |
+| right to left | `dir` on the page | Yoga's direction and the views' semantic direction | Yoga's direction and the views' layout direction | Yoga's direction; each view's `userInterfaceLayoutDirection` and the text's alignment (AppKit's own follows the app's localizations, not the system's language) | Yoga's direction; GTK's widgets follow the default direction it takes from the locale |
 
 Each host also has a registry of native view types and a way for native code to post
 events from any thread: [native code](native.md).
@@ -69,12 +70,12 @@ platform (the props are in docs/protocol.md and src/core/wire.esk). What a platf
 | Web | No screen reader detection (`ui_screen_reader()` is false). Autocorrect off is Safari's attribute and `spellcheck`. |
 | iOS | A checkbox is a toggle button, its state "on" or "off" in the user's language (a radio and a checked menu item are "selected"); with words of the app's in `Style.value` it says those, and "selected" when checked. UIKit has no word for a mixed check, nor for "expanded" and "collapsed" before iOS 18: those are the words of `ui_set_words` (the kit's through `kit_use_text`), English until the app sends some; a mixed check with `Style.value` says that instead. A `RoleSlider` on a view that is not a slider is announced as adjustable without increment and decrement. A multiline field cannot be secure. |
 | Android | Roles are widget classes TalkBack names in the user's language: a link and a menu item are buttons, a tab is ActionBar's tab, a tab list a `TabWidget`. Android has no class for a menu, an alert, a search landmark, a link or a menu item as such, nor a state for a mixed check or a disclosure: those are the words of `ui_set_words` (the kit's through `kit_use_text`), English until the app sends some: the role's as its role description, a mixed check's and a disclosure's in the state description (a mixed check with `Style.value` says that instead). |
-| macOS | No keyboard type, return key label or capitalization. No system text size. Some autofill kinds need macOS 14. A multiline field cannot be secure. |
-| Linux | No autofill and no return key label; a multiline field has no placeholder. A role set after the element is on screen re-inserts it, which can move the focus. |
-| Windows | MSAA has no heading, switch or search role. No capitalization, autocorrect, autofill or return key label; the number keyboard takes digits only. A click on a disabled control inside a pressable can reach the pressable. |
+| macOS | No keyboard type, return key label or capitalization. No system text size. Some autofill kinds need macOS 14. A multiline field cannot be secure. VoiceOver says the roles and states in the system's language, so the app's words (`ui_set_words`) are not needed there. |
+| Linux | No autofill and no return key label; a multiline field has no placeholder. A role set after the element is on screen re-inserts it, which can move the focus. Orca says GTK's roles and states in the system's language, so the app's words are not needed there. |
+| Windows | MSAA has no heading, switch or search role: UI Automation's properties, annotated on the window, carry them (a heading's level, a switch as "toggle switch", a search landmark with the app's word for search from `ui_set_words`). No capitalization, autocorrect, autofill or return key label; the number keyboard takes digits only. A multiline field's text is not justified. |
 
-On Linux and Windows `disabled` does not reach a `Modal` opened inside the disabled element,
-since a modal is a window of its own there.
+On Linux and Windows a modal is a window of its own, outside its parent's: `disabled` above it
+reaches it through the element it was placed in.
 
 ## The web
 
@@ -217,8 +218,16 @@ frames are the other hosts' to the point. Its parts:
 - **Styled controls.** A button or a field the app gives a background, a border or a radius
   loses the system's bezel, and its layer paints what the app asked (the kit's buttons and
   fields look as on the other hosts); a plain one is the system's push button or field.
-- **What is not native yet.** A RefreshControl has no pull (a desktop has none), and a
-  screenshot (`ui agent`) is the window's content as AppKit draws it, without the sheets.
+- **Right to left.** With a right-to-left language first in the system's list, Yoga lays out
+  from the right and each view takes the direction (AppKit's views follow the app's own
+  localizations otherwise); a Text's start is its right edge.
+- **Pull to refresh.** The scroll pulled past its top by 60 points (the trackpad's or the
+  wheel's elastic scroll), or View > Refresh (Cmd+R) for the refreshable scroll on top; a
+  spinner shows at the top of the scroll while the app is refreshing.
+- **Accent.** A switch or a slider with a color is drawn by the host in it (AppKit's own take
+  the system's accent only).
+- **What is not native yet.** A screenshot (`ui agent`) is the window's content as AppKit
+  draws it, without the sheets. Style.clip with a shadow clips the shadow too.
 
 ui.toml's `[macos]` table: `renderer` (`"web"` for the WKWebView host), `window`,
 `frameworks` (system frameworks to link) and `[macos.plist]` (Info.plist entries). The
@@ -261,9 +270,17 @@ other hosts' to the point. Its parts:
 - **Text.** 16 points unless the app says otherwise, in the system's sans-serif font (the
   frames of text and controls depend on the font, as on every host; the conformance tests
   check those that do not). A font file from `assets/` is added to fontconfig.
-- **What is not native yet.** A RefreshControl has no pull (a desktop has none), a backdrop
-  blur paints the window's color at 65% (GTK cannot blur what is under a widget) and a share
-  copies the text. A screenshot (`ui agent`) is the window's content without an alert.
+- **Backdrop blur.** GTK has no backdrop filter, so a box with `blur` draws again what is
+  behind it (the window's color, its ancestors' backgrounds and the widgets under its branch,
+  through `GtkWidgetPaintable`), blurred by the radius and clipped to the box; it draws again
+  when one of them does.
+- **Pull to refresh.** Scrolling past the top (`edge-overshot`: a touchpad or the wheel), or
+  View > Refresh (F5, Ctrl+R) for the refreshable scroll on top; a `GtkSpinner` shows at the
+  top of the scroll while the app is refreshing.
+- **Share.** A small dialog: Copy, or Email through the desktop portal
+  (`org.freedesktop.portal.Email`, which works in a sandbox too), else a `mailto:` link.
+- **What is not native yet.** Haptics do nothing (no API). A screenshot (`ui agent`) is the
+  window's content without an alert.
 
 ui.toml's `[linux]` table: `renderer` (`"web"` for the WebKitGTK host) and `window`. A
 release (`ui release linux`) is a `.tar.gz` of the program, its assets and its icon.
@@ -322,10 +339,26 @@ other hosts' to the point.
   translation, background color) and the screens' slides are the host's, on its clock; drags,
   long presses and hover come from the mouse (captured past 6 px); the network is WinHTTP on a
   thread; storage is `%APPDATA%\NAME`; the clipboard is the system's, and a share copies to it.
-- **What is not native yet.** A transform's scale and rotation, a shadow and a backdrop blur
-  are kept but not drawn; a vertical scroll bar takes its width from the scroll's content when
-  it shows; an announcement is a name change event, which screen readers may not speak; a
-  RefreshControl has no pull. MSVC does not build this host (the app's object is MinGW's).
+- **Effects a child window cannot draw.** Its parent draws them: a shadow around it, and a
+  scaled or turned element as a transformed picture of its window (`PrintWindow`), whose window
+  is then out of sight; a click on the picture goes to what is under it in the element (a
+  button, a switch, a pressable), but a field in it cannot be typed into until the transform
+  ends. A backdrop blur is the pictures of the windows under the element's branch and its
+  ancestors' backgrounds, shrunk and grown again by the radius (a box blur); it draws again
+  after each commit and scroll.
+- **Announcements.** `ui_announce` raises UI Automation's notification event
+  (`UiaRaiseNotificationEvent`, Windows 10 1709 and later), which Narrator and NVDA speak.
+- **Pull to refresh.** The wheel turned up twice within a second at the top of the scroll, or
+  View > Refresh (F5); a spinner turns at the top of the scroll while the app is refreshing.
+- **Text.** A Text is painted by the host: inside its padding, in its alignment (the start is
+  the right edge right to left), its line height and its maximum of lines.
+- **MSVC.** CI compiles the host's source with MSVC (`cl`) as well as MinGW-w64, in a release
+  and a test build. The tool still builds the app with MinGW-w64: the app's object is
+  `eskiuc`'s for `x86_64-w64-windows-gnu`, whose C runtime and helpers MSVC's linker does not
+  have, so an all-MSVC build needs an MSVC target in `eskiuc`.
+- **What is not native yet.** A vertical scroll bar takes its width from the scroll's content
+  when it shows; a share copies to the clipboard (the system's share UI is WinRT, which
+  MinGW-w64's headers do not have); haptics do nothing.
 
 ui.toml's `[windows]` table: `renderer` (`"web"` for the WebView2 host) and `window`.
 
