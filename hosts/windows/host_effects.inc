@@ -15,7 +15,7 @@ static const int kAway = -32000;
 // The node's laid out box in its parent's client area, in pixels, with its translation.
 static Gdiplus::RectF boxOf(Node *node) {
     double f[4] = {node->x, node->y, node->w, node->h};
-    if (node->frameT < 1) for (int i = 0; i < 4; i++) f[i] = node->frameFrom[i] + (f[i] - node->frameFrom[i]) * eased(node->frameT, 3);
+    if (node->frameT < 1) for (int i = 0; i < 4; i++) f[i] = node->frameFrom[i] + (f[i] - node->frameFrom[i]) * eased(node->frameT, node->easing);
     return Gdiplus::RectF((float)px(f[0] + node->shownX + node->slideX), (float)px(f[1] + node->shownY), (float)px(f[2]), (float)px(f[3]));
 }
 
