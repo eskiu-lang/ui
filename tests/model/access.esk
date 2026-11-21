@@ -210,3 +210,30 @@ void style_props() {
         "a sheet that animates in; a plain Modal sends neither");
     ui_shutdown(); balanced("style props leak");
 }
+
+int gesture_last_dx;
+int gesture_phases;
+int gesture_long;
+bool gesture_inside;
+
+// drag, long_press and hover reach the nearest listener around the element named.
+void driver_gestures() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    gesture_last_dx = 0; gesture_phases = 0; gesture_long = 0; gesture_inside = false;
+    ui_mount() {
+        ui_on_pan(void(Pan p) { gesture_phases++; gesture_last_dx = p.dx; });
+        ui_on_long_press(void() { gesture_long++; });
+        ui_on_hover(void(bool inside) { gesture_inside = inside; });
+        Row(Style{test_id: "card"}) { TextWith(Style{test_id: "inside"}, "Card"); }
+        TextWith(Style{test_id: "plain"}, "Plain");
+    }
+    ui_frame();
+    check(has(drive("{\"op\": \"drag\", \"target\": \"inside\", \"dx\": -120, \"dy\": 0, \"ms\": 200}"), "\"ok\": true"), "drag");
+    check(gesture_phases == 7 && gesture_last_dx == -120, "began, five moves and the end at the full distance");
+    check(has(drive("{\"op\": \"long_press\", \"target\": \"card\"}"), "\"ok\": true") && gesture_long == 1, "long press");
+    check(has(drive("{\"op\": \"hover\", \"target\": \"card\", \"inside\": \"in\"}"), "\"ok\": true") && gesture_inside, "hover in");
+    check(has(drive("{\"op\": \"drag\", \"target\": \"plain\", \"dx\": 10, \"dy\": 0}"), "has ui_on_pan"),
+        "a drag on an element nothing listens around says so");
+    ui_shutdown(); balanced("gestures leak");
+}

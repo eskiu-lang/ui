@@ -1,0 +1,57 @@
+// core/_driver/gestures.esk: the gesture ops of `ui agent` and `ui test`: drag, long_press and
+// hover. The core carries them out itself, as the host would report them, so they behave the
+// same on every platform (part of driver.esk, which imports it in order after requests.esk).
+
+// The nearest element at or above `node` that listens for `kind` (17 pan, 20 long press,
+// 13 hover), or null (internal).
+*Node _ui_driver_listener(*Node node, int kind) {
+    for (*Node at = node; at != null && at != ui.root; at = at.parent) {
+        if (kind == 17 && at.has_on_pan) { return at; }
+        if (kind == 20 && at.has_on_long_press) { return at; }
+        if (kind == 13 && at.has_on_hover) { return at; }
+    }
+    return null;
+}
+
+// `drag ID DX DY [MS]`, `long_press ID` and `hover ID in|out` (internal). A drag reports
+// PanBegan, five PanMoved steps on the way to (dx, dy), and PanEnded with the velocity of
+// covering that distance in `ms` (300 by default); each step's effects are rendered.
+string _ui_driver_gesture(string op, string target, int dx, int dy, int ms, bool inside) {
+    String error;
+    defer String_free(&error);
+    *Node node = _ui_driver_find(target, &error);
+    if (node == null) { return ui_driver_error(op, error.data); }
+    int kind = strcmp(op, "drag") == 0 ? 17 : strcmp(op, "long_press") == 0 ? 20 : 13;
+    *Node at = _ui_driver_listener(node, kind);
+    if (at == null) {
+        String_appendf(&error, "'%s' is a %s (#%d), and neither it nor an element around it has %s", target,
+            ui_kind_name(node.kind), node.id, kind == 17 ? "ui_on_pan" : kind == 20 ? "ui_on_long_press" : "ui_on_hover");
+        return ui_driver_error(op, error.data);
+    }
+    if (_ui_node_disabled(at)) {
+        String_appendf(&error, "'%s' is disabled (Style.disabled, on it or on an element around it)", target);
+        return ui_driver_error(op, error.data);
+    }
+    if (kind == 17) {
+        if (ms <= 0) { ms = 300; }
+        int vx = (int)((int64)dx * 1000 / ms);
+        int vy = (int)((int64)dy * 1000 / ms);
+        ui_event_pan(at.id, at.generation, PanBegan, 0, 0, 0, 0);
+        _ui_driver_flush();
+        for (int step = 1; step <= 5; step++) {
+            if (!ui_event_pan(at.id, at.generation, PanMoved, dx * step / 5, dy * step / 5, vx, vy)) { break; }
+            _ui_driver_flush();
+        }
+        ui_event_pan(at.id, at.generation, PanEnded, dx, dy, vx, vy);
+    } else if (kind == 20) {
+        ui_event_long_press(at.id, at.generation);
+    } else {
+        ui_event_hover(at.id, at.generation, inside);
+    }
+    _ui_driver_flush();
+    _ui_driver_begin(op);
+    String_append(&ui_drv.out, ", \"target\": ");
+    ui_json_string(&ui_drv.out, target);
+    String_append(&ui_drv.out, "}");
+    return ui_drv.out.data;
+}

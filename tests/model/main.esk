@@ -49,6 +49,7 @@ int main() {
     kit_access(); printf("PASS kit access\n");
     kit_semantics(); printf("PASS kit semantics\n");
     style_props(); printf("PASS style props\n");
+    driver_gestures(); printf("PASS driver gestures\n");
     layout_props(); printf("PASS layout props\n");
     driver_access(); printf("PASS driver access\n");
     textf_texts(); printf("PASS textf\n");

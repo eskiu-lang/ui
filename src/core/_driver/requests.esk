@@ -112,6 +112,13 @@ string _ui_driver_answer(*JsonValue request, string source) {
         String_append(&ui_drv.out, "}");
         return ui_drv.out.data;
     }
+    // Gestures, carried out by the core as the host would report them (gestures.esk).
+    if (strcmp(op, "drag") == 0 || strcmp(op, "long_press") == 0 || strcmp(op, "hover") == 0) {
+        string where = _ui_driver_text(request, "inside");
+        return _ui_driver_gesture(op, _ui_driver_text(request, "target"), (int)_ui_driver_number(request, "dx", 0),
+            (int)_ui_driver_number(request, "dy", 0), (int)_ui_driver_number(request, "ms", 300),
+            where == null || strcmp(where, "out") != 0);
+    }
     // Return in a TextInput: its ui_on_submit gets the field's text.
     if (strcmp(op, "submit") == 0) {
         string target = _ui_driver_text(request, "target");

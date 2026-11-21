@@ -335,3 +335,4 @@ void _ui_driver_shutdown() {
 
 import "_driver/nodes.esk";
 import "_driver/requests.esk";
+import "_driver/gestures.esk";

@@ -5,7 +5,9 @@
 // How many words an op takes after its name.
 int agent_arity(string op) {
     if (strcmp(op, "tap") == 0 || strcmp(op, "submit") == 0 || strcmp(op, "screenshot") == 0 || strcmp(op, "clock") == 0) { return 1; }
-    if (strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) { return 2; }
+    if (strcmp(op, "long_press") == 0) { return 1; }
+    if (strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0 || strcmp(op, "hover") == 0) { return 2; }
+    if (strcmp(op, "drag") == 0) { return 3; }
     return 0;
 }
 
@@ -47,7 +49,8 @@ string agent_request_text(List<String>* words, String* request) {
         String_appendf(&message, "%s takes %d argument%s (docs/agents.md)", op, need, need == 1 ? "" : "s");
         return message.data;
     }
-    if (strcmp(op, "tap") == 0 || strcmp(op, "submit") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+    if (strcmp(op, "tap") == 0 || strcmp(op, "submit") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0
+        || strcmp(op, "drag") == 0 || strcmp(op, "long_press") == 0 || strcmp(op, "hover") == 0) {
         String_append(request, ", \"target\": ");
         serve_json_string(request, words.data[1].data);
     }
@@ -60,6 +63,22 @@ string agent_request_text(List<String>* words, String* request) {
         int at = dy[0] == '-' ? 1 : 0;
         if (dy[at] < '0' || dy[at] > '9') { return "scroll takes a number of points (scroll ID DY)"; }
         String_appendf(request, ", \"dy\": %d", atoi(dy));
+    }
+    if (strcmp(op, "drag") == 0) {
+        // DX DY, and optionally the time it takes in ms (the last word: "DY MS").
+        string ddx = words.data[2].data;
+        string rest = words.data[3].data;
+        int ddy = atoi(rest);
+        int ms = 300;
+        string space = strchr(rest, ' ');
+        if (space != null) { ms = atoi(&space[1]); }
+        String_appendf(request, ", \"dx\": %d, \"dy\": %d, \"ms\": %d", atoi(ddx), ddy, ms);
+    }
+    if (strcmp(op, "hover") == 0) {
+        string where = words.data[2].data;
+        if (strcmp(where, "in") != 0 && strcmp(where, "out") != 0) { return "hover takes in or out (hover ID in)"; }
+        String_append(request, ", \"inside\": ");
+        serve_json_string(request, where);
     }
     if (strcmp(op, "clock") == 0) {
         string arg = words.data[1].data;
