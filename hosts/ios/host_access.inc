@@ -38,11 +38,14 @@ static UIAccessibilityContainerType containerOf(int role) {
 }
 
 // Words UIKit has no localized form of (a mixed check, and before iOS 18 expanded and
-// collapsed) are said only to a user whose language is English; others hear the app's own
-// value words (Style.value) or nothing, never another language's.
-static bool englishUser(void) {
-    NSString *language = NSLocale.preferredLanguages.firstObject ?: @"en";
-    return [language isEqualToString:@"en"] || [language hasPrefix:@"en-"];
+// collapsed): the latest the app sent (command 13, ui_set_words: mixed, expanded, collapsed,
+// menu, menu item, alert, search, link), English until then.
+static NSArray<NSString *> *accessWords;
+static NSString *accessWord(int index) {
+    static NSArray<NSString *> *english = @[@"mixed", @"expanded", @"collapsed", @"menu", @"menu item", @"alert",
+                                             @"search", @"link"];
+    NSString *word = index < (int)accessWords.count ? accessWords[index] : nil;
+    return word.length ? word : english[index];
 }
 
 // True when node or a node above it is disabled (Style.disabled holds for what is inside).
@@ -107,15 +110,14 @@ static void applyAccess(UiHostNode *node) {
     // The spoken value: the app's value text or the range, a mixed check, then whether it is
     // open where UIKit has no expanded status.
     NSMutableArray<NSString *> *parts = [NSMutableArray new];
-    bool english = englishUser();
     NSString *text = node.accessValue ?: rangeText(node);
     if (text.length) [parts addObject:text];
-    else if (node.checked == 3 && english) [parts addObject:@"mixed"];
+    else if (node.checked == 3) [parts addObject:accessWord(0)];
     if (@available(iOS 18.0, *)) {
         view.accessibilityExpandedStatus = node.expanded == 1 ? UIAccessibilityExpandedStatusCollapsed
                                          : node.expanded == 2 ? UIAccessibilityExpandedStatusExpanded
                                                               : UIAccessibilityExpandedStatusUnsupported;
-    } else if (node.expanded && english) [parts addObject:node.expanded == 2 ? @"expanded" : @"collapsed"];
+    } else if (node.expanded) [parts addObject:accessWord(node.expanded == 2 ? 1 : 2)];
     // A checkbox or a switch: "1" or "0" alone, which VoiceOver reads as on or off in the
     // user's language (with the app's words it is "selected" when on, above).
     if (toggle && (node.checked == 1 || node.checked == 2) && !parts.count) [parts addObject:node.checked == 2 ? @"1" : @"0"];
@@ -170,4 +172,12 @@ static bool accessText(UiHostNode *node, int code, NSString *value) {
     else return false;
     applyAccess(node);
     return true;
+}
+
+// Command 13: the app's words for what UIKit does not translate; what is shown says them now.
+static void setAccessWords(int count, const char **strings) {
+    NSMutableArray<NSString *> *words = [NSMutableArray new];
+    for (int i = 0; i < count; i++) [words addObject:@(strings[i])];
+    accessWords = words;
+    for (UiHostNode *node in nodes.allValues) if (node.access) applyAccess(node);
 }
