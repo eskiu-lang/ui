@@ -400,6 +400,8 @@ static void ui_host_command(int request, int command, int count, const char **st
                                                         UINotificationFeedbackTypeError};
             [[UINotificationFeedbackGenerator new] notificationOccurred:types[std::min(kind - 4, 2)]];
         }
+    } else if (command == 13) {
+        setAccessWords(count, strings);
     } else if (command == 11 && count >= 1) {
         if (strings[0][0] == '1') splashHeld = splashView != nil;
         else hideSplash();
