@@ -137,6 +137,18 @@ void uitest_collect(*JsonValue node, string target, int mode, List<*JsonValue>* 
     return null;
 }
 
+// The texts at and below a tree node, in order, a space between each, into `out`.
+void uitest_texts(*JsonValue node, String* out) {
+    string text = agent_member(node, "text");
+    if (text != null && text[0] != 0) {
+        if (out.len > 0) { String_push(out, ' '); }
+        String_append(out, text);
+    }
+    *JsonValue children = JsonValue_get(node, "children");
+    if (children == null) { return; }
+    for (i in 0..JsonValue_len(children)) { uitest_texts(JsonValue_at(children, i), out); }
+}
+
 // What a JSON value is, as a test writes it: a string as itself, anything else as JSON.
 void uitest_show(*JsonValue v, String* out) {
     String_clear(out);

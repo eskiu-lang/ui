@@ -99,7 +99,7 @@ word with blanks is written in double quotes (`"Open sheet"`, with `\"` and `\\`
 | `repeat N STEP` | the step N times |
 | `expect ID exists` | an element is in the tree |
 | `expect ID missing` | no element is (an unmounted row, a closed sheet) |
-| `expect ID text "T"` | the element's text is T |
+| `expect ID text "T"` | the element's text is T; for a container, the texts inside it in order, a space between each |
 | `expect ID prop NAME VALUE` | a prop the app set (`tree` leaves out defaults: `background "#ff0000ff"`, `radius 8`, `on 1`), or a member of the element (`label`, `placeholder`, `key`) |
 | `expect ID frame X Y W H [±TOL] [in OTHER]` | the frame the host laid out, in points from the window's top left or OTHER's; `_` takes any value; each within TOL, 1 by default (`+-2` works too) |
 | `expect state PATH VALUE` | a member of `state` (`modals`, `timers`, `fetches`, `frames`, `clock`, `now`; `routes` as `/ > /places/2`), or `SCOPE.N`, the Nth signal of a scope: SCOPE is its test_id, its component name or its path as `ui agent state` prints it |

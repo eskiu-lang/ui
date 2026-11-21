@@ -30,7 +30,13 @@ bool uitest_expect_tree(List<String>* w) {
     if (strcmp(what, "text") == 0) {
         *JsonValue text = JsonValue_get(node, "text");
         if (text != null && text.kind == JString && uitest_same(text, w.data[3].data)) { return true; }
-        uitest_show(text, &found);
+        // A container's text is the texts inside it, in order, a space between each (as a
+        // screen reader reads a row).
+        if (text == null) {
+            uitest_texts(node, &found);
+            if (strcmp(found.data == null ? "" : found.data, w.data[3].data) == 0) { return true; }
+            if (found.len == 0) { String_from(&found, "(no text inside)"); }
+        } else { uitest_show(text, &found); }
         String_appendf(&message, "expected the text \"%s\", found \"%s\"", w.data[3].data, found.data);
         return uitest_fail(message.data);
     }
