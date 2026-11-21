@@ -145,7 +145,7 @@ keeps a web app's module about a sixth smaller).
   `SwipeToDelete` always has its delete button, since a page cannot tell that a screen reader
   runs.
 - Web: padding on a `Text` was ignored.
-- A duplicate key stops the program in a release build too (the docs said it only warned).
+- docs/state.md says that a duplicate key stops a release build too, as it does (a comment in the runtime said release builds only warned).
 
 ## [0.6.2]
 
