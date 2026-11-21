@@ -2,6 +2,8 @@
 
 // ---- the driver ----
 
+static void runConformance();
+
 #ifdef UI_TEST
 static void driverOnMain(std::function<void()> work) { onMain(std::move(work)); }
 static std::string driverCarry(const std::string &directive);
@@ -172,10 +174,11 @@ static void setupMenu() {
     AppendMenuW(bar, MF_POPUP, (UINT_PTR)edit, L"&Edit");
     HMENU view = CreatePopupMenu();
     AppendMenuW(view, MF_STRING, kCmdBack, L"&Back\tAlt+Left");
+    AppendMenuW(view, MF_STRING, kCmdRefresh, L"&Refresh\tF5");
     AppendMenuW(bar, MF_POPUP, (UINT_PTR)view, L"&View");
     SetMenu(mainWindow, bar);
-    ACCEL keys[] = {{FVIRTKEY | FALT, VK_LEFT, kCmdBack}, {FVIRTKEY | FCONTROL, 'W', kCmdClose}};
-    accelerators = CreateAcceleratorTableW(keys, 2);
+    ACCEL keys[] = {{FVIRTKEY | FALT, VK_LEFT, kCmdBack}, {FVIRTKEY | FCONTROL, 'W', kCmdClose}, {FVIRTKEY, VK_F5, kCmdRefresh}};
+    accelerators = CreateAcceleratorTableW(keys, 3);
 }
 
 // The Edit menu's commands go to the field with the focus.
@@ -276,6 +279,7 @@ static LRESULT CALLBACK mainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             switch (LOWORD(wParam)) {
                 case kCmdClose: DestroyWindow(hwnd); return 0;
                 case kCmdBack: ui_report_back(); return 0;
+                case kCmdRefresh: refreshShown(); return 0;
                 case kCmdAbout: MessageBoxW(hwnd, appName.c_str(), (L"About " + appName).c_str(), MB_OK | MB_ICONINFORMATION); return 0;
                 case kCmdUndo: case kCmdCut: case kCmdCopy: case kCmdPaste: case kCmdSelectAll: editCommand(LOWORD(wParam)); return 0;
             }
@@ -421,9 +425,17 @@ int main() {
     // The app's data directory, before the app starts (ui_data_dir).
     ui_report_data_dir(narrow(dataDir().c_str()).c_str());
     if (!link.empty()) ui_report_link(link.c_str());
+#ifdef UI_TEST
+    // The conformance scene's own run (host_conformance.inc): example 3 asks it to fetch too.
+    bool conformance = getenv("UI_CONFORMANCE") && !strcmp(getenv("UI_CONFORMANCE"), "1");
+    if (conformance) launchExample = 3;
+#endif
     ui_start(launchExample);
     reportEnvironment();
     relayout();
+#ifdef UI_TEST
+    if (conformance) runConformance();
+#endif
 #ifdef UI_RELOAD
     SetTimer(mainWindow, kReloadTimer, 50, nullptr);
 #endif

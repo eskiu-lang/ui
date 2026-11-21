@@ -16,6 +16,8 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
     ui_commit_each(data, len, ui_host_apply, ui_host_command, ui_host_named);
     relayout();
     slideScreens();
+    appearModals();
+    refreshBlurs();
 
 }
 
@@ -53,7 +55,9 @@ extern "C" void ui_host_timer_stop(int token) {
     timers.erase(token);
 }
 
-// An alert, shown once the commit is applied: a task dialog with the app's buttons.
+// An alert, shown once the commit is applied: a task dialog with the app's buttons. The dialog
+// on screen (for the conformance run's answer).
+static HWND alertWindow;
 struct Alert { int request; std::wstring title, message; std::vector<std::wstring> buttons; };
 static void showAlert(Alert alert) {
     std::vector<TASKDIALOG_BUTTON> buttons;
@@ -67,6 +71,11 @@ static void showAlert(Alert alert) {
     config.cButtons = (UINT)buttons.size();
     config.pButtons = buttons.empty() ? nullptr : buttons.data();
     if (buttons.empty()) config.dwCommonButtons = TDCBF_OK_BUTTON;
+    config.pfCallback = [](HWND hwnd, UINT notification, WPARAM, LPARAM, LONG_PTR) -> HRESULT {
+        if (notification == TDN_CREATED) alertWindow = hwnd;
+        else if (notification == TDN_DESTROYED) alertWindow = nullptr;
+        return S_OK;
+    };
     typedef HRESULT(WINAPI * TaskDialogFn)(const TASKDIALOGCONFIG *, int *, int *, BOOL *);
     TaskDialogFn show = (TaskDialogFn)(void *)GetProcAddress(GetModuleHandleW(L"comctl32.dll"), "TaskDialogIndirect");
     int pressed = -1;
@@ -127,8 +136,7 @@ static void ui_host_command(int request, int command, int count, const char **st
     } else if (command == 7) {
         ui_dispatch_answer(request, narrow(pasteText().c_str()).c_str());
     } else if (command == 9 && count >= 1) {
-        // Announced through the window's accessible name change, which screen readers follow.
-        NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, mainWindow, OBJID_CLIENT, CHILDID_SELF);
+        announce(wide(strings[0]));
     } else if (command == 10 && count >= 6) {
         std::wstring url = wide(strings[0]);
         std::string method = strings[1], headers = strings[2], body = strings[3];
@@ -197,6 +205,19 @@ static void reportSystem() {
     DWORD reading = 0;
     GetLocaleInfoEx(locale, LOCALE_IREADINGLAYOUT | LOCALE_RETURN_NUMBER, (LPWSTR)&reading, sizeof reading / sizeof(wchar_t));
     ui_report_locale(narrow(locale).c_str(), reading == 1 ? 1 : 0);
+    // Right to left: Yoga mirrors rows, start and end; a field reads and aligns from the right.
+    if ((reading == 1) != ui_layout_rtl()) {
+        ui_layout_rtl() = reading == 1;
+        for (auto &entry : nodes) {
+            Node *node = entry.second;
+            if (node->kind == 5 && node->inner) {
+                LONG ex = GetWindowLongW(node->inner, GWL_EXSTYLE) & ~(WS_EX_RTLREADING | WS_EX_RIGHT);
+                SetWindowLongW(node->inner, GWL_EXSTYLE, ex | (ui_layout_rtl() ? WS_EX_RTLREADING | WS_EX_RIGHT : 0));
+            }
+            if (node->hwnd) InvalidateRect(node->hwnd, nullptr, TRUE);
+        }
+        if (rootYoga) relayout();
+    }
 }
 
 static void reportWindow() {

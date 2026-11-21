@@ -3,6 +3,22 @@
 // ---- window procedures ----
 
 static LRESULT notifyChild(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, bool *handled);
+static Node *transformedAt(HWND parent, POINT point, POINT &local);
+static bool clickTransformed(HWND parent, POINT point);
+static void paintText(Node *node, HDC hdc, RECT rect);
+static LRESULT paintSliderAccent(Node *node, NMCUSTOMDRAW *draw);
+
+// Whether the click at `point` (client pixels) is on a disabled control inside `hwnd`.
+static bool disabledChildAt(HWND hwnd, POINT point) {
+    HWND at = hwnd;
+    for (;;) {
+        HWND next = ChildWindowFromPointEx(at, point, CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT);
+        if (!next || next == at) return false;
+        if (!IsWindowEnabled(next)) return true;
+        MapWindowPoints(at, next, &point, 1);
+        at = next;
+    }
+}
 
 static LRESULT CALLBACK viewProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     bool handled = false;
@@ -23,6 +39,10 @@ static LRESULT CALLBACK viewProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             // A container that takes no input lets the pointer through to what is under it (a
             // pressable's label and rows, the window).
             Node *owner = node ? node : owningNode(hwnd);
+            // Over a scaled or turned child's picture the click is the parent's to pass on.
+            POINT over = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)}, local;
+            ScreenToClient(hwnd, &over);
+            if (transformedAt(hwnd, over, local)) return HTCLIENT;
             if (!owner) return HTTRANSPARENT;
             bool takes = owner->kind == 8 || owner->kind == 12 || owner->kind == 5 || owner->kind == 13 ||
                          owner->panListening || owner->longListening || owner->hoverListening;
@@ -31,13 +51,17 @@ static LRESULT CALLBACK viewProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         }
         case WM_LBUTTONDOWN: {
             Node *owner = node ? node : owningNode(hwnd);
+            POINT at = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            if (clickTransformed(hwnd, at)) return 0;
+            // A disabled control takes no click, and its parent (Windows gives the parent the
+            // clicks on a disabled child) does not take it for its own either.
+            if (disabledChildAt(hwnd, at)) return 0;
             if (owner && owner->kind == 5 && owner->inner) { SetFocus(owner->inner); return 0; }
             if (owner && owner->kind == 12) {
                 // A click on a modal's backdrop (outside its content) asks it to close.
                 if (owner->listening) ui_dispatch(owner->id, owner->generation);
                 return 0;
             }
-            POINT at;
             GetCursorPos(&at);
             if (owner) gestureDown(hwnd, owner, at);
             return 0;
@@ -94,6 +118,7 @@ static LRESULT CALLBACK scrollProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             return 0;
         case WM_MOUSEWHEEL: {
             if (!node) break;
+            wheelAtTop(node, GET_WHEEL_DELTA_WPARAM(wParam));
             if (scrollMost(node) <= 0) break;
             UINT lines = 3;
             SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0);
@@ -222,6 +247,10 @@ static LRESULT notifyChild(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, bo
         NMHDR *header = (NMHDR *)lParam;
         Node *node = owningNode(header->hwndFrom);
         if (node && node->nativeView) { *handled = true; return SendMessageW(header->hwndFrom, UI_REFLECT + msg, wParam, lParam); }
+        if (node && node->kind == 15 && node->textColor && header->code == NM_CUSTOMDRAW) {
+            *handled = true;
+            return paintSliderAccent(node, (NMCUSTOMDRAW *)lParam);
+        }
     }
     if (msg == WM_CTLCOLORSTATIC || msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORBTN) {
         HDC hdc = (HDC)wParam;
@@ -264,7 +293,19 @@ static LRESULT CALLBACK nodeSubclass(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         RemoveWindowSubclass(hwnd, nodeSubclass, id);
     } else if (msg == WM_ERASEBKGND) {
         Node *node = nodeOf(hwnd);
-        if (node && node->kind == 4 && node->styled) return 1;
+        if (node && (node->kind == 3 || (node->kind == 4 && node->styled))) return 1;
+    } else if (msg == WM_PAINT || msg == WM_PRINTCLIENT) {
+        // A Text is painted by the host (host_props.inc): padding, alignment, line height,
+        // maximum lines.
+        Node *node = nodeOf(hwnd);
+        if (node && node->kind == 3) {
+            if (msg == WM_PRINTCLIENT) { RECT r; GetClientRect(hwnd, &r); paintText(node, (HDC)wParam, r); return 0; }
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hwnd, &ps);
+            buffered(hwnd, hdc, [&](HDC memory, RECT r) { paintText(node, memory, r); });
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
     }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }

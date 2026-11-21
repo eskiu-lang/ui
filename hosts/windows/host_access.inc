@@ -13,7 +13,7 @@ static void applyFont(Node *node);
 static HWND accessibleOf(Node *node) { return node->kind == 5 && node->inner ? node->inner : node->hwnd; }
 
 // Role (prop 57) as MSAA's. MSAA has no heading (3: static text), switch (8: a check button)
-// or search landmark (18: a grouping).
+// or search landmark (18: a grouping): UI Automation's properties say those (uiaRole).
 static const int kRoles[] = {0, ROLE_SYSTEM_PUSHBUTTON, ROLE_SYSTEM_LINK, ROLE_SYSTEM_STATICTEXT, ROLE_SYSTEM_GRAPHIC,
                              ROLE_SYSTEM_CHECKBUTTON, ROLE_SYSTEM_RADIOBUTTON, ROLE_SYSTEM_GROUPING, ROLE_SYSTEM_CHECKBUTTON,
                              ROLE_SYSTEM_PAGETAB, ROLE_SYSTEM_PAGETABLIST, ROLE_SYSTEM_SLIDER, ROLE_SYSTEM_PROGRESSBAR,
@@ -44,12 +44,65 @@ static void accessibleText(HWND hwnd, const MSAAPROPID &prop, const std::wstring
     else accProps->SetHwndPropStr(hwnd, OBJID_CLIENT, CHILDID_SELF, prop, text.c_str());
 }
 
+// UI Automation's own properties, annotated as MSAA's are (Windows 10 1803 and later read
+// them): the localized control type a screen reader speaks, a heading's level, a landmark.
+static const GUID kLocalizedControlType = {0x8763404f, 0xa1bd, 0x452a, {0x89, 0xc4, 0x3f, 0x01, 0xd3, 0x83, 0x38, 0x06}};
+static const GUID kHeadingLevel = {0x29084272, 0xaaaf, 0x4a30, {0x87, 0x96, 0x3c, 0x12, 0xf6, 0x2b, 0x6b, 0xbb}};
+static const GUID kLandmarkType = {0x454045f2, 0x6f61, 0x49f7, {0xa4, 0xf8, 0xb5, 0xf0, 0xcf, 0x82, 0xda, 0x1e}};
+static const GUID kAriaRole = {0xdd207b95, 0xbe4a, 0x4e0d, {0xb7, 0x27, 0x63, 0xac, 0xe9, 0x4b, 0x69, 0x16}};
+static const int kHeadingLevel2 = 80052, kSearchLandmark = 80004;
+
+static void uiaInt(HWND hwnd, const GUID &prop, int value) {
+    if (!accProps || !hwnd) return;
+    VARIANT v;
+    VariantInit(&v);
+    v.vt = VT_I4;
+    v.lVal = value;
+    accProps->SetHwndProp(hwnd, OBJID_CLIENT, CHILDID_SELF, prop, v);
+}
+
+// A heading, a switch and a search region as UI Automation says them (a switch as its own
+// kind 9 is one too).
+static void uiaRole(Node *node, HWND target) {
+    int role = node->role ? node->role : node->kind == 9 ? 8 : 0;
+    const wchar_t *spoken = role == 3 ? L"heading" : role == 8 ? L"toggle switch" : role == 18 ? L"search" : nullptr;
+    const wchar_t *aria = role == 3 ? L"heading" : role == 8 ? L"switch" : role == 18 ? L"search" : nullptr;
+    accessibleText(target, kLocalizedControlType, spoken ? spoken : L"");
+    accessibleText(target, kAriaRole, aria ? aria : L"");
+    if (role == 3) uiaInt(target, kHeadingLevel, kHeadingLevel2); else clearAccessible(target, kHeadingLevel);
+    if (role == 18) uiaInt(target, kLandmarkType, kSearchLandmark); else clearAccessible(target, kLandmarkType);
+}
+
 static void applyAccessRole(Node *node) {
     HWND target = accessibleOf(node);
     int count = (int)(sizeof kRoles / sizeof kRoles[0]);
     int role = node->role > 0 && node->role < count && !(node->kind == 5 && node->role == 18) ? kRoles[node->role] : kindRole(node);
     if (role) accessible(target, role, nullptr);
     else clearAccessible(target, PROPID_ACC_ROLE);
+    uiaRole(node, target);
+}
+
+// An announcement (command 9): UI Automation's notification event, which Narrator and NVDA
+// speak, from the window's host provider (uiautomationcore.dll, Windows 10 1709 and later); a
+// live region's change event before that.
+static void announce(const std::wstring &text) {
+    typedef HRESULT(WINAPI * HostProvider)(HWND, IRawElementProviderSimple **);
+    typedef HRESULT(WINAPI * Notify)(IRawElementProviderSimple *, int, int, BSTR, BSTR);
+    static HMODULE core = LoadLibraryW(L"uiautomationcore.dll");
+    static HostProvider hostProvider = core ? (HostProvider)(void *)GetProcAddress(core, "UiaHostProviderFromHwnd") : nullptr;
+    static Notify notify = core ? (Notify)(void *)GetProcAddress(core, "UiaRaiseNotificationEvent") : nullptr;
+    IRawElementProviderSimple *provider = nullptr;
+    if (hostProvider && notify && SUCCEEDED(hostProvider(mainWindow, &provider)) && provider) {
+        BSTR spoken = SysAllocString(text.c_str()), activity = SysAllocString(L"announcement");
+        // NotificationKind_Other (4), NotificationProcessing_ImportantMostRecent (1).
+        notify(provider, 4, 1, spoken, activity);
+        SysFreeString(spoken);
+        SysFreeString(activity);
+        provider->Release();
+        return;
+    }
+    accessibleText(mainWindow, PROPID_ACC_NAME, text);
+    NotifyWinEvent(EVENT_OBJECT_LIVEREGIONCHANGED, mainWindow, OBJID_CLIENT, CHILDID_SELF);
 }
 
 // The state the node announces. An annotated state replaces the one the control computes, so
@@ -92,10 +145,18 @@ static void enableTree(Node *node, bool above) {
         enableTree((Node *)YGNodeGetContext(YGNodeGetChild(node->yoga, i)), off);
 }
 static bool anyDisabled;
+// The element above a node in the app's tree: its Yoga parent, or for a modal (a root of its
+// own, a window over the content) the element it was placed in.
+static Node *aboveOf(Node *node) {
+    Node *up = parentNode(node);
+    if (up || node->kind != 12 || !node->parentId) return up;
+    auto found = nodes.find(node->parentId);
+    return found == nodes.end() ? nullptr : found->second;
+}
 static void refreshEnabled(Node *node) {
     if (!anyDisabled) return;
     bool above = false;
-    for (Node *up = parentNode(node); up; up = parentNode(up)) if (up->disabled) { above = true; break; }
+    for (Node *up = aboveOf(node); up; up = aboveOf(up)) if (up->disabled) { above = true; break; }
     enableTree(node, above);
     HWND focus = GetFocus();
     if (focus && focus != mainWindow && !IsWindowEnabled(focus)) SetFocus(mainWindow);
@@ -107,6 +168,8 @@ static void applyAccessProp(Node *node, int code, int value) {
         node->disabled = value != 0;
         if (node->disabled) anyDisabled = true;
         refreshEnabled(node);
+        // The modals placed under it.
+        for (Node *modal : modals) refreshEnabled(modal);
         return;
     }
     if (code == 57) { node->role = value; applyAccessRole(node); }
