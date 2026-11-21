@@ -59,6 +59,10 @@ keeps a web app's module about a sixth smaller).
 - `ui_accent_color`: the accent of a Switch or a Slider with no color (the kit sets it to its
   primary color); a Switch's or Slider's `color` is its accent on every host.
 - `ui_right_click_long_press` (true): whether a right click on the web is a long press.
+- `ui_set_words(UiWords)` hands the hosts the words a screen reader says that the platform
+  does not translate (a mixed checkbox, expanded and collapsed, Android's names for a menu, an
+  alert, a link); `KitText.access` holds them in English or Spanish and `kit_use_text` sets the
+  kit's words and these at once.
 - `ui agent` and `ui test`: `drag ID DX DY [MS]`, `long_press ID` and `hover ID in|out`,
   carried out by the core so they behave the same on every host; `state` lists every
   Navigator's stack (`navigators`).
