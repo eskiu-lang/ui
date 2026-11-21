@@ -128,11 +128,16 @@ static void applyDirection(UiHostNode *node) {
     if (isTextArea(node.view)) ((UiTextArea *)node.view).textView.baseWritingDirection =
         ui_layout_rtl() ? NSWritingDirectionRightToLeft : NSWritingDirectionLeftToRight;
 }
+// A text input's alignment (Style.text_align).
+static void applyInputAlign(UiHostNode *node) {
+    if (isField(node.view)) ((NSTextField *)node.view).alignment = alignmentOf(node.textAlign);
+    else if (isTextArea(node.view)) ((UiTextArea *)node.view).textView.alignment = alignmentOf(node.textAlign);
+}
 static void directionChanged(void) {
     for (UiHostNode *node in nodes.allValues) {
         applyDirection(node);
         applyLabel(node);
-        if (isField(node.view)) ((NSTextField *)node.view).alignment = alignmentOf(0);
+        applyInputAlign(node);
         node.view.needsDisplay = YES;
     }
 }
@@ -211,7 +216,7 @@ static void restack(NSView *parent) {
 static bool styleProp(UiHostNode *node, int code, int value) {
     if (ui_layout_prop(node.yoga, code, value)) return true;
     switch (code) {
-    case 81: node.textAlign = value; applyLabel(node); return true;
+    case 81: node.textAlign = value; applyLabel(node); applyInputAlign(node); return true;
     case 82: node.maxLines = value; applyLabel(node); return true;
     case 83:
         node.shrinkSet = value != 0;

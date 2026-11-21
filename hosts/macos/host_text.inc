@@ -161,6 +161,9 @@ static void swapInput(UiHostNode *node) {
     applyStyled(node);
     applyPlaceholder(node);
     applyTraits(node);
+    applyDirection(node);
+    applyInputAlign(node);
+    applyAreaLineHeight(node);
     if (access) applyAccess(node);
     refreshEnabled(node);
     YGNodeMarkDirty(node.yoga);
