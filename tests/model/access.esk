@@ -162,8 +162,11 @@ void driver_access() {
     ui_init(&runtime, record);
     ui_mount() {
         Row(Style{label: "Agree", role: RoleCheckbox, checked: CheckOn, hint: "Accepts the terms", disabled: true}) {}
+        Column(Style{disabled: true}) { ButtonWith(Style{test_id: "off"}, "Off") {} }
     }
     ui_frame();
+    check(has(drive("{\"op\": \"tap\", \"target\": \"off\"}"), "\"ok\": false, \"op\": \"tap\", \"error\": \"'off' is disabled"),
+        "a tap on a disabled element says so");
     String out;
     _ui_driver_tree_node(&out, ui.root);
     string json = (string)out.data;

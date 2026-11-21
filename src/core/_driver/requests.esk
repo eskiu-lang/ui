@@ -158,6 +158,12 @@ string _ui_driver_answer(*JsonValue request, string source) {
                 : strcmp(op, "scroll") == 0 ? "is not a scroll or inside one" : "is not a TextInput");
             return ui_driver_error(op, error.data);
         }
+        // A disabled element (or one inside a disabled one) takes nothing the user does: say
+        // so rather than report a press that did nothing.
+        if (strcmp(op, "scroll") != 0 && _ui_node_disabled(reached)) {
+            String_appendf(&error, "'%s' is disabled (Style.disabled, on it or on an element around it)", target);
+            return ui_driver_error(op, error.data);
+        }
         String_clear(&ui_drv.target); String_append(&ui_drv.target, target);
         _ui_driver_directive(op, reached);
         if (strcmp(op, "type") == 0) {
