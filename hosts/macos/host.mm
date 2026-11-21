@@ -6,6 +6,7 @@
 #include <yoga/Yoga.h>
 #include "../commit.h"
 #include "../grid.h"
+#include "../layout.h"
 #include "ui_native.h"
 #include <chrono>
 #include <cmath>
@@ -80,6 +81,11 @@ static bool driverHostRequest(const std::string &request, std::string &answer);
 // A text input's options (host_text.inc), and its placeholder, kept when its view changes.
 @property(nonatomic) int secure, multiline, autocorrect, autofill, submit;
 @property(nonatomic, copy) NSString *placeholder;
+// Props 81 to 91 (host_props.inc), a label's text, whether the app set shrink, whether it
+// listens to its image, and whether a modal appeared.
+@property(nonatomic) int textAlign, maxLines, lineHeight, zIndex, layoutMs, presentation, appear;
+@property(nonatomic) bool italic, clip, shrinkSet, imageListening, appeared;
+@property(nonatomic, copy) NSString *text;
 @end
 @implementation UiHostNode
 @end
@@ -314,30 +320,6 @@ static NSSize textAreaSize(UiTextArea *area, CGFloat width) {
     CGFloat line = text.font ? [text.layoutManager defaultLineHeightForFont:text.font] : 17;
     return NSMakeSize(width, std::max(used.size.height, line) + 2 * text.textContainerInset.height + border);
 }
-
-// An image, fitted in its box or covering it (cropped), smoothed or pixelated.
-@interface UiImageView : NSImageView
-@property(nonatomic) bool cover;
-@property(nonatomic) bool pixelated;
-@end
-@implementation UiImageView
-- (BOOL)wantsUpdateLayer { return NO; }
-- (void)drawRect:(NSRect)dirty {
-    NSImage *image = self.image;
-    if (!image) return;
-    NSSize size = image.size, box = self.bounds.size;
-    if (size.width <= 0 || size.height <= 0) return;
-    CGFloat sx = box.width / size.width, sy = box.height / size.height;
-    CGFloat scale = self.cover ? std::max(sx, sy) : std::min(sx, sy);
-    NSRect rect = NSMakeRect((box.width - size.width * scale) / 2, (box.height - size.height * scale) / 2,
-                             size.width * scale, size.height * scale);
-    [NSGraphicsContext.currentContext saveGraphicsState];
-    NSRectClip(self.bounds);
-    NSGraphicsContext.currentContext.imageInterpolation = self.pixelated ? NSImageInterpolationNone : NSImageInterpolationHigh;
-    [image drawInRect:rect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
-    [NSGraphicsContext.currentContext restoreGraphicsState];
-}
-@end
 
 // A sheet a Modal is shown in: Escape asks the app to close it.
 @interface UiSheet : NSPanel
@@ -592,8 +574,10 @@ static bool inputProp(UiHostNode *node, int code, int value);
 static void applyPlaceholder(UiHostNode *node);
 static NSString *inputText(NSView *view);
 static void setInputText(NSView *view, NSString *text);
+static void applyLabel(UiHostNode *node);
 
 #include "host_style.inc"
+#include "host_props.inc"
 #include "host_views.inc"
 #include "host_access.inc"
 #include "host_text.inc"

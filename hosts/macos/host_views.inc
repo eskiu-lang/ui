@@ -7,9 +7,10 @@ static void place(YGNodeRef yoga) {
         UiHostNode *node = (__bridge UiHostNode *)YGNodeGetContext(child);
         CGFloat x = YGNodeLayoutGetLeft(child), y = YGNodeLayoutGetTop(child);
         CGFloat w = YGNodeLayoutGetWidth(child), h = YGNodeLayoutGetHeight(child);
+        bool animated = moveAnimated(node, NSMakeRect(x, y, w, h));
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
-        node.view.frame = NSMakeRect(x, y, w, h);
+        if (!animated) node.view.frame = NSMakeRect(x, y, w, h);
         // A radius past half the shorter side: a pill asks for 999.
         if (node.radius > 0) node.view.layer.cornerRadius = std::min<CGFloat>(node.radius, std::min(w, h) / 2);
         if (node.blur) node.blur.layer.cornerRadius = node.view.layer.cornerRadius;
@@ -245,11 +246,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             YGNodeStyleSetFlexDirection(node.yoga, YGFlexDirectionColumn);
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
         } else if (kind == 15) {
-            NSSlider *slider = [NSSlider sliderWithTarget:events action:@selector(slide:)];
+            NSSlider *slider = [UiSlider sliderWithTarget:events action:@selector(slide:)];
             slider.continuous = YES;
             node.view = slider;
         } else if (kind == 9) {
-            NSSwitch *toggle = [NSSwitch new];
+            NSSwitch *toggle = [UiSwitch new];
             toggle.target = events;
             toggle.action = @selector(toggle:);
             node.view = toggle;
@@ -302,6 +303,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         node.view.autoresizesSubviews = NO;
         if (kind == 12) node.view.layer.backgroundColor = [NSColor colorWithWhite:0 alpha:0.4].CGColor;
         [viewNodes setObject:node forKey:node.view];
+        if (ui_layout_rtl()) { applyDirection(node); applyLabel(node); }
         YGNodeSetContext(node.yoga, (__bridge void *)node);
         if ((kind >= 3 && kind <= 5) || kind == 7 || kind == 9 || kind == 10 || kind == 15) YGNodeSetMeasureFunc(node.yoga, measure);
         nodes[@(id)] = node;
@@ -314,7 +316,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
     if (op == 9 && node.yoga) ui_grid_tracks(node.yoga, kind, text);
     if (op == 2) {
         // Props: the code in kind, the value in before.
-        if (accessProp(node, kind, before) || inputProp(node, kind, before)) {}
+        if (accessProp(node, kind, before) || inputProp(node, kind, before) || styleProp(node, kind, before)) {}
         else if (kind == 1) YGNodeStyleSetGap(node.yoga, YGGutterAll, before);
         else if (kind == 2) {
             YGNodeStyleSetPadding(node.yoga, YGEdgeAll, before);
@@ -334,7 +336,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             if (before) YGNodeStyleSetHeight(node.yoga, before); else YGNodeStyleSetHeightAuto(node.yoga);
         } else if (kind == 6) {
             YGNodeStyleSetFlexGrow(node.yoga, before);
-            if (![node.view isKindOfClass:NSScrollView.class]) YGNodeStyleSetFlexShrink(node.yoga, before > 0 ? 1 : 0);
+            if (![node.view isKindOfClass:NSScrollView.class] && !node.shrinkSet) YGNodeStyleSetFlexShrink(node.yoga, before > 0 ? 1 : 0);
         } else if (kind == 7) YGNodeStyleSetFlexWrap(node.yoga, before ? YGWrapWrap : YGWrapNoWrap);
         else if (kind == 8) {
             node.background = before;
@@ -346,7 +348,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             applyGradient(node);
             node.view.layer.backgroundColor = node.gradient ? nil : colorOf(node.background).CGColor;
         } else if (kind == 52) applyBlur(node, before);
-        else if (kind == 9) { node.textColor = before; applyColor(node); }
+        else if (kind == 9) { node.textColor = before; applyColor(node); applyAccent(node); }
         else if (kind == 10) { node.fontSize = before; applyFont(node); }
         else if (kind == 11) { node.fontWeight = before; applyFont(node); }
         else if (kind == 12) {
@@ -359,7 +361,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             node.radius = before;
             NSSize size = node.view.bounds.size;
             node.view.layer.cornerRadius = std::min<CGFloat>(before, std::min(size.width, size.height) / 2);
-            node.view.layer.masksToBounds = before > 0 && !node.shadow;
+            applyMasks(node);
             applyStyled(node);
         } else if (kind == 47 && [node.view isKindOfClass:UiImageView.class]) {
             ((UiImageView *)node.view).cover = before != 0;
@@ -376,7 +378,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             layer.shadowRadius = before;
             // The layer is flipped with its view: a positive offset is down.
             layer.shadowOffset = CGSizeMake(0, before / 2.0);
-            layer.masksToBounds = node.radius > 0 && !before;
+            applyMasks(node);
         } else if (kind == 15) {
             animateLayer(node, node.view.layer, @"opacity", @(before / 100.0));
             node.view.alphaValue = before / 100.0;
@@ -433,15 +435,12 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         } else if (kind == 5) { node.fontFile = value; applyFont(node); }
         else if (kind == 2) { node.placeholder = value; applyPlaceholder(node); }
         else if (accessText(node, kind, value)) {}
-        else if (kind == 3 && [node.view isKindOfClass:NSImageView.class]) loadImage((NSImageView *)node.view, node.yoga, value);
+        else if (kind == 3 && [node.view isKindOfClass:UiImageView.class]) loadImage(node, value);
     } else if (op == 3) {
         NSString *value = [NSString stringWithUTF8String:text ? text : ""];
         if ([node.view isKindOfClass:NSButton.class]) { node.title = value; applyButtonTitle(node); }
         else if (node.kind == 5) setInputText(node.view, value);
-        else if ([node.view isKindOfClass:NSTextField.class]) {
-            NSTextField *field = (NSTextField *)node.view;
-            if (![field.stringValue isEqualToString:value]) field.stringValue = value;
-        }
+        else if (node.kind == 3) { node.text = value; applyLabel(node); }
         YGNodeMarkDirty(node.yoga);
     } else if ((op == 4 || op == 5) && node.kind == 12) {
         // A Modal is a sheet; one with a background of its own (an Overlay: popovers, menus)
@@ -450,7 +449,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         if (disabledCount) refreshEnabled(node);
         if ([modals containsObject:node]) return;
         [modals addObject:node];
-        if (!node.background) showSheet(node);
+        // A ModalWith's sheet or dialog (prop 89) is laid out by the core over the window too.
+        if (!node.background && !node.presentation) showSheet(node);
         else [contentView addSubview:node.view];
     } else if (op == 4 || op == 5) {
         UiHostNode *parentNode = nodes[@(parent)];
@@ -468,6 +468,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             [parentView addSubview:node.view positioned:NSWindowBelow relativeTo:next.view];
         } else [parentView addSubview:node.view];
         YGNodeInsertChild(parentYoga, node.yoga, index);
+        restack(parentView);
         // Under a disabled element, what comes in is disabled too.
         node.parentId = parent;
         if (disabledCount) refreshEnabled(node);

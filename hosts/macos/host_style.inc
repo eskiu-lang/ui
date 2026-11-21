@@ -1,5 +1,30 @@
 // host_style.inc: fonts, text colors, a styled control's look, images, gradients and blur. Part of host.mm, which #includes it (one translation unit).
 
+// An image, fitted in its box or covering it (cropped), smoothed or pixelated.
+@interface UiImageView : NSImageView
+@property(nonatomic) bool cover;
+@property(nonatomic) bool pixelated;
+@property(nonatomic, copy) NSString *source;
+@end
+@implementation UiImageView
+- (BOOL)wantsUpdateLayer { return NO; }
+- (void)drawRect:(NSRect)dirty {
+    NSImage *image = self.image;
+    if (!image) return;
+    NSSize size = image.size, box = self.bounds.size;
+    if (size.width <= 0 || size.height <= 0) return;
+    CGFloat sx = box.width / size.width, sy = box.height / size.height;
+    CGFloat scale = self.cover ? std::max(sx, sy) : std::min(sx, sy);
+    NSRect rect = NSMakeRect((box.width - size.width * scale) / 2, (box.height - size.height * scale) / 2,
+                             size.width * scale, size.height * scale);
+    [NSGraphicsContext.currentContext saveGraphicsState];
+    NSRectClip(self.bounds);
+    NSGraphicsContext.currentContext.imageInterpolation = self.pixelated ? NSImageInterpolationNone : NSImageInterpolationHigh;
+    [image drawInRect:rect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
+    [NSGraphicsContext.currentContext restoreGraphicsState];
+}
+@end
+
 static NSFontWeight weightOf(int weight) {
     if (weight <= 0) return NSFontWeightRegular;
     const NSFontWeight weights[] = {NSFontWeightUltraLight, NSFontWeightThin, NSFontWeightLight, NSFontWeightRegular,
@@ -40,7 +65,8 @@ static NSFont *fontOf(UiHostNode *node) {
     CGFloat size = node.fontSize > 0 ? node.fontSize : kTextSize;
     NSString *custom = node.fontFile ? fontName(node.fontFile) : nil;
     NSFont *font = custom ? [NSFont fontWithName:custom size:size] : nil;
-    return font ?: [NSFont systemFontOfSize:size weight:weightOf(node.fontWeight)];
+    font = font ?: [NSFont systemFontOfSize:size weight:weightOf(node.fontWeight)];
+    return node.italic ? [NSFontManager.sharedFontManager convertFont:font toHaveTrait:NSItalicFontMask] : font;
 }
 
 // A button's title: the system's for a push button, else in the node's font and color.
@@ -91,6 +117,7 @@ static void applyFont(UiHostNode *node) {
     if ([node.view isKindOfClass:NSButton.class]) applyButtonTitle(node);
     else if ([node.view isKindOfClass:NSTextField.class]) ((NSTextField *)node.view).font = fontOf(node);
     else if (isTextArea(node.view)) ((UiTextArea *)node.view).textView.font = fontOf(node);
+    applyLabel(node);
     YGNodeMarkDirty(node.yoga);
 }
 
@@ -99,19 +126,33 @@ static void applyColor(UiHostNode *node) {
     if ([node.view isKindOfClass:NSButton.class]) applyButtonTitle(node);
     else if ([node.view isKindOfClass:NSTextField.class]) ((NSTextField *)node.view).textColor = color ?: NSColor.labelColor;
     else if (isTextArea(node.view)) ((UiTextArea *)node.view).textView.textColor = color ?: NSColor.labelColor;
+    applyLabel(node);
 }
 
 // A bundled resource by file name, or an http(s) URL fetched in the background. The image
-// changes the node's measured size, so the layout runs again when it arrives.
-static void loadImage(NSImageView *view, YGNodeRef yoga, NSString *source) {
+// changes the node's measured size, so the layout runs again when it arrives. Whether it
+// loaded goes to the app when it listens (prop 84), after the commit that set it.
+static void imageLoaded(UiHostNode *node, NSString *source, bool loaded) {
+    if (!node.imageListening) return;
+    int id = node.nodeId, generation = node.generation;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (nodes[@(id)] == node) ui_dispatch_image(id, generation, loaded ? 1 : 0);
+    });
+}
+static void loadImage(UiHostNode *node, NSString *source) {
+    UiImageView *view = (UiImageView *)node.view;
+    YGNodeRef yoga = node.yoga;
     view.image = nil;
+    view.source = source;
     if (!source) return;
     if ([source hasPrefix:@"http://"] || [source hasPrefix:@"https://"]) {
         NSURL *url = [NSURL URLWithString:source];
         [[NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
             NSImage *image = data ? [[NSImage alloc] initWithData:data] : nil;
             dispatch_async(dispatch_get_main_queue(), ^{
+                if (view.source != source) return;
                 view.image = image; [view setNeedsDisplay:YES]; YGNodeMarkDirty(yoga); relayout();
+                imageLoaded(node, source, image != nil);
             });
         }] resume];
         return;
@@ -121,6 +162,7 @@ static void loadImage(NSImageView *view, YGNodeRef yoga, NSString *source) {
     view.image = path ? [[NSImage alloc] initWithContentsOfFile:path] : nil;
     [view setNeedsDisplay:YES];
     YGNodeMarkDirty(yoga);
+    imageLoaded(node, source, view.image != nil);
 }
 
 static void applyGradient(UiHostNode *node) {

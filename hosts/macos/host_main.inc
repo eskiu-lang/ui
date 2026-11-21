@@ -96,6 +96,7 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
     ui_commit_each(data, len, ui_host_apply, ui_host_command, ui_host_named);
     relayout();
     slideScreens();
+    appearModals();
     commitCount++;
 }
 
@@ -103,7 +104,7 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
 // the box its children take.
 static void layoutSheet(UiHostNode *modal) {
     NSSize window = contentView.bounds.size;
-    ui_grid_calculate(modal.yoga, window.width, window.height, YGDirectionLTR);
+    ui_grid_calculate(modal.yoga, window.width, window.height, ui_layout_direction());
     CGFloat right = 0, bottom = 0;
     for (size_t i = 0; i < YGNodeGetChildCount(modal.yoga); ++i) {
         YGNodeRef child = YGNodeGetChild(modal.yoga, i);
@@ -112,20 +113,20 @@ static void layoutSheet(UiHostNode *modal) {
     }
     float pad = YGNodeLayoutGetPadding(modal.yoga, YGEdgeRight);
     NSSize size = NSMakeSize(std::max<CGFloat>(1, std::ceil(right + pad)), std::max<CGFloat>(1, std::ceil(bottom + pad)));
-    ui_grid_calculate(modal.yoga, size.width, size.height, YGDirectionLTR);
+    ui_grid_calculate(modal.yoga, size.width, size.height, ui_layout_direction());
     if (!NSEqualSizes(modal.sheet.contentView.bounds.size, size)) [modal.sheet setContentSize:size];
     modal.view.frame = NSMakeRect(0, 0, size.width, size.height);
     place(modal.yoga);
 }
 
 static void relayout(void) {
-    ui_grid_calculate(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
+    ui_grid_calculate(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, ui_layout_direction());
     place(rootYoga);
     for (UiHostNode *modal in modals) {
         if (modal.sheet) { layoutSheet(modal); continue; }
         NSRect screen = contentView.bounds;
         modal.view.frame = screen;
-        ui_grid_calculate(modal.yoga, screen.size.width, screen.size.height, YGDirectionLTR);
+        ui_grid_calculate(modal.yoga, screen.size.width, screen.size.height, ui_layout_direction());
         place(modal.yoga);
     }
 }
@@ -164,6 +165,12 @@ static void reportSystem(void) {
     NSString *language = NSLocale.preferredLanguages.firstObject ?: @"en";
     bool rtl = [NSLocale characterDirectionForLanguage:language] == NSLocaleLanguageDirectionRightToLeft;
     ui_report_locale(language.UTF8String, rtl ? 1 : 0);
+    // Right to left: Yoga mirrors rows, start and end; the views their controls and text.
+    if (rtl != ui_layout_rtl()) {
+        ui_layout_rtl() = rtl;
+        directionChanged();
+        relayout();
+    }
 }
 
 // The window, the insets (none on a desktop) and the system's settings, once the core runs.
