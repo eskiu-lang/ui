@@ -226,8 +226,12 @@ frames are the other hosts' to the point. Its parts:
   spinner shows at the top of the scroll while the app is refreshing.
 - **Accent.** A switch or a slider with a color is drawn by the host in it (AppKit's own take
   the system's accent only).
+- **Clip and shadow.** A layer that clips its content clips its own shadow too, so a box with
+  both Style.clip and a shadow puts its children in an inner view that clips them, with the
+  same radius, while the box's layer, unclipped, draws the shadow. A click on the inner view
+  and on no child is the box's.
 - **What is not native yet.** A screenshot (`ui agent`) is the window's content as AppKit
-  draws it, without the sheets. Style.clip with a shadow clips the shadow too.
+  draws it, without the sheets.
 
 ui.toml's `[macos]` table: `renderer` (`"web"` for the WKWebView host), `window`,
 `frameworks` (system frameworks to link) and `[macos.plist]` (Info.plist entries). The
@@ -238,8 +242,12 @@ app's URL scheme (`[app] scheme`) opens it (`ui_link`).
 `ui build macos --webview` (also `run`, `serve` and `release`), or ui.toml `[macos] renderer =
 "web"` for an app that relies on the web host (its DOM, `native/web` code), builds the web
 host and a Cocoa app whose window is a `WKWebView` loading it (`hosts/macos/webview.m`), for
-both architectures. The window takes the page's title and has the same menus (with View's
-Reload). `ui serve macos --webview` reloads the page after each build, as on the web.
+both architectures. The app in the bundle's `web/` is served as `app://localhost/` (a path with
+no extension is a route and gets the page). The window takes the page's title and has the same
+menus (with View's Reload). `ui serve macos --webview` reloads the page after each build, as on
+the web. Asset updates ([updates.md](updates.md)) are kept in Application Support/BUNDLE_ID and
+served in place of the bundled files; a build that is not a release prints the page's console
+on standard output.
 
 ## Linux
 
@@ -293,7 +301,11 @@ window is a WebKitGTK view (`hosts/linux/webview.c`, `webkit2gtk-4.1` or `4.0` t
 `pkg-config`). The app in `web/` beside the executable is served as `app://localhost/` (a path
 with no extension is a route and gets the page), so the page's base, its module imports and its
 routes work as on a server. The window takes the document's title; a release build has no
-inspector. `ui serve linux --webview` reloads the page after each build, as on the web.
+inspector. `ui serve linux --webview` reloads the page after each build, as on the web. The
+page's storage is in `$XDG_DATA_HOME/ID/webkit` and WebKit's cache in `$XDG_CACHE_HOME/ID`;
+asset updates ([updates.md](updates.md)) are kept in `$XDG_DATA_HOME/ID/ui-updates` and served
+in place of the bundled files; a build that is not a release prints the page's console on
+standard output.
 
 ## Windows
 
@@ -338,7 +350,12 @@ other hosts' to the point.
 - **Services.** Frames and timers are window messages and `SetTimer`; transitions (opacity,
   translation, background color) and the screens' slides are the host's, on its clock; drags,
   long presses and hover come from the mouse (captured past 6 px); the network is WinHTTP on a
-  thread; storage is `%APPDATA%\NAME`; the clipboard is the system's, and a share copies to it.
+  thread; storage is `%APPDATA%\NAME`; the clipboard is the system's.
+- **Share.** The system's share sheet (`IDataTransferManagerInterop`, Windows 10 and later),
+  with the app's name as its title, the text (and the URL after it) as text and the URL as a
+  web link. The WinRT interfaces are declared in `hosts/windows/host_share.inc` and combase's
+  functions are looked up at run time, so MinGW-w64 and MSVC build it alike. When the sheet
+  cannot open, the text and the URL go to the clipboard.
 - **Effects a child window cannot draw.** Its parent draws them: a shadow around it, and a
   scaled or turned element as a transformed picture of its window (`PrintWindow`), whose window
   is then out of sight; a click on the picture goes to what is under it in the element (a
@@ -357,8 +374,7 @@ other hosts' to the point.
   `eskiuc`'s for `x86_64-w64-windows-gnu`, whose C runtime and helpers MSVC's linker does not
   have, so an all-MSVC build needs an MSVC target in `eskiuc`.
 - **What is not native yet.** A vertical scroll bar takes its width from the scroll's content
-  when it shows; a share copies to the clipboard (the system's share UI is WinRT, which
-  MinGW-w64's headers do not have); haptics do nothing.
+  when it shows; haptics do nothing.
 
 ui.toml's `[windows]` table: `renderer` (`"web"` for the WebView2 host) and `window`.
 
@@ -369,10 +385,14 @@ renderer = "web"`, builds the web host and a Win32 application using Microsoft E
 (`hosts/windows/webview.cpp`), with MSVC (`cl.exe`, from a Developer prompt) or MinGW-w64; `CXX`
 picks another. The tool fetches the WebView2 SDK's NuGet package once (checked by its SHA-256)
 for its header, and puts its `WebView2Loader.dll` next to the executable. The app in `web/` is
-served as `https://app.assets/`; WebView2 keeps its data in `%LOCALAPPDATA%\NAME`. The window
-has no console, takes the document's title, reloads on F5 and Ctrl+R and closes on Ctrl+W,
-and a failure to start WebView2 says so in a message box. A release build turns the
-developer tools off. Running it needs the WebView2 Runtime, which Windows 10 and 11 carry.
+served as `https://app.assets/` by the host (`WebResourceRequested`; a path with no extension
+is a route and gets the page); WebView2 keeps its data in `%LOCALAPPDATA%\NAME`. Asset updates
+([updates.md](updates.md)) are kept in `%APPDATA%\NAME\ui-updates` and served in place of the
+bundled files. The window has no console (a build that is not a release writes the page's
+console to its standard output, when it has one), takes the document's title, reloads on F5
+and Ctrl+R and closes on Ctrl+W, and a failure to start WebView2 says so in a message box. A
+release build turns the developer tools off. Running it needs the WebView2 Runtime, which
+Windows 10 and 11 carry.
 
 ## Web apps
 
