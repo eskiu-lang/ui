@@ -11,7 +11,33 @@ void Line(string test_id, string label, string value) {
     TextWith(Style{test_id: test_id}, text.data);
 }
 
+#ifdef __wasm__
+// A webview build (tests/desktop/updates.py HOST --webview): the host prints the page's
+// console, and data= is the text the page gets for data.txt from the host.
+String web_data;
+*Signal<int> web_loaded = null;
+
+void ReportWeb() {
+    if (web_loaded == null) {
+        web_loaded = signal_new<int>(0);
+        ui_fetch(FetchRequest{url: "data.txt"}, void(FetchResult result) {
+            String_clear(&web_data);
+            String_append(&web_data, result.status == 200 && result.body != null ? result.body : "?");
+            String_trim(&web_data);
+            web_loaded.set(1);
+        });
+    }
+    int loaded = web_loaded.get();
+    printf("UPDATES version=%s ready=%s error=%s data=%s\n", ui_update_version(), ui_update_ready(), ui_update_error(),
+           loaded != 0 && web_data.data != null ? web_data.data : "");
+    fflush(null);
+}
+#endif
+
 void App() {
+#ifdef __wasm__
+    ReportWeb();
+#endif
     // A desktop host has no page to read: with UI_UPDATES_REPORT=1 each render prints the state
     // and the file data.txt is read from.
     if (env_get("UI_UPDATES_REPORT") != null) {

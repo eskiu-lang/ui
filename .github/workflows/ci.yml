@@ -127,6 +127,11 @@ jobs:
         with:
           path: ~/.eskiu/cache
           key: yoga-windows-${{ hashFiles('tools/ui/yoga.esk') }}
+      # emcc, for the webview build's asset updates (tests/desktop/updates.py --webview).
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 5.0.2
+          actions-cache-folder: emsdk-cache
       - name: Host checks and budgets
         run: tools/ci_host.sh windows
       # The Win32 host's source with MSVC too (a release, and a test build with the driver).
@@ -173,6 +178,11 @@ jobs:
         with:
           path: ~/.eskiu/cache
           key: yoga-linux-x86_64-${{ hashFiles('tools/ui/yoga.esk') }}
+      # emcc, for the webview build's asset updates (tests/desktop/updates.py --webview).
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 5.0.2
+          actions-cache-folder: emsdk-cache
       - name: Host checks and budgets
         # The GTK host's window on Xvfb, with a session bus for GTK's settings and AT-SPI.
         run: dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" tools/ci_host.sh linux

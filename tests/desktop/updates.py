@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """Asset updates on a desktop host (docs/updates.md): tests/web/updates-app built for this
-system's native host (macos, linux or windows), a changed asset and a new one published with
-`ui publish` and served on 127.0.0.1:8793 (the app's [updates] url).
+system's native host (macos, linux or windows), or with --webview for its webview host
+(WKWebView, WebKitGTK, WebView2), a changed asset and a new one published with `ui publish`
+and served on 127.0.0.1:8793 (the app's [updates] url).
 
 - the app downloads the bundle after its first frame and keeps it for the next start;
 - the next start uses it: data.txt comes from the downloaded file;
 - a bundle whose file does not match its hash is refused and the app keeps the bundle it has.
 
-The app prints its state (UI_UPDATES_REPORT=1), since a release build has no driver.
+The app prints its state (UI_UPDATES_REPORT=1), since a release build has no driver. A
+webview build prints it on the page's console, which the host forwards to its output, with
+the text the page got for data.txt from the host (the update directory first, then the app's
+own file).
 
     python3 tests/desktop/updates.py macos
+    python3 tests/desktop/updates.py macos --webview
 
-Needs the host's toolchain and a display. The signing key is made for the test in build/.
+Needs the host's toolchain and a display (and emcc with --webview). The signing key is made
+for the test in build/.
 """
 import os
 from pathlib import Path
@@ -19,14 +25,17 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE / "tests/web"))
 from serve import serve  # noqa: E402
 
-HOST = sys.argv[1] if len(sys.argv) > 1 else {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
-APP = HERE / f"build/updates-app-{HOST}"
+ARGS = [arg for arg in sys.argv[1:] if arg != "--webview"]
+WEBVIEW = "--webview" in sys.argv[1:]
+HOST = ARGS[0] if ARGS else {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
+APP = HERE / f"build/updates-app-{HOST}{'-webview' if WEBVIEW else ''}"
 BUNDLE = APP / "build/ui/updates"
 UPDATES = HERE / "build/updates-server"
 ID = "org.eskiu.test.updates"
@@ -65,6 +74,30 @@ def data_dir():
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / ID
 
 
+def webview_data():
+    """Where the webview keeps the page's storage (the core's state is in its localStorage)."""
+    if not WEBVIEW:
+        return []
+    if HOST == "macos":
+        return [Path.home() / "Library/WebKit" / ID, Path.home() / "Library/Caches" / ID]
+    if HOST == "windows":
+        return [Path(os.environ["LOCALAPPDATA"]) / "updatesapp"]
+    return [Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / ID]
+
+
+def clean():
+    for path in [data_dir(), *webview_data()]:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def updated(state, text):
+    """Whether data.txt is the downloaded file: its path (native) or the page's text (webview)."""
+    data = state.get("data", "")
+    if WEBVIEW:
+        return data == text.strip()
+    return data != "data.txt" and Path(data).is_file() and Path(data).read_text() == text
+
+
 def program():
     out = APP / "build/ui" / HOST
     return {"macos": out / "updatesapp.app/Contents/MacOS/updatesapp", "linux": out / "updatesapp",
@@ -76,6 +109,9 @@ def run(until, seconds=40):
     env = {**os.environ, "UI_UPDATES_REPORT": "1", "UI_NO_OPEN": "1"}
     process = subprocess.Popen([program()], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     state, deadline = {}, time.monotonic() + seconds
+    # An app that prints nothing more is stopped at the deadline too.
+    timer = threading.Timer(seconds, process.kill)
+    timer.start()
     try:
         while time.monotonic() < deadline:
             line = process.stdout.readline()
@@ -88,6 +124,7 @@ def run(until, seconds=40):
             if until(state):
                 break
     finally:
+        timer.cancel()
         process.kill()
         process.wait()
     return state
@@ -100,8 +137,8 @@ def main():
     ui_path = Path(os.path.relpath(HERE, APP)).as_posix()
     for name in ("eskiu.lock", "eskiu.toml"):
         (APP / name).write_text((APP / name).read_text().replace("../../..", ui_path))
-    shutil.rmtree(data_dir(), ignore_errors=True)
-    ui("build", HOST)
+    clean()
+    ui("build", HOST, *(["--webview"] if WEBVIEW else []))
     (APP / "assets/data.txt").write_text("second\n")
     (APP / "assets/new.txt").write_text("added\n")
     publish(100)
@@ -109,11 +146,9 @@ def main():
 
     state = run(lambda s: s["ready"] == "100" or s["error"])
     check(state.get("ready") == "100" and state.get("version") == "", f"bundle 100 downloads and waits for the next start ({state})")
-    state = run(lambda s: s["version"] == "100")
-    data = state.get("data", "")
+    state = run(lambda s: s["version"] == "100" and updated(s, "second\n"))
     check(state.get("version") == "100", f"the next start uses bundle 100 ({state})")
-    check(data != "data.txt" and Path(data).is_file() and Path(data).read_text() == "second\n",
-          f"data.txt is the downloaded file ({data})")
+    check(updated(state, "second\n"), f"data.txt is the downloaded file ({state.get('data')})")
 
     # A file that does not match its hash.
     (APP / "assets/data.txt").write_text("third\n")
@@ -122,13 +157,13 @@ def main():
     (UPDATES / "files" / changed).write_text("tampered\n")
     state = run(lambda s: bool(s["error"]))
     check("does not match its hash" in state.get("error", ""), f"a file that does not match its hash is refused ({state})")
-    state = run(lambda s: s["version"] == "100")
-    check(state.get("version") == "100" and Path(state.get("data", "")).read_text() == "second\n", "and the app keeps bundle 100")
+    state = run(lambda s: s["version"] == "100" and updated(s, "second\n"))
+    check(state.get("version") == "100" and updated(state, "second\n"), f"and the app keeps bundle 100 ({state})")
     server.shutdown()
-    shutil.rmtree(data_dir(), ignore_errors=True)
+    clean()
     if failures:
         sys.exit(1)
-    print(f"PASS {HOST} updates")
+    print(f"PASS {HOST}{' webview' if WEBVIEW else ''} updates")
 
 
 if __name__ == "__main__":

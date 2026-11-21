@@ -74,6 +74,11 @@ jobs:
         with:
           path: ~/.eskiu/cache
           key: yoga-macos-${{ hashFiles('tools/ui/yoga.esk') }}
+      # emcc, for the webview build's asset updates (tests/desktop/updates.py --webview).
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 5.0.2
+          actions-cache-folder: emsdk-cache
       - name: Host checks and budgets
         run: tools/ci_host.sh macos
       - name: Logs

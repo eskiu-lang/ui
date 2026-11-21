@@ -35,7 +35,14 @@ case "$HOST" in macos|linux|windows)
     # refused.
     started=$(date +%s)
     python3 tests/desktop/updates.py "$HOST"
-    echo "updates: $(( $(date +%s) - started )) s";;
+    echo "updates: $(( $(date +%s) - started )) s"
+    # And in the webview build (WKWebView, WebKitGTK, WebView2), whose host serves the
+    # bundle's files; it needs emcc for the web build, and WebKitGTK on Linux.
+    if command -v emcc > /dev/null && { [ "$HOST" != linux ] || pkg-config --exists webkit2gtk-4.1 2>/dev/null; }; then
+        started=$(date +%s)
+        python3 tests/desktop/updates.py "$HOST" --webview
+        echo "updates (webview): $(( $(date +%s) - started )) s"
+    fi;;
 esac
 if [ "$HOST" = web ]; then
     python3 tools/budgets.py model
