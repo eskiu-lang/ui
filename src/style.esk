@@ -138,3 +138,41 @@ int64 rgb(int r, int g, int b) { return rgba(r, g, b, 255); }
 int64 rgba(int r, int g, int b, int a) {
     return ((int64)(r & 255) << 24) | ((int64)(g & 255) << 16) | ((int64)(b & 255) << 8) | (int64)(a & 255);
 }
+
+// The color of a Switch or a Slider whose Style sets none, its accent: -1 (the default) is
+// the platform's. The kit's kit_follow_system and kit_set set it to the theme's primary.
+int64 ui_accent_color = -1;
+
+// For the next element made (a component's first that is not a Scope: its root), the fields `extra` gives on top
+// of its own Style: key, test_id, label, hint, disabled, the margins, width, height and their
+// bounds, grow, shrink and z_index. A component that takes no Style (a kit component) gets a
+// test_id, a margin or a size this way: `ui_style_next(Style{test_id: "save"}); KitButton(...)`.
+void ui_style_next(Style extra) {
+    ui.next_style = extra;
+    ui.has_next_style = true;
+}
+
+// `base` with the fields `extra` sets (ui_style_next) (internal).
+Style _ui_style_merged(Style base, Style extra) {
+    Style out = base;
+    if (extra.key.set) { out.key = extra.key; }
+    if (extra.test_id != null) { out.test_id = extra.test_id; }
+    if (extra.label != null) { out.label = extra.label; }
+    if (extra.hint != null) { out.hint = extra.hint; }
+    if (extra.disabled) { out.disabled = true; }
+    if (extra.margin != 0) { out.margin = extra.margin; }
+    if (extra.margin_top != 0) { out.margin_top = extra.margin_top; }
+    if (extra.margin_right != 0) { out.margin_right = extra.margin_right; }
+    if (extra.margin_bottom != 0) { out.margin_bottom = extra.margin_bottom; }
+    if (extra.margin_left != 0) { out.margin_left = extra.margin_left; }
+    if (extra.width != 0) { out.width = extra.width; }
+    if (extra.height != 0) { out.height = extra.height; }
+    if (extra.min_width != 0) { out.min_width = extra.min_width; }
+    if (extra.max_width != 0) { out.max_width = extra.max_width; }
+    if (extra.min_height != 0) { out.min_height = extra.min_height; }
+    if (extra.max_height != 0) { out.max_height = extra.max_height; }
+    if (extra.grow != 0) { out.grow = extra.grow; }
+    if (extra.shrink != 0) { out.shrink = extra.shrink; }
+    if (extra.z_index != 0) { out.z_index = extra.z_index; }
+    return out;
+}

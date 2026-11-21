@@ -37,6 +37,8 @@ struct Ui {
     Insets insets;
     bool inactive;
     *Signal<int> environment;
+    // Bumped by a theme change (the kit's kit_set); what reads a theme subscribes to it.
+    *Signal<int> theme;
     *Node builder;
     *_Observer tracking;
     // Index = node id; null once the node is unmounted. An id is reused only after the
@@ -93,6 +95,9 @@ struct Ui {
     // While above 0, the signals made are a hook's own and `ui agent state` leaves them out
     // (internal).
     int hidden_signals;
+    // ui_style_next's Style, for the next element made (internal).
+    Style next_style;
+    bool has_next_style;
     // The timers of mounted scopes, the next token, and the host's clock (ui_set_timer_host).
     List<*UiTimer> timers;
     int next_timer;
@@ -199,6 +204,7 @@ void ui_init(*Ui runtime, escaping fn(*uint8, int)->void apply) {
     ui = runtime;
     ui.apply = apply;
     ui.environment = signal_new<int>(0);
+    ui.theme = signal_new<int>(0);
     ui.by_id.push(null);
     ui.generations.push(0);
     *Node root = alloc<Node>(1);
@@ -686,6 +692,7 @@ void ui_shutdown() {
     ui_require(!ui.in_flight, "prototype shutdown requires synchronous renderer");
     free_closure(ui.apply);
     ui.environment.free();
+    ui.theme.free();
     ui.by_id.free(); ui.generations.free(); ui.retired_ids.free(); ui.free_ids.free();
     ui.next_nodes.free(); ui.render_writes.free(); ui.looping.free();
     ui.dirty_memos.free(); ui.dirty_effects.free();

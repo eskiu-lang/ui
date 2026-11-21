@@ -449,6 +449,12 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
 *Node ui_element(int kind, Style style, string text,
     escaping fn()->void block, escaping fn()->void handler, escaping fn()->void handler_cleanup) {
     *Node parent = ui.builder;
+    // ui_style_next: the fields it gives go onto the first element made after it that is
+    // not a scope (a component's Scope has no view).
+    if (ui.has_next_style && kind != 0) {
+        ui.has_next_style = false;
+        style = _ui_style_merged(style, ui.next_style);
+    }
     // A scroll takes the RefreshControl that came right before it: its handler is the
     // scroll's handler, its state a prop.
     bool refresh = false;
@@ -621,7 +627,8 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 7, style.wrap ? 1 : 0, 0);
     ui_prop(node, fresh, 8, style.background, -1);
     // Text with no color of its own takes the app's (ui_text_color), else the platform's.
-    int64 color = style.color == -1 && (node.kind == 3 || node.kind == 5) ? ui_text_color : style.color;
+    int64 color = style.color == -1 && (node.kind == 3 || node.kind == 5) ? ui_text_color
+                : style.color == -1 && (node.kind == 9 || node.kind == 15) ? ui_accent_color : style.color;
     ui_prop(node, fresh, 9, color, -1);
     ui_prop(node, fresh, 10, style.font_size, 0);
     ui_prop(node, fresh, 11, style.font_weight, 0);
