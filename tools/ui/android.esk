@@ -343,7 +343,7 @@ string android_manifest(Project* p, string setup_classes, bool package) {
     String_appendf(&manifest, "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"%s>\n"
         "%s%s"
         "  <application android:label=\"%s\"%s android:theme=\"%s\"%s"
-        " android:usesCleartextTraffic=\"true\">\n"
+        " android:usesCleartextTraffic=\"true\" android:supportsRtl=\"true\">\n"
         "    <activity android:name=\"org.eskiu.ui.UiActivity\" android:exported=\"true\" android:launchMode=\"singleTask\"\n"
         "      android:configChanges=\"uiMode|locale|layoutDirection|fontScale|orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|density\" >\n"
         "      <meta-data android:name=\"org.eskiu.ui.native\" android:value=\"%s\"/>\n%s"
