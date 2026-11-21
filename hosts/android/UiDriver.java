@@ -42,9 +42,14 @@ final class UiDriver {
         for (java.util.Map.Entry<Integer, View> entry : activity.nodes.entrySet()) {
             View view = entry.getValue();
             view.getLocationInWindow(at);
+            // Shown, and some of it inside the window and every scroll above it: a row scrolled
+            // away is not visible.
+            boolean visible = view.isShown();
+            if (visible && view.getWidth() > 0 && view.getHeight() > 0) visible = view.getGlobalVisibleRect(new android.graphics.Rect());
+            else if (visible) visible = at[0] >= 0 && at[1] >= 0 && at[0] <= view.getRootView().getWidth() && at[1] <= view.getRootView().getHeight();
             rows.append(entry.getKey()).append(' ').append(at[0] / d).append(' ').append(at[1] / d).append(' ')
                 .append(view.getWidth() / d).append(' ').append(view.getHeight() / d).append(' ')
-                .append(view.isShown() ? 1 : 0).append('\n');
+                .append(visible ? 1 : 0).append('\n');
         }
         return rows.toString();
     }
