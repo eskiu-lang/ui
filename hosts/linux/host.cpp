@@ -497,3 +497,6 @@ static const int kUnset = -1000000;
 #include "host_access.inc"
 #include "host_commit.inc"
 #include "host_main.inc"
+#ifdef UI_TEST
+#include "host_conformance.inc"
+#endif
