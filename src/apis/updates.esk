@@ -317,25 +317,6 @@ void _ui_update_finish(string error) {
     String_clear(&ui_updater.ready_text);
     String_append(&ui_updater.ready_text, ui_updater.incoming_text.data);
     ui_updater.ready_version = ui_updater.incoming.version;
-#ifdef __wasm__
-    // The service worker's list: the changed files by hash.
-    List<string> strings;
-    String version;
-    String_appendf(&version, "%lld", ui_updater.incoming.version);
-    strings.push("ready");
-    strings.push(version.data);
-    for (i in 0..ui_updater.incoming.files.size) {
-        UiUpdateFile* file = &ui_updater.incoming.files.data[i];
-        if (file.local.len == 0) { continue; }
-        String line;
-        String_appendf(&line, "%s %s", file.path.data, file.hash.data);
-        strings.push(line.data);
-    }
-    ui_command(0, 12, &strings);
-    for (int i = 2; i < strings.size; i++) { free(strings.data[i]); }
-    strings.free();
-    String_free(&version);
-#endif
     _ui_update_free(&ui_updater.incoming);
     String_clear(&ui_updater.incoming_text);
     ui_updater.changed.set(ui_updater.changed.value + 1);
@@ -400,7 +381,33 @@ void _ui_update_next() {
         return;
 #endif
     }
+#ifdef __wasm__
+    // The page keeps the bundle's list for the next load (the service worker's, or the
+    // webview host's): the changed files by hash. The bundle is ready once it answers.
+    int request = ++ui.next_request;
+    ui.text_requests.push(_PendingText{request, void(string answer) {
+        if (!ui_updater.busy) { return; }
+        _ui_update_finish(answer != null && answer[0] != 0 ? answer : null);
+    }});
+    List<string> strings;
+    String version;
+    String_appendf(&version, "%lld", ui_updater.incoming.version);
+    strings.push("ready");
+    strings.push(version.data);
+    for (i in 0..ui_updater.incoming.files.size) {
+        UiUpdateFile* file = &ui_updater.incoming.files.data[i];
+        if (file.local.len == 0) { continue; }
+        String line;
+        String_appendf(&line, "%s %s", file.path.data, file.hash.data);
+        strings.push(line.data);
+    }
+    ui_command(request, 12, &strings);
+    for (int i = 2; i < strings.size; i++) { free(strings.data[i]); }
+    strings.free();
+    String_free(&version);
+#else
     _ui_update_finish(null);
+#endif
 }
 
 // Removes the files of ui-updates/ that neither the bundle in use nor the waiting one needs
