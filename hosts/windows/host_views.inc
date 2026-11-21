@@ -383,6 +383,7 @@ static Gdiplus::Bitmap *decodeImage(const std::vector<uint8_t> &bytes) {
 static bool httpGet(const std::wstring &url, const std::string &method, const std::string &headers, const std::string *body,
                     int timeoutMs, int &status, std::vector<uint8_t> &out, std::string &responseHeaders, std::string &error);
 
+static void imageReport(Node *node, bool loaded);
 static void imageLoaded(int id, Node *node, Gdiplus::Bitmap *bitmap) {
     if (!alive(node, id)) { delete bitmap; return; }
     node->image.reset(bitmap);
@@ -406,7 +407,12 @@ static void loadImage(Node *node, const std::wstring &source) {
             std::string headers, error;
             bool ok = httpGet(source, "GET", "", nullptr, 30000, status, bytes, headers, error) && status >= 200 && status < 300;
             std::shared_ptr<std::vector<uint8_t>> kept = std::make_shared<std::vector<uint8_t>>(std::move(bytes));
-            onMain([id, node, ok, kept]() { if (alive(node, id) && ok) imageLoaded(id, node, decodeImage(*kept)); });
+            onMain([id, node, ok, kept, source]() {
+                if (!alive(node, id) || node->imageSource != source) return;
+                Gdiplus::Bitmap *bitmap = ok ? decodeImage(*kept) : nullptr;
+                if (bitmap) imageLoaded(id, node, bitmap);
+                imageReport(node, bitmap != nullptr);
+            });
         }).detach();
         return;
     }
@@ -417,6 +423,7 @@ static void loadImage(Node *node, const std::wstring &source) {
     if (bitmap && bitmap->GetLastStatus() != Gdiplus::Ok) { delete bitmap; bitmap = nullptr; }
     node->image.reset(bitmap);
     if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE);
+    imageReport(node, bitmap != nullptr);
 }
 
 // ---- the network ----
