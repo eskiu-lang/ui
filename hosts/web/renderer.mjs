@@ -383,7 +383,7 @@ export function createHost(root, dispatch, views = {}) {
       case 1: if (container) s.gap = `${value}px`; break;
       case 2: case 73: case 74: case 75: case 76:
         // The padding, and a side's own (kUnset: the padding's).
-        if (container || kindOf(node) === 4 || kindOf(node) === 5) applyPadding(node, code, value);
+        if (container || kindOf(node) === 3 || kindOf(node) === 4 || kindOf(node) === 5) applyPadding(node, code, value);
         break;
       case 77: s.marginTop = px(value); break;
       case 78: s.marginRight = px(value); break;
