@@ -143,6 +143,11 @@ int64 rgba(int r, int g, int b, int a) {
 // the platform's. The kit's kit_follow_system and kit_set set it to the theme's primary.
 int64 ui_accent_color = -1;
 
+// Whether a right click on the web is also a long press for ui_on_long_press (true, the
+// default: a mouse has no long press of its own). Set it false where the page should keep the
+// browser's menu.
+bool ui_right_click_long_press = true;
+
 // For the next element made (a component's first that is not a Scope: its root), the fields `extra` gives on top
 // of its own Style: key, test_id, label, hint, disabled, the margins, width, height and their
 // bounds, grow, shrink and z_index. A component that takes no Style (a kit component) gets a
