@@ -25,6 +25,7 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <oleacc.h>
+#include <uiautomation.h>
 #include <psapi.h>
 #include <inputscope.h>
 #include <winhttp.h>
@@ -37,6 +38,7 @@ using std::min;
 #include <yoga/Yoga.h>
 #include "../commit.h"
 #include "../grid.h"
+#include "../layout.h"
 #include "ui_native.h"
 #include <chrono>
 #include <cmath>
@@ -65,7 +67,7 @@ static const UINT WM_UI_RUN = WM_APP + 2;
 static const UINT_PTR kFramesTimer = 1, kAnimTimer = 2, kHoverTimer = 3, kLongPressTimer = 4, kReloadTimer = 5;
 static const UINT_PTR kTimerBase = 0x10000;
 // Menu commands.
-enum { kCmdClose = 100, kCmdUndo, kCmdCut, kCmdCopy, kCmdPaste, kCmdSelectAll, kCmdBack, kCmdAbout };
+enum { kCmdClose = 100, kCmdUndo, kCmdCut, kCmdCopy, kCmdPaste, kCmdSelectAll, kCmdBack, kCmdAbout, kCmdRefresh };
 
 static HWND mainWindow, rootWindow;
 static YGNodeRef rootYoga;
@@ -123,7 +125,8 @@ struct Node {
     std::wstring fontFile;
     int background = 0, gradientTo = 0, gradientAngle = 180, borderWidth = 0, borderColor = 0, radius = 0;
     int padding = 0, shadow = 0, blur = 0;
-    // Opacity in percent; the transform (scale and rotate are kept, not drawn).
+    // Opacity in percent; the transform (a scale or a rotation draws the window's picture,
+    // host_effects.inc).
     int opacity = 100, translateX = 0, translateY = 0, scalePercent = 100, rotateDegrees = 0;
     int transitionMs = 0, easing = 0;
     // What shows now while a transition runs: the opacity, the translation, the background.
@@ -156,6 +159,15 @@ struct Node {
     // A text input's editing options (props 65, 66, 68, 70, 72).
     int secure = 0, keyboard = 0, autocorrect = 1;
     bool multiline = false, submitListening = false;
+    // Props 81 to 91 (host_props.inc); whether the app set shrink and listens to its image; a
+    // modal's parent and whether it appeared; a layout animation's start and progress; a
+    // refreshable scroll's state, wheel pull and spinner.
+    int textAlign = 0, maxLines = 0, lineHeight = 0, zIndex = 0, layoutMs = 0, presentation = 0, appear = 0, parentId = 0;
+    bool italic = false, clip = false, shrinkSet = false, imageListening = false, appeared = false;
+    double frameFrom[4] = {}, frameT = 1, shownScale = 100, shownRotate = 0;
+    bool refreshable = false, refreshing = false;
+    double pulled = 0, pullAt = 0;
+    Node *refreshSpinner = nullptr;
 };
 
 static std::unordered_map<int, Node *> nodes;
@@ -269,14 +281,15 @@ static const int kTextSize = 16;
 static double textScale = 1;
 
 static std::map<std::tuple<int, int, std::wstring, int>, HFONT> fonts;
-static HFONT fontFor(int size, int weight, const std::wstring &family) {
+static HFONT fontFor(int size, int weight, const std::wstring &family, bool italic = false) {
     int height = -px(size);
-    auto key = std::make_tuple(height, weight, family, 0);
+    auto key = std::make_tuple(height, weight, family, italic ? 1 : 0);
     auto found = fonts.find(key);
     if (found != fonts.end()) return found->second;
     LOGFONTW lf = {};
     lf.lfHeight = height;
     lf.lfWeight = weight > 0 ? weight : FW_NORMAL;
+    lf.lfItalic = italic ? TRUE : FALSE;
     lf.lfQuality = CLEARTYPE_QUALITY;
     lf.lfCharSet = DEFAULT_CHARSET;
     wcsncpy(lf.lfFaceName, family.empty() ? L"Segoe UI" : family.c_str(), LF_FACESIZE - 1);
@@ -284,7 +297,7 @@ static HFONT fontFor(int size, int weight, const std::wstring &family) {
 }
 static HFONT fontOf(Node *node) {
     return fontFor((int)std::lround((node->fontSize > 0 ? node->fontSize : kTextSize) * textScale), node->fontWeight,
-                   node->fontFile.empty() ? std::wstring() : familyOf(node->fontFile));
+                   node->fontFile.empty() ? std::wstring() : familyOf(node->fontFile), node->italic);
 }
 // The system's control font (a plain button's), at the window's DPI.
 static HFONT controlFont() {
@@ -338,6 +351,11 @@ static Gdiplus::GraphicsPath *roundedPath(Gdiplus::RectF r, float radius) {
     return path;
 }
 
+// Over a backdrop blur the box keeps what was drawn under it.
+static bool paintingBlur;
+static void paintBlur(Node *node, HDC hdc, RECT rect);
+static void paintChildEffects(HWND parent, HDC hdc);
+
 // A node's box: what is behind it, then its background (or gradient) and border in its
 // rounded rectangle. `dim` lightens it while a pressable is held.
 static void paintBox(Node *node, HDC hdc, RECT rect, int fill, double dim = 1) {
@@ -346,7 +364,7 @@ static void paintBox(Node *node, HDC hdc, RECT rect, int fill, double dim = 1) {
     g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
     Gdiplus::SolidBrush under(colorOf(backdropOf(node)));
     Gdiplus::RectF r((float)rect.left, (float)rect.top, (float)(rect.right - rect.left), (float)(rect.bottom - rect.top));
-    g.FillRectangle(&under, r);
+    if (!paintingBlur) g.FillRectangle(&under, r);
     float radius = (float)px(node->radius);
     std::unique_ptr<Gdiplus::GraphicsPath> path(roundedPath(r, radius));
     if (node->gradientTo) {
@@ -405,6 +423,7 @@ static void paintView(HWND hwnd, HDC hdc) {
         // The root, or a scroll's document: the node's (or the window's) background.
         Node *scroll = owningNode(hwnd);
         FillRect(hdc, &rect, brushOf(scroll ? ownBackdrop(scroll) : windowBackground()));
+        paintChildEffects(hwnd, hdc);
         return;
     }
     if (node->kind == 12) {
@@ -438,7 +457,10 @@ static void paintView(HWND hwnd, HDC hdc) {
         }
         return;
     }
+    if (node->blur) { paintBlur(node, hdc, rect); paintingBlur = true; }
     paintBox(node, hdc, rect, node->shownBackground, node->pressed ? 0.7 : 1);
+    paintingBlur = false;
+    paintChildEffects(hwnd, hdc);
 }
 
 // A styled button (owner drawn): its box and its title in its font and color.
@@ -461,7 +483,7 @@ static void paintButton(Node *node, const DRAWITEMSTRUCT *item) {
         float kx = node->on ? x + w - h / 2 - knob / 2 : x + h / 2 - knob / 2;
         float ky = y + (h - knob) / 2;
         if (node->on) {
-            Gdiplus::SolidBrush fill(colorOf(accent(), held ? 0.8 : 1));
+            Gdiplus::SolidBrush fill(colorOf(node->textColor ? node->textColor : accent(), held ? 0.8 : 1));
             g.FillPath(&fill, path.get());
             Gdiplus::SolidBrush dot(Gdiplus::Color(255, 255, 255, 255));
             g.FillEllipse(&dot, kx, ky, knob, knob);
@@ -544,5 +566,10 @@ static void buffered(HWND hwnd, HDC hdc, F paint) {
 #include "host_input.inc"
 #include "host_access.inc"
 #include "host_views.inc"
+#include "host_props.inc"
+#include "host_effects.inc"
 #include "host_commit.inc"
 #include "host_main.inc"
+#ifdef UI_TEST
+#include "host_conformance.inc"
+#endif

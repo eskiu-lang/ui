@@ -150,6 +150,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
     if (op == 2) {
         // Props: the code in kind, the value in before.
         int v = before;
+        if (styleProp(node, kind, v)) return;
         switch (kind) {
             case 1: YGNodeStyleSetGap(node->yoga, YGGutterAll, (float)v); break;
             case 2: YGNodeStyleSetPadding(node->yoga, YGEdgeAll, (float)v); node->padding = v; break;
@@ -163,7 +164,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             case 5: if (v) YGNodeStyleSetHeight(node->yoga, (float)v); else YGNodeStyleSetHeightAuto(node->yoga); break;
             case 6:
                 YGNodeStyleSetFlexGrow(node->yoga, (float)v);
-                if (node->kind != 6) YGNodeStyleSetFlexShrink(node->yoga, v > 0 ? 1 : 0);
+                if (node->kind != 6 && !node->shrinkSet) YGNodeStyleSetFlexShrink(node->yoga, v > 0 ? 1 : 0);
                 break;
             case 7: YGNodeStyleSetFlexWrap(node->yoga, v ? YGWrapWrap : YGWrapNoWrap); break;
             case 8:
@@ -172,7 +173,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
                 animateColor(node, v);
                 applyButtonStyle(node);
                 break;
-            case 9: node->textColor = v; applyButtonStyle(node); if (node->hwnd) InvalidateRect(node->hwnd, nullptr, TRUE); if (node->inner) InvalidateRect(node->inner, nullptr, TRUE); break;
+            case 9: node->textColor = v; applyButtonStyle(node); applyAccent(node); if (node->hwnd) InvalidateRect(node->hwnd, nullptr, TRUE); if (node->inner) InvalidateRect(node->inner, nullptr, TRUE); break;
             case 10: node->fontSize = v; applyFont(node); break;
             case 11: node->fontWeight = v; applyFont(node); break;
             case 12:
@@ -209,6 +210,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
                 if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE);
                 if (spinnersShowing()) animationsRun();
                 break;
+            case 22: setRefreshing(node, v != 0); break;
             case 23: screenActive(node, v); break;
             case 24: YGNodeStyleSetPositionType(node->yoga, v ? YGPositionTypeAbsolute : YGPositionTypeRelative); break;
             case 25: case 26: case 27: case 28: {
@@ -228,8 +230,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
                 break;
             case 35: node->translateX = v; animate(node, 1, node->shownX, v); break;
             case 36: node->translateY = v; animate(node, 2, node->shownY, v); break;
-            case 37: node->scalePercent = v; break;
-            case 38: node->rotateDegrees = v; break;
+            case 37: node->scalePercent = v; animate(node, 7, node->shownScale, v); break;
+            case 38: node->rotateDegrees = v; animate(node, 8, node->shownRotate, v); break;
             case 39: node->transitionMs = v; break;
             case 40: node->easing = v; break;
             case 41: node->panListening = v != 0; break;
@@ -237,13 +239,16 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
             case 43: YGNodeStyleSetMaxWidth(node->yoga, v ? (float)v : YGUndefined); break;
             case 44: YGNodeStyleSetMinHeight(node->yoga, (float)v); break;
             case 45: YGNodeStyleSetMaxHeight(node->yoga, v ? (float)v : YGUndefined); break;
-            case 46: node->shadow = v; break;
+            case 46:
+                node->shadow = v;
+                if (node->hwnd && GetParent(node->hwnd)) InvalidateRect(GetParent(node->hwnd), nullptr, FALSE);
+                break;
             case 47: node->cover = v != 0; if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE); break;
             case 48: node->pixelated = v != 0; if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE); break;
             case 49: node->longListening = v != 0; break;
             case 50: node->gradientTo = v; applyButtonStyle(node); if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE); break;
             case 51: node->gradientAngle = v; if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE); break;
-            case 52: node->blur = v; break;
+            case 52: node->blur = v; if (node->hwnd) InvalidateRect(node->hwnd, nullptr, FALSE); break;
             default:
                 // 57 to 64 accessibility, 65 to 72 a text input's editing (host_access.inc).
                 if (kind >= 57 && kind <= 64) applyAccessProp(node, kind, v);
@@ -274,6 +279,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         YGNodeMarkDirty(node->yoga);
     } else if ((op == 4 || op == 5) && node->kind == 12) {
         // A Modal is a layer over the window's content, laid out on its own.
+        node->parentId = parent;
+        refreshEnabled(node);
         if (std::find(modals.begin(), modals.end(), node) != modals.end()) return;
         modals.push_back(node);
         if (node->hwnd) {
@@ -296,6 +303,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent, int be
         }
         YGNodeInsertChild(parentYoga, node->yoga, index);
         insertWindow(node, containerOf(parentNode), next);
+        restack(parentNode);
         // Under a disabled element it is disabled too.
         refreshEnabled(node);
     } else if (op == 6) {
@@ -333,11 +341,9 @@ static void place(YGNodeRef yoga) {
         YGNodeRef child = YGNodeGetChild(yoga, i);
         Node *node = (Node *)YGNodeGetContext(child);
         if (YGNodeStyleGetDisplay(child) == YGDisplayNone) continue;
-        node->x = YGNodeLayoutGetLeft(child);
-        node->y = YGNodeLayoutGetTop(child);
-        node->w = YGNodeLayoutGetWidth(child);
-        node->h = YGNodeLayoutGetHeight(child);
+        moveFrame(node, YGNodeLayoutGetLeft(child), YGNodeLayoutGetTop(child), YGNodeLayoutGetWidth(child), YGNodeLayoutGetHeight(child));
         placeWindow(node);
+        if (node->clip) applyClip(node);
         if (node->kind == 5 && node->inner) {
             // The EDIT in the field's content box, centered on its line.
             double left = YGNodeLayoutGetPadding(child, YGEdgeLeft) + YGNodeLayoutGetBorder(child, YGEdgeLeft);
@@ -407,14 +413,14 @@ static void relayout() {
     RECT client;
     GetClientRect(rootWindow, &client);
     double width = client.right / scale, height = client.bottom / scale;
-    ui_grid_calculate(rootYoga, (float)width, (float)height, YGDirectionLTR);
+    ui_grid_calculate(rootYoga, (float)width, (float)height, ui_layout_direction());
     place(rootYoga);
     for (Node *modal : modals) {
         modal->x = modal->y = 0;
         modal->w = width;
         modal->h = height;
         if (modal->hwnd) SetWindowPos(modal->hwnd, nullptr, 0, 0, client.right, client.bottom, SWP_NOZORDER | SWP_NOACTIVATE);
-        ui_grid_calculate(modal->yoga, (float)width, (float)height, YGDirectionLTR);
+        ui_grid_calculate(modal->yoga, (float)width, (float)height, ui_layout_direction());
         place(modal->yoga);
     }
     RedrawWindow(mainWindow, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_ERASE);

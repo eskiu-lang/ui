@@ -2,6 +2,11 @@
 
 // ---- measuring ----
 
+static SIZE measureLines(Node *node, int limit);
+static bool transformed(Node *node);
+static void refreshBlurs();
+static void wheelAtTop(Node *node, int delta);
+
 // A memory DC for measuring, made once.
 static HDC measureDC() {
     static HDC hdc;
@@ -42,7 +47,8 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
     double limitH = heightMode == YGMeasureModeUndefined ? 1e9 : height;
     double w = 0, h = 0;
     if (node->kind == 3) {
-        SIZE size = measureText(fontOf(node), node->text, limitW < 1e8 ? (int)std::floor(limitW * scale) : 0, true);
+        int limit = limitW < 1e8 ? (int)std::floor(limitW * scale) : 0;
+        SIZE size = node->lineHeight > 0 || node->maxLines > 0 ? measureLines(node, limit) : measureText(fontOf(node), node->text, limit, true);
         w = size.cx / scale;
         h = size.cy / scale;
     } else if (node->kind == 4) {
@@ -130,6 +136,13 @@ static void showAnimated(Animation &a, double t) {
     else if (a.property == 2) { node->shownY = v; placeWindow(node); }
     else if (a.property == 4) { node->slideX = v; placeWindow(node); }
     else if (a.property == 5) {}
+    else if (a.property == 6) { node->frameT = t >= 1 ? 1 : v; placeWindow(node); }
+    else if (a.property == 7 || a.property == 8) {
+        if (a.property == 7) node->shownScale = v; else node->shownRotate = v;
+        placeWindow(node);
+        HWND up = node->hwnd ? GetParent(node->hwnd) : nullptr;
+        if (up) InvalidateRect(up, nullptr, FALSE);
+    }
     else {
         node->shownBackground = t >= 1 ? a.toColor : mixColor(a.fromColor, a.toColor, eased(t, a.easing));
         if (node->hwnd) RedrawWindow(node->hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
@@ -226,8 +239,17 @@ static void applyOpacity(Node *node) {
 // The node's window at its laid out frame, moved by its translation and a screen's slide.
 static void placeWindow(Node *node) {
     if (!node->hwnd || node->kind == 12) return;
-    int x = px(node->x + node->shownX + node->slideX), y = px(node->y + node->shownY);
-    int w = std::max(0, px(node->x + node->w) - px(node->x)), h = std::max(0, px(node->y + node->h) - px(node->y));
+    double f[4] = {node->x, node->y, node->w, node->h};
+    // A layout animation (prop 90) between where it was and where the layout put it.
+    if (node->frameT < 1) for (int i = 0; i < 4; i++) f[i] = node->frameFrom[i] + (f[i] - node->frameFrom[i]) * eased(node->frameT, node->easing);
+    int x = px(f[0] + node->shownX + node->slideX), y = px(f[1] + node->shownY);
+    int w = std::max(0, px(f[0] + f[2]) - px(f[0])), h = std::max(0, px(f[1] + f[3]) - px(f[1]));
+    // Scaled or turned, its parent draws its picture (host_effects.inc).
+    if (transformed(node)) x = -32000;
+    if (node->shadow || transformed(node)) {
+        HWND up = GetParent(node->hwnd);
+        if (up) InvalidateRect(up, nullptr, FALSE);
+    }
     RECT want = {x, y, w, h};
     if (EqualRect(&want, &node->placed)) return;
     node->placed = want;
@@ -382,6 +404,7 @@ static void scrollTo(Node *node, double y, bool report) {
     info.nPage = (UINT)std::max(0, px(node->h));
     info.nPos = px(y);
     SetScrollInfo(node->hwnd, SB_VERT, &info, TRUE);
+    refreshBlurs();
     ShowScrollBar(node->hwnd, SB_VERT, node->documentHeight > node->h + 0.5);
     if (!report) return;
     reportWindows();
