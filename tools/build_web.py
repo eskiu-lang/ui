@@ -23,7 +23,7 @@ subprocess.run([compiler, str(HERE / "tests/harness/app.esk"), "--target", "wasm
                 "_ui_conformance_log,_ui_dispatch_native,_ui_dispatch_view,_ui_dispatch_route,_ui_dispatch_layout,_ui_dispatch_timer,_ui_dispatch_frame,_ui_dispatch_hover,_ui_dispatch_long_press,_ui_dispatch_value,_ui_report_appearance,_ui_report_accessibility,_ui_report_locale,_ui_dispatch_answer,_ui_dispatch_fetch,_ui_dispatch_pan,_malloc,_free",
                 "--link-arg=-sEXPORTED_RUNTIME_METHODS=UTF8ToString,ccall,stringToUTF8,lengthBytesUTF8"], check=True)
 # The renderer (hosts/web) and the test pages (tests/harness/web) side by side.
-for filename in ("renderer.mjs", "scheduler.mjs", "access.mjs"):
+for filename in ("renderer.mjs", "scheduler.mjs", "access.mjs", "style.mjs"):
     shutil.copyfile(HERE / "hosts/web" / filename, BUILD / filename)
 for filename in ("index.html", "benchmark.mjs", "platform-test.mjs", "conformance.mjs"):
     shutil.copyfile(HERE / "tests/harness/web" / filename, BUILD / filename)

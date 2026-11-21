@@ -9,6 +9,7 @@
 // failed (0).
 import {aria, setRole, menuItemRole, disabledAbove, applyDisabled, setMultiline, focusTrap, INPUT_MODES, ENTER_HINTS, CAPITALIZE, AUTOFILL,
   TEXT_ALIGN, applyPadding, maxLines, watchImage} from './access.mjs';
+import {styleProp, accent, layoutMotion, appear} from './style.mjs';
 
 // Style.font: a font file loaded once as its own family, with the system font behind it while
 // it loads (or when it does not).
@@ -264,6 +265,7 @@ export function createHost(root, dispatch, views = {}) {
   // Open modals, newest last: Escape asks the newest to close.
   const modals = [];
   const trap = focusTrap();
+  const motion = layoutMotion(nodes, EASINGS);
   if (typeof document.addEventListener === 'function') {
     document.addEventListener('keydown', event => {
       const modal = modals.at(-1);
@@ -376,6 +378,7 @@ export function createHost(root, dispatch, views = {}) {
     const container = CONTAINERS.has(kindOf(node));
     const px = v => v ? `${v}px` : '';
     const s = node.style;
+    if (styleProp(node, code, value)) return;
     switch (code) {
       case 1: if (container) s.gap = `${value}px`; break;
       case 2: case 73: case 74: case 75: case 76:
@@ -449,7 +452,7 @@ export function createHost(root, dispatch, views = {}) {
       case 70: aria(node, 'autocorrect', value ? null : 'off'); node.spellcheck = value !== 0; break;
       case 71: aria(node, 'autocomplete', AUTOFILL[value] ?? null); break;
       case 72: node.dataset.submit = String(value !== 0); break;
-      case 9: s.color = cssColor(value); break;
+      case 9: s.color = cssColor(value); if (kindOf(node) === 9 || kindOf(node) === 15) accent(node, cssColor(value)); break;
       case 10: s.fontSize = px(value); break;
       case 11: s.fontWeight = value ? String(value) : ''; break;
       case 12: s.borderWidth = px(value); s.borderStyle = value ? 'solid' : ''; break;
@@ -716,6 +719,7 @@ export function createHost(root, dispatch, views = {}) {
     apply(mutation) { pending.push(mutation); },
     commit() {
       if (rootId === undefined && nodes.size === 0) adopt();
+      motion.snapshot();
       for (const m of pending) {
         if (m.op === 1) {
           if (nodes.has(m.id)) throw new Error(`duplicate node ${m.id}`);
@@ -763,6 +767,8 @@ export function createHost(root, dispatch, views = {}) {
       }
       pending.length = 0;
       adopting = null;
+      motion.play();
+      for (const modal of modals) if (modal.isConnected) appear(modal);
       if ((modals.length || trap.active) && typeof document.body !== 'undefined') trap.update(modals);
       if (layouts.size) reportLayouts();
       if (!splashHeld) hideSplash();
