@@ -157,8 +157,9 @@ keeps a web app's module about a sixth smaller).
 - iOS: a checkbox is a toggle button, its state said by VoiceOver in the user's language;
   Android: a link, a tab and a menu item are widget classes TalkBack names in the user's
   language. Words a platform has no localized form of (a mixed check, a disclosure before iOS
-  18, an Android menu or alert) are said in English only to a user whose language is English,
-  instead of in English to everyone (docs/hosts.md).
+  18, an Android menu, menu item, alert, search or link) are the app's, from `ui_set_words`
+  (the kit's Spanish or English through `kit_use_text`), English until it sends some
+  (docs/hosts.md).
 - Android: text with no color follows dark mode, also when it changes while the app runs, and
   so do the window behind the app and the splash's theme (before, it stayed dark on a dark
   background).
