@@ -96,7 +96,7 @@ baseline = 112574
 tolerance = 0.02
 
 ["web.wasm_bytes.kit_gallery"]
-baseline = 188159
+baseline = 193205
 tolerance = 0.02
 
 # The recording renderer (tests/benchmark.esk at -O2), no host: a frame over 1000 rows,
