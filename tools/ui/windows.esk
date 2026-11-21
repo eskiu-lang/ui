@@ -82,7 +82,7 @@ string build_windows_webview(Project* p) {
         cmd.add(obj.data);
         cmd.add(join(p.ui.data, "hosts/windows/webview.cpp"));
         cmd.add("/link"); cmd.add("/SUBSYSTEM:WINDOWS");
-        cmd.add("user32.lib"); cmd.add("ole32.lib"); cmd.add("shell32.lib"); cmd.add("shlwapi.lib"); cmd.add("uuid.lib") cmd.add("winhttp.lib");
+        cmd.add("user32.lib"); cmd.add("ole32.lib"); cmd.add("shell32.lib"); cmd.add("shlwapi.lib"); cmd.add("uuid.lib"); cmd.add("winhttp.lib");
         String out_flag;
         String_appendf(&out_flag, "/OUT:%s", binary);
         cmd.add(out_flag.data);
