@@ -1,5 +1,6 @@
-// The app tests/web/updates.py updates: the bundle in use, the one waiting, the last error,
-// and an image and a text file of its assets.
+// The app tests/web/updates.py and tests/desktop/updates.py update: the bundle in use, the one
+// waiting, the last error, and an image and a text file of its assets.
+import <env>;
 import <string>;
 import <ui>;
 
@@ -11,6 +12,13 @@ void Line(string test_id, string label, string value) {
 }
 
 void App() {
+    // A desktop host has no page to read: with UI_UPDATES_REPORT=1 each render prints the state
+    // and the file data.txt is read from.
+    if (env_get("UI_UPDATES_REPORT") != null) {
+        printf("UPDATES version=%s ready=%s error=%s data=%s\n", ui_update_version(), ui_update_ready(), ui_update_error(),
+               ui_update_source("data.txt"));
+        fflush(null);
+    }
     Column(Style{padding: 16, gap: 8}) {
         Line("version", "Version", ui_update_version());
         Line("ready", "Ready", ui_update_ready());
