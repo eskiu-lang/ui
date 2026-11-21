@@ -648,9 +648,14 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 36, style.translate_y, 0);
     ui_prop(node, fresh, 37, style.scale, 100);
     ui_prop(node, fresh, 38, style.rotate, 0);
-    ui_prop(node, fresh, 42, style.min_width, 0);
+    // A Button or a one-line TextInput the app gives no size is a 44-point target (a Button
+    // also at least 44 wide): the platform's minimum for a finger.
+    bool target = node.kind == 4 || (node.kind == 5 && !(ui.next_input != null && ui.next_input.multiline));
+    int min_w = node.kind == 4 && style.width == 0 && style.min_width == 0 ? 44 : style.min_width;
+    int min_h = target && style.height == 0 && style.min_height == 0 ? 44 : style.min_height;
+    ui_prop(node, fresh, 42, min_w, 0);
     ui_prop(node, fresh, 43, style.max_width, 0);
-    ui_prop(node, fresh, 44, style.min_height, 0);
+    ui_prop(node, fresh, 44, min_h, 0);
     ui_prop(node, fresh, 45, style.max_height, 0);
     ui_prop(node, fresh, 46, style.shadow, 0);
     ui_prop(node, fresh, 47, style.cover ? 1 : 0, 0);
