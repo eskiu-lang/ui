@@ -32,7 +32,7 @@ string drive(string request) {
         else { ui_event_text(node.id, node.generation, "Milk"); }
     }
     if (has(copy.data, "\"host\": \"layout\"")) { result = "2 0 0 320 480 1\n3 10 20 100 30 1\n"; }
-    if (has(copy.data, "\"host\": \"logs\"")) { result = "printed by the app\n"; }
+    if (has(copy.data, "\"host\": \"logs\"")) { result = "error: printed by the app\n"; }
     if (has(copy.data, "\"host\": \"perf\"")) { result = "4096"; }
     if (has(copy.data, "\"host\": \"scroll\"")) { result = "120"; }
     return ui_driver_finish(result);
@@ -98,7 +98,8 @@ void driver_test_ids() {
         "layout merges the host's frames with the tree");
     check(has(drive("{\"op\": \"perf\"}"), "\"memory_bytes\": 4096") && has(drive("{\"op\": \"perf\"}"), "\"frames\": "),
         "perf from the core and the host");
-    check(has(drive("{\"op\": \"logs\"}"), "\"host\": [\"printed by the app\"]"), "logs from the host");
+    check(has(drive("{\"op\": \"logs\"}"), "\"host\": [\"error: printed by the app\"]"),
+        "logs from the host, a console.error first among them");
     check(has(drive("{\"op\": \"nope\"}"), "unknown op 'nope'") && has(drive("not json"), "\"ok\": false"), "bad requests");
     ui_shutdown(); balanced("driver test ids leak");
 }

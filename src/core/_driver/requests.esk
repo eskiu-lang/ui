@@ -226,7 +226,9 @@ string ui_driver_finish(string result) {
     op = op_text.data;
     String_clear(&ui_drv.pending);
     if (result == null) { result = ""; }
-    if (strncmp(result, "error: ", 7) == 0) { return ui_driver_error(op, &result[7]); }
+    // What `logs` reports is the app's own output, whose lines can start with "error: " (the
+    // web host's console.error, a program's own message): it is never a failure of the host.
+    if (strcmp(op, "logs") != 0 && strncmp(result, "error: ", 7) == 0) { return ui_driver_error(op, &result[7]); }
     if (ui == null) { return ui_driver_error(op, "the app stopped"); }
     _ui_driver_flush();
     _ui_driver_begin(op);
