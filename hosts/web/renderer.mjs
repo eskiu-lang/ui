@@ -737,7 +737,10 @@ export function createHost(root, dispatch, views = {}) {
         else if (m.op === 9 && m.kind === 9) aria(node, 'aria-description', m.text || null);
         else if (m.op === 9) {
           // String props: 1 label (an image's alt text), 2 placeholder, 3 image source.
-          const name = m.kind === 1 ? (kindOf(node) === 7 ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';
+          // An image that failed keeps its words in aria-label until a source loads (watchImage).
+          const failed = kindOf(node) === 7 && node.uiAlt !== undefined;
+          if (m.kind === 1 && failed) node.uiAlt = m.text || '';
+          const name = m.kind === 1 ? (kindOf(node) === 7 && !failed ? 'alt' : 'aria-label') : m.kind === 2 ? 'placeholder' : 'src';
           if (!m.text) node.removeAttribute(name);
           else if (node.getAttribute?.(name) !== m.text) node.setAttribute(name, m.text);
         } else if (m.op === 4 || m.op === 5) {

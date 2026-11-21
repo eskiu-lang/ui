@@ -62,7 +62,12 @@ export function setMultiline(node, multiline, nodes) {
   for (const {name, value} of [...node.attributes]) if (name !== 'type') next.setAttribute(name, value);
   for (const key of Object.keys(node)) if (key.startsWith('ui')) next[key] = node[key];
   next.value = node.value;
-  if (multiline) { next.style.resize = 'none'; next.style.fieldSizing = 'content'; }
+  // A textarea takes the page's font (the browser's is monospace) and, unless the app gives
+  // it a height, room for three lines.
+  if (multiline) {
+    Object.assign(next.style, {resize: 'none', fieldSizing: 'content', font: 'inherit'});
+    if (!next.style.height) next.style.minHeight = '3lh';
+  }
   else next.type = node.uiSecure ? 'password' : 'text';
   node.replaceWith(next);
   nodes.set(Number(node.dataset.uiId), next);
@@ -88,7 +93,10 @@ export function focusTrap() {
       }
       for (let at = top; at && at !== document.body; at = at.parentElement) {
         for (const sibling of at.parentElement?.children ?? []) {
-          if (sibling !== at && !sibling.inert && sibling.tagName !== 'SCRIPT' && sibling.tagName !== 'STYLE') {
+          // The live region stays out of it: announcements (a toast, ui_announce) are read
+          // while a modal is open.
+          if (sibling !== at && !sibling.inert && sibling.tagName !== 'SCRIPT' && sibling.tagName !== 'STYLE'
+              && !sibling.hasAttribute?.('aria-live')) {
             sibling.inert = true;
             inerted.push(sibling);
           }
@@ -123,12 +131,14 @@ export function maxLines(node, lines) {
   }
 }
 
-// An image: hidden while it cannot be loaded (no broken icon, no alt text spilling out of its
-// box), shown again when a new source loads; `report(id, generation, loaded)` when the app
-// listens (prop 84, node.uiListens).
+// An image that cannot be loaded draws nothing but its background (no broken icon, no alt
+// text spilling out of its box): its alt text moves to aria-label, which a screen reader
+// still reads, and comes back when a new source loads; `report(id, generation, loaded)` when
+// the app listens (prop 84, node.uiListens).
 export function watchImage(node, report) {
   const tell = loaded => {
-    node.style.visibility = loaded ? '' : 'hidden';
+    if (!loaded && node.alt) { node.setAttribute('aria-label', node.alt); node.uiAlt = node.alt; node.alt = ''; }
+    else if (loaded && node.uiAlt !== undefined) { node.alt = node.uiAlt; node.removeAttribute('aria-label'); node.uiAlt = undefined; }
     if (node.uiListens) report(Number(node.dataset.uiId), Number(node.dataset.generation), loaded);
   };
   node.addEventListener?.('load', () => tell(true));
