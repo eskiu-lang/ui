@@ -61,11 +61,19 @@ static void uiaInt(HWND hwnd, const GUID &prop, int value) {
     accProps->SetHwndProp(hwnd, OBJID_CLIENT, CHILDID_SELF, prop, v);
 }
 
-// A heading, a switch and a search region as UI Automation says them (a switch as its own
-// kind 9 is one too).
+// The words a screen reader says that Windows has no translation of (command 13, UiWords:
+// mixed, expanded, collapsed, menu, menu item, alert, search, link), English until the app
+// gives its own. MSAA's roles and states are said in the system's language, so only search,
+// a landmark's localized type, is the app's.
+static std::wstring words[8] = {L"mixed", L"expanded", L"collapsed", L"menu", L"menu item", L"alert", L"search", L"link"};
+
+// A heading (UI Automation's heading level, which a screen reader says in its own language), a
+// switch and a search region as UI Automation says them (a switch as its own kind 9 is one
+// too). UI Automation has no switch type: its localized type is "toggle switch", as the
+// Windows 11 toggle's.
 static void uiaRole(Node *node, HWND target) {
     int role = node->role ? node->role : node->kind == 9 ? 8 : 0;
-    const wchar_t *spoken = role == 3 ? L"heading" : role == 8 ? L"toggle switch" : role == 18 ? L"search" : nullptr;
+    const wchar_t *spoken = role == 8 ? L"toggle switch" : role == 18 ? words[6].c_str() : nullptr;
     const wchar_t *aria = role == 3 ? L"heading" : role == 8 ? L"switch" : role == 18 ? L"search" : nullptr;
     accessibleText(target, kLocalizedControlType, spoken ? spoken : L"");
     accessibleText(target, kAriaRole, aria ? aria : L"");
