@@ -112,9 +112,27 @@ static void tracks() {
     ui_grid_containers() = 0;
 }
 
+// Right to left the columns run from the right edge, and an item sits at its area's start.
+static void rightToLeft() {
+    YGNodeRef root = YGNodeNew();
+    prop(root, 4, 200);
+    YGNodeRef grid = box(root, 0, 0);
+    prop(grid, 1, 0);
+    ui_grid_tracks(grid, 6, "50 1fr");
+    YGNodeRef a = box(grid, 0, 20), b = box(grid, 0, 20), c = box(grid, 30, 20);
+    ui_grid_calculate(root, YGUndefined, YGUndefined, YGDirectionRTL);
+    expect("rtl first", a, 150, 0, 50, 20);
+    expect("rtl second", b, 0, 0, 150, 20);
+    expect("rtl sized", c, 170, 20, 30, 20);
+    YGNodeFreeRecursive(root);
+    ui_grid_table().clear();
+    ui_grid_containers() = 0;
+}
+
 int main() {
     scene();
     tracks();
+    rightToLeft();
     if (failures) return 1;
     printf("PASS grid\n");
     return 0;
