@@ -4,8 +4,8 @@
 // A row the user drags left to delete. Past a third of its width, or flicked, it slides out
 // and on_delete runs once it is gone; short of that it springs back. `label` shows on the red
 // band behind it. Without the gesture: with a screen reader on, the row has a delete button
-// (named `label`, or kit_text.delete); for anyone else a long press (a right click on the
-// web) shows it.
+// (named `label`, or kit_text.delete); for anyone else a long press shows it. On the web,
+// where a page cannot tell that a screen reader runs, the button is always there.
 void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->void content UI_LOC) {
     UI_HERE
     ui_own(void() { ui_release_closure(on_delete); ui_release_closure(content); });
@@ -15,7 +15,7 @@ void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->v
         *Signal<bool> removing = use_signal<bool>(false);
         *Signal<int> width = use_signal<int>(0);
         *Signal<bool> revealed = use_signal<bool>(false);
-        bool button = revealed.get() || ui_screen_reader();
+        bool button = revealed.get() || ui_screen_reader() || ui_platform() == PlatformWeb;
         // Gone after the slide out.
         use_timeout(removing.get() ? 220 : 0) { on_delete(); }
         ui_on_layout(void(Frame f) { width.set(f.width); });
