@@ -193,12 +193,16 @@ input, 3:1.
 
 The kit's words are `kit_text`, a `KitText`: month and weekday names, the first day of the
 week, how a date is written, and what its components say to a screen reader ("Previous month",
-"Progress", the colors' names, "Delete"). English by default; `kit_text = kit_text_spanish();`,
-or `kit_text = kit_text_for(ui_locale());` before mounting, or fields of your own:
+"Progress", the colors' names, "Delete"), and in `access` the words a screen reader says that
+the platform does not translate (a mixed checkbox, expanded and collapsed, Android's names for
+a menu, an alert, a link). English by default; Spanish with `kit_text_spanish()`, or the one
+for the user's language with `kit_text_for(ui_locale())`. `kit_use_text` makes them the kit's
+and hands the `access` words to the host, before mounting:
 
 ```eskiu
-kit_text = kit_text_for(ui_locale());
-kit_text.first_weekday = 1;
+KitText words = kit_text_for(ui_locale());
+words.first_weekday = 1;
+kit_use_text(words);
 ```
 
 Density: the theme's `title_size`, `heading_size`, `body_size`, `secondary_size`,
