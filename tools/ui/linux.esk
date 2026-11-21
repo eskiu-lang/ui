@@ -268,6 +268,11 @@ string build_linux_webview(Project* p) {
     cmd.add(cc_env != null ? cc_env : "cc");
     if (ui_release) { cmd.add("-DUI_RELEASE"); }
     cmd.add("-O2");
+    // The app's id: its data directory (asset updates, the page's storage).
+    String id_flag;
+    defer String_free(&id_flag);
+    String_appendf(&id_flag, "-DUI_APP_ID=%s", linux_c_string(p.id.data));
+    cmd.add(id_flag.data);
     cmd.add(join(p.ui.data, "hosts/linux/webview.c"));
 
     List<String> parts;
