@@ -3850,7 +3850,8 @@ below, kept inside the window. A tap outside, back and Escape call on_dismiss.
 void MenuItem(string text, bool checked, escaping fn()->void on_press)
 ```
 
-A row of a menu: a press runs on_press.
+A row of a menu: a press runs on_press. `checked` marks the option a Select shows; a screen
+reader hears the row as a menu item, and as checked or not inside a Select.
 
 ### DropdownMenu
 

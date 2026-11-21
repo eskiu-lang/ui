@@ -18,7 +18,7 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}) 
 | `width`, `height` | 0 | Size in points; 0 lets the content and the parent decide. |
 | `grow` | 0 | How much of the parent's free space along its direction this child takes (flex-grow). |
 | `wrap` | false | A row's children flow onto more lines (flex-wrap). |
-| `background`, `color` | `NoColor` | Background and text color from `rgb`/`rgba`, or a constant `0xRRGGBBAA`; `NoColor` (-1) is the platform's default. |
+| `background`, `color` | `NoColor` | Background and text color from `rgb`/`rgba`, or a constant `0xRRGGBBAA`; `NoColor` (-1) is the platform's default (for text, `ui_text_color` when set). |
 | `font_size` | 0 | Points; 0 is the platform's default. |
 | `font_weight` | 0 | 100 to 900; 0 is the default. |
 | `border_width`, `border_color` | 0, `NoColor` | The border, in points. |

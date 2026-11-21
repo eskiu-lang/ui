@@ -4,6 +4,30 @@ All notable changes to ui are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `ui_text_color`: the color of a Text or a TextInput whose Style sets none (-1, the default,
+  is the platform's). `kit_follow_system` sets it to the theme's ink, so plain text stays
+  readable in the kit's dark theme; after `kit = kit_dark();` set it yourself.
+- `ui agent --json` passes on the compiler's warnings for the build it drives, as JSON lines
+  before the answers (`ui serve` keeps them in its status).
+
+### Fixed
+
+- A new `ui serve web` session could start with an earlier session's signal values: a page
+  opened during the first build ran the app left in `build/ui/web`, and the reload after the
+  build handed its signals to the new app. The page waits for the first build now.
+- `ui agent ... logs` failed (`ok: false`) when the first line of the app's output started
+  with `error: `, such as a `console.error` on the web: a log is never read as the host
+  failing.
+- Text with no color on the web follows the system's dark appearance, as on iOS and macOS.
+- Kit: `Title` and `Heading` are headings to screen readers; `DropdownMenu` and `Select` say
+  whether they are open, their panel is a menu, and each row is a menu item (a `Select`'s
+  rows also say which one is chosen); `Checkbox`, `RadioGroup`'s rows, `TabBar`,
+  `SegmentedControl` and menu rows are at least 44 points tall, as 0.7.0 promised.
+
 ## [0.7.0] - 2026-11-20
 
 Needs Eskiu 0.16.2 (it compiles with 0.16.1, but 0.16.2 passes `Style` by pointer, which
