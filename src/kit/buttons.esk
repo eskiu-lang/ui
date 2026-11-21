@@ -3,7 +3,7 @@
 
 // A button in one of the Variant styles.
 void KitButton(string text, int variant, escaping fn()->void on_press UI_LOC) {
-    UI_HERE
+    KIT_HERE
     ButtonWith(_kit_button_style(text, variant), text, on_press);
 }
 

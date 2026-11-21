@@ -254,3 +254,30 @@ void driver_state_hidden() {
     check(has(answer, "\"signals\": [7]"), "only the app's signal, not use_animated's four");
     ui_shutdown(); balanced("state hidden leak");
 }
+
+// kit_set changes the theme live; ui_style_next puts a test_id and a margin on a kit
+// component's root; a Switch with no color takes ui_accent_color.
+void kit_live() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    kit = kit_light();
+    ui_mount() {
+        ui_style_next(Style{test_id: "save", margin_top: 12});
+        KitButton("Save", VariantPrimary) {}
+        Switch(Style{}, true, void(bool on) {});
+    }
+    ui_frame();
+    *Node save = find_label(ui.root, "Save");
+    check(save != null && save.test_id != null && strcmp(save.test_id, "save") == 0, "the kit button took the test_id");
+    check(count_prop(2, 77) == 1 && prop_value(2, 77) == 12, "and the margin");
+    kit_set(kit_dark());
+    ui_frame();
+    check(count_prop(2, 8) >= 1 && prop_value(2, 8) == (int)kit_dark().primary,
+        "kit_set renders the kit button again in the dark theme");
+    check(ui_text_color == kit_dark().ink && ui_accent_color == kit_dark().primary, "and sets the default colors");
+    ui_shutdown();
+    kit = kit_light();
+    ui_text_color = -1;
+    ui_accent_color = -1;
+    balanced("kit live leak");
+}

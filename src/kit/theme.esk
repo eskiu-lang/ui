@@ -42,6 +42,22 @@ must_use Theme kit_dark() {
                  track: 0x1F2533FF, danger: 0xF87171FF, radius: 12, dark: true};
 }
 
+// Makes `theme` the kit's, at any time (a settings screen, a handler): every kit component
+// shows it right away, and text and controls with no color of their own take its ink and
+// primary color (ui_text_color, ui_accent_color). Assigning `kit` directly works only at the
+// top of the root block, before anything reads it.
+void kit_set(Theme theme) {
+    kit = theme;
+    ui_text_color = theme.ink;
+    ui_accent_color = theme.primary;
+    if (ui != null) { ui.theme.set(ui.theme.value + 1); }
+}
+
+// Makes the running block render again when kit_set changes the theme (internal).
+void _kit_track() {
+    if (ui != null) { ui.theme.get(); }
+}
+
 // The smaller sizes of a desktop layout, for a pointer rather than a finger.
 void kit_dense() {
     kit.title_size = 28;
@@ -62,6 +78,7 @@ void kit_follow_window() { if (ui_wide()) { kit_dense(); } }
 void kit_follow_system() {
     kit = ui_color_scheme() == SchemeDark ? kit_dark() : kit_light();
     ui_text_color = kit.ink;
+    ui_accent_color = kit.primary;
     kit_follow_window();
 }
 

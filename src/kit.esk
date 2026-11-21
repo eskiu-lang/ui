@@ -11,6 +11,10 @@
 //   disclosure   Collapsible, Accordion
 import "ui.esk";
 
+// A kit component's first line: its call's position (UI_HERE) and the theme it reads, so the
+// block that shows it renders again on kit_set.
+#define KIT_HERE UI_HERE _kit_track();
+
 import "kit/theme.esk";
 import "kit/locale.esk";
 import "kit/text.esk";

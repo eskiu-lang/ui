@@ -3,7 +3,7 @@
 
 // A header that shows or hides its content (one section of an Accordion).
 void Collapsible(string title, escaping fn()->void content UI_LOC) {
-    UI_HERE
+    KIT_HERE
     ui_own_fn(content);
     Scope("Collapsible", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
@@ -22,7 +22,7 @@ void Collapsible(string title, escaping fn()->void content UI_LOC) {
 
 // Sections (Collapsibles) in one card.
 void Accordion(escaping fn()->void sections UI_LOC) {
-    UI_HERE
+    KIT_HERE
     Column(Style{background: kit.surface, radius: kit.radius + 4, border_width: 1, border_color: kit.line, gap: 0},
         sections);
 }

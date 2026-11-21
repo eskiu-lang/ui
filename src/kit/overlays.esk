@@ -7,7 +7,7 @@ void _kit_release_int64(escaping fn(int64)->void callback) { free_closure(callba
 // `content` in a panel next to `trigger` while `open`: below it, or above when there is no room
 // below, kept inside the window. A tap outside, back and Escape call on_dismiss.
 void Popover(bool open, escaping fn()->void on_dismiss, escaping fn()->void trigger, escaping fn()->void content UI_LOC) {
-    UI_HERE
+    KIT_HERE
     ui_own(void() { ui_release_closure(on_dismiss); ui_release_closure(trigger); ui_release_closure(content); });
     Scope("Popover", Key{}) {
         // The trigger's frame in the window, and the panel's height once laid out.
@@ -48,7 +48,7 @@ void MenuItem(string text, bool checked, escaping fn()->void on_press UI_LOC) {
 // A MenuItem with its checked state as screen readers hear it: CheckNone for an action,
 // CheckOff or CheckOn for one of a Select's options (internal).
 void _kit_menu_item(string text, int checked, escaping fn()->void on_press UI_LOC) {
-    UI_HERE
+    KIT_HERE
     ui_own_fn(on_press);
     Scope("MenuItem", Key{}) {
         *Signal<bool> over = use_signal<bool>(false);
@@ -65,7 +65,7 @@ void _kit_menu_item(string text, int checked, escaping fn()->void on_press UI_LO
 
 // A button that opens a menu of `options` (a line each); on_select gets the index chosen.
 void DropdownMenu(string label, string options, escaping fn(int)->void on_select UI_LOC) {
-    UI_HERE
+    KIT_HERE
     ui_own_fn(on_select);
     Scope("DropdownMenu", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
@@ -92,7 +92,7 @@ void DropdownMenu(string label, string options, escaping fn(int)->void on_select
 
 // One of `options` (a line each), chosen from a menu under a field that shows it.
 void Select(string options, int selected, escaping fn(int)->void on_change UI_LOC) {
-    UI_HERE
+    KIT_HERE
     ui_own_fn(on_change);
     Scope("Select", Key{}) {
         *Signal<bool> open = use_signal<bool>(false);
@@ -126,7 +126,7 @@ void Select(string options, int selected, escaping fn(int)->void on_change UI_LO
 // `text` in a bubble above `content` while a pointer is over it (no hover on touch screens:
 // the text is also the content's accessible name).
 void Tooltip(string text, escaping fn()->void content UI_LOC) {
-    UI_HERE
+    KIT_HERE
     ui_own_fn(content);
     Scope("Tooltip", Key{}) {
         *Signal<bool> over = use_signal<bool>(false);
@@ -195,7 +195,7 @@ void kit_toast_owner(*Signal<int> count) {
 // Where kit_toast messages show: put it last in the app's root (it sits absolute over the
 // root's bottom and blocks no touch).
 void ToastHost(UI_LOC_ONLY) {
-    UI_HERE
+    KIT_HERE
     // A strip of no height along the parent's bottom: the toast sits above it, and it blocks
     // no touch.
     ui.next_name = "ToastHost";

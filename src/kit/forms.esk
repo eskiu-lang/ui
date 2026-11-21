@@ -3,7 +3,7 @@
 
 // A text field in the theme's style; `placeholder` is also its accessible name.
 void TextField(string value, string placeholder, escaping fn(string)->void on_change UI_LOC) {
-    UI_HERE
+    KIT_HERE
     TextInput(Input{value: value, placeholder: placeholder, label: placeholder,
                     style: Style{padding: kit.control_padding, radius: kit.radius, background: kit.surface, border_width: 1,
                                  border_color: kit.control, font_size: kit.body_size, color: kit.ink}}, on_change);
@@ -11,7 +11,7 @@ void TextField(string value, string placeholder, escaping fn(string)->void on_ch
 
 // A checkbox with its label; on_change gets the new state.
 void Checkbox(string label, bool checked, escaping fn(bool)->void on_change UI_LOC) {
-    UI_HERE
+    KIT_HERE
     ui_own_fn(on_change);
     Pressable(Style{min_height: 44, justify: JustifyCenter, label: label, role: RoleCheckbox, checked: checked ? CheckOn : CheckOff}, void() { on_change(!checked); }) {
         Row(Style{gap: 10, align: AlignCenter}) {
@@ -27,7 +27,7 @@ void Checkbox(string label, bool checked, escaping fn(bool)->void on_change UI_L
 
 // One choice among `options` (a line each); on_change gets the index chosen.
 void RadioGroup(string options, int selected, escaping fn(int)->void on_change UI_LOC) {
-    UI_HERE
+    KIT_HERE
     ui_own_fn(on_change);
     Column(Style{gap: 0, role: RoleRadioGroup}) {
         List<String> items;
