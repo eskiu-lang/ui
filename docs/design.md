@@ -40,6 +40,11 @@ Take colors from the theme's roles, never from hex values in a view:
 
 - A brand color goes into the theme (`Theme{primary: ...}` built from `kit_light()` and
   `kit_dark()`, set with `kit_set`), so it changes in one place and has a dark variant.
+- The brand shows in accents: the primary button, a selected item, badges, the logo and
+  illustrations. Text, page and surface stay the theme's neutral roles; a brand color is never
+  the background behind running text, and text is never set in it.
+- No gradients or patterns behind content; a gradient (`Style.gradient`) belongs to a hero
+  image or an illustration, not to cards, bars or lists.
 - Use one primary action per screen. Everything else is a secondary or ghost button.
 - Never carry meaning with color alone: an error has words, a selected tab is also bolder or
   marked.
@@ -53,6 +58,14 @@ for sections, `Body` (16) for text, `Secondary` (15) and `Caption` (13) for deta
 weights are enough: 700 for headings and labels that must stand out, the regular weight for
 the rest. The sizes grow with the user's text size: never fix a height that text must fit in
 (a row of `height: 60` overlaps at large sizes; use `min_height` and padding).
+
+- Use the platform's font (the default: SF on Apple platforms, Roboto on Android, the system
+  font on the web and desktops) for everything structural: bars, buttons, labels, lists. A
+  brand font (`Style.font`) belongs to a title or a hero line at most, never to body text or
+  controls.
+- Most of a screen is in two sizes, `Body` and `Secondary`; reach for `Heading` and `Title`
+  only for what structures the screen.
+- Emphasis (bold, italic) is for words inside content, not a way to build hierarchy.
 
 ## Spacing and layout
 
@@ -69,6 +82,57 @@ the rest. The sizes grow with the user's text size: never fix a height that text
   lines across the screen.
 - Right-to-left languages mirror rows, start and end on their own; do not hard-code "left"
   for what means "start".
+
+## Patterns and their rules
+
+Pick the pattern for the job, and keep to its rules: they are what make a screen feel calm and
+predictable.
+
+**Card** (`Card`): one thing, or one decision, at a glance: an order's summary, a status, a
+player, a booking to confirm.
+
+- A title when the card stands for an item; its main facts under it; actions at the bottom.
+- At most two actions: one primary and one secondary. More belong to a menu or to the detail
+  screen.
+- No tabs, steps or navigation inside a card, and no scroll of its own: a card grows to fit
+  its content. When it needs more, it opens a detail screen or a sheet.
+- A card in a list opens its detail when tapped; its actions are the shortcuts.
+
+**List** (`FlatList`, `ListItem`): many items of the same kind, read top to bottom.
+
+- Each row: a leading image or icon (optional), a title on one line, at most two lines of
+  detail, and one trailing element (a value, a badge, a chevron or a switch).
+- Rows of the same list have the same structure and height range; separators (`kit.line`) or
+  spacing, not both.
+- Long lists are virtual (`FlatList`), grouped with headers when the order has meaning
+  (`SectionList`), and searchable past a few dozen items.
+
+**Carousel** (a horizontal `Scroll` of cards): a few visual items to scan and pick from: places,
+playlists, products.
+
+- 3 to 8 items. Fewer is a row; more is a list or a grid with "See all".
+- Every item has an image with the same aspect ratio, a title, and at most two lines of
+  details; at most one action per item.
+- The next item shows partly at the edge, so it is clear the row scrolls.
+
+**Sheet** (`ModalWith(ModalOptions{presentation: PresentSheet})`): a focused task over the
+current screen that the user finishes or dismisses: a filter, a short form, a picker, a share.
+
+- A title, the content, and the action at the bottom; dismissed by a tap on the backdrop or the
+  back gesture, with the work kept or confirmed.
+- One task per sheet; it does not push further screens. Longer work goes to a full screen.
+
+**Dialog** (`PresentCenter`, or `Alert` for the platform's own): a question that needs an
+answer before going on: confirm a deletion, resolve a conflict. One sentence, two buttons at
+most, the destructive one in `kit.danger` and named for what it does.
+
+**Full screen** (a route on the router, or `PresentFull`): deeper work that needs the space: an
+editor, a map, a gallery, a checkout. It has a clear way out (back, close) and keeps the
+user's work when they leave.
+
+**Floating** (an `Overlay` pinned to an edge): something live while the user does other
+things: a player, a call, a timer. Small, with one or two controls; it goes away when the
+session ends.
 
 ## Touch and controls
 
@@ -139,10 +203,24 @@ usually breaks.
 
 ## Icons and images
 
-- Use one icon style across the app: an icon font in `assets/fonts` (set with `Style.font`) or
-  SVGs with the `svg` package, at 20 to 24 points, in `kit.ink` or `kit.primary`.
+- Use one icon style across the app: outlined and in one color, from an icon font in
+  `assets/fonts` (set with `Style.font`) or SVGs with the `svg` package, at 20 to 24 points, in
+  `kit.ink`, `kit.muted` or `kit.primary`. Filled icons only to show a selected state (a tab, a
+  favorite).
+- Every image that carries meaning has a `label` (its alt text); decorative ones have none.
 - Images have a fixed aspect ratio (`aspect_ratio`) and `cover` when cropped, so the layout
   does not jump while they load, and a `background` in `kit.track` as their placeholder.
+
+## Patterns to avoid
+
+- More than one primary button on a screen, or more than two actions on a card.
+- Scroll inside scroll in the same direction (a scrolling card inside a scrolling list).
+- Tabs, steps or navigation inside a card or a sheet.
+- A brand color behind text, gradients behind content, and custom fonts in controls.
+- Fixed heights around text, and text that runs edge to edge without the screen's padding.
+- Icons in several styles, and images stretched out of their aspect ratio.
+- Spinners where saved content could show, and blank screens where an empty state belongs.
+- Meaning carried only by color, only by an icon, or only by a gesture.
 
 ## Before calling a screen done
 
