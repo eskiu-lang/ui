@@ -56,7 +56,7 @@ void ui_fail(string message) { ui_fail_node(message, ui == null ? null : ui.buil
 // called from) to stderr, then aborts.
 void ui_fail_node(string message, *Node node) {
 #ifdef UI_SRCLOC
-    _ui_fail_where(message, node, node == null ? UiSourceLoc{} : node.at);
+    _ui_fail_where(message, node, _ui_app_at(node));
 #else
     // stderr is unbuffered: the message survives the abort when output goes to a file.
     String text;
@@ -80,6 +80,23 @@ string _ui_source_file(string file) {
     int64 n = (int64)strlen(root);
     if (file != null && n > 0 && strncmp(file, root, (size_t)n) == 0) { return (string)((*char)file + n); }
     return file;
+}
+
+// Whether `file` is one of the app's sources, under UI_SOURCE_ROOT (internal).
+bool _ui_source_is_app(string file) {
+    string root = UI_SOURCE_ROOT;
+    int64 n = (int64)strlen(root);
+    return file != null && (n == 0 || strncmp(file, root, (size_t)n) == 0);
+}
+
+// Where in the app's own code `node` comes from: its call, or for an element a package made
+// (a FlatList's row, a kit component's parts), the nearest element above it the app called
+// (internal).
+UiSourceLoc _ui_app_at(*Node node) {
+    for (*Node at = node; at != null; at = at.parent) {
+        if (at.at.file != null && _ui_source_is_app(at.at.file)) { return at.at; }
+    }
+    return node == null ? UiSourceLoc{} : node.at;
 }
 
 // "\n  at FILE:LINE:COL" for a known position, appended to `out` (internal).
