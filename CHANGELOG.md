@@ -96,6 +96,16 @@ keeps a web app's module about a sixth smaller).
 - The desktop hosts' own conformance runs (`python3 tools/conformance.py --host-only HOST`) and
   asset updates on the native desktop hosts (`tests/desktop/updates.py`), in CI on macOS, Linux
   and Windows; CI also compiles the Win32 host's source with MSVC.
+- Asset updates in the webview builds (`--webview` on macOS, Linux and Windows): the host keeps
+  the bundle's files in the app's data directory (`ui-updates/`), checks each one's SHA-256,
+  and serves a file of the bundle in use in place of the bundled one, from the next page load
+  or `ui_update_apply`, as the service worker does on the web. `tests/desktop/updates.py HOST
+  --webview` runs it in CI on the three desktops.
+- Windows: `ui_share` opens the system's share sheet (`IDataTransferManagerInterop`, Windows 10
+  and later) with the text and the link; the clipboard is the fallback when the sheet cannot
+  open. The WinRT pieces are declared in the host, so MinGW-w64 and MSVC build it.
+- The webview hosts print the page's console on standard output in a build that is not a
+  release.
 
 ### Changed
 
@@ -137,6 +147,12 @@ keeps a web app's module about a sixth smaller).
 - `.uitest`: `expect ID text` on a container compares the texts inside it, in order.
 - A `Tooltip` also shows for a few seconds after a long press (touch screens have no hover).
 - An error in a timer's handler names the scope that made the timer.
+- The WebView2 host serves the app's files itself (`WebResourceRequested` on
+  `https://app.assets/`, no folder mapping), so a route without an extension gets the page as
+  on the other webview hosts. The WebKitGTK host keeps the page's storage in
+  `$XDG_DATA_HOME/ID/webkit` and its cache in `$XDG_CACHE_HOME/ID`.
+- On the web, a downloaded bundle is ready (`ui_update_ready`) once the page has kept its list,
+  not before.
 
 ### Fixed
 
@@ -191,6 +207,8 @@ keeps a web app's module about a sixth smaller).
 - `ui agent`'s `layout` on iOS and Android says `visible` false for a view outside the window
   or scrolled out of its scroll view, not only for a hidden one.
 - iOS: the text size (Dynamic Type) scales a line height as it does the font.
+- macOS: a view with both `clip` and a shadow keeps its shadow: the children are clipped in an
+  inner view with the same radius, and the view's own layer draws the shadow outside.
 - docs/state.md says that a duplicate key stops a release build too, as it does (a comment in the runtime said release builds only warned).
 
 ## [0.6.2]
