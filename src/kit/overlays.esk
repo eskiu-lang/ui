@@ -39,18 +39,25 @@ void Popover(bool open, escaping fn()->void on_dismiss, escaping fn()->void trig
     }
 }
 
-// A row of a menu: a press runs on_press.
+// A row of a menu: a press runs on_press. `checked` marks the option a Select shows; a screen
+// reader hears the row as a menu item, and as checked or not inside a Select.
 void MenuItem(string text, bool checked, escaping fn()->void on_press UI_LOC) {
+    _kit_menu_item(text, checked ? CheckOn : CheckNone, on_press);
+}
+
+// A MenuItem with its checked state as screen readers hear it: CheckNone for an action,
+// CheckOff or CheckOn for one of a Select's options (internal).
+void _kit_menu_item(string text, int checked, escaping fn()->void on_press UI_LOC) {
     UI_HERE
     ui_own_fn(on_press);
     Scope("MenuItem", Key{}) {
         *Signal<bool> over = use_signal<bool>(false);
         ui_on_hover(void(bool inside) { over.set(inside); });
-        Pressable(Style{padding: 10, radius: kit.radius - 4, background: over.get() ? kit.track : -1, label: text},
-            void() { on_press(); }) {
+        Pressable(Style{padding: 10, min_height: 44, radius: kit.radius - 4, background: over.get() ? kit.track : -1, label: text,
+                        role: RoleMenuItem, checked: checked}, void() { on_press(); }) {
             Row(Style{align: AlignCenter, gap: 8}) {
                 TextWith(Style{grow: 1, font_size: 15, color: kit.ink}, text);
-                if (checked) { TextWith(Style{font_size: 15, font_weight: 700, color: kit.primary}, "✓"); }
+                if (checked == CheckOn) { TextWith(Style{font_size: 15, font_weight: 700, color: kit.primary}, "✓"); }
             }
         }
     }
@@ -66,15 +73,19 @@ void DropdownMenu(string label, string options, escaping fn(int)->void on_select
             String text;
             defer String_free(&text);
             String_format(&text, "%s  ▾", label);
-            KitButton(text.data, VariantSecondary) { open.set(true); }
+            Style style = _kit_button_style(label, VariantSecondary);
+            style.expanded = open.get() ? DisclosureExpanded : DisclosureCollapsed;
+            ButtonWith(style, text.data) { open.set(true); }
         }) {
-            List<String> items;
-            kit_options(options, &items);
-            for (i in 0..items.size) {
-                int index = i;
-                MenuItem(items.data[i].data, false) { open.set(false); on_select(index); }
+            Column(Style{gap: 2, role: RoleMenu, label: label}) {
+                List<String> items;
+                kit_options(options, &items);
+                for (i in 0..items.size) {
+                    int index = i;
+                    _kit_menu_item(items.data[i].data, CheckNone) { open.set(false); on_select(index); }
+                }
+                kit_free_options(&items);
             }
-            kit_free_options(&items);
         }
     }
 }
@@ -90,20 +101,23 @@ void Select(string options, int selected, escaping fn(int)->void on_change UI_LO
         string current = selected >= 0 && selected < items.size ? items.data[selected].data : "";
         Popover(open.get(), void() { open.set(false); }, void() {
             Pressable(Style{padding: 12, radius: kit.radius, background: kit.surface, border_width: 1, border_color: kit.line,
-                            label: current}, void() { open.set(true); }) {
+                            label: current, role: RoleButton, expanded: open.get() ? DisclosureExpanded : DisclosureCollapsed},
+                void() { open.set(true); }) {
                 Row(Style{align: AlignCenter, gap: 8}) {
                     TextWith(Style{grow: 1, font_size: 16, color: kit.ink}, current);
                     TextWith(Style{font_size: 14, color: kit.muted, rotate: open.get() ? 180 : 0, transition_ms: 150}, "▾");
                 }
             }
         }) {
-            List<String> names;
-            kit_options(options, &names);
-            for (i in 0..names.size) {
-                int index = i;
-                MenuItem(names.data[i].data, index == selected) { open.set(false); on_change(index); }
+            Column(Style{gap: 2, role: RoleMenu}) {
+                List<String> names;
+                kit_options(options, &names);
+                for (i in 0..names.size) {
+                    int index = i;
+                    _kit_menu_item(names.data[i].data, index == selected ? CheckOn : CheckOff) { open.set(false); on_change(index); }
+                }
+                kit_free_options(&names);
             }
-            kit_free_options(&names);
         }
         kit_free_options(&items);
     }

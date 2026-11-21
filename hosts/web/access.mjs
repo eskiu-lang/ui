@@ -22,6 +22,15 @@ export function setRole(node, value) {
   const role = ROLES[value] ?? node.uiRole;
   if (role) node.setAttribute('role', role); else node.removeAttribute('role');
   aria(node, 'aria-level', value === 3 ? '2' : null);
+  menuItemRole(node);
+}
+
+// A menu item that is checked or not (a Select's option) is a menuitemradio in ARIA, the
+// role aria-checked belongs to; call it after the role or the checked state changes.
+export function menuItemRole(node) {
+  const role = node.getAttribute?.('role');
+  if (role !== 'menuitem' && role !== 'menuitemradio') return;
+  node.setAttribute('role', node.hasAttribute('aria-checked') ? 'menuitemradio' : 'menuitem');
 }
 
 // True when node or an element above it (up to root) is disabled (uiDisabled).

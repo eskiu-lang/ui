@@ -13,7 +13,7 @@ void TextField(string value, string placeholder, escaping fn(string)->void on_ch
 void Checkbox(string label, bool checked, escaping fn(bool)->void on_change UI_LOC) {
     UI_HERE
     ui_own_fn(on_change);
-    Pressable(Style{label: label, role: RoleCheckbox, checked: checked ? CheckOn : CheckOff}, void() { on_change(!checked); }) {
+    Pressable(Style{min_height: 44, justify: JustifyCenter, label: label, role: RoleCheckbox, checked: checked ? CheckOn : CheckOff}, void() { on_change(!checked); }) {
         Row(Style{gap: 10, align: AlignCenter}) {
             Row(Style{width: 22, height: 22, radius: 6, border_width: 2,
                       border_color: checked ? kit.primary : kit.control, background: checked ? kit.primary : kit.surface,
@@ -29,14 +29,14 @@ void Checkbox(string label, bool checked, escaping fn(bool)->void on_change UI_L
 void RadioGroup(string options, int selected, escaping fn(int)->void on_change UI_LOC) {
     UI_HERE
     ui_own_fn(on_change);
-    Column(Style{gap: 10, role: RoleRadioGroup}) {
+    Column(Style{gap: 0, role: RoleRadioGroup}) {
         List<String> items;
         kit_options(options, &items);
         for (i in 0..items.size) {
             int index = i;
             bool on = index == selected;
             string name = items.data[i].data;
-            Pressable(Style{label: name, role: RoleRadio, checked: on ? CheckOn : CheckOff, selected: on},
+            Pressable(Style{min_height: 44, justify: JustifyCenter, label: name, role: RoleRadio, checked: on ? CheckOn : CheckOff, selected: on},
                 void() { on_change(index); }) {
                 Row(Style{gap: 10, align: AlignCenter}) {
                     Row(Style{width: 22, height: 22, radius: 11, border_width: 2,

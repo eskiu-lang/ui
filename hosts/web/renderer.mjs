@@ -7,7 +7,7 @@
 // in text, the headers in extra), 17 a pan (the phase in value, then dx, dy, vx, vy), 20 a
 // long press, 21 submit (a text input's text when return is pressed), 22 an image loaded (1) or
 // failed (0).
-import {aria, setRole, disabledAbove, applyDisabled, setMultiline, focusTrap, INPUT_MODES, ENTER_HINTS, CAPITALIZE, AUTOFILL,
+import {aria, setRole, menuItemRole, disabledAbove, applyDisabled, setMultiline, focusTrap, INPUT_MODES, ENTER_HINTS, CAPITALIZE, AUTOFILL,
   TEXT_ALIGN, applyPadding, maxLines, watchImage} from './access.mjs';
 
 // Style.font: a font file loaded once as its own family, with the system font behind it while
@@ -423,7 +423,7 @@ export function createHost(root, dispatch, views = {}) {
       }
       case 51: node.uiAngle = value; paintGradient(node, s); break;
       case 57: setRole(node, value); break;
-      case 58: aria(node, 'aria-checked', value ? ['false', 'true', 'mixed'][value - 1] : null); break;
+      case 58: aria(node, 'aria-checked', value ? ['false', 'true', 'mixed'][value - 1] : null); menuItemRole(node); break;
       case 59: {
         const role = node.getAttribute?.('role');
         aria(node, 'aria-selected', value ? 'true' : role === 'tab' || role === 'option' ? 'false' : null);

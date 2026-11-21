@@ -5,15 +5,15 @@
 void SegmentedControl(string options, int selected, escaping fn(int)->void on_change UI_LOC) {
     UI_HERE
     ui_own_fn(on_change);
-    Row(Style{background: kit.track, radius: kit.radius, padding: 4, gap: 4, role: RoleTabList}) {
+    Row(Style{background: kit.track, radius: kit.radius, padding: 2, gap: 2, role: RoleTabList}) {
         List<String> items;
         kit_options(options, &items);
         for (i in 0..items.size) {
             int index = i;
             bool on = index == selected;
             string name = items.data[i].data;
-            Pressable(Style{grow: 1, padding: 8, radius: kit.radius - 4, background: on ? kit.surface : -1,
-                            align: AlignCenter, label: name, role: RoleTab, selected: on},
+            Pressable(Style{grow: 1, padding: 8, min_height: 44, radius: kit.radius - 2, background: on ? kit.surface : -1,
+                            align: AlignCenter, justify: JustifyCenter, label: name, role: RoleTab, selected: on},
                 void() { on_change(index); }) {
                 TextWith(Style{font_size: kit.body_size - 2, font_weight: 600, color: on ? kit.ink : kit.muted}, name);
             }
@@ -33,7 +33,7 @@ void TabBar(string tabs, int selected, escaping fn(int)->void on_change UI_LOC) 
             int index = i;
             bool on = index == selected;
             string name = items.data[i].data;
-            Pressable(Style{gap: 6, label: name, role: RoleTab, selected: on}, void() { on_change(index); }) {
+            Pressable(Style{gap: 6, min_height: 44, justify: JustifyEnd, label: name, role: RoleTab, selected: on}, void() { on_change(index); }) {
                 TextWith(Style{font_size: kit.secondary_size, font_weight: 600, color: on ? kit.primary : kit.muted}, name);
                 Row(Style{height: 2, radius: 1, background: on ? kit.primary : -1}) {}
             }

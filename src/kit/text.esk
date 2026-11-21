@@ -3,10 +3,10 @@
 // kit.dense). For another size or color, use TextWith.
 
 // A screen's title.
-void Title(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.title_size, font_weight: 800, color: kit.ink}, text); }
+void Title(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.title_size, font_weight: 800, color: kit.ink, role: RoleHeader}, text); }
 
 // A section's heading.
-void Heading(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.heading_size, font_weight: 700, color: kit.ink}, text); }
+void Heading(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.heading_size, font_weight: 700, color: kit.ink, role: RoleHeader}, text); }
 
 // Running text.
 void Body(string text UI_LOC) { UI_HERE TextWith(Style{font_size: kit.body_size, color: kit.ink}, text); }

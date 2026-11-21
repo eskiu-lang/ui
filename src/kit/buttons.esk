@@ -4,12 +4,15 @@
 // A button in one of the Variant styles.
 void KitButton(string text, int variant, escaping fn()->void on_press UI_LOC) {
     UI_HERE
+    ButtonWith(_kit_button_style(text, variant), text, on_press);
+}
+
+// A KitButton's style for `variant`, with `text` as its label (internal).
+Style _kit_button_style(string text, int variant) {
     int64 background = variant == VariantPrimary ? kit.primary : variant == VariantDanger ? kit.danger
                      : variant == VariantSecondary ? kit.surface : 0xFFFFFF00;  // ghost: transparent
     int64 color = variant == VariantPrimary || variant == VariantDanger ? kit.on_primary
                 : variant == VariantGhost ? kit.primary : kit.ink;
-    ButtonWith(Style{background: background, color: color, radius: kit.radius, padding: kit.control_padding, font_size: kit.body_size,
-                     font_weight: 600, border_width: variant == VariantSecondary ? 1 : 0, border_color: kit.line,
-                     label: text},
-        text, on_press);
+    return Style{background: background, color: color, radius: kit.radius, padding: kit.control_padding, font_size: kit.body_size,
+                 font_weight: 600, border_width: variant == VariantSecondary ? 1 : 0, border_color: kit.line, label: text};
 }
