@@ -3480,7 +3480,8 @@ A small label in a tone's colors.
 void Avatar(string initials, int size)
 ```
 
-Initials in a circle of `size` points.
+Initials in a circle of `size` points, larger when the user's text size makes the initials
+larger.
 
 ### AvatarImage
 
