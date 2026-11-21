@@ -188,9 +188,9 @@ static void paintBlur(Node *node, HDC hdc, RECT rect) {
     // A box blur: shrunk by the radius over 2 and grown back, smoothed.
     int factor = std::max(2, px(node->blur) / 2);
     int sw = std::max(1, w / factor), sh = std::max(1, h / factor);
-    Gdiplus::Bitmap small(sw, sh, PixelFormat32bppARGB);
+    Gdiplus::Bitmap shrunk(sw, sh, PixelFormat32bppARGB);
     {
-        Gdiplus::Graphics s(&small);
+        Gdiplus::Graphics s(&shrunk);
         s.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBilinear);
         s.DrawImage(backdrop.get(), Gdiplus::Rect(0, 0, sw, sh), 0, 0, w, h, Gdiplus::UnitPixel);
     }
@@ -201,7 +201,7 @@ static void paintBlur(Node *node, HDC hdc, RECT rect) {
     g.SetClip(shape.get());
     Gdiplus::ImageAttributes edges;
     edges.SetWrapMode(Gdiplus::WrapModeTileFlipXY);
-    g.DrawImage(&small, Gdiplus::Rect(0, 0, w, h), 0, 0, sw, sh, Gdiplus::UnitPixel, &edges);
+    g.DrawImage(&shrunk, Gdiplus::Rect(0, 0, w, h), 0, 0, sw, sh, Gdiplus::UnitPixel, &edges);
     drawingBackdrop = false;
 }
 

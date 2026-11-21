@@ -136,8 +136,8 @@ jobs:
         if: success() || failure()
         shell: cmd
         run: |
-          cl /nologo /c /std:c++17 /EHsc /W3 /I "%USERPROFILE%\.eskiu\cache\yoga-3.2.1" hosts\windows\host.cpp /Fobuild\host-msvc.obj || exit /b 1
-          cl /nologo /c /std:c++17 /EHsc /W3 /DUI_TEST /I "%USERPROFILE%\.eskiu\cache\yoga-3.2.1" hosts\windows\host.cpp /Fobuild\host-msvc-test.obj || exit /b 1
+          cl /nologo /c /std:c++17 /EHsc /W3 /D_CRT_SECURE_NO_WARNINGS /I "%USERPROFILE%\.eskiu\cache\yoga-3.2.1" hosts\windows\host.cpp /Fobuild\host-msvc.obj || exit /b 1
+          cl /nologo /c /std:c++17 /EHsc /W3 /D_CRT_SECURE_NO_WARNINGS /DUI_TEST /I "%USERPROFILE%\.eskiu\cache\yoga-3.2.1" hosts\windows\host.cpp /Fobuild\host-msvc-test.obj || exit /b 1
       - name: Logs
         if: failure()
         uses: actions/upload-artifact@v4
