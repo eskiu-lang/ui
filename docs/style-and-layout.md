@@ -53,9 +53,32 @@ Column(Style{padding: 16, gap: 12, background: rgb(255, 255, 255), radius: 16}) 
 | `value`, `hint` | null | What it holds and what using it does, as words for a screen reader. |
 | `value_min`, `value_max`, `value_now` | 0 | A progress bar's or an adjustable element's range, when `value_max` is above `value_min`. |
 | `disabled` | false | Turns the element and what is in it off: shown and announced as unavailable, and its handlers are not called. |
+| `line_height` | 0 | The distance between a text's lines, in points; 0 is the font's own. |
+| `italic` | false | Slants the text. |
+| `z_index` | 0 | Stacks the element over its siblings with a lower value; 0 keeps the order of the children. |
+| `clip` | false | Hides what of the content falls outside the element's box, its radius included. |
+| `layout_ms` | 0 | When the layout moves or resizes the element, it slides and grows there over this many milliseconds with `easing`, instead of jumping (skipped when the system asks for reduced motion). |
 
 A field left at its default is not sent to the host, and changing one sends only that
-field. Styles are plain values, so shared styles are functions or globals:
+field. A `Button`, or a one-line `TextInput`, given no size is at least 44 points tall (a
+`Button` also 44 wide), the smallest target for a finger. Text with no `color` takes
+`ui_text_color`, and a `Switch` or `Slider` with none takes `ui_accent_color` as its accent
+(both -1 by default: the platform's; the kit's themes set them).
+
+A component that takes no `Style` (a kit component, one from a package) still takes a few of
+its fields with `ui_style_next`, which puts them on the next element made:
+
+```eskiu
+ui_style_next(Style{test_id: "save", margin_top: 12});
+KitButton("Save", VariantPrimary) { save(); }
+```
+
+It carries the key, `test_id`, `label`, `hint`, `disabled`, the margins, the size and its
+bounds, `grow`, `shrink` and `z_index`.
+
+In a right-to-left language (`ui_is_rtl()`), rows run right to left and start and end swap
+on every platform; `left`, `right` and a side's padding or margin stay where they are, as in
+CSS. Styles are plain values, so shared styles are functions or globals:
 
 ```eskiu
 Style card() { return Style{padding: 16, radius: 16, background: kit.surface}; }

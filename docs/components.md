@@ -19,7 +19,7 @@ A container takes its content as a block, `escaping fn()->void`. Every element t
 | `Scope(name, Key, block)` | A component's own scope: state, identity, and `name` in diagnostics. No view. |
 | `ErrorBoundary(fn(UiError)->void fallback, block)` | Renders `block`; when a render inside it throws, shows `fallback` instead, until `ui_boundary_reset(e.boundary)`. No view. See [Errors](state.md#errors). |
 | `ui_on_pan(fn(Pan)->void)` | For the element right after it: a drag on it, from `PanBegan` (past the platform's slop) through `PanMoved` to `PanEnded` or `PanCancelled`, with `dx`, `dy` (points since it began) and `vx`, `vy` (points per second). A press that does not move is still a press, and a drag takes over from a pressable inside. |
-| `ui_on_long_press(fn()->void)` | For the element right after it: runs when it is held about half a second (a right click or a held mouse button on the web). A long press is not also a press. |
+| `ui_on_long_press(fn()->void)` | For the element right after it: runs when it is held about half a second (a held mouse button on the web, and a right click unless `ui_right_click_long_press = false`). A long press is not also a press. |
 | `ui_on_hover(fn(bool)->void)` | For the element right after it: true when a pointer (a mouse, a trackpad, an iPad's pointer, a stylus) moves over it, false when it leaves. Touch screens have no hover. |
 | `ui_on_layout(fn(Frame)->void)` | For the element right after it: the handler gets its `Frame{x, y, width, height, window_x, window_y}` (points; x and y relative to the parent, the window position from the window's top left, also after a scroll) after each change, as React Native's `onLayout`. |
 
@@ -67,6 +67,7 @@ view returns to it.
 | Element | What it is |
 |---|---|
 | `Modal(bool visible, on_request_close, block)` | Content on a layer over the whole screen while `visible`, over a dim backdrop. Back on Android, Escape on the web and a tap on the backdrop (outside the content) call `on_request_close`. |
+| `ModalWith(ModalOptions, bool visible, on_request_close, block)` | A Modal as a sheet from the bottom edge (`PresentSheet`, as tall as its content) or a dialog at the center (`PresentCenter`), over the dim backdrop, or over the whole screen (`PresentFull`); `ModalOptions.style` is the sheet's or the dialog's Style (padding, background, radius, size), and `animated` (true) slides a sheet up and fades the others in, or shows them at once. |
 | `Overlay(bool visible, on_dismiss, block)` | The same layer without the dim, for content placed next to something: the block positions itself (absolute, from a `Frame`'s `window_x` and `window_y`). |
 | `Alert(title, message, buttons, fn(int)->void)` | A native alert. `buttons` are separated by newlines (null: "OK"); the handler gets the index pressed, -1 when it was dismissed. |
 
@@ -102,6 +103,7 @@ See [native code](native.md) for the platform side.
 | `router.push`, `back`, `replace`, `reset`, `path`, `depth`, `at` | Change and read the stack. |
 | `route_match(pattern, route, *List<String> params)` | `"/places/:id"` against a route; the caller frees the params. |
 | `route_int(pattern, route, name, fallback)` | One `:name` part of a route as a number, or `fallback`. |
+| `KeepAlive(Key, bool active, block)` | A block kept mounted, hidden, while `active` is false: a tab's content keeps its state, its scroll and its navigation when the user comes back to it. It fills its parent, as a screen does. |
 | `route_param(pattern, route, index)` | One parameter of a route the navigator handed a screen, kept as long as the route is on the stack (null when it does not match). |
 
 See [navigation](navigation.md).
@@ -171,7 +173,7 @@ smaller (see density below).
 | `DropdownMenu(label, options, fn(int)->void)` | A button that opens a menu of options (a line each). |
 | `Select(options, selected, fn(int)->void)` | A field showing the chosen option, with a menu to change it. |
 | `MenuItem(text, checked, on_press)` | A row of a menu, lit under a pointer. |
-| `Tooltip(text, content)` | `text` in a bubble above `content` while a pointer is over it. |
+| `Tooltip(text, content)` | `text` in a bubble above `content` while a pointer is over it, or for a few seconds after a long press on a touch screen. |
 | `kit_toast(text)`, `ToastHost()` | A short message at the bottom for a few seconds, announced to a screen reader; one shown while another is up waits its turn. The app puts `ToastHost()` last in its root. |
 | `Calendar(Date, fn(Date)->void)` | A month's days with arrows to the months around it. |
 | `DatePicker(Date, fn(Date)->void)` | A field showing a date that opens a `Calendar`. |
@@ -182,7 +184,10 @@ smaller (see density below).
 `kit_light()` and `kit_dark()` are the two themes, to assign (`kit = kit_dark();`; calling one
 alone does nothing, and the compiler says so); `kit_follow_system()` picks the one for the
 system's appearance ([the platform](platform.md)) and the density for the window's width.
-`examples/kit-gallery` shows every component, in both. The themes' secondary text (`muted`)
+`kit_set(theme)` changes the theme at any time (a setting, a handler): every kit
+component shows it at once, and plain text and controls take its ink and primary color
+(`ui_text_color`, `ui_accent_color`). Assigning `kit` directly works at the top of the root
+block, before anything reads it. `examples/kit-gallery` shows every component, in both. The themes' secondary text (`muted`)
 meets WCAG AA contrast on the page and on surfaces, and `control`, the border of what takes
 input, 3:1.
 

@@ -2180,7 +2180,7 @@ pointer entering and leaving), 32 slider value, 33 slider minimum, 34 slider max
 animates. 41 pan listener (1: the host reports drags on the node). 42 minimum width,
 43 maximum width, 44 minimum height, 45 maximum height (points; 0: no bound), 46 shadow
 (elevation in points), 47 cover (1: an image fills its box, cropped), 48 pixelated (1: an
-image scales without smoothing), 49 long press listener (1: the host reports a long press), 50 gradient end
+image scales without smoothing), 49 long press listener (1: the host reports a long press, and on the web a right click; 2: the long press only), 50 gradient end
 color (RGBA, 0: none; from the background), 51 gradient angle (degrees, as CSS; 180 down),
 52 backdrop blur, 53 grid column, 54 grid column span, 55 grid row, 56 grid row span (lines
 from 1, 0: auto; spans 0 or 1: one track). Accessibility: 57 role (Role), 58 checked
@@ -3012,6 +3012,17 @@ mounted (hidden) and keep their state. Back (Android's button, the iOS edge swip
 modal-free Escape) pops it. The first Navigator mounted follows the platform: the web
 page's URL and history, and the links the app is opened with (ui_link).
 
+### KeepAlive
+
+```eskiu
+void KeepAlive(Key key, bool active, escaping fn()->void block)
+```
+
+`block` kept mounted while `active` is false, hidden, with its state and scroll positions:
+a tab's content stays as it was when the user comes back to it. Give each its own key when
+several sit side by side: `KeepAlive(key(0), tab.get() == 0) { InboxTab(); }`. It fills its
+parent as a Navigator's screen does, and only the active ones show.
+
 
 ## `<ui/elements/overlay>`
 
@@ -3672,8 +3683,8 @@ One of `options` (a line each), chosen from a menu under a field that shows it.
 void Tooltip(string text, escaping fn()->void content)
 ```
 
-`text` in a bubble above `content` while a pointer is over it (no hover on touch screens:
-the text is also the content's accessible name).
+`text` in a bubble above `content` while a pointer is over it, or for a few seconds after a
+long press (a touch screen has no hover). The text is also the content's accessible name.
 
 ### kit_toast
 
