@@ -1,13 +1,24 @@
 // host_main.inc: the system's settings, the controller and the app. Part of host.mm, which #includes it (one translation unit).
 
-// The system's appearance, accessibility settings and language, to the core.
+// Whether the user's language is written right to left.
+static bool localeRTL(void) {
+    NSString *language = NSLocale.preferredLanguages.firstObject ?: @"en";
+    return [NSLocale characterDirectionForLanguage:language] == NSLocaleLanguageDirectionRightToLeft;
+}
+
+static UIScreenEdgePanGestureRecognizer *edgeSwipe;
+// The system's appearance, accessibility settings and language, to the core; the layout's
+// direction follows the language.
 static void reportSystem(UITraitCollection *traits) {
     ui_report_appearance(traits.userInterfaceStyle == UIUserInterfaceStyleDark ? 1 : 0);
     int scale = (int)std::lround([UIFontMetrics.defaultMetrics scaledValueForValue:100]);
     ui_report_accessibility(UIAccessibilityIsVoiceOverRunning() ? 1 : 0, UIAccessibilityIsReduceMotionEnabled() ? 1 : 0, scale);
     NSString *language = NSLocale.preferredLanguages.firstObject ?: @"en";
-    bool rtl = [NSLocale characterDirectionForLanguage:language] == NSLocaleLanguageDirectionRightToLeft;
+    bool rtl = localeRTL();
     ui_report_locale(language.UTF8String, rtl ? 1 : 0);
+    // Back is a swipe from the leading edge.
+    edgeSwipe.edges = rtl ? UIRectEdgeRight : UIRectEdgeLeft;
+    setDirection(rtl);
 }
 
 @implementation UiController
@@ -26,10 +37,11 @@ static void reportSystem(UITraitCollection *traits) {
 - (BOOL)prefersStatusBarHidden { return barHidden; }
 - (void)viewDidLoad {
     [super viewDidLoad];
-    // The left edge swipe is back, as Android's back button.
+    // The leading edge swipe is back, as Android's back button.
     UIScreenEdgePanGestureRecognizer *edge = [[UIScreenEdgePanGestureRecognizer alloc] initWithTarget:self
                                                                                                action:@selector(edgeBack:)];
-    edge.edges = UIRectEdgeLeft;
+    edge.edges = layoutRTL ? UIRectEdgeRight : UIRectEdgeLeft;
+    edgeSwipe = edge;
     [self.view addGestureRecognizer:edge];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardChanged:)
         name:UIKeyboardWillChangeFrameNotification object:nil];
@@ -69,13 +81,15 @@ static UiHostNode *swipeTop, *swipeBelow;
         return;
     }
     UIView *top = swipeTop.view, *below = swipeBelow.view;
-    CGFloat x = std::max<CGFloat>(0, [gesture translationInView:top.superview].x);
+    // How far the screen moved toward the trailing edge.
+    CGFloat sign = layoutRTL ? -1 : 1;
+    CGFloat x = std::max<CGFloat>(0, sign * [gesture translationInView:top.superview].x);
     if (state == UIGestureRecognizerStateChanged) {
-        top.transform = CGAffineTransformMakeTranslation(x, 0);
+        top.transform = CGAffineTransformMakeTranslation(sign * x, 0);
         return;
     }
     bool back = state == UIGestureRecognizerStateEnded &&
-                (x > top.bounds.size.width / 3 || [gesture velocityInView:top.superview].x > 500);
+                (x > top.bounds.size.width / 3 || sign * [gesture velocityInView:top.superview].x > 500);
     swipeTop = swipeBelow = nil;
     if (back && ui_report_back()) return;
     [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseOut
@@ -375,8 +389,16 @@ static std::string driverCarry(const std::string &d) {
             UIView *view = node.view;
             if (!view) continue;
             CGRect r = [view convertRect:view.bounds toView:nil];
-            bool shown = view.window != nil;
-            for (UIView *up = view; up && shown; up = up.superview) if (up.hidden || up.alpha <= 0) shown = false;
+            // Shown: not hidden, and some of it inside the window and every view above that
+            // clips (a scroll view's viewport), so a row scrolled away is not visible.
+            auto inside = [&](CGRect box) {
+                return CGRectIntersectsRect(r, box) || (CGRectIsEmpty(r) && CGRectContainsPoint(box, r.origin));
+            };
+            bool shown = view.window != nil && inside(view.window.bounds);
+            for (UIView *up = view; up && shown; up = up.superview) {
+                if (up.hidden || up.alpha <= 0) shown = false;
+                else if (up != view && up.clipsToBounds && !inside([up convertRect:up.bounds toView:nil])) shown = false;
+            }
             snprintf(line, sizeof line, "%d %.1f %.1f %.1f %.1f %d\n", node.nodeId, r.origin.x, r.origin.y, r.size.width,
                      r.size.height, shown ? 1 : 0);
             rows += line;
@@ -468,6 +490,8 @@ static std::string driverCarry(const std::string &d) {
     self.window.rootViewController = controller;
     [self.window makeKeyAndVisible];
     rootView = [[UIView alloc] initWithFrame:controller.view.bounds];
+    // The first layout already in the user's direction.
+    setDirection(localeRTL());
     [controller.view addSubview:rootView];
     rootYoga = YGNodeNew();
     YGNodeStyleSetFlexDirection(rootYoga, YGFlexDirectionColumn);
