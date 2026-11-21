@@ -16,11 +16,12 @@ void Badge(string text, int tone UI_LOC) {
     }
 }
 
-// Initials in a circle of `size` points.
+// Initials in a circle of `size` points, larger when the user's text size makes the initials
+// larger.
 void Avatar(string initials, int size UI_LOC) {
     KIT_HERE
-    Row(Style{width: size, height: size, radius: size / 2, background: kit.primary_soft, align: AlignCenter,
-              justify: JustifyCenter, label: initials}) {
+    Row(Style{min_width: size, aspect_ratio: 1, radius: 9999, padding: size / 10, background: kit.primary_soft,
+              align: AlignCenter, justify: JustifyCenter, label: initials}) {
         TextWith(Style{font_size: size * 2 / 5, font_weight: 700, color: kit.primary}, initials);
     }
 }

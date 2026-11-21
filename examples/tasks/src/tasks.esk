@@ -68,7 +68,7 @@ void Chip(string name, int value, *Signal<int> filter) {
 
 void TaskRow(*TaskStore store, int index) {
     Task task = store.tasks.get(index);
-    Row(Style{height: 60, padding: 14, gap: 12, align: AlignCenter, background: kCard, radius: 14,
+    Row(Style{min_height: 60, padding: 14, gap: 12, align: AlignCenter, background: kCard, radius: 14,
               border_width: 1, border_color: kLine, label: task.title}) {
         Pressable(Style{width: 24, height: 24, radius: 12, border_width: 2,
                         border_color: task.done ? kSuccess : 0xD1D5DBFF,
@@ -77,7 +77,7 @@ void TaskRow(*TaskStore store, int index) {
             void() { store.toggle(task.id); }) {
             if (task.done) { TextWith(Style{font_size: 13, font_weight: 700, color: kCard}, "✓"); }
         }
-        TextWith(Style{grow: 1, font_size: 16, font_weight: 500, color: task.done ? kMuted : kInk}, task.title);
+        TextWith(Style{grow: 1, shrink: 1, font_size: 16, font_weight: 500, color: task.done ? kMuted : kInk}, task.title);
         Row(Style{padding: 6, radius: 8, background: tag_background(task.tag)}) {
             TextWith(Style{font_size: 12, font_weight: 600, color: tag_color(task.tag)}, tag_name(task.tag));
         }
@@ -107,15 +107,16 @@ void TasksApp(*TaskStore store) {
                 time_format(time_now_s(), "%A, %B %d", TIME_LOCAL, date);
                 TextWith(Style{font_size: 14, color: kMuted}, date.data);
             }
-            Row(Style{width: 40, height: 40, radius: 20, background: kPrimarySoft, align: AlignCenter,
-                      justify: JustifyCenter, label: "Account"}) {
+            // A circle at least 40 points wide that grows with its initials at a large text size.
+            Row(Style{min_width: 40, aspect_ratio: 1, radius: 999, background: kPrimarySoft, align: AlignCenter,
+                      justify: JustifyCenter, padding: 4, label: "Account"}) {
                 TextWith(Style{font_size: 15, font_weight: 700, color: kPrimary}, "ED");
             }
         }
 
         Column(Style{background: kPrimary, radius: 20, padding: 20, gap: 10, label: "Progress"}) {
-            Row(Style{justify: JustifyBetween, align: AlignCenter}) {
-                TextWith(Style{font_size: 14, font_weight: 600, color: rgba(255, 255, 255, 210)}, "Daily progress");
+            Row(Style{justify: JustifyBetween, align: AlignCenter, gap: 12}) {
+                TextWith(Style{shrink: 1, font_size: 14, font_weight: 600, color: rgba(255, 255, 255, 210)}, "Daily progress");
                 TextWith(Style{font_size: 14, font_weight: 600, color: kCard}, textf("%d of %d", done, total));
             }
             TextWith(Style{font_size: 34, font_weight: 800, color: kCard}, textf("%d%%", total == 0 ? 0 : done * 100 / total));
