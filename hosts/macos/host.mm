@@ -152,20 +152,6 @@ static void hoverListen(NSView *view, bool on) {
     [v addTrackingArea:v.hoverArea];
 }
 
-// The inner view of a box with Style.clip and a shadow (applyMasks): it clips the children to
-// the box's radius while the box's own layer, unclipped, draws the shadow. A point on it and
-// on no child is the box's.
-@interface UiClipView : NSView
-@end
-@implementation UiClipView
-- (BOOL)isFlipped { return YES; }
-- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
-- (NSView *)hitTest:(NSPoint)point {
-    NSView *hit = [super hitTest:point];
-    return hit == self ? nil : hit;
-}
-@end
-
 // A pressable: a click on a descendant that does not handle clicks (a label, a row) is the
 // pressable's, so its text presses it too. A control or a scroll inside keeps its own.
 @interface UiPressable : UiView

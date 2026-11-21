@@ -202,6 +202,20 @@ static void applyBlur(UiHostNode *node, int radius) {
     if (!node.gradient) node.view.layer.backgroundColor = colorOf(node.background).CGColor;
 }
 
+// The inner view of a box with Style.clip and a shadow (applyMasks): it clips the children to
+// the box's radius while the box's own layer, unclipped, draws the shadow. A point on it and
+// on no child is the box's.
+@interface UiClipView : NSView
+@end
+@implementation UiClipView
+- (BOOL)isFlipped { return YES; }
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+- (NSView *)hitTest:(NSPoint)point {
+    NSView *hit = [super hitTest:point];
+    return hit == self ? nil : hit;
+}
+@end
+
 // The view children go into: a scroll's document view, the inner view of a box that clips
 // and has a shadow, else the node's own.
 static NSView *container(UiHostNode *node) {
