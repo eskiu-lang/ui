@@ -219,7 +219,8 @@ static inline std::vector<float> ui_grid_size_tracks(const std::vector<UiGridTra
 }
 
 // Lays out one grid container whose own width Yoga has set; returns whether a frame changed.
-static inline bool ui_grid_container(YGNodeRef grid, UiGridInfo &info, unsigned epoch) {
+// `rtl`: columns run from the right edge (a right-to-left layout).
+static inline bool ui_grid_container(YGNodeRef grid, UiGridInfo &info, unsigned epoch, bool rtl) {
     std::vector<UiGridItem> items;
     std::vector<YGNodeRef> children;
     for (size_t i = 0; i < YGNodeGetChildCount(grid); ++i) children.push_back(YGNodeGetChild(grid, i));
@@ -275,6 +276,7 @@ static inline bool ui_grid_container(YGNodeRef grid, UiGridInfo &info, unsigned 
         float h = rowAt[item.at[1] + item.span[1]] - rowAt[item.at[1]] - gaps[1];
         float frame[4] = {left + colAt[item.at[0]], top + rowAt[item.at[1]], item.info->size[0] ? item.info->size[0] : w,
                           item.info->size[1] ? item.info->size[1] : h};
+        if (rtl) frame[0] = YGNodeLayoutGetWidth(grid) - right - colAt[item.at[0]] - frame[2];
         for (int i = 0; i < 4; i++) if (std::fabs(frame[i] - item.info->frame[i]) > 0.01f) changed = true;
         for (int i = 0; i < 4; i++) item.info->frame[i] = frame[i];
         item.info->item = true;
@@ -295,17 +297,17 @@ static inline bool ui_grid_container(YGNodeRef grid, UiGridInfo &info, unsigned 
     return changed;
 }
 
-static inline bool ui_grid_walk(YGNodeRef node, unsigned epoch) {
+static inline bool ui_grid_walk(YGNodeRef node, unsigned epoch, bool rtl) {
     bool changed = false;
     UiGridInfo *info = ui_grid_find(node);
-    if (info && info->grid && YGNodeStyleGetDisplay(node) != YGDisplayNone) changed = ui_grid_container(node, *info, epoch);
+    if (info && info->grid && YGNodeStyleGetDisplay(node) != YGDisplayNone) changed = ui_grid_container(node, *info, epoch, rtl);
     else if (info && info->ownsHeight) {
         info->ownsHeight = false;
         if (info->size[1]) YGNodeStyleSetHeight(node, info->size[1]); else YGNodeStyleSetHeightAuto(node);
         changed = true;
     }
     if (YGNodeStyleGetDisplay(node) == YGDisplayNone) return changed;
-    for (size_t i = 0; i < YGNodeGetChildCount(node); ++i) changed = ui_grid_walk(YGNodeGetChild(node, i), epoch) || changed;
+    for (size_t i = 0; i < YGNodeGetChildCount(node); ++i) changed = ui_grid_walk(YGNodeGetChild(node, i), epoch, rtl) || changed;
     return changed;
 }
 
@@ -319,7 +321,7 @@ static inline void ui_grid_calculate(YGNodeRef root, float width, float height, 
     if (ui_grid_containers() == 0 && !anyItems) return;
     for (int pass = 0; pass < 4; pass++) {
         unsigned now = ++epoch;
-        bool changed = ui_grid_walk(root, now);
+        bool changed = ui_grid_walk(root, now, direction == YGDirectionRTL);
         // An item no grid holds any more gets its own props back.
         for (auto &entry : ui_grid_table()) {
             if (!entry.second.item || entry.second.seen == now) continue;
