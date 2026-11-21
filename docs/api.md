@@ -3725,6 +3725,7 @@ Part of `<ui/kit>` (src/kit.esk imports every part).
 struct KitText {
     string months = "January,February,March,April,May,June,July,August,September,October,November,December";
     string weekdays = "S,M,T,W,T,F,S";
+    string weekday_names = "Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday";
     int first_weekday = 0;
     string date = ";
     string month_year = ";
@@ -3738,7 +3739,7 @@ struct KitText {
 ```
 
 The words the kit shows and says, English by default. Lists are comma separated. `weekdays`
-are the initials from Sunday; `first_weekday` is the day a Calendar's weeks start on (0
+are the initials from Sunday, and `weekday_names` the names a screen reader says for them; `first_weekday` is the day a Calendar's weeks start on (0
 Sunday, 1 Monday). `date` and `month_year` are patterns with {day}, {month} and {year}.
 `colors` names ColorPicker's swatches in order. Set `kit_text` before mounting:
 `kit_text = kit_text_for(ui_locale());`, or fields of your own.
@@ -3999,8 +4000,8 @@ void SwipeToDelete(string label, escaping fn()->void on_delete, escaping fn()->v
 A row the user drags left to delete. Past a third of its width, or flicked, it slides out
 and on_delete runs once it is gone; short of that it springs back. `label` shows on the red
 band behind it. Without the gesture: with a screen reader on, the row has a delete button
-(named `label`, or kit_text.delete); for anyone else a long press (a right click on the
-web) shows it.
+(named `label`, or kit_text.delete); for anyone else a long press shows it. On the web,
+where a page cannot tell that a screen reader runs, the button is always there.
 
 
 ## `<ui/kit/text>`

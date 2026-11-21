@@ -81,7 +81,8 @@ TextInput(Input{value: title.get(), style: Style{test_id: "title"}}, void(string
 ## Ops
 
 Each argument is one op. An op with arguments is quoted (`"tap add"`), or its arguments
-follow it (`tap add`); the text of `type` is the rest of its argument (`"type title Milk
+follow it (`tap add`); a word in double quotes keeps its spaces (`tap "I agree"`); the text of
+`type` is the rest of its argument (`"type title Milk
 bread"`). The ops run in order, and the first that fails stops `ui agent` with exit code 1.
 `--json` prints each op's answer as one JSON object per line instead of text. When the app
 does not build, its errors come first as [JSON diagnostics](#diagnostics-as-json), and the last line is
@@ -92,7 +93,8 @@ does not build, its errors come first as [JSON diagnostics](#diagnostics-as-json
 | `tree` | the elements: kind, id, test_id, label, text, key, component name, props that are not their default |
 | `layout` | each element's frame in points from the window's top left, and whether it shows |
 | `screenshot FILE` | the window's pixels as a PNG |
-| `tap ID` | a press: a button or pressable is clicked, a switch toggled, a field focused, a modal asked to close; a text inside a pressable presses the pressable |
+| `tap ID` | a press: a button or pressable is clicked, a switch toggled, a field focused, a modal asked to close; a text inside a pressable presses the pressable; fails on a disabled element (or one inside a disabled element) |
+| `submit ID` | return in a TextInput: its `ui_on_submit` gets the field's text; fails when the field has no listener or is disabled |
 | `type ID TEXT` | the field's text becomes TEXT, as the platform's edit (it replaces what was there) |
 | `scroll ID DY` | the scroll at or around ID moves by DY points from where it is, down (negative: up); the answer is the offset it ended at, so `scroll list 0` does nothing |
 | `back` | the platform's back: the newest modal closes, else a `use_back` handler or the router goes back |

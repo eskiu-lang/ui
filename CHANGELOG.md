@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   readable in the kit's dark theme; after `kit = kit_dark();` set it yourself.
 - `ui agent --json` passes on the compiler's warnings for the build it drives, as JSON lines
   before the answers (`ui serve` keeps them in its status).
+- `ui agent` and `ui test`: `submit ID` presses return in a TextInput, and an op's word in
+  double quotes keeps its spaces (`tap "I agree"`).
+- `KitText.weekday_names`: a Calendar's weekday initials carry the day's name for screen
+  readers.
 
 ### Fixed
 
@@ -27,6 +31,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   whether they are open, their panel is a menu, and each row is a menu item (a `Select`'s
   rows also say which one is chosen); `Checkbox`, `RadioGroup`'s rows, `TabBar`,
   `SegmentedControl` and menu rows are at least 44 points tall, as 0.7.0 promised.
+- `tap` (and `type`, `submit`) on a disabled element fails with a message instead of
+  answering ok for a press that did nothing.
+- Web: a multiline TextInput takes the page's font and room for three lines; announcements
+  are read while a Modal is open (the live region is no longer made inert); an Image that
+  fails to load keeps its background (its words move to `aria-label`).
+- Kit: a toast is announced once (it is no longer also an alert); the same message twice in a
+  row is queued once, and at most `KIT_TOASTS_WAITING` (5) wait; `SegmentedControl`'s
+  unselected options are in ink (muted on the track was under 4.5:1); on the web,
+  `SwipeToDelete` always has its delete button, since a page cannot tell that a screen reader
+  runs.
 
 ## [0.7.0] - 2026-11-20
 
@@ -77,6 +91,9 @@ keeps a web app's module about a sixth smaller).
 - `kit_light()` and `kit_dark()` are `must_use`: calling one without assigning it was a
   silent no-op.
 - `kit_month_name(month, &out)` writes the name in the kit's words (it returned English).
+  Code that used its result passes a `String` now: `kit_month_name(m, &name)`.
+- `kit_toast_owner(count)` lost its message parameter: the queue (`kit_toast_queue`) holds the
+  messages. Only a custom toast host calls it.
 - An open `Modal` takes the keyboard on the web: what is under it is inert, focus moves into it
   and back when it closes.
 
