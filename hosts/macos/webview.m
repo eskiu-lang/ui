@@ -1,13 +1,133 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#include "../webview_updates.h"
 
-// Custom scheme handler to serve bundled web assets offline without CORS restrictions.
-@interface LocalSchemeHandler : NSObject <WKURLSchemeHandler>
+// Custom scheme handler to serve bundled web assets offline without CORS restrictions. With
+// asset updates (docs/updates.md) a file of the bundle in use comes from the app's data
+// directory, Application Support/BUNDLE_ID/ui-updates, instead (hosts/webview_updates.h).
+@interface LocalSchemeHandler : NSObject <WKURLSchemeHandler> {
+    UiUpdateState _updates;
+}
 @property(copy) NSString *baseDir;
+@property(copy) NSString *updatesDir;
+// The tasks still running: one WebKit stopped is not answered.
+@property(strong) NSHashTable *running;
 @end
 
+static NSString *mimeFor(NSString *ext) {
+    ext = ext.lowercaseString;
+    NSDictionary *types = @{
+        @"html": @"text/html; charset=utf-8", @"js": @"application/javascript; charset=utf-8",
+        @"mjs": @"application/javascript; charset=utf-8", @"wasm": @"application/wasm", @"css": @"text/css; charset=utf-8",
+        @"json": @"application/json", @"webmanifest": @"application/json", @"png": @"image/png", @"jpg": @"image/jpeg",
+        @"jpeg": @"image/jpeg", @"gif": @"image/gif", @"webp": @"image/webp", @"woff": @"font/woff", @"woff2": @"font/woff2",
+        @"ttf": @"font/ttf", @"mp3": @"audio/mpeg", @"mp4": @"video/mp4", @"webm": @"video/webm", @"svg": @"image/svg+xml",
+        @"ico": @"image/x-icon", @"txt": @"text/plain; charset=utf-8"};
+    return types[ext] ?: @"application/octet-stream";
+}
+
 @implementation LocalSchemeHandler
+- (instancetype)init {
+    if ((self = [super init])) {
+        NSString *data = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
+        NSString *name = NSBundle.mainBundle.bundleIdentifier ?: NSProcessInfo.processInfo.processName;
+        self.updatesDir = [[data stringByAppendingPathComponent:name] stringByAppendingPathComponent:@"ui-updates"];
+        self.running = [NSHashTable weakObjectsHashTable];
+        NSString *state = [NSString stringWithContentsOfFile:[self.updatesDir stringByAppendingPathComponent:@"state"]
+                                                    encoding:NSUTF8StringEncoding error:nil];
+        ui_updates_parse(&_updates, state.UTF8String);
+    }
+    return self;
+}
+
+- (void)dealloc {
+    ui_updates_free(&_updates);
+}
+
+- (void)saveUpdates {
+    [NSFileManager.defaultManager createDirectoryAtPath:self.updatesDir withIntermediateDirectories:YES attributes:nil error:nil];
+    char *text = ui_updates_format(&_updates);
+    [[NSString stringWithUTF8String:text ?: ""] writeToFile:[self.updatesDir stringByAppendingPathComponent:@"state"]
+                                                atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    free(text);
+}
+
+// A page loads: the waiting bundle becomes the one in use, and the files no bundle needs go.
+- (void)promoteUpdates {
+    if (!ui_updates_promote(&_updates)) return;
+    [self saveUpdates];
+    for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:self.updatesDir error:nil]) {
+        if (!ui_updates_needed(&_updates, name.UTF8String))
+            [NSFileManager.defaultManager removeItemAtPath:[self.updatesDir stringByAppendingPathComponent:name] error:nil];
+    }
+}
+
+- (void)task:(id<WKURLSchemeTask>)task answer:(NSData *)data type:(NSString *)mime {
+    if (![self.running containsObject:task]) return;
+    [self.running removeObject:task];
+    NSDictionary *headers = @{
+        @"Content-Type": mime,
+        @"Content-Length": [NSString stringWithFormat:@"%lu", (unsigned long)data.length],
+        @"Cache-Control": @"no-store",
+        @"Access-Control-Allow-Origin": @"*"
+    };
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:task.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:headers];
+    [task didReceiveResponse:response];
+    [task didReceiveData:data];
+    [task didFinish];
+}
+
+- (void)task:(id<WKURLSchemeTask>)task fail:(NSInteger)code {
+    if (![self.running containsObject:task]) return;
+    [self.running removeObject:task];
+    [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:code userInfo:nil]];
+}
+
+- (void)task:(id<WKURLSchemeTask>)task say:(NSString *)text {
+    [self task:task answer:[text dataUsingEncoding:NSUTF8StringEncoding] type:@"text/plain; charset=utf-8"];
+}
+
+// The page's update operations (hosts/web/updates.mjs).
+- (void)task:(id<WKURLSchemeTask>)task update:(NSString *)op query:(const char *)query {
+    if ([op isEqualToString:@"ready"]) {
+        BOOL ok = ui_updates_set_ready(&_updates, query);
+        if (ok) [self saveUpdates];
+        [self task:task say:ok ? @"" : @"not an update bundle"];
+        return;
+    }
+    if ([op isEqualToString:@"apply"]) {
+        [self promoteUpdates];
+        [self task:task say:@""];
+        return;
+    }
+    char *url = ui_updates_query(query, "url", 0), *hash = ui_updates_query(query, "hash", 0);
+    NSURL *source = url ? [NSURL URLWithString:@(url)] : nil;
+    NSString *hex = hash && ui_updates_hash_ok(hash) ? @(hash) : nil;
+    free(url);
+    free(hash);
+    if (![op isEqualToString:@"fetch"] || !source || !hex) {
+        [self task:task say:@"not a file of the bundle"];
+        return;
+    }
+    NSString *blob = [self.updatesDir stringByAppendingPathComponent:hex];
+    if ([NSFileManager.defaultManager fileExistsAtPath:blob]) {
+        [self task:task say:@""];
+        return;
+    }
+    [NSFileManager.defaultManager createDirectoryAtPath:self.updatesDir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSURLRequest *request = [NSURLRequest requestWithURL:source cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:60];
+    [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
+        NSString *why = @"";
+        if (error || !data || status < 200 || status >= 300) why = @"a file of the bundle did not download";
+        else if (!ui_updates_matches((const uint8_t *)data.bytes, data.length, hex.UTF8String)) why = @"a file of the bundle does not match its hash";
+        else if (![data writeToFile:blob atomically:YES]) why = @"a file of the bundle could not be kept";
+        dispatch_async(dispatch_get_main_queue(), ^{ [self task:task say:why]; });
+    }] resume];
+}
+
 - (void)webView:(WKWebView *)webView startURLSchemeTask:(id<WKURLSchemeTask>)task {
+    [self.running addObject:task];
     NSURL *url = task.request.URL;
     NSString *path = url.path;
     if (!path.length || [path isEqualToString:@"/"]) {
@@ -16,55 +136,43 @@
     while ([path hasPrefix:@"/"]) {
         path = [path substringFromIndex:1];
     }
+    if ([path hasPrefix:@"__ui/updates/"]) {
+        NSURLComponents *parts = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+        [self task:task update:[path substringFromIndex:13] query:parts.percentEncodedQuery.UTF8String ?: ""];
+        return;
+    }
     // Only files inside the app's web directory.
     if ([path.pathComponents containsObject:@".."]) {
-        [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNoPermissionsToReadFile userInfo:nil]];
+        [self task:task fail:NSURLErrorNoPermissionsToReadFile];
+        return;
+    }
+    // The page loading uses the bundle downloaded last; a file of the bundle in use is the
+    // downloaded one.
+    BOOL page = [path isEqualToString:@"index.html"] || path.pathExtension.length == 0;
+    if (page) [self promoteUpdates];
+    const char *updated = page ? NULL : ui_updates_lookup(&_updates, path.UTF8String);
+    NSData *data = updated ? [NSData dataWithContentsOfFile:[self.updatesDir stringByAppendingPathComponent:@(updated)]] : nil;
+    if (data) {
+        [self task:task answer:data type:@(ui_updates_mime(path.UTF8String))];
         return;
     }
     NSString *fullPath = [self.baseDir stringByAppendingPathComponent:path];
-    NSData *data = [NSData dataWithContentsOfFile:fullPath];
+    data = [NSData dataWithContentsOfFile:fullPath];
     // A path with no extension is a route: the page. A missing file is an error.
     if (!data && path.pathExtension.length == 0) {
         fullPath = [self.baseDir stringByAppendingPathComponent:@"index.html"];
         data = [NSData dataWithContentsOfFile:fullPath];
     }
     if (!data) {
-        NSError *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
-        [task didFailWithError:error];
+        [self task:task fail:NSURLErrorFileDoesNotExist];
         return;
     }
-    NSString *mime = @"application/octet-stream";
-    NSString *ext = fullPath.pathExtension.lowercaseString;
-    if ([ext isEqualToString:@"html"]) mime = @"text/html; charset=utf-8";
-    else if ([ext isEqualToString:@"js"] || [ext isEqualToString:@"mjs"]) mime = @"application/javascript; charset=utf-8";
-    else if ([ext isEqualToString:@"wasm"]) mime = @"application/wasm";
-    else if ([ext isEqualToString:@"css"]) mime = @"text/css; charset=utf-8";
-    else if ([ext isEqualToString:@"json"] || [ext isEqualToString:@"webmanifest"]) mime = @"application/json";
-    else if ([ext isEqualToString:@"png"]) mime = @"image/png";
-    else if ([ext isEqualToString:@"jpg"] || [ext isEqualToString:@"jpeg"]) mime = @"image/jpeg";
-    else if ([ext isEqualToString:@"gif"]) mime = @"image/gif";
-    else if ([ext isEqualToString:@"webp"]) mime = @"image/webp";
-    else if ([ext isEqualToString:@"woff"]) mime = @"font/woff";
-    else if ([ext isEqualToString:@"woff2"]) mime = @"font/woff2";
-    else if ([ext isEqualToString:@"ttf"]) mime = @"font/ttf";
-    else if ([ext isEqualToString:@"mp3"]) mime = @"audio/mpeg";
-    else if ([ext isEqualToString:@"mp4"]) mime = @"video/mp4";
-    else if ([ext isEqualToString:@"webm"]) mime = @"video/webm";
-    else if ([ext isEqualToString:@"svg"]) mime = @"image/svg+xml";
-    else if ([ext isEqualToString:@"ico"]) mime = @"image/x-icon";
-
-    NSDictionary *headers = @{
-        @"Content-Type": mime,
-        @"Content-Length": [NSString stringWithFormat:@"%lu", (unsigned long)data.length],
-        @"Access-Control-Allow-Origin": @"*"
-    };
-    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:url statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:headers];
-    [task didReceiveResponse:response];
-    [task didReceiveData:data];
-    [task didFinish];
+    [self task:task answer:data type:mimeFor(fullPath.pathExtension)];
 }
 
-- (void)webView:(WKWebView *)webView stopURLSchemeTask:(id<WKURLSchemeTask>)task {}
+- (void)webView:(WKWebView *)webView stopURLSchemeTask:(id<WKURLSchemeTask>)task {
+    [self.running removeObject:task];
+}
 @end
 
 // A real macOS desktop host for the shared wasm/DOM renderer. Native-core bridge
@@ -146,6 +254,10 @@
     [configuration.userContentController addScriptMessageHandler:self name:@"results"];
 #ifndef UI_RELEASE
     [configuration.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
+    // The page's console on standard output.
+    [configuration.userContentController addScriptMessageHandler:self name:@"console"];
+    [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:@UI_WEBVIEW_CONSOLE_SCRIPT
+        injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES]];
 #endif
 
     if (self.localWebDir) {
@@ -212,6 +324,13 @@
 }
 
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
+    if ([message.name isEqualToString:@"console"]) {
+        if ([message.body isKindOfClass:NSString.class]) {
+            printf("%s\n", [message.body UTF8String]);
+            fflush(stdout);
+        }
+        return;
+    }
     if (![message.body isKindOfClass:NSDictionary.class]) return;
     NSDictionary *report = message.body;
     NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:nil];
