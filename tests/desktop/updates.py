@@ -96,8 +96,10 @@ def run(until, seconds=40):
 def main():
     shutil.rmtree(APP, ignore_errors=True)
     shutil.copytree(HERE / "tests/web/updates-app", APP, ignore=shutil.ignore_patterns("build"))
+    # ui, from the copy (relative: the tool joins a path that has no drive letter to the app's).
+    ui_path = Path(os.path.relpath(HERE, APP)).as_posix()
     for name in ("eskiu.lock", "eskiu.toml"):
-        (APP / name).write_text((APP / name).read_text().replace("../../..", HERE.as_posix()))
+        (APP / name).write_text((APP / name).read_text().replace("../../..", ui_path))
     shutil.rmtree(data_dir(), ignore_errors=True)
     ui("build", HOST)
     (APP / "assets/data.txt").write_text("second\n")
