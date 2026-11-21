@@ -21,6 +21,7 @@ final class UiCommands {
     // 2 open a URL.
     void command(int request, int command, String[] strings) {
         UiActivity a = activity;
+        if (command == 13) { a.access.setWords(strings); return; }
         if (command == 11 && strings.length >= 1) {
             if (strings[0].equals("1")) a.splashHeld = a.splash != null;
             else a.hideSplash();

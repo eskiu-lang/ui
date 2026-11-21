@@ -14,6 +14,7 @@ final class UiAccess {
     static final class State {
         int role, checked, selected, expanded, now, min, max;
         String value = "", hint = "";
+        java.lang.ref.WeakReference<View> view;
     }
     private final HashMap<Integer, State> states = new HashMap<>();
     // Views disabled by Style.disabled, and views the core does not listen to (op 8): a view is
@@ -27,11 +28,11 @@ final class UiAccess {
         "android.widget.ImageView", "android.widget.CheckBox", "android.widget.RadioButton", "android.widget.RadioGroup",
         "android.widget.Switch", "android.app.ActionBar$Tab", "android.widget.TabWidget", "android.widget.SeekBar",
         "android.widget.ProgressBar", null, "android.widget.Button", "android.widget.ListView", null, null, null};
-    // Roles Android has no class for, as a role description, said only to a user whose language
-    // is English: others hear the class's word (a button) or nothing, never another language.
-    private static final String[] DESCRIPTIONS = {null, null, "Link", null, null, null, null, null, null, null, null,
-        null, null, "Menu", "Menu item", null, null, "Alert", "Search"};
-    static boolean english() { return "en".equals(java.util.Locale.getDefault().getLanguage()); }
+    // Words the framework does not translate: the latest the app sent (command 13, ui_set_words:
+    // mixed, expanded, collapsed, menu, menu item, alert, search, link), English until then.
+    private static String[] words = {"mixed", "expanded", "collapsed", "menu", "menu item", "alert", "search", "link"};
+    // Per Role, the word of a role Android has no class for (a role description; -1: none).
+    private static final int[] DESCRIPTIONS = {-1, -1, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 3, 4, -1, -1, 5, 6};
     private static final String ROLE_DESCRIPTION = "AccessibilityNodeInfo.roleDescription";
 
     void forget(int id, View view) { states.remove(id); disabled.remove(view); unlistened.remove(view); }
@@ -41,6 +42,7 @@ final class UiAccess {
         State state = states.get(id);
         if (state != null) return state;
         State made = new State();
+        made.view = new java.lang.ref.WeakReference<>(view);
         states.put(id, made);
         view.setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
@@ -86,22 +88,29 @@ final class UiAccess {
         if (code == 8) state.value = text; else state.hint = text;
         if (Build.VERSION.SDK_INT >= 30 && code == 8) view.setStateDescription(stateText(state));
     }
-    // What is said for a state no widget class says: the value text, a mixed check, a
-    // disclosure.
-    // A mixed check and a disclosure have no state the framework says: their words in English
-    // for an English user; otherwise the app's value words, and TalkBack's expand and collapse
-    // actions say the rest in the user's language.
+    // What is said for a state no widget class says: the value text, else the app's word for a
+    // mixed check, and the word for a disclosure.
     private static String stateText(State state) {
         String said = state.value;
-        boolean english = english();
-        if (state.checked == 3 && english) said = said.isEmpty() ? "Partially checked" : "Partially checked, " + said;
-        if (state.expanded != 0 && english) said = (state.expanded == 2 ? "Expanded" : "Collapsed") + (said.isEmpty() ? "" : ", " + said);
+        if (state.checked == 3 && said.isEmpty()) said = words[0];
+        if (state.expanded != 0) said = words[state.expanded == 2 ? 1 : 2] + (said.isEmpty() ? "" : ", " + said);
         return said.isEmpty() ? null : said;
+    }
+    // Command 13: the app's words; the states shown say them now.
+    void setWords(String[] given) {
+        String[] next = words.clone();
+        for (int i = 0; i < Math.min(given.length, next.length); i++) if (!given[i].isEmpty()) next[i] = given[i];
+        words = next;
+        if (Build.VERSION.SDK_INT < 30) return;
+        for (State state : states.values()) {
+            View view = state.view == null ? null : state.view.get();
+            if (view != null) view.setStateDescription(stateText(state));
+        }
     }
     private static void describe(State state, View host, AccessibilityNodeInfo info) {
         if (state.role != 0) {
             if (CLASSES[state.role] != null) info.setClassName(CLASSES[state.role]);
-            if (DESCRIPTIONS[state.role] != null && english()) info.getExtras().putCharSequence(ROLE_DESCRIPTION, DESCRIPTIONS[state.role]);
+            if (DESCRIPTIONS[state.role] >= 0) info.getExtras().putCharSequence(ROLE_DESCRIPTION, words[DESCRIPTIONS[state.role]]);
             if (state.role == 3 && Build.VERSION.SDK_INT < 28)
                 info.setCollectionItemInfo(AccessibilityNodeInfo.CollectionItemInfo.obtain(0, 1, 0, 1, true));
             if (state.role == 15 && host instanceof ViewGroup)
