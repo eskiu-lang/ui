@@ -188,7 +188,8 @@ export function createHost(root, dispatch, views = {}) {
       node.uiLong = {
         down: e => { if (e.button === 0 || e.button === undefined) { cancel(); timer = setTimeout(fire, 500); } },
         cancel,
-        menu: e => { e.preventDefault(); cancel(); dispatch(...ids(node), 20); },
+        // A right click is a long press unless the app turned it off (prop 49 = 2).
+        menu: e => { if (!node.uiRightClick) return; e.preventDefault(); cancel(); dispatch(...ids(node), 20); },
         click: e => { if (node.uiLongPressed) { node.uiLongPressed = false; e.stopPropagation(); e.preventDefault(); } },
       };
       node.addEventListener('pointerdown', node.uiLong.down);
@@ -467,7 +468,7 @@ export function createHost(root, dispatch, views = {}) {
       case 22: refresh(node, value !== 0); break;
       case 23: s.display = value ? 'flex' : 'none'; break;  // a screen under the top is hidden
       case 31: hover(node, value !== 0); break;
-      case 49: longPress(node, value !== 0); break;
+      case 49: longPress(node, value !== 0); node.uiRightClick = value === 1; break;
       case 41: pan(node, value !== 0); break;
       case 42: s.minWidth = value ? `${value}px` : '0'; break;
       case 43: s.maxWidth = value ? `${value}px` : ''; break;

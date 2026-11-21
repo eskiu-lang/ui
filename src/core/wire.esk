@@ -37,7 +37,7 @@
 // animates. 41 pan listener (1: the host reports drags on the node). 42 minimum width,
 // 43 maximum width, 44 minimum height, 45 maximum height (points; 0: no bound), 46 shadow
 // (elevation in points), 47 cover (1: an image fills its box, cropped), 48 pixelated (1: an
-// image scales without smoothing), 49 long press listener (1: the host reports a long press), 50 gradient end
+// image scales without smoothing), 49 long press listener (1: the host reports a long press, and on the web a right click; 2: the long press only), 50 gradient end
 // color (RGBA, 0: none; from the background), 51 gradient angle (degrees, as CSS; 180 down),
 // 52 backdrop blur, 53 grid column, 54 grid column span, 55 grid row, 56 grid row span (lines
 // from 1, 0: auto; spans 0 or 1: one track). Accessibility: 57 role (Role), 58 checked

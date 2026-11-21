@@ -715,7 +715,7 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     node.has_on_long_press = ui.has_next_long_press;
     node.on_long_press = ui.next_long_press;
     ui.has_next_long_press = false;
-    ui_prop(node, fresh, 49, node.has_on_long_press ? 1 : 0, 0);
+    ui_prop(node, fresh, 49, node.has_on_long_press ? (ui_right_click_long_press ? 1 : 2) : 0, 0);
     node.has_on_pan = ui.has_next_pan;
     node.on_pan = ui.next_pan;
     ui.has_next_pan = false;
