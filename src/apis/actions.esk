@@ -64,3 +64,23 @@ bool _ui_dispatch_answer_event(*Event event) {
     }
     return false;
 }
+
+// Words a screen reader says that the platform has no translation of: a checkbox's mixed
+// state, a disclosure's expanded and collapsed (before iOS 18), and the names Android gives a
+// menu, a menu item, an alert, a search field and a link. English by default; the kit sets
+// them with its words (kit_use_text).
+struct UiWords {
+    string mixed = "mixed"; string expanded = "expanded"; string collapsed = "collapsed";
+    string menu = "menu"; string menu_item = "menu item"; string alert = "alert";
+    string search = "search"; string link = "link";
+}
+
+// Hands the hosts the words of `words` (command 13), for what they say to a screen reader.
+void ui_set_words(UiWords words) {
+    List<string> strings;
+    strings.push(words.mixed); strings.push(words.expanded); strings.push(words.collapsed);
+    strings.push(words.menu); strings.push(words.menu_item); strings.push(words.alert);
+    strings.push(words.search); strings.push(words.link);
+    ui_command(0, 13, &strings);
+    strings.free();
+}

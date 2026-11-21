@@ -93,6 +93,8 @@ void kit_access() {
     check(strcmp((string)text.data, "L") == 0 && kit_text.first_weekday == 1, "Spanish weekdays from Monday");
     kit_text_item(kit_text.weekday_names, 3, &text);
     check(strcmp((string)text.data, "miércoles") == 0, "a weekday's name for a screen reader");
+    check(strcmp(kit_text.access.expanded, "expandido") == 0, "Spanish words for what the platform does not translate");
+    check(strcmp(kit_text_english().access.menu_item, "menu item") == 0, "and English ones by default");
     String_free(&text);
     kit_text = kit_text_english();
     Ui runtime;

@@ -5,8 +5,9 @@
 // The words the kit shows and says, English by default. Lists are comma separated. `weekdays`
 // are the initials from Sunday, and `weekday_names` the names a screen reader says for them; `first_weekday` is the day a Calendar's weeks start on (0
 // Sunday, 1 Monday). `date` and `month_year` are patterns with {day}, {month} and {year}.
-// `colors` names ColorPicker's swatches in order. Set `kit_text` before mounting:
-// `kit_text = kit_text_for(ui_locale());`, or fields of your own.
+// `colors` names ColorPicker's swatches in order; `access` holds what a screen reader says
+// that the platform does not translate. Set them before mounting with
+// `kit_use_text(kit_text_for(ui_locale()));` (or fields of your own).
 struct KitText {
     string months = "January,February,March,April,May,June,July,August,September,October,November,December";
     string weekdays = "S,M,T,W,T,F,S";
@@ -20,6 +21,8 @@ struct KitText {
     string color = "Color";
     string colors = "Red,Orange,Amber,Lime,Green,Cyan,Blue,Indigo,Violet,Pink,Gray,Black";
     string delete = "Delete";
+    // What a screen reader says that the platform does not translate (ui_set_words).
+    UiWords access;
 }
 
 KitText kit_text;
@@ -34,7 +37,16 @@ KitText kit_text_spanish() {
                    first_weekday: 1, date: "{day} de {month} de {year}",
                    month_year: "{month} de {year}", previous_month: "Mes anterior", next_month: "Mes siguiente",
                    progress: "Progreso", color: "Color",
-                   colors: "Rojo,Naranja,Ámbar,Lima,Verde,Cian,Azul,Índigo,Violeta,Rosa,Gris,Negro", delete: "Eliminar"};
+                   colors: "Rojo,Naranja,Ámbar,Lima,Verde,Cian,Azul,Índigo,Violeta,Rosa,Gris,Negro", delete: "Eliminar",
+                   access: UiWords{mixed: "mixto", expanded: "expandido", collapsed: "contraído", menu: "menú",
+                                   menu_item: "elemento de menú", alert: "alerta", search: "búsqueda", link: "enlace"}};
+}
+
+// Makes `text` the kit's words and hands the platform's untranslated ones to the hosts
+// (ui_set_words): `kit_use_text(kit_text_for(ui_locale()));` in ui_app_start.
+void kit_use_text(KitText text) {
+    kit_text = text;
+    ui_set_words(text.access);
 }
 
 // The kit's words for a language tag ("es", "es-MX", "en-US"): Spanish or English.
