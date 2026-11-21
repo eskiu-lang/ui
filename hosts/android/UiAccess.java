@@ -21,13 +21,17 @@ final class UiAccess {
     private final java.util.Set<View> disabled = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
     private final java.util.Set<View> unlistened = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 
-    // Role names TalkBack speaks through the role description where Android has no widget class.
-    private static final String[] CLASSES = {null, "android.widget.Button", null, null, "android.widget.ImageView",
-        "android.widget.CheckBox", "android.widget.RadioButton", "android.widget.RadioGroup", "android.widget.Switch",
-        null, "android.widget.TabWidget", "android.widget.SeekBar", "android.widget.ProgressBar", null, null,
-        "android.widget.ListView", null, null, null};
-    private static final String[] DESCRIPTIONS = {null, null, "Link", null, null, null, null, null, null, "Tab", null,
+    // The widget class per Role, whose role TalkBack says in the user's language: a link and a
+    // menu item are buttons, a tab ActionBar's tab, a tab list a TabWidget.
+    private static final String[] CLASSES = {null, "android.widget.Button", "android.widget.Button", null,
+        "android.widget.ImageView", "android.widget.CheckBox", "android.widget.RadioButton", "android.widget.RadioGroup",
+        "android.widget.Switch", "android.app.ActionBar$Tab", "android.widget.TabWidget", "android.widget.SeekBar",
+        "android.widget.ProgressBar", null, "android.widget.Button", "android.widget.ListView", null, null, null};
+    // Roles Android has no class for, as a role description, said only to a user whose language
+    // is English: others hear the class's word (a button) or nothing, never another language.
+    private static final String[] DESCRIPTIONS = {null, null, "Link", null, null, null, null, null, null, null, null,
         null, null, "Menu", "Menu item", null, null, "Alert", "Search"};
+    static boolean english() { return "en".equals(java.util.Locale.getDefault().getLanguage()); }
     private static final String ROLE_DESCRIPTION = "AccessibilityNodeInfo.roleDescription";
 
     void forget(int id, View view) { states.remove(id); disabled.remove(view); unlistened.remove(view); }
@@ -84,16 +88,20 @@ final class UiAccess {
     }
     // What is said for a state no widget class says: the value text, a mixed check, a
     // disclosure.
+    // A mixed check and a disclosure have no state the framework says: their words in English
+    // for an English user; otherwise the app's value words, and TalkBack's expand and collapse
+    // actions say the rest in the user's language.
     private static String stateText(State state) {
         String said = state.value;
-        if (state.checked == 3) said = said.isEmpty() ? "Partially checked" : "Partially checked, " + said;
-        if (state.expanded != 0) said = (state.expanded == 2 ? "Expanded" : "Collapsed") + (said.isEmpty() ? "" : ", " + said);
+        boolean english = english();
+        if (state.checked == 3 && english) said = said.isEmpty() ? "Partially checked" : "Partially checked, " + said;
+        if (state.expanded != 0 && english) said = (state.expanded == 2 ? "Expanded" : "Collapsed") + (said.isEmpty() ? "" : ", " + said);
         return said.isEmpty() ? null : said;
     }
     private static void describe(State state, View host, AccessibilityNodeInfo info) {
         if (state.role != 0) {
             if (CLASSES[state.role] != null) info.setClassName(CLASSES[state.role]);
-            if (DESCRIPTIONS[state.role] != null) info.getExtras().putCharSequence(ROLE_DESCRIPTION, DESCRIPTIONS[state.role]);
+            if (DESCRIPTIONS[state.role] != null && english()) info.getExtras().putCharSequence(ROLE_DESCRIPTION, DESCRIPTIONS[state.role]);
             if (state.role == 3 && Build.VERSION.SDK_INT < 28)
                 info.setCollectionItemInfo(AccessibilityNodeInfo.CollectionItemInfo.obtain(0, 1, 0, 1, true));
             if (state.role == 15 && host instanceof ViewGroup)
