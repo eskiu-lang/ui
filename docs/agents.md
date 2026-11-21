@@ -106,7 +106,7 @@ does not build, its errors come first as [JSON diagnostics](#diagnostics-as-json
 | `clock +MS` | moves the driver's clock MS milliseconds, running each timer and frame on the way |
 | `clock settle` | runs the clock until nothing is pending (at most 60 s of it) |
 | `clock real` | gives the clock back to the platform |
-| `perf` | frame times, commit sizes, live nodes, the app's memory and its cold start |
+| `perf` | frame times, commit sizes, live nodes, the app's memory and its cold start; in a dev build the driver keeps the app's last 500 log lines, so the memory grows by a few hundred bytes until that buffer is full, then stays (the model tests check that mounting and unmounting leaves nothing behind) |
 
 ### tree
 
