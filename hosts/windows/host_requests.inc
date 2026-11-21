@@ -137,6 +137,9 @@ static void ui_host_command(int request, int command, int count, const char **st
         ui_dispatch_answer(request, narrow(pasteText().c_str()).c_str());
     } else if (command == 9 && count >= 1) {
         announce(wide(strings[0]));
+    } else if (command == 13) {
+        for (int i = 0; i < count && i < 8; i++) if (strings[i][0]) words[i] = wide(strings[i]);
+        for (auto &entry : nodes) if (entry.second->role == 18) applyAccessRole(entry.second);
     } else if (command == 10 && count >= 6) {
         std::wstring url = wide(strings[0]);
         std::string method = strings[1], headers = strings[2], body = strings[3];
