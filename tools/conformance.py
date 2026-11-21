@@ -74,6 +74,9 @@ def differences(report, host=""):
             out.append(f"modal: sheet {modal['sheet']}, expected 200 by 100")
     if len(rows) > 30:
         out.append(f"feed: {len(rows)} rows mounted, expected a window")
+    # Windows: the share sheet opened and its DataRequested filled the package (2).
+    if host == "windows" and report.get("share") != 2:
+        out.append(f"share: stage {report.get('share')}, expected 2 (the sheet filled)")
     expected_log = EXPECTED_LOG + EXTRA_LOG.get(host, "") + ",refresh"
     # The fetch answers when the network does: present once, anywhere in the log.
     entries = (report.get("log") or "").split(",")

@@ -81,6 +81,13 @@ static void runConformance() {
     static std::string frames, roles, styles, modal = "null";
     static std::vector<bool> refresh;
     static std::vector<std::function<void()>> steps = {
+        // The share sheet: opened for the window, and the share broker's DataRequested fills the
+        // package (host_share.inc); the steps after it give the broker time to ask.
+        []() { uishare::show(mainWindow, L"Conformance", L"eskiu", L"https://example.com/"); },
+        []() {},
+        []() {},
+        []() {},
+        []() {},
         []() {
             Node *suite = labeled(L"Suite");
             for (auto &entry : nodes) {
@@ -144,6 +151,13 @@ static void runConformance() {
             refresh.push_back(labeled(L"Feed")->refreshing);
             scrollTo(labeled(L"Feed"), 2000, true);
         },
+        // The share sheet: opened for the window, and the share broker's DataRequested fills the
+        // package (host_share.inc); the steps after it give the broker time to ask.
+        []() { uishare::show(mainWindow, L"Conformance", L"eskiu", L"https://example.com/"); },
+        []() {},
+        []() {},
+        []() {},
+        []() {},
         []() {
             Node *suite = labeled(L"Suite");
             std::string scrolled;
@@ -155,7 +169,7 @@ static void runConformance() {
             std::string result = "{\"status\":\"DONE\",\"frames\":{" + frames + "},\"roles\":{" + roles + "},\"styles\":" + styles +
                                  ",\"scrolled\":{" + scrolled + "},\"modal\":" + modal + ",\"refresh\":[" +
                                  (refresh.size() > 0 && refresh[0] ? "true" : "false") + "," +
-                                 (refresh.size() > 1 && refresh[1] ? "true" : "false") + "],\"log\":" +
+                                 (refresh.size() > 1 && refresh[1] ? "true" : "false") + "],\"share\":" + std::to_string(uishare::stage) + ",\"log\":" +
                                  jsonText(wide(ui_conformance_log())) + "}";
             printf("CONFORMANCE %s\n", result.c_str());
             fflush(stdout);
