@@ -453,6 +453,53 @@ static void answerAlert(GObject *source, GAsyncResult *result, gpointer data) {
 
 static void copyText(const char *text) { gdk_clipboard_set_text(gtk_widget_get_clipboard(window), text); }
 
+// A share (command 5): a Linux desktop has no share sheet, so a small one: copy the text and the
+// link, or send them by email through the desktop portal (org.freedesktop.portal.Email, which
+// opens the user's mail program, in a sandbox too), else as a mailto: link.
+static void shareByEmail(const std::string &text) {
+    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+    char *escaped = g_uri_escape_string(text.c_str(), nullptr, FALSE);
+    std::string mailto = std::string("mailto:?body=") + escaped;
+    g_free(escaped);
+    if (!bus) { g_app_info_launch_default_for_uri(mailto.c_str(), nullptr, nullptr); return; }
+    GVariantBuilder options;
+    g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&options, "{sv}", "body", g_variant_new_string(text.c_str()));
+    g_dbus_connection_call(bus, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+                           "org.freedesktop.portal.Email", "ComposeEmail", g_variant_new("(sa{sv})", "", &options),
+                           G_VARIANT_TYPE("(o)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr,
+                           [](GObject *source, GAsyncResult *result, gpointer data) {
+                               GError *error = nullptr;
+                               GVariant *reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error);
+                               char *fallback = (char *)data;
+                               if (reply) g_variant_unref(reply);
+                               else {
+                                   g_error_free(error);
+                                   g_app_info_launch_default_for_uri(fallback, nullptr, nullptr);
+                               }
+                               g_free(fallback);
+                           }, g_strdup(mailto.c_str()));
+    g_object_unref(bus);
+}
+
+static void share(const std::string &text) {
+    GtkAlertDialog *sheet = gtk_alert_dialog_new("Share");
+    gtk_alert_dialog_set_detail(sheet, text.c_str());
+    const char *buttons[] = {"Copy", "Email", "Cancel", nullptr};
+    gtk_alert_dialog_set_buttons(sheet, buttons);
+    gtk_alert_dialog_set_cancel_button(sheet, 2);
+    gtk_alert_dialog_set_default_button(sheet, 0);
+    gtk_alert_dialog_set_modal(sheet, TRUE);
+    gtk_alert_dialog_choose(sheet, GTK_WINDOW(window), nullptr, [](GObject *source, GAsyncResult *result, gpointer data) {
+        std::string *text = (std::string *)data;
+        int choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), result, nullptr);
+        if (choice == 0) copyText(text->c_str());
+        else if (choice == 1) shareByEmail(*text);
+        delete text;
+    }, new std::string(text));
+    g_object_unref(sheet);
+}
+
 // Commands: 1 an alert, 2 open a URL, 4 hide the keyboard, 5 share, 6 copy, 7 paste, 8 a
 // haptic, 9 announce, 10 fetch, 11 the splash (a desktop window has none).
 static void ui_host_command(int request, int command, int count, const char **strings) {
@@ -478,11 +525,9 @@ static void ui_host_command(int request, int command, int count, const char **st
     } else if (command == 4) {
         gtk_root_set_focus(GTK_ROOT(window), nullptr);
     } else if (command == 5 && count >= 2) {
-        // No system share sheet on a Linux desktop: the text and the URL are copied, as the
-        // web host does without navigator.share.
         std::string text = strings[0];
         if (strings[1][0]) text += text.empty() ? strings[1] : std::string(" ") + strings[1];
-        copyText(text.c_str());
+        share(text);
     } else if (command == 6 && count >= 1) {
         copyText(strings[0]);
     } else if (command == 7) {
