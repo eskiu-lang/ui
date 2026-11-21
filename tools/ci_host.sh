@@ -30,7 +30,12 @@ echo "budgets: $(( $(date +%s) - started )) s"
 case "$HOST" in macos|linux|windows)
     started=$(date +%s)
     python3 tools/conformance.py --host-only "$HOST"
-    echo "conformance run: $(( $(date +%s) - started )) s";;
+    echo "conformance run: $(( $(date +%s) - started )) s"
+    # Asset updates on the native host: a bundle downloaded, used at the next start, a bad one
+    # refused.
+    started=$(date +%s)
+    python3 tests/desktop/updates.py "$HOST"
+    echo "updates: $(( $(date +%s) - started )) s";;
 esac
 if [ "$HOST" = web ]; then
     python3 tools/budgets.py model
