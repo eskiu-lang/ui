@@ -12,11 +12,29 @@ bool agent_json;
 int agent_web_port;
 int agent_cdp_port;
 
+// The driver's port of a desktop dev app of the project at `root` (UI_AGENT_PORT when set):
+// one of its own, from its path, so an app another project left running never answers.
+// ui serve's launch passes it to the app and `ui agent` connects to it.
+int desktop_driver_port(string root) {
+    string value = env_get("UI_AGENT_PORT");
+    if (value != null && value[0] != 0) { return atoi(value); }
+    uint64 h = 1469598103934665603;
+    for (int i = 0; root != null && root[i] != 0; i++) { h = (h ^ (uint64)(uint8)root[i]) * 1099511628211; }
+    return 20000 + (int)(h % 20000);
+}
+
+// The project `ui agent` drives (its root), set as it attaches.
+string agent_root;
+
 // The driver's port of the dev app on the simulator, this Mac or this Linux machine (and the
-// local end of `adb forward`).
+// local end of `adb forward`). On macOS, Linux and Windows each project has a port of its own
+// (from its path), passed to the app through ui serve's environment: an app an earlier session
+// left running, of another project, never answers this one.
 int agent_native_port() {
     string value = env_get("UI_AGENT_PORT");
     if (value != null && value[0] != 0) { return atoi(value); }
+    bool desktop = strcmp(agent_host, "linux") == 0 || strcmp(agent_host, "windows") == 0 || strcmp(agent_host, "macos") == 0;
+    if (desktop && agent_root != null) { return desktop_driver_port(agent_root); }
     if (strcmp(agent_host, "linux") == 0) { return 8769; }
     if (strcmp(agent_host, "windows") == 0) { return 8770; }
     return strcmp(agent_host, "android") == 0 ? 8767 : strcmp(agent_host, "macos") == 0 ? 8768 : 8766;
@@ -86,6 +104,7 @@ string agent_quote(string text) { return shell_quote(text); }
     List<string> env;
     defer env.free();
     env.push("UI_NO_OPEN=1");
+
     if (!agent_json) { printf("ui agent: starting ui serve %s (its output: %s)\n", agent_host, log.data); fflush(null); }
     if (!spawn_detached(&argv, &env, p.root.data, log.data)) { agent_fail("could not start ui serve"); }
     int64 until = time_monotonic_ms() + 30000;

@@ -89,6 +89,7 @@ string agent_source(Project* p) {
 // A build that is not up to date yet is waited for while `ui serve` builds it; a failed one
 // stops with its output.
 void agent_attach(Project* p, bool real_clock) {
+    agent_root = p.root.data;
     *JsonValue status = agent_serve(p);
     if (strcmp(agent_host, "web") == 0) {
         agent_web_port = (int)agent_number(status, "port");

@@ -484,6 +484,10 @@ void windows_launch(Project* p) {
     String reload;
     String_appendf(&reload, "UI_RELOAD_FILE=%s", windows_reload_file(p));
     env.push(reload.data);
+    String port;
+    defer String_free(&port);
+    String_appendf(&port, "UI_AGENT_PORT=%d", desktop_driver_port(p.root.data));
+    env.push(port.data);
     string window = env_get("UI_AGENT_WINDOW");
     String size;
     if (window != null && window[0] != 0) { String_appendf(&size, "UI_WINDOW=%s", window); env.push(size.data); }

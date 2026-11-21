@@ -390,7 +390,7 @@ void macos_launch(Project* p) {
     string executable = join(p.out("macos"), app_name.data);
     String command;
     defer String_free(&command);
-    String_appendf(&command, "(exec env UI_RELOAD_FILE=%s", shell_quote(macos_reload_file(p)));
+    String_appendf(&command, "(exec env UI_RELOAD_FILE=%s UI_AGENT_PORT=%d", shell_quote(macos_reload_file(p)), desktop_driver_port(p.root.data));
     string window = env_get("UI_AGENT_WINDOW");
     if (window != null && window[0] != 0) { String_appendf(&command, " UI_WINDOW=%s", shell_quote(window)); }
     String_appendf(&command, " %s) > %s 2>&1 < /dev/null &", shell_quote(executable), shell_quote(join(p.out("macos"), "app.log")));
