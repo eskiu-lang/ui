@@ -59,8 +59,9 @@ struct Ui {
     fn(*uint8, int)->void apply;
     int phase;
     int sequence;
-    // Release behavior: a duplicate key warns and is treated as unkeyed instead of
-    // stopping the program.
+    // Off by default, in dev and release builds alike: a duplicate key stops the program. An
+    // app that sets it (`ui.lenient = true;` in ui_app_start) gets a warning instead, and the
+    // later child is treated as unkeyed.
     bool lenient;
     // The name the next element takes (Scope), cleared as soon as it is taken.
     string next_name;

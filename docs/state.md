@@ -179,8 +179,10 @@ void TodoRow(*Todo todo) {
 `key(id)` keeps a child's node, and so its state, when its siblings are added, removed or
 reordered. Without a key, children of a block match by position among the unkeyed siblings
 of the same kind, so `if (saving) { Text("Saving"); }` does not disturb a `Column` next to
-it. Keys must be unique among siblings: a duplicate stops the program, or, with
-`ui.lenient` set, warns and treats the later child as unkeyed. Key 0 is a key.
+it. Keys must be unique among siblings: a duplicate stops the program, in a dev build and in a
+release build alike, so a test or `ui agent` finds it before users do. An app that would
+rather keep running sets `ui.lenient = true;` in `ui_app_start`: a duplicate then prints a
+warning and the later child is treated as unkeyed. Key 0 is a key.
 
 When the program stops (a duplicate key, a hook outside a render), the message says where:
 

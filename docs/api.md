@@ -1505,6 +1505,7 @@ it if any, and the last run that subscribed (internal).
 struct Slot {
     int vtype;
     string key;
+    bool hidden;
 }
 ```
 
@@ -1790,6 +1791,9 @@ struct Ui {
     string next_view_type;
     *Router router;
     bool next_active;
+    int next_presentation;
+    int next_appear;
+    int hidden_signals;
     List<*UiTimer> timers;
     int next_timer;
     fn(int, int, bool)->void timer_start;
@@ -2193,7 +2197,7 @@ struct Node {
     string name;
     int gap;
     int padding;
-    int64[85] props;
+    int64[92] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -2436,6 +2440,14 @@ ui_dispatch_submit). 73 padding top, 74 right, 75 bottom, 76 left (points; 0: th
 of prop 2), 77 margin top, 78 right, 79 bottom, 80 left (points), 81 text align
 (TextAlign), 82 maximum lines (0: no limit; cut with an ellipsis), 83 shrink (flex-shrink),
 84 image listener (1: the host reports an Image's load or failure with ui_dispatch_image).
+85 line height (points; 0: the font's), 86 italic (1 or 0), 87 z index (stacking among
+siblings; 0: the children's order), 88 clip (1: what falls outside the box, radius
+included, is hidden), 89 a modal's presentation (Presentation: 0 the whole screen, 1 a
+sheet from the bottom edge, 2 a dialog centered over a dim backdrop), 90 layout animation
+(ms; 0 none: a frame the layout changes moves there over that time, with prop 40's easing),
+91 a modal's appearing (0 the host's default, 1 animated as its presentation does, 2 at
+once). A switch's or a slider's text color (prop 9) is its accent: the track when on, the
+filled part and the thumb.
 An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal
@@ -3262,6 +3274,36 @@ Content over the whole screen while `visible`; `on_request_close` runs when the 
 asks to leave it (Android's back, Escape on the web, a tap on the backdrop outside the
 content).
 
+### Presentation
+
+```eskiu
+enum Presentation { PresentFull, PresentSheet, PresentCenter }
+```
+
+How a ModalWith shows: over the whole screen (as Modal), as a sheet from the bottom edge
+(its height is its content's), or as a dialog centered over a dim backdrop.
+
+### ModalOptions
+
+```eskiu
+struct ModalOptions { Style style; int presentation; bool animated = true; }
+```
+
+A ModalWith's options: the content's Style (its padding, background, radius, size), how it
+shows, and whether it animates in (the presentation's own animation: a fade for the whole
+screen and a dialog, a slide up for a sheet) or appears at once.
+
+### ModalWith
+
+```eskiu
+void ModalWith(ModalOptions options, bool visible, escaping fn()->void on_request_close, escaping fn()->void block)
+```
+
+Modal with options: a sheet or a centered dialog, a Style for its content, and its
+appearing. `on_request_close` and `block` as Modal's. Over the whole screen the Style is the
+layer's, as Modal's; a sheet or a dialog is a panel with the Style on the layer (the dim
+backdrop: a tap on it asks to close), at its bottom edge across its width or at its center.
+
 ### ui_command
 
 ```eskiu
@@ -3529,7 +3571,7 @@ Part of `<ui>` (src/ui.esk imports every part; they are not imported alone).
 ### UiTimer
 
 ```eskiu
-struct UiTimer { int token; int ms; bool repeat; fn()->void handler; bool armed; bool removed; }
+struct UiTimer { int token; int ms; bool repeat; fn()->void handler; bool armed; bool removed; *Node owner; }
 ```
 
 A timer while its scope is mounted. The host keeps the clock (ui_set_timer_host); its
@@ -4454,9 +4496,15 @@ struct Style {
     int padding_top; int padding_right; int padding_bottom; int padding_left;
     int margin; int margin_top; int margin_right; int margin_bottom; int margin_left;
     int text_align; int max_lines; int shrink;
+    int line_height; bool italic; int z_index; bool clip; int layout_ms;
 }
 ```
 
+`line_height` is the distance between a text's lines in points (0: the font's own);
+`italic` slants it. `z_index` stacks an element over its siblings with lower values (0, the
+default, keeps the order of the children). `clip` hides what of the content falls outside
+the element's box (its radius included). `layout_ms` animates the element's frame when the
+layout moves or resizes it, over that many milliseconds with `easing` (0: no animation).
 `label` is the accessible name (ARIA label, accessibilityLabel, contentDescription).
 width and height are points (0: sized by content and parent); grow shares the free
 space along the parent's direction (flex-grow); wrap lets a row's children flow onto
