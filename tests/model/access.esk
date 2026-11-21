@@ -119,10 +119,17 @@ void kit_semantics() {
         Checkbox("Agree", false, void(bool on) {});
         Text("Plain");
         TextWith(Style{color: 0x111827FF}, "Colored");
+        ToastHost();
     }
     ui_frame();
     ui_text_color = -1;
-    check(count_prop(2, 57) == 6, "two headings, three menu rows and a checkbox have roles");
+    kit_toast("Saved"); kit_toast("Saved");
+    check(kit_toast_queue.size == 1, "the same toast twice in a row is queued once");
+    for (i in 0..12) { kit_toast(textf("Toast %d", i)); }
+    check(kit_toast_queue.size == 1 + KIT_TOASTS_WAITING, "at most KIT_TOASTS_WAITING toasts wait");
+    check(strcmp(kit_toast_queue.data[0].data, "Saved") == 0 && strcmp(kit_toast_queue.data[kit_toast_queue.size - 1].data, "Toast 11") == 0,
+        "the oldest waiting ones are dropped, the newest kept");
+    check(count_prop(2, 57) == 6, "two headings, three menu rows and a checkbox have roles (a toast is no alert)");
     check(count_prop(2, 58) == 3, "the checked state of a Select's rows and of the checkbox, none for an action");
     check(count_prop(2, 44) >= 4 && prop_value(2, 44) == 44, "menu rows and the checkbox are 44 points tall");
     check(count_prop(2, 9) >= 4, "text with no color takes ui_text_color");

@@ -147,7 +147,10 @@ void Tooltip(string text, escaping fn()->void content UI_LOC) {
 // Toasts: kit_toast shows a short message at the bottom for a few seconds, through the
 // ToastHost the app puts last in its root (it is absolute over the root's bottom). Messages
 // shown while one is up wait their turn, each shown in full and announced to a screen reader.
-// With no host mounted, a toast is dropped.
+// A message the same as the last one waiting is not queued again, and at most
+// KIT_TOASTS_WAITING wait: a newer one drops the oldest waiting. With no host mounted, a toast
+// is dropped.
+#define KIT_TOASTS_WAITING 5
 *Signal<int> kit_toast_count;
 List<String> kit_toast_queue;
 
@@ -155,8 +158,18 @@ List<String> kit_toast_queue;
 // mounted ToastHost; dropped when none is mounted.
 void kit_toast(string text) {
     if (kit_toast_count == null) { return; }
+    string message = text == null ? "" : text;
+    if (kit_toast_queue.size > 0) {
+        string last = kit_toast_queue.data[kit_toast_queue.size - 1].data;
+        if (strcmp(last == null ? "" : last, message) == 0) { return; }
+    }
+    // The first is the one showing; the rest wait.
+    if (kit_toast_queue.size > KIT_TOASTS_WAITING) {
+        String_free(&kit_toast_queue.data[1]);
+        List_remove(&kit_toast_queue, 1);
+    }
     String copy;
-    String_append(&copy, text == null ? "" : text);
+    String_append(&copy, message);
     List_push(&kit_toast_queue, copy);
     kit_toast_count.set(kit_toast_count.value + 1);
 }
@@ -211,7 +224,8 @@ void ToastHost(UI_LOC_ONLY) {
         Row(Style{absolute: true, left: 24, right: 24, bottom: 24 + ui_insets().bottom, justify: JustifyCenter,
                   opacity: visible.get() ? 100 : 0, translate_y: visible.get() ? 0 : 16, transition_ms: 250,
                   easing: EaseOut}) {
-            Row(Style{padding: 14, radius: 14, background: kit.ink, shadow: 8, label: message, role: RoleAlert}) {
+            // Announced once, through ui_announce above (not also as an alert).
+            Row(Style{padding: 14, radius: 14, background: kit.ink, shadow: 8, label: message}) {
                 TextWith(Style{font_size: 15, font_weight: 600, color: kit.page}, message);
             }
         }
