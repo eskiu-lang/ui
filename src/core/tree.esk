@@ -34,7 +34,7 @@ struct Node {
     int gap;
     int padding;
     // The value last sent for each int prop (by code), so only a change is sent again.
-    int64[85] props;
+    int64[92] props;
     *Node parent;
     List<*Node> children;
     List<*Node> emitted;
@@ -681,6 +681,11 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 81, style.text_align, 0);
     ui_prop(node, fresh, 82, style.max_lines, 0);
     ui_prop(node, fresh, 83, style.shrink, 0);
+    ui_prop(node, fresh, 85, style.line_height, 0);
+    ui_prop(node, fresh, 86, style.italic ? 1 : 0, 0);
+    ui_prop(node, fresh, 87, style.z_index, 0);
+    ui_prop(node, fresh, 88, style.clip ? 1 : 0, 0);
+    ui_prop(node, fresh, 90, style.layout_ms, 0);
     if (ui_update_string(&node.value, style.value)) { _ui_emit_string_prop(node, 8, node.value); }
     if (ui_update_string(&node.hint, style.hint)) { _ui_emit_string_prop(node, 9, node.hint); }
 #ifdef UI_TEST
@@ -774,6 +779,13 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     }
     if (kind == 12 && fresh) { ui.modals.push(node); }
     if (kind == 14) { ui_prop(node, fresh, 23, ui.next_active ? 1 : 0, -1); }
+    // A modal's presentation and whether it animates in (ModalWith).
+    if (kind == 12) {
+        ui_prop(node, fresh, 89, ui.next_presentation, 0);
+        ui_prop(node, fresh, 91, ui.next_appear, 0);
+        ui.next_presentation = 0;
+        ui.next_appear = 0;
+    }
     if (kind == 13) { ui_native_view_props(node, fresh); }
     if (kind == 6 && ui.next_list != null) {
         *_ListExtra list = ui.next_list;

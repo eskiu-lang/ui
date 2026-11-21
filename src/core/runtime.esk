@@ -86,6 +86,9 @@ struct Ui {
     // the next Screen is the top one.
     *Router router;
     bool next_active;
+    // The next Modal's presentation and appearing (ModalWith; internal).
+    int next_presentation;
+    int next_appear;
     // The timers of mounted scopes, the next token, and the host's clock (ui_set_timer_host).
     List<*UiTimer> timers;
     int next_timer;

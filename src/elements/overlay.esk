@@ -14,6 +14,29 @@ void Modal(bool visible, escaping fn()->void on_request_close, escaping fn()->vo
     ui_element(12, Style{padding: 0}, null, block, on_request_close) {}
 }
 
+// How a ModalWith shows: over the whole screen (as Modal), as a sheet from the bottom edge
+// (its height is its content's), or as a dialog centered over a dim backdrop.
+enum Presentation { PresentFull, PresentSheet, PresentCenter }
+
+// A ModalWith's options: the content's Style (its padding, background, radius, size), how it
+// shows, and whether it animates in (the presentation's own animation: a fade for the whole
+// screen and a dialog, a slide up for a sheet) or appears at once.
+struct ModalOptions { Style style; int presentation; bool animated = true; }
+
+// Modal with options: a sheet or a centered dialog, a Style for its content, and its
+// appearing. `on_request_close` and `block` as Modal's.
+void ModalWith(ModalOptions options, bool visible, escaping fn()->void on_request_close, escaping fn()->void block UI_LOC) {
+    if (!visible) {
+        ui_release_closure(on_request_close);
+        ui_release_closure(block);
+        return;
+    }
+    UI_HERE
+    ui.next_presentation = options.presentation;
+    ui.next_appear = options.animated ? 1 : 2;
+    ui_element(12, options.style, null, block, on_request_close) {}
+}
+
 // Queues command `command` with its strings (null is "") for the next commit; `request` is
 // the id an answer comes back with (0 for none). See src/core/wire.esk.
 void ui_command(int request, int command, List<string>* strings) {

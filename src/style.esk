@@ -8,6 +8,11 @@ struct Key { bool set; int64 value; }
 // A key from a number (an item's id).
 Key key(int64 value) { return Key{true, value}; }
 
+// `line_height` is the distance between a text's lines in points (0: the font's own);
+// `italic` slants it. `z_index` stacks an element over its siblings with lower values (0, the
+// default, keeps the order of the children). `clip` hides what of the content falls outside
+// the element's box (its radius included). `layout_ms` animates the element's frame when the
+// layout moves or resizes it, over that many milliseconds with `easing` (0: no animation).
 // `label` is the accessible name (ARIA label, accessibilityLabel, contentDescription).
 // width and height are points (0: sized by content and parent); grow shares the free
 // space along the parent's direction (flex-grow); wrap lets a row's children flow onto
@@ -85,6 +90,7 @@ struct Style {
     int padding_top; int padding_right; int padding_bottom; int padding_left;
     int margin; int margin_top; int margin_right; int margin_bottom; int margin_left;
     int text_align; int max_lines; int shrink;
+    int line_height; bool italic; int z_index; bool clip; int layout_ms;
 }
 
 // Where a text's lines sit (Style.text_align): the platform's default (the start), the start

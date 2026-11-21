@@ -190,3 +190,23 @@ void driver_access() {
     String_free(&out);
     ui_shutdown(); balanced("driver access leak");
 }
+
+// The text, stacking, clipping and layout-animation props, and a ModalWith's presentation.
+void style_props() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_mount() {
+        TextWith(Style{line_height: 22, italic: true}, "Slanted");
+        Row(Style{z_index: 2, clip: true, layout_ms: 200}) {}
+        Row(Style{}) {}
+        ModalWith(ModalOptions{presentation: PresentSheet, style: Style{padding: 16}}, true, void() {}) { Text("Sheet"); }
+        Modal(true, void() {}) { Text("Plain"); }
+    }
+    ui_frame();
+    check(count_prop(2, 85) == 1 && prop_value(2, 85) == 22 && count_prop(2, 86) == 1, "line height and italic");
+    check(count_prop(2, 87) == 1 && count_prop(2, 88) == 1 && count_prop(2, 90) == 1 && prop_value(2, 90) == 200,
+        "z index, clip and the layout animation, only where set");
+    check(count_prop(2, 89) == 1 && prop_value(2, 89) == PresentSheet && count_prop(2, 91) == 1 && prop_value(2, 91) == 1,
+        "a sheet that animates in; a plain Modal sends neither");
+    ui_shutdown(); balanced("style props leak");
+}

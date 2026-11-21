@@ -51,6 +51,14 @@
 // of prop 2), 77 margin top, 78 right, 79 bottom, 80 left (points), 81 text align
 // (TextAlign), 82 maximum lines (0: no limit; cut with an ellipsis), 83 shrink (flex-shrink),
 // 84 image listener (1: the host reports an Image's load or failure with ui_dispatch_image).
+// 85 line height (points; 0: the font's), 86 italic (1 or 0), 87 z index (stacking among
+// siblings; 0: the children's order), 88 clip (1: what falls outside the box, radius
+// included, is hidden), 89 a modal's presentation (Presentation: 0 the whole screen, 1 a
+// sheet from the bottom edge, 2 a dialog centered over a dim backdrop), 90 layout animation
+// (ms; 0 none: a frame the layout changes moves there over that time, with prop 40's easing),
+// 91 a modal's appearing (0 the host's default, 1 animated as its presentation does, 2 at
+// once). A switch's or a slider's text color (prop 9) is its accent: the track when on, the
+// filled part and the thumb.
 // An input's value is its text. Kinds: 0 scope, 1 column, 2 row, 3 text, 4 button,
 // 5 text input, 6 scroll (a column whose content scrolls), 7 image, 8 pressable (a column
 // that takes presses), 9 switch, 10 activity indicator, 11 status bar (no view), 12 modal

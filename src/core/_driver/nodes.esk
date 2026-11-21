@@ -107,6 +107,13 @@ string _ui_driver_prop_name(int code) {
     if (code == 82) { return "max_lines"; }
     if (code == 83) { return "shrink"; }
     if (code == 84) { return "on_image"; }
+    if (code == 85) { return "line_height"; }
+    if (code == 86) { return "italic"; }
+    if (code == 87) { return "z_index"; }
+    if (code == 88) { return "clip"; }
+    if (code == 89) { return "presentation"; }
+    if (code == 90) { return "layout_ms"; }
+    if (code == 91) { return "appear"; }
     return null;
 }
 
@@ -124,6 +131,7 @@ bool _ui_driver_prop_applies(int kind, int code, *int64 unset) {
     if (code == 51) { *unset = 180; }
     if (code >= 25 && code <= 28) { *unset = kUnset; }
     if (code >= 65 && code <= 72) { if (code == 70) { *unset = 1; } return kind == 5; }
+    if (code == 89 || code == 91) { return kind == 12; }
     return _ui_driver_prop_name(code) != null;
 }
 
@@ -161,7 +169,7 @@ void _ui_driver_tree_node(*String out, *Node node) {
     defer String_free(&props);
     if (node.kind != 0 && node.gap != 8) { String_appendf(&props, "\"gap\": %d", node.gap); any = true; }
     if (node.padding != 0) { String_appendf(&props, "%s\"padding\": %d", any ? ", " : "", node.padding); any = true; }
-    for (code in 4..85) {
+    for (code in 4..92) {
         if (node == ui.root) { break; }
         int64 unset = 0;
         if (!_ui_driver_prop_applies(node.kind, code, &unset)) { continue; }
