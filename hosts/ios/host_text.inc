@@ -37,6 +37,8 @@ static NSString *fontName(NSString *file) {
     return name.length ? name : nil;
 }
 
+static void applyLabel(UiHostNode *node);
+
 // The app's sizes follow the system text size (Dynamic Type) through UIFontMetrics; a button
 // no font prop reached keeps UIKit's font, scaled too.
 static void applyFont(UiHostNode *node) {
@@ -46,6 +48,12 @@ static void applyFont(UiHostNode *node) {
     NSString *custom = node.fontFile ? fontName(node.fontFile) : nil;
     UIFont *font = custom ? [UIFont fontWithName:custom size:size] : nil;
     if (!font) font = node.kind == 4 && !node.fontSet ? buttonFont : [UIFont systemFontOfSize:size weight:weightOf(node.fontWeight)];
+    if (node.italic) {
+        // A face without an italic (a custom font) stays upright.
+        UIFontDescriptor *slanted = [font.fontDescriptor fontDescriptorWithSymbolicTraits:
+                                     font.fontDescriptor.symbolicTraits | UIFontDescriptorTraitItalic];
+        if (slanted) font = [UIFont fontWithDescriptor:slanted size:font.pointSize];
+    }
     font = [UIFontMetrics.defaultMetrics scaledFontForFont:font];
     if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).font = font;
     else if ([node.view isKindOfClass:UIButton.class]) ((UIButton *)node.view).titleLabel.font = font;
@@ -55,6 +63,8 @@ static void applyFont(UiHostNode *node) {
         for (UIView *child in node.view.subviews) if ([child isKindOfClass:UILabel.class]) ((UILabel *)child).font = font;
         [node.view setNeedsLayout];
     }
+    // A line height is in the attributed text, which holds the font.
+    if (node.lineHeight > 0) applyLabel(node);
     YGNodeMarkDirty(node.yoga);
 }
 
@@ -66,11 +76,14 @@ static void rescaleFonts(void) {
     relayout();
 }
 
+static bool applyAccent(UiHostNode *node, UIColor *color);
 static void applyColor(UiHostNode *node, UIColor *color) {
+    if (applyAccent(node, color)) return;
     if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).textColor = color ?: UIColor.labelColor;
     else if ([node.view isKindOfClass:UIButton.class]) [(UIButton *)node.view setTitleColor:color forState:UIControlStateNormal];
     else if ([node.view isKindOfClass:UITextField.class]) ((UITextField *)node.view).textColor = color ?: UIColor.labelColor;
     else if ([node.view isKindOfClass:UITextView.class]) ((UITextView *)node.view).textColor = color ?: UIColor.labelColor;
+    if (node.lineHeight > 0) applyLabel(node);
 }
 
 @interface UiEvents (Input) <UITextViewDelegate>
@@ -149,13 +162,13 @@ static UiTextView *makeTextView(int id) {
 // The node's padding inside the input: a field's text from its left edge, a text view's on
 // both sides.
 static void applyInputPadding(UiHostNode *node) {
-    int pad = node.padding;
+    int left = node.padLeft ?: node.padding, right = node.padRight ?: node.padding;
     if ([node.view isKindOfClass:UITextField.class]) {
         UITextField *field = (UITextField *)node.view;
-        field.leftView = pad ? [[UIView alloc] initWithFrame:CGRectMake(0, 0, pad, 1)] : nil;
-        field.leftViewMode = pad ? UITextFieldViewModeAlways : UITextFieldViewModeNever;
+        field.leftView = left ? [[UIView alloc] initWithFrame:CGRectMake(0, 0, left, 1)] : nil;
+        field.leftViewMode = left ? UITextFieldViewModeAlways : UITextFieldViewModeNever;
     } else if ([node.view isKindOfClass:UITextView.class]) {
-        ((UITextView *)node.view).textContainerInset = UIEdgeInsetsMake(8, pad, 8, pad);
+        ((UITextView *)node.view).textContainerInset = UIEdgeInsetsMake(8, left, 8, right);
     }
 }
 
@@ -251,6 +264,7 @@ static void setMultiline(UiHostNode *node) {
     applyFont(node);
     applyColor(node, colorOf(node.textColor));
     applyInputPadding(node);
+    applyLabel(node);
     applyPlaceholder(node);
     applyTraits(node);
     applySubmit(node);

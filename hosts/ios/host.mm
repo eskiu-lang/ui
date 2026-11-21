@@ -72,6 +72,13 @@ static std::string driverCarry(const std::string &directive);
 // A text input's options (host_input.inc), and what a swap between field and text view keeps.
 @property(nonatomic) int secure, keyboard, returnKey, multiline, capitalize, autocorrect, autofill, submit, padding, textColor;
 @property(nonatomic, copy) NSString *placeholder;
+// Layout and text props since 73 (host_style.inc): the sides' padding (0: prop 2's), shrink,
+// text align and lines, line height, italic, z index, clip, layout animation, an image's
+// load listener, a modal's presentation and appearing, and the label's text.
+@property(nonatomic) int padTop, padRight, padBottom, padLeft, shrink, textAlign, maxLines, lineHeight, layoutMs;
+@property(nonatomic) int presentation, appear;
+@property(nonatomic) bool italic, clip, cover, imageListening, placed, appearing;
+@property(nonatomic, copy) NSString *text;
 @end
 @implementation UiHostNode
 @end
@@ -106,6 +113,8 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
 }
 
 static void relayout(void);
+// Whether the layout runs right to left: the user's language is written so (host_style.inc).
+static bool layoutRTL;
 
 // Scrolling moves what is inside in the window without a layout: the listened nodes' window
 // positions are checked again.
@@ -242,7 +251,7 @@ static bool removeScreen(UiHostNode *node) {
     [leaving addObject:view];
     [view.superview bringSubviewToFront:view];
     [UIView animateWithDuration:kSlide delay:0 options:UIViewAnimationOptionCurveEaseIn animations:^{
-        view.transform = CGAffineTransformMakeTranslation(view.bounds.size.width, 0);
+        view.transform = CGAffineTransformMakeTranslation(layoutRTL ? -view.bounds.size.width : view.bounds.size.width, 0);
     } completion:^(BOOL done) { [view removeFromSuperview]; [leaving removeObject:view]; }];
     return true;
 }
@@ -257,7 +266,7 @@ static void slideScreens(void) {
                 !other.view.hidden) over = true;
         }
         if (!over) continue;
-        node.view.transform = CGAffineTransformMakeTranslation(node.view.bounds.size.width, 0);
+        node.view.transform = CGAffineTransformMakeTranslation(layoutRTL ? -node.view.bounds.size.width : node.view.bounds.size.width, 0);
         [UIView animateWithDuration:kSlide delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
             node.view.transform = CGAffineTransformIdentity;
         } completion:nil];
@@ -287,9 +296,16 @@ static UIColor *colorOf(int value) {
                             blue:((v >> 8) & 255) / 255.0 alpha:(v & 255) / 255.0];
 }
 
+// An Image's load or failure, to the app when it listens (ui_on_image).
+static void reportImage(UiHostNode *node, UIImage *image) {
+    if (node.imageListening && nodes[@(node.nodeId)] == node) ui_dispatch_image(node.nodeId, node.generation, image ? 1 : 0);
+}
+
 // A bundled resource by file name, or an http(s) URL fetched in the background. The image
 // changes the node's measured size, so the layout runs again when it arrives.
-static void loadImage(UIImageView *view, YGNodeRef yoga, NSString *source) {
+static void loadImage(UiHostNode *node, NSString *source) {
+    UIImageView *view = (UIImageView *)node.view;
+    YGNodeRef yoga = node.yoga;
     view.image = nil;
     if (!source) return;
     if ([source hasPrefix:@"http://"] || [source hasPrefix:@"https://"]) {
@@ -298,6 +314,7 @@ static void loadImage(UIImageView *view, YGNodeRef yoga, NSString *source) {
             UIImage *image = data ? [UIImage imageWithData:data] : nil;
             dispatch_async(dispatch_get_main_queue(), ^{
                 view.image = image; YGNodeMarkDirty(yoga); relayout();
+                reportImage(node, image);
             });
         }] resume];
         return;
@@ -305,8 +322,11 @@ static void loadImage(UIImageView *view, YGNodeRef yoga, NSString *source) {
     // A file by its absolute path (a photo the app saved) or a file:// URL, else a bundled one.
     NSString *path = [source hasPrefix:@"file://"] ? [NSURL URLWithString:source].path
                    : [source hasPrefix:@"/"] ? source : [NSBundle.mainBundle pathForResource:source ofType:nil];
-    view.image = [UIImage imageWithContentsOfFile:path];
+    view.image = path ? [UIImage imageWithContentsOfFile:path] : nil;
     YGNodeMarkDirty(yoga);
+    UIImage *image = view.image;
+    // After the commit that set the source, as the web reports it.
+    dispatch_async(dispatch_get_main_queue(), ^{ reportImage(node, image); });
 }
 
 // The gradient layer for a node's colors and angle, made, updated or dropped.
@@ -359,11 +379,28 @@ static void place(YGNodeRef yoga, UIView *parent) {
         // Only the size: a scroll view's bounds origin is its scroll offset.
         CGRect bounds = node.view.bounds;
         bounds.size = CGSizeMake(w, h);
-        node.view.bounds = bounds;
+        CGPoint center = CGPointMake(YGNodeLayoutGetLeft(child) + w / 2, YGNodeLayoutGetTop(child) + h / 2);
+        UIView *view = node.view;
+        // Style.layout_ms: a frame the layout changes moves there, once the view was placed.
+        bool moves = node.layoutMs > 0 && node.placed && view.window && !UIAccessibilityIsReduceMotionEnabled() &&
+                     (!CGSizeEqualToSize(view.bounds.size, bounds.size) || !CGPointEqualToPoint(view.center, center));
+        node.placed = true;
+        void (^frame)(void) = ^{ view.bounds = bounds; view.center = center; };
+        if (moves) {
+            const UIViewAnimationOptions curves[] = {UIViewAnimationOptionCurveEaseInOut, UIViewAnimationOptionCurveEaseOut,
+                                                     UIViewAnimationOptionCurveEaseIn, UIViewAnimationOptionCurveLinear};
+            UIViewAnimationOptions options = UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState;
+            if (node.easing == 4) {
+                [UIView animateWithDuration:node.layoutMs / 1000.0 delay:0 usingSpringWithDamping:0.7 initialSpringVelocity:0
+                                    options:options animations:frame completion:nil];
+            } else {
+                [UIView animateWithDuration:node.layoutMs / 1000.0 delay:0 options:options | curves[std::min(3, std::max(0, node.easing))]
+                                 animations:frame completion:nil];
+            }
+        } else frame();
         // A radius past half the shorter side draws nothing on iOS: a pill asks for 999.
         if (node.radius > 0) node.view.layer.cornerRadius = std::min<CGFloat>(node.radius, std::min(w, h) / 2);
         if (node.blur) node.blur.layer.cornerRadius = node.view.layer.cornerRadius;
-        node.view.center = CGPointMake(YGNodeLayoutGetLeft(child) + w / 2, YGNodeLayoutGetTop(child) + h / 2);
         if (node.gradient) {
             [CATransaction begin];
             [CATransaction setDisableActions:YES];
@@ -541,5 +578,7 @@ static UiEvents *events;
 
 #include "host_access.inc"
 #include "host_text.inc"
+#include "host_style.inc"
 #include "host_views.inc"
+#include "host_tests.inc"
 #include "host_main.inc"

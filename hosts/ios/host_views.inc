@@ -124,6 +124,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             YGNodeStyleSetFlexDirection(node.yoga, kind == 2 ? YGFlexDirectionRow : YGFlexDirectionColumn);
             YGNodeStyleSetGap(node.yoga, YGGutterAll, 8);
         }
+        applyDirection(node.view);
         YGNodeSetContext(node.yoga, (__bridge void *)node);
         if ((kind >= 3 && kind <= 5) || kind == 7 || kind == 9 || kind == 10 || kind == 15) YGNodeSetMeasureFunc(node.yoga, measure);
         // After the measure function: marking the node dirty needs one.
@@ -138,7 +139,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
     if (op == 9 && node.yoga) ui_grid_tracks(node.yoga, kind, text);
     if (op == 2) {
         // Props: the code in kind (1 gap, 2 padding, 3 focused), the value in before.
-        if (accessProp(node, kind, before) || inputProp(node, kind, before)) {}
+        if (accessProp(node, kind, before) || inputProp(node, kind, before) || styleProp(node, kind, before)) {}
         else if (kind == 1) YGNodeStyleSetGap(node.yoga, YGGutterAll, before);
         else if (kind == 2) {
             YGNodeStyleSetPadding(node.yoga, YGEdgeAll, before);
@@ -155,7 +156,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         } else if (kind == 6) {
             // A growing child also shrinks to its parent, so a scroll under it stays in the window.
             YGNodeStyleSetFlexGrow(node.yoga, before);
-            if (![node.view isKindOfClass:UIScrollView.class]) YGNodeStyleSetFlexShrink(node.yoga, before > 0 ? 1 : 0);
+            if (![node.view isKindOfClass:UIScrollView.class]) YGNodeStyleSetFlexShrink(node.yoga, std::max(node.shrink, before > 0 ? 1 : 0));
         }
         else if (kind == 7) YGNodeStyleSetFlexWrap(node.yoga, before ? YGWrapWrap : YGWrapNoWrap);
         else if (kind == 8) {
@@ -182,11 +183,12 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             node.radius = before;
             CGSize size = node.view.bounds.size;
             node.view.layer.cornerRadius = std::min<CGFloat>(before, std::min(size.width, size.height) / 2);
-            node.view.clipsToBounds = before > 0 && !node.view.layer.shadowOpacity;
+            applyClip(node);
         }
         else if (kind == 47 && [node.view isKindOfClass:UIImageView.class]) {
             node.view.contentMode = before ? UIViewContentModeScaleAspectFill : UIViewContentModeScaleAspectFit;
-            node.view.clipsToBounds = before || node.radius > 0;
+            node.cover = before != 0;
+            applyClip(node);
         }
         else if (kind == 48 && [node.view isKindOfClass:UIImageView.class]) {
             NSString *filter = before ? kCAFilterNearest : kCAFilterLinear;
@@ -200,7 +202,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             layer.shadowOpacity = before ? 0.16 : 0;
             layer.shadowRadius = before;
             layer.shadowOffset = CGSizeMake(0, before / 2.0);
-            node.view.clipsToBounds = layer.cornerRadius > 0 && !before;
+            applyClip(node);
         }
         else if (kind == 15) { UIView *view = node.view; animated(node, ^{ view.alpha = before / 100.0; }); }
         else if (kind >= 35 && kind <= 38) {
@@ -288,11 +290,11 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         } else if (kind == 5) { node.fontFile = value; node.fontSet = true; applyFont(node); }
         else if (kind == 2) { node.placeholder = value; applyPlaceholder(node); }
         else if (accessText(node, kind, value)) {}
-        else if (kind == 3 && [node.view isKindOfClass:UIImageView.class]) loadImage((UIImageView *)node.view, node.yoga, value);
+        else if (kind == 3 && [node.view isKindOfClass:UIImageView.class]) loadImage(node, value);
     } else if (op == 3) {
         NSString *value = [NSString stringWithUTF8String:text ? text : ""];
         if (isTextInput(node.view)) setInputText(node.view, value);
-        else if ([node.view isKindOfClass:UILabel.class]) ((UILabel *)node.view).text = value;
+        else if ([node.view isKindOfClass:UILabel.class]) { node.text = value; applyLabel(node); }
         else [(UIButton *)node.view setTitle:value forState:UIControlStateNormal];
         YGNodeMarkDirty(node.yoga);
     } else if ((op == 4 || op == 5) && node.kind == 12) {
@@ -301,7 +303,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         if (disabledCount) refreshEnabled(node);
         [node.view removeFromSuperview];
         [rootView.superview addSubview:node.view];
-        if (![modals containsObject:node]) [modals addObject:node];
+        if (![modals containsObject:node]) { [modals addObject:node]; node.appearing = true; }
     } else if (op == 4 || op == 5) {
         UiHostNode *parentNode = nodes[@(parent)];
         UIView *parentView = parentNode ? parentNode.view : rootView;
@@ -320,6 +322,7 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
             [parentView insertSubview:node.view belowSubview:next.view];
         } else [parentView addSubview:node.view];
         YGNodeInsertChild(parentYoga, node.yoga, index);
+        restack(parentView);
         // Under a disabled element, what comes in is disabled too.
         node.parentId = parent;
         if (disabledCount) refreshEnabled(node);
@@ -489,13 +492,15 @@ extern "C" void ui_host_commit(const uint8_t *data, int len) {
 }
 
 static void relayout(void) {
-    ui_grid_calculate(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, YGDirectionLTR);
+    YGDirection direction = layoutRTL ? YGDirectionRTL : YGDirectionLTR;
+    ui_grid_calculate(rootYoga, rootView.bounds.size.width, rootView.bounds.size.height, direction);
     place(rootYoga, rootView);
     for (UiHostNode *modal in modals) {
         CGRect screen = rootView.superview.bounds;
         modal.view.frame = screen;
-        ui_grid_calculate(modal.yoga, screen.size.width, screen.size.height, YGDirectionLTR);
+        ui_grid_calculate(modal.yoga, screen.size.width, screen.size.height, direction);
         place(modal.yoga, modal.view);
+        appearModal(modal);
     }
 }
 
@@ -509,76 +514,6 @@ extern "C" void ui_host_ready(void) {
         testCompletion = nil;
         dispatch_async(dispatch_get_main_queue(), completion);
     }
-}
-
-static UIView *findView(Class kind, NSString *text) {
-    for (UiHostNode *node in nodes.allValues) {
-        if (![node.view isKindOfClass:kind]) continue;
-        if (!text) return node.view;
-        NSString *shown = [node.view isKindOfClass:UIButton.class] ? [(UIButton *)node.view titleForState:UIControlStateNormal]
-                        : [node.view isKindOfClass:UILabel.class] ? ((UILabel *)node.view).text : ((UITextField *)node.view).text;
-        if ([shown isEqualToString:text]) return node.view;
-    }
-    return nil;
-}
-
-// Type a task into the TODO's field, press Add, and look for the new row; frames come from
-// the display link, so each step waits a little.
-static void runTodoTest(void) {
-    ui_start(1);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-        UITextField *field = (UITextField *)findView(UITextField.class, nil);
-        bool ok = field && [field.accessibilityLabel isEqualToString:@"New task"] && [field.placeholder isEqualToString:@"New task"];
-        field.text = @"Write the docs";
-        [field sendActionsForControlEvents:UIControlEventEditingChanged];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-            [(UIButton *)findView(UIButton.class, @"Add") sendActionsForControlEvents:UIControlEventTouchUpInside];
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-                bool added = findView(UILabel.class, @"Write the docs") != nil && field.text.length == 0;
-                UIImageView *logo = (UIImageView *)findView(UIImageView.class, nil);
-                bool image = logo.image != nil && [logo.accessibilityLabel isEqualToString:@"Eskiu"] &&
-                             logo.frame.size.width == 48;
-                bool pass = ok && added && image;
-                printf("iOS todo: %s label=%d added=%d image=%d\n", pass ? "PASS" : "FAIL", ok, added, image);
-                fflush(stdout);
-                ui_stop();
-                ui_grid_free(rootYoga);
-                exit(pass ? 0 : 1);
-            });
-        });
-    });
-}
-
-// Places the root: inside the safe area and above the keyboard, unless the app draws edge
-// to edge; either way the raw insets go to the app.
-// The native example (scene 6): ticks from its clock module, its UISlider's events and the
-// value prop sent back; prints the result and exits.
-static void runNativeTest(void) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        int ticks = 0;
-        UISlider *slider = nil;
-        for (UiHostNode *node in nodes.allValues) {
-            if ([node.view isKindOfClass:UILabel.class] && [((UILabel *)node.view).text hasPrefix:@"Ticks: "]) {
-                ticks = [((UILabel *)node.view).text substringFromIndex:7].intValue;
-            }
-            if ([node.nativeView isKindOfClass:UISlider.class]) slider = (UISlider *)node.nativeView;
-        }
-        bool initial = slider && lroundf(slider.value) == 30 && findView(UILabel.class, @"Volume: 30");
-        slider.value = 64;
-        [slider sendActionsForControlEvents:UIControlEventValueChanged];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            bool changed = findView(UILabel.class, @"Volume: 64") != nil;
-            [(UIButton *)findView(UIButton.class, @"Mute") sendActionsForControlEvents:UIControlEventTouchUpInside];
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                bool muted = findView(UILabel.class, @"Volume: 0") != nil && lroundf(slider.value) == 0;
-                bool pass = ticks >= 1 && initial && changed && muted;
-                printf("iOS native: %s ticks=%d initial=%d changed=%d muted=%d\n", pass ? "PASS" : "FAIL", ticks, initial,
-                       changed, muted);
-                fflush(stdout);
-                exit(pass ? 0 : 1);
-            });
-        });
-    });
 }
 
 @interface UiController : UIViewController
