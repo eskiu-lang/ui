@@ -218,9 +218,31 @@ static void applyAreaLineHeight(UiHostNode *node) {
     YGNodeMarkDirty(node.yoga);
 }
 
-// What a layer clips: Style.clip, else a radius without a shadow (a shadow draws outside).
+// What a layer clips: Style.clip, else a radius without a shadow (a shadow draws outside). A
+// box with both Style.clip and a shadow clips its children in an inner view (UiClipView) with
+// the same radius, so its own layer draws the shadow outside.
 static void applyMasks(UiHostNode *node) {
-    node.view.layer.masksToBounds = node.clip || (node.radius > 0 && !node.shadow);
+    bool split = node.clip && node.shadow && [node.view isKindOfClass:UiView.class] && node.kind != 11 && node.kind != 12 &&
+                 node.kind != 13;
+    if (split && !node.clipView) {
+        UiClipView *inner = [UiClipView new];
+        inner.wantsLayer = YES;
+        inner.autoresizesSubviews = NO;
+        inner.frame = node.view.bounds;
+        inner.layer.masksToBounds = YES;
+        for (NSView *child in node.view.subviews.copy)
+            if (nodeOf(child)) [inner addSubview:child];
+        [node.view addSubview:inner];
+        node.clipView = inner;
+        [viewNodes setObject:node forKey:inner];
+    } else if (!split && node.clipView) {
+        for (NSView *child in node.clipView.subviews.copy) [node.view addSubview:child];
+        [node.clipView removeFromSuperview];
+        [viewNodes removeObjectForKey:node.clipView];
+        node.clipView = nil;
+    }
+    node.view.layer.masksToBounds = !node.clipView && (node.clip || (node.radius > 0 && !node.shadow));
+    applyInnerRadius(node);
 }
 
 // Whether any element set a z index (until then the children's order is the views').
@@ -306,7 +328,7 @@ static void appearModals(void) {
         fade.timingFunction = curve;
         [modal.view.layer addAnimation:fade forKey:@"appear"];
         UiHostNode *panel = nil;
-        for (NSView *view in modal.view.subviews) if ((panel = nodeOf(view))) break;
+        for (NSView *view in container(modal).subviews) if ((panel = nodeOf(view))) break;
         if (!panel.view.layer || modal.presentation == 0) continue;
         NSSize size = panel.view.bounds.size;
         CABasicAnimation *move = [CABasicAnimation animationWithKeyPath:@"transform"];

@@ -54,6 +54,8 @@ static bool driverHostRequest(const std::string &request, std::string &answer);
 @property(nonatomic) int translateX, translateY, scalePercent, rotateDegrees, transitionMs, easing;
 @property(nonatomic) int radius;
 @property(nonatomic) int shadow;
+// Style.clip with a shadow: the inner view that clips the children (the view keeps the shadow).
+@property(nonatomic, strong) NSView *clipView;
 @property(nonatomic) int borderWidth;
 // The background (RGBA, 0: none), a gradient over it (Style.gradient) and its angle.
 @property(nonatomic) int background, gradientTo, gradientAngle;
@@ -149,6 +151,20 @@ static void hoverListen(NSView *view, bool on) {
         options:NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect owner:v userInfo:nil];
     [v addTrackingArea:v.hoverArea];
 }
+
+// The inner view of a box with Style.clip and a shadow (applyMasks): it clips the children to
+// the box's radius while the box's own layer, unclipped, draws the shadow. A point on it and
+// on no child is the box's.
+@interface UiClipView : NSView
+@end
+@implementation UiClipView
+- (BOOL)isFlipped { return YES; }
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+- (NSView *)hitTest:(NSPoint)point {
+    NSView *hit = [super hitTest:point];
+    return hit == self ? nil : hit;
+}
+@end
 
 // A pressable: a click on a descendant that does not handle clicks (a label, a row) is the
 // pressable's, so its text presses it too. A control or a scroll inside keeps its own.

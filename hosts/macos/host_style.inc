@@ -202,9 +202,24 @@ static void applyBlur(UiHostNode *node, int radius) {
     if (!node.gradient) node.view.layer.backgroundColor = colorOf(node.background).CGColor;
 }
 
-// The view children go into: a scroll's document view, else the node's own.
+// The view children go into: a scroll's document view, the inner view of a box that clips
+// and has a shadow, else the node's own.
 static NSView *container(UiHostNode *node) {
     if ([node.view isKindOfClass:NSScrollView.class]) return ((NSScrollView *)node.view).documentView;
-    return node.view;
+    return node.clipView ?: node.view;
+}
+
+// The inner view and the gradient of a box that clips and has a shadow follow its bounds and
+// its radius (the box's layer does not clip them).
+static void applyInnerRadius(UiHostNode *node) {
+    CGFloat radius = node.view.layer.cornerRadius;
+    if (node.clipView) {
+        node.clipView.frame = node.view.bounds;
+        node.clipView.layer.cornerRadius = radius;
+    }
+    if (node.gradient) {
+        node.gradient.cornerRadius = radius;
+        node.gradient.masksToBounds = node.clipView != nil;
+    }
 }
 

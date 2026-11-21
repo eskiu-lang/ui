@@ -16,6 +16,7 @@ static void place(YGNodeRef yoga) {
         if (node.radius > 0) node.view.layer.cornerRadius = std::min<CGFloat>(node.radius, std::min(w, h) / 2);
         if (node.blur) node.blur.layer.cornerRadius = node.view.layer.cornerRadius;
         if (node.gradient) node.gradient.frame = CGRectMake(0, 0, w, h);
+        if (node.clipView) applyInnerRadius(node);
         placeRefreshSpinner(node);
         [CATransaction commit];
         // AppKit sets a layer-backed view's layer geometry with its frame: the transform again.
