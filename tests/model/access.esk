@@ -69,6 +69,11 @@ void input_options() {
     *Node field = find_label(ui.root, "Password");
     check(ui_event_submit(field.id, field.generation, "hunter2"), "submit dispatched");
     check(strcmp((string)access_submitted.data, "hunter2") == 0, "the submit handler got the text");
+    String_clear(&access_submitted);
+    check(has(drive("{\"op\": \"submit\", \"target\": \"Password\"}"), "\"ok\": true, \"op\": \"submit\""), "the submit op");
+    check(strcmp((string)access_submitted.data, "hunter2") == 0, "the submit op hands over the field's text");
+    check(has(drive("{\"op\": \"submit\", \"target\": \"Notes\"}"), "has no ui_on_submit listener"),
+        "the submit op on a field without a listener says so");
     *Node notes = find_label(ui.root, "Notes");
     check(!ui_event_submit(notes.id, notes.generation, "x") || strcmp((string)access_submitted.data, "hunter2") == 0,
         "a field without a submit listener does not call another's");

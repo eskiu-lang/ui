@@ -4,13 +4,21 @@
 
 // How many words an op takes after its name.
 int agent_arity(string op) {
-    if (strcmp(op, "tap") == 0 || strcmp(op, "screenshot") == 0 || strcmp(op, "clock") == 0) { return 1; }
+    if (strcmp(op, "tap") == 0 || strcmp(op, "submit") == 0 || strcmp(op, "screenshot") == 0 || strcmp(op, "clock") == 0) { return 1; }
     if (strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) { return 2; }
     return 0;
 }
 
-// One op: its words (the name first; the last word of `type` is the rest of the text).
+// One op: its words (the name first; the last word of `type` is the rest of the text). A
+// word in double quotes keeps its spaces (`tap "I agree"`), as in a .uitest file.
 void agent_split(string text, List<String>* words, int limit) {
+    List<String> quoted;
+    if (uitest_words(text, limit, &quoted)) {
+        for (i in 0..quoted.size) { words.push(quoted.data[i]); }
+        quoted.free();
+        return;
+    }
+    fs_list_free(&quoted);
     String word;
     int i = 0;
     while (text[i] == ' ') { i++; }
@@ -39,7 +47,7 @@ string agent_request_text(List<String>* words, String* request) {
         String_appendf(&message, "%s takes %d argument%s (docs/agents.md)", op, need, need == 1 ? "" : "s");
         return message.data;
     }
-    if (strcmp(op, "tap") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
+    if (strcmp(op, "tap") == 0 || strcmp(op, "submit") == 0 || strcmp(op, "type") == 0 || strcmp(op, "scroll") == 0) {
         String_append(request, ", \"target\": ");
         serve_json_string(request, words.data[1].data);
     }

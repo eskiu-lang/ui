@@ -112,6 +112,33 @@ string _ui_driver_answer(*JsonValue request, string source) {
         String_append(&ui_drv.out, "}");
         return ui_drv.out.data;
     }
+    // Return in a TextInput: its ui_on_submit gets the field's text.
+    if (strcmp(op, "submit") == 0) {
+        string target = _ui_driver_text(request, "target");
+        String error;
+        defer String_free(&error);
+        *Node node = _ui_driver_find(target, &error);
+        if (node == null) { return ui_driver_error(op, error.data); }
+        if (node.kind != 5) {
+            String_appendf(&error, "'%s' is a %s (#%d), not a TextInput", target, ui_kind_name(node.kind), node.id);
+            return ui_driver_error(op, error.data);
+        }
+        if (_ui_node_disabled(node)) {
+            String_appendf(&error, "'%s' is disabled (Style.disabled, on it or on an element around it)", target);
+            return ui_driver_error(op, error.data);
+        }
+        if (!node.has_on_submit) {
+            String_appendf(&error, "'%s' has no ui_on_submit listener", target);
+            return ui_driver_error(op, error.data);
+        }
+        ui_event_submit(node.id, node.generation, node.text == null ? "" : node.text);
+        _ui_driver_flush();
+        _ui_driver_begin(op);
+        String_append(&ui_drv.out, ", \"target\": ");
+        ui_json_string(&ui_drv.out, target);
+        String_append(&ui_drv.out, "}");
+        return ui_drv.out.data;
+    }
     if (strcmp(op, "back") == 0) {
         bool handled = ui_back();
         _ui_driver_flush();
