@@ -24,7 +24,9 @@ enum Presentation { PresentFull, PresentSheet, PresentCenter }
 struct ModalOptions { Style style; int presentation; bool animated = true; }
 
 // Modal with options: a sheet or a centered dialog, a Style for its content, and its
-// appearing. `on_request_close` and `block` as Modal's.
+// appearing. `on_request_close` and `block` as Modal's. Over the whole screen the Style is the
+// layer's, as Modal's; a sheet or a dialog is a panel with the Style on the layer (the dim
+// backdrop: a tap on it asks to close), at its bottom edge across its width or at its center.
 void ModalWith(ModalOptions options, bool visible, escaping fn()->void on_request_close, escaping fn()->void block UI_LOC) {
     if (!visible) {
         ui_release_closure(on_request_close);
@@ -34,7 +36,17 @@ void ModalWith(ModalOptions options, bool visible, escaping fn()->void on_reques
     UI_HERE
     ui.next_presentation = options.presentation;
     ui.next_appear = options.animated ? 1 : 2;
-    ui_element(12, options.style, null, block, on_request_close) {}
+    if (options.presentation == PresentFull) {
+        ui_element(12, options.style, null, block, on_request_close) {}
+        return;
+    }
+    // The panel calls `block` from a block of its own (as the kit's Popover does): this scope
+    // owns it and releases it.
+    ui_own_fn(block);
+    Style panel = options.style;
+    bool sheet = options.presentation == PresentSheet;
+    ui_element(12, Style{padding: 0, gap: 0, justify: sheet ? JustifyEnd : JustifyCenter, align: sheet ? AlignDefault : AlignCenter},
+        null, void() { Column(panel) { block(); } }, on_request_close) {}
 }
 
 // Queues command `command` with its strings (null is "") for the next commit; `request` is
