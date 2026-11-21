@@ -72,7 +72,9 @@ At the next start, before the app renders, the bundle becomes the one in use:
 - `Image(style, "logo.png")` shows the updated `logo.png`;
 - `ui_asset_path("screens/home.json")` gives the updated file's path (iOS, Android);
 - on the web, the page's requests for the assets (images, `ui_fetch("screens/home.json")`)
-  get the updated files at their own URLs, from the service worker.
+  get the updated files at their own URLs, from the service worker;
+- in a webview build (`--webview` on macOS, Linux and Windows) they get them from the host,
+  which serves the app's files.
 
 ```eskiu
 void UpdateBanner() {
@@ -107,7 +109,9 @@ the assets you edit are what you see; `[updates] dev = true` keeps them, to try 
 | macOS (AppKit) | Application Support/BUNDLE_ID, `ui-updates/HASH.EXT` | as iOS |
 | Linux (GTK) | `$XDG_DATA_HOME/ID`, `ui-updates/HASH.EXT` | as iOS |
 | Windows (Win32) | `%APPDATA%\NAME`, `ui-updates\HASH.EXT` | as iOS |
-| macOS, Linux and Windows `--webview` | not yet: these run the web build from the app's own files (a custom scheme or the bundle's directory), where a service worker does not run, and their hosts do not serve the downloaded files in its place | |
+| macOS `--webview` (WKWebView) | Application Support/BUNDLE_ID, `ui-updates/HASH`, served at `app://localhost/` | Ed25519 in the wasm module; each file's SHA-256 by the host |
+| Linux `--webview` (WebKitGTK) | `$XDG_DATA_HOME/ID`, `ui-updates/HASH`, served at `app://localhost/` | the same |
+| Windows `--webview` (WebView2) | `%APPDATA%\NAME`, `ui-updates\HASH`, served at `https://app.assets/` | the same |
 
 The bundle in use and the waiting one are kept as their manifests in the app's saved data
 (`ui.update.active`, `ui.update.ready`); files no bundle needs are removed at the next check.
@@ -119,10 +123,22 @@ On the web, the page registers `ui-sw.js` (copied next to `index.html` in a buil
 loads again. Service workers need HTTPS (or `localhost`). Serve the bundle from another origin
 with CORS (`Access-Control-Allow-Origin`), since the page fetches it.
 
+A webview build runs the web build from the app's own files, under a scheme where no service
+worker runs, so its host does the worker's part (`hosts/webview_updates.h`, the page's side in
+`hosts/web/updates.mjs`). The page asks it at `__ui/updates/`: the host downloads each changed
+file itself, checks its SHA-256 and keeps it as `ui-updates/HASH`, and keeps the bundle in use
+and the waiting one in `ui-updates/state`. The rule is the worker's and the native hosts': a
+page load (or `ui_update_apply`) makes the waiting bundle the one in use and removes the files
+no bundle needs, and a request for a file of the bundle in use gets the downloaded file, any
+other the app's own. The core's state (`ui.update.active`, `ui.update.ready`) stays in the
+page's storage, which the webview keeps with the app's data.
+
 ## Tests
 
 `tests/ed25519.esk` checks the signatures, `tests/updates.esk` the manifest's checks (a changed
 byte, another key, another app or version, a path out of `assets/`), a download of only the
 changed files, a file that does not match its hash, the next start, `ui_update_apply` and the
 removal of old files. `tests/web/updates.py` runs a bundle end to end in headless Chrome
-against a local update server, and `tools/ci.sh` checks `ui publish`'s output.
+against a local update server, `tests/desktop/updates.py HOST` on a native desktop host and
+`tests/desktop/updates.py HOST --webview` in its webview build (where the app prints the text
+the page gets for the changed file), and `tools/ci.sh` checks `ui publish`'s output.
