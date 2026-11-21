@@ -51,6 +51,8 @@ extern "C" void ui_host_apply(int op, int id, int generation, int parent,
         node.yoga = YGNodeNew();
         if (kind == 4) {
             UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+            button.titleLabel.numberOfLines = 0;
+            button.titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
             button.tag = id;
             [button addTarget:events action:@selector(press:) forControlEvents:UIControlEventTouchUpInside];
             node.view = button;

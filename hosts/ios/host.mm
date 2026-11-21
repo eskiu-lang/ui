@@ -107,6 +107,16 @@ static YGSize measure(YGNodeConstRef yoga, float width, YGMeasureMode widthMode,
     CGSize limit = CGSizeMake(widthMode == YGMeasureModeUndefined ? CGFLOAT_MAX : width,
                               heightMode == YGMeasureModeUndefined ? CGFLOAT_MAX : height);
     CGSize size = [node.view sizeThatFits:limit];
+    // A button measures one line; when that is wider than the room, its title wraps: the
+    // title's height at the width left after the button's own insets.
+    if ([node.view isKindOfClass:UIButton.class] && widthMode != YGMeasureModeUndefined && size.width > width) {
+        UIButton *button = (UIButton *)node.view;
+        CGSize unbounded = CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX);
+        CGSize title = [button.titleLabel sizeThatFits:unbounded];
+        CGFloat insetW = std::max<CGFloat>(0, size.width - title.width), insetH = std::max<CGFloat>(0, size.height - title.height);
+        CGSize wrapped = [button.titleLabel sizeThatFits:CGSizeMake(std::max<CGFloat>(1, width - insetW), CGFLOAT_MAX)];
+        size = CGSizeMake(width, wrapped.height + insetH);
+    }
     // A text view's width is its text's: as wide as a field at least.
     if ([node.view isKindOfClass:UITextView.class] && widthMode == YGMeasureModeUndefined) size.width = std::max<CGFloat>(size.width, 120);
     return {static_cast<float>(size.width), static_cast<float>(size.height)};

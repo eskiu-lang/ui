@@ -12,7 +12,9 @@ static void applyLabel(UiHostNode *node) {
     NSLineBreakMode breaks = node.maxLines > 0 ? NSLineBreakByTruncatingTail : NSLineBreakByWordWrapping;
     if ([node.view isKindOfClass:UIButton.class]) {
         UIButton *button = (UIButton *)node.view;
-        button.titleLabel.numberOfLines = node.maxLines > 0 ? node.maxLines : 1;
+        // A title too long for its button wraps (a large text size), unless max_lines cuts it.
+        button.titleLabel.numberOfLines = node.maxLines > 0 ? node.maxLines : 0;
+        button.titleLabel.lineBreakMode = breaks;
         button.titleLabel.textAlignment = align;
         const UIControlContentHorizontalAlignment places[] = {UIControlContentHorizontalAlignmentCenter,
             UIControlContentHorizontalAlignmentLeading, UIControlContentHorizontalAlignmentCenter,
