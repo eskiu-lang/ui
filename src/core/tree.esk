@@ -620,7 +620,9 @@ struct InputExtra { fn(string)->void on_text; fn(bool)->void on_focus; bool has_
     ui_prop(node, fresh, 6, style.grow, 0);
     ui_prop(node, fresh, 7, style.wrap ? 1 : 0, 0);
     ui_prop(node, fresh, 8, style.background, -1);
-    ui_prop(node, fresh, 9, style.color, -1);
+    // Text with no color of its own takes the app's (ui_text_color), else the platform's.
+    int64 color = style.color == -1 && (node.kind == 3 || node.kind == 5) ? ui_text_color : style.color;
+    ui_prop(node, fresh, 9, color, -1);
     ui_prop(node, fresh, 10, style.font_size, 0);
     ui_prop(node, fresh, 11, style.font_weight, 0);
     ui_prop(node, fresh, 12, style.border_width, 0);

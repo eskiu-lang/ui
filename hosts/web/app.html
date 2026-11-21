@@ -7,6 +7,8 @@
 {{icons}}<style>
   html, body { height: 100%; margin: 0; }
   body { font: 16px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #111827; }
+  /* Text with no color of its own is the platform's: light on a dark system, as on iOS and macOS. */
+  @media (prefers-color-scheme: dark) { body { color: #F3F4F6; } }
   #app { height: 100%; display: flex; flex-direction: column; }
   #app button { font: inherit; border: 0; cursor: pointer; }
   #app img { object-fit: contain; }

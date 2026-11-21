@@ -91,6 +91,12 @@ struct Style {
 // edge, centered, the end edge, or justified.
 enum TextAlign { TextAlignDefault, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify }
 
+// The color of a Text or a TextInput whose Style sets none: -1 (the default) is the
+// platform's text color, which follows the system's light or dark appearance. A theme that
+// does not follow the system sets it (the kit's kit_follow_system sets it to `kit.ink`; after
+// `kit = kit_dark();` set it yourself: `ui_text_color = kit.ink;`).
+int64 ui_text_color = -1;
+
 // What an element is to a screen reader (Style.role). RoleNone: what its kind says (a Button
 // is a button, a TextInput a text field, the rest a group or plain text).
 enum Role { RoleNone, RoleButton, RoleLink, RoleHeader, RoleImage, RoleCheckbox, RoleRadio, RoleRadioGroup, RoleSwitch,

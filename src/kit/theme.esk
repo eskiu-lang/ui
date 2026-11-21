@@ -61,6 +61,7 @@ void kit_follow_window() { if (ui_wide()) { kit_dense(); } }
 // app's root block (which then renders again when either changes). Changes to `kit` go after it.
 void kit_follow_system() {
     kit = ui_color_scheme() == SchemeDark ? kit_dark() : kit_light();
+    ui_text_color = kit.ink;
     kit_follow_window();
 }
 

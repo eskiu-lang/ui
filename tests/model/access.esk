@@ -99,6 +99,31 @@ void kit_access() {
     ui_shutdown(); balanced("kit access leak");
 }
 
+// The kit's headings and menu rows say what they are, its controls are 44 points tall, and
+// text with no color of its own takes ui_text_color.
+void kit_semantics() {
+    Ui runtime;
+    ui_init(&runtime, record);
+    ui_text_color = 0xF3F4F6FF;
+    ui_mount() {
+        Title("Settings");
+        Heading("Account");
+        MenuItem("Rename", false) {}
+        _kit_menu_item("Large", CheckOn) {}
+        _kit_menu_item("Small", CheckOff) {}
+        Checkbox("Agree", false, void(bool on) {});
+        Text("Plain");
+        TextWith(Style{color: 0x111827FF}, "Colored");
+    }
+    ui_frame();
+    ui_text_color = -1;
+    check(count_prop(2, 57) == 6, "two headings, three menu rows and a checkbox have roles");
+    check(count_prop(2, 58) == 3, "the checked state of a Select's rows and of the checkbox, none for an action");
+    check(count_prop(2, 44) >= 4 && prop_value(2, 44) == 44, "menu rows and the checkbox are 44 points tall");
+    check(count_prop(2, 9) >= 4, "text with no color takes ui_text_color");
+    ui_shutdown(); balanced("kit semantics leak");
+}
+
 int image_loads;
 
 int image_failures;
