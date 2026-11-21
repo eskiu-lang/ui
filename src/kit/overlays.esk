@@ -123,19 +123,22 @@ void Select(string options, int selected, escaping fn(int)->void on_change UI_LO
     }
 }
 
-// `text` in a bubble above `content` while a pointer is over it (no hover on touch screens:
-// the text is also the content's accessible name).
+// `text` in a bubble above `content` while a pointer is over it, or for a few seconds after a
+// long press (a touch screen has no hover). The text is also the content's accessible name.
 void Tooltip(string text, escaping fn()->void content UI_LOC) {
     KIT_HERE
     ui_own_fn(content);
     Scope("Tooltip", Key{}) {
         *Signal<bool> over = use_signal<bool>(false);
+        *Signal<bool> pressed = use_signal<bool>(false);
         *Signal<int> height = use_signal<int>(0);
+        use_timeout(pressed.get() ? 2500 : 0) { pressed.set(false); }
         ui_on_layout(void(Frame f) { height.set(f.height); });
         ui_on_hover(void(bool inside) { over.set(inside); });
+        ui_on_long_press(void() { pressed.set(true); });
         Column(Style{gap: 0, label: text}) {
             content();
-            if (over.get()) {
+            if (over.get() || pressed.get()) {
                 Row(Style{absolute: true, left: 0, bottom: height.get() + 6, padding: 8, radius: 8, background: kit.ink}) {
                     TextWith(Style{font_size: 13, color: kit.page}, text);
                 }
