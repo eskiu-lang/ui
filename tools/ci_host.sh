@@ -38,7 +38,6 @@ case "$HOST" in macos|linux|windows)
     echo "updates: $(( $(date +%s) - started )) s"
     # And in the webview build (WKWebView, WebKitGTK, WebView2), whose host serves the
     # bundle's files; it needs emcc for the web build, and WebKitGTK on Linux.
-    echo "emcc: $(command -v emcc emcc.bat 2>&1) $(echo "$PATH" | tr ':' '\n' | grep -i emscripten)"
     if { command -v emcc || command -v emcc.bat; } > /dev/null && { [ "$HOST" != linux ] || pkg-config --exists webkit2gtk-4.1 2>/dev/null; }; then
         started=$(date +%s)
         python3 tests/desktop/updates.py "$HOST" --webview
