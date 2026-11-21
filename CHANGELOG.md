@@ -44,6 +44,28 @@ keeps a web app's module about a sixth smaller).
   double quotes keeps its spaces (`tap "I agree"`).
 - `KitText.weekday_names`: a Calendar's weekday initials carry the day's name for screen
   readers.
+- `Style` fields: `line_height`, `italic`, `z_index` (stacking among siblings), `clip` (content
+  outside the box, radius included, is hidden) and `layout_ms` (a frame the layout changes
+  slides there over that time, with `easing`; skipped under reduced motion).
+- `ModalWith(ModalOptions, visible, on_request_close, block)`: a sheet from the bottom edge
+  (`PresentSheet`), a centered dialog (`PresentCenter`) or the whole screen (`PresentFull`),
+  with a Style for the panel and an animated or immediate appearance. The core lays the panel
+  out, so it looks the same on every host.
+- `KeepAlive(Key, active, block)`: content kept mounted and hidden while inactive, so a tab
+  keeps its state.
+- `kit_set(theme)` changes the kit's theme at any time; every kit component follows it.
+- `ui_style_next(Style)`: a test_id, key, label, margins, size, grow, shrink or z_index for the
+  next element made, so a kit component (which takes no Style) gets them too.
+- `ui_accent_color`: the accent of a Switch or a Slider with no color (the kit sets it to its
+  primary color); a Switch's or Slider's `color` is its accent on every host.
+- `ui_right_click_long_press` (true): whether a right click on the web is a long press.
+- `ui agent` and `ui test`: `drag ID DX DY [MS]`, `long_press ID` and `hover ID in|out`,
+  carried out by the core so they behave the same on every host; `state` lists every
+  Navigator's stack (`navigators`).
+- Right-to-left languages lay out right to left on the web (rows, start and end mirror).
+- A runtime error in a build with source positions ends with the app's line (`at
+  src/main.esk:12:5`), and an element a package made points at the app's call that led to it
+  in the tree (`file`, `line`), with the package's own line as `made_at`.
 
 ### Changed
 
@@ -69,6 +91,22 @@ keeps a web app's module about a sixth smaller).
   messages. Only a custom toast host calls it.
 - An open `Modal` takes the keyboard on the web: what is under it is inert, focus moves into it
   and back when it closes.
+- Internal plumbing that had public names is behind `_` now: the driver's helpers
+  (`ui_driver_error`, `ui_driver_advance`, `ui_driver_settle`, ...), the ed25519 internals
+  (`ui_fe_*`, `ui_ed_*`), `ui_rollback`, `ui_render_failed`, `ui_unwind_evaluating`,
+  `ui_untrack`, `ui_answer_cache`, `Reader` and `RenderSave`. The names a component, a
+  package or a test uses stay public and are listed in docs/stability.md (`ui_own`,
+  `ui_release_*`, `ui_slot`, `ui_decode`), as are the host ABI (`ui_driver_request`,
+  `ui_driver_finish`, ...).
+- A `Button`, and a one-line `TextInput`, given no size is at least 44 points tall (a Button
+  also 44 wide).
+- `ui agent ... layout`: `visible` is false for an element outside the window (a row scrolled
+  away), not only for a hidden one, on the web.
+- `ui agent ... state` leaves out the signals a hook keeps for itself (`use_animated`'s,
+  `use_repeat`'s).
+- `.uitest`: `expect ID text` on a container compares the texts inside it, in order.
+- A `Tooltip` also shows for a few seconds after a long press (touch screens have no hover).
+- An error in a timer's handler names the scope that made the timer.
 
 ### Fixed
 
@@ -106,6 +144,8 @@ keeps a web app's module about a sixth smaller).
   unselected options are in ink (muted on the track was under 4.5:1); on the web,
   `SwipeToDelete` always has its delete button, since a page cannot tell that a screen reader
   runs.
+- Web: padding on a `Text` was ignored.
+- A duplicate key stops the program in a release build too (the docs said it only warned).
 
 ## [0.6.2]
 
