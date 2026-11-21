@@ -113,6 +113,8 @@ static std::wstring pasteText() {
     return text;
 }
 
+#include "host_share.inc"
+
 // Commands: 1 an alert, 2 open a URL, 4 hide the keyboard, 5 share, 6 copy, 7 paste, 8 a
 // haptic, 9 announce, 10 fetch, 11 the splash (a desktop window has none).
 static void ui_host_command(int request, int command, int count, const char **strings) {
@@ -127,10 +129,7 @@ static void ui_host_command(int request, int command, int count, const char **st
         HWND focus = GetFocus();
         if (focus && IsChild(mainWindow, focus)) SetFocus(mainWindow);
     } else if (command == 5 && count >= 2) {
-        // A desktop has no share sheet here: the text and the URL go to the clipboard.
-        std::wstring text = wide(strings[0]);
-        if (strings[1][0]) text += (text.empty() ? L"" : L" ") + wide(strings[1]);
-        copyText(text);
+        shareText(wide(strings[0]), wide(strings[1]));
     } else if (command == 6 && count >= 1) {
         copyText(wide(strings[0]));
     } else if (command == 7) {
