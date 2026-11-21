@@ -285,6 +285,7 @@ static void restartCore(const std::string &path) {
 #endif
 
 #ifdef UI_TEST
+static void runConformance(void);
 // The driver (hosts/driver.h, docs/agents.md). While it owns the clock the host's transitions
 // read the driver's time (hostNow), so they move only when the clock does, and GTK's own
 // animations (a switch's slide, the spinner, a field's caret blinking) are off; `clock settle`
@@ -554,9 +555,17 @@ int main(int argc, char **argv) {
 #endif
     startApp();
     if (launchLink) ui_report_link(launchLink);
+#ifdef UI_TEST
+    // The conformance scene's own run (host_conformance.inc): example 3 asks it to fetch too.
+    bool conformance = getenv("UI_CONFORMANCE") && !strcmp(getenv("UI_CONFORMANCE"), "1");
+    if (conformance) launchExample = 3;
+#endif
     ui_start(launchExample);
     reportEnvironment();
     relayout();
+#ifdef UI_TEST
+    if (conformance) runConformance();
+#endif
     gtk_window_present(GTK_WINDOW(window));
     while (!quitting) g_main_context_iteration(nullptr, TRUE);
     return 0;
