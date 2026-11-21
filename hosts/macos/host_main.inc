@@ -495,9 +495,17 @@ static NSSize windowSize = NSMakeSize(900, 700);
         name:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(systemChanged:)
         name:NSCurrentLocaleDidChangeNotification object:nil];
+#ifdef UI_TEST
+    // The conformance scene's own run (host_conformance.inc): example 3 asks it to fetch too.
+    bool conformance = getenv("UI_CONFORMANCE") && !strcmp(getenv("UI_CONFORMANCE"), "1");
+    if (conformance) launchExample = 3;
+#endif
     ui_start(launchExample);
     reportEnvironment();
     relayout();
+#ifdef UI_TEST
+    if (conformance) runConformance();
+#endif
     [mainWindow makeKeyAndOrderFront:nil];
     // `ui agent` and `ui test` (UI_NO_OPEN=1) leave the focus where it is.
     const char *quiet = getenv("UI_NO_OPEN");

@@ -584,4 +584,7 @@ static void applyLabel(UiHostNode *node);
 #include "host_views.inc"
 #include "host_access.inc"
 #include "host_text.inc"
+#ifdef UI_TEST
+#include "host_conformance.inc"
+#endif
 #include "host_main.inc"
