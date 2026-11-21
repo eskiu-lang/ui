@@ -91,7 +91,7 @@ does not build, its errors come first as [JSON diagnostics](#diagnostics-as-json
 | Op | Answers |
 |---|---|
 | `tree` | the elements: kind, id, test_id, label, text, key, component name, props that are not their default |
-| `layout` | each element's frame in points from the window's top left, and whether it shows |
+| `layout` | each element's frame in points from the window's top left, and whether it shows: laid out and at least partly inside the window (a row scrolled away is not) |
 | `screenshot FILE` | the window's pixels as a PNG |
 | `tap ID` | a press: a button or pressable is clicked, a switch toggled, a field focused, a modal asked to close; a text inside a pressable presses the pressable; fails on a disabled element (or one inside a disabled element) |
 | `drag ID DX DY [MS]` | a drag on the nearest element with `ui_on_pan` at or around ID: began, five moves to (DX, DY) points and the end, with the speed of covering it in MS (300) |

@@ -100,9 +100,14 @@ async function carry(app, host, d) {
   }
   if (d.host === 'layout') {
     const rows = [];
+    // The app's window: the page, or the phone-sized box an agent page gets (#ui-agent).
+    const view = document.getElementById('app')?.getBoundingClientRect?.() ?? {top: 0, left: 0, bottom: innerHeight, right: innerWidth};
     for (const [id, element] of host.nodes) {
       const box = element.getBoundingClientRect();
-      const shown = element.getClientRects().length > 0;
+      // Shown: laid out (not display:none) and at least partly inside the window, so a row
+      // scrolled away is not visible.
+      const inWindow = box.bottom > view.top && box.right > view.left && box.top < view.bottom && box.left < view.right;
+      const shown = element.getClientRects().length > 0 && inWindow;
       const r = v => Math.round(v * 10) / 10;
       rows.push(`${id} ${r(box.left)} ${r(box.top)} ${r(box.width)} ${r(box.height)} ${shown ? 1 : 0}`);
     }
