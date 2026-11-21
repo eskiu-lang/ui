@@ -169,11 +169,14 @@ string shell_quote(string text) {
     return out.data;
 }
 
-// A name for a native source's object, unique per path (two packages may both have clock.m).
+// A name for a native source's object, unique per path (two packages may both have clock.m),
+// with no separator or drive colon (a Windows path's too).
 string native_object_name(string path) {
     String name;
     String_from(&name, path);
     String_replace_all(&name, "/", "_");
+    String_replace_all(&name, "\\", "_");
+    String_replace_all(&name, ":", "_");
     String_replace_all(&name, ".", "_");
     return name.data;
 }
