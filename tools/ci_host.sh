@@ -25,6 +25,13 @@ echo "conformance: $(( $(date +%s) - started )) s"
 started=$(date +%s)
 python3 tools/budgets.py "$HOST"
 echo "budgets: $(( $(date +%s) - started )) s"
+# The desktop hosts' own runs of the conformance scene (tools/conformance.py): roles, what the
+# host drew, the alert, the clipboard, the fetch, the pull and the modal, from the toolkit.
+case "$HOST" in macos|linux|windows)
+    started=$(date +%s)
+    python3 tools/conformance.py --host-only "$HOST"
+    echo "conformance run: $(( $(date +%s) - started )) s";;
+esac
 if [ "$HOST" = web ]; then
     python3 tools/budgets.py model
     # The prerendered first frame: content before the module, the elements adopted.
