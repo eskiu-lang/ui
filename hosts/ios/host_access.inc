@@ -12,11 +12,11 @@ static UIAccessibilityTraits toggleTrait(void) {
 // The traits a Role gives an element (0: none, the kind's own).
 static UIAccessibilityTraits roleTraits(int role) {
     switch (role) {
-    case 1: case 5: case 6: case 9: case 14: return UIAccessibilityTraitButton;
+    case 1: case 6: case 9: case 14: return UIAccessibilityTraitButton;
     case 2: return UIAccessibilityTraitLink;
     case 3: return UIAccessibilityTraitHeader;
     case 4: return UIAccessibilityTraitImage;
-    case 8: return UIAccessibilityTraitButton | toggleTrait();
+    case 5: case 8: return UIAccessibilityTraitButton | toggleTrait();
     case 10: return UIAccessibilityTraitTabBar;
     case 11: return UIAccessibilityTraitAdjustable;
     case 12: return UIAccessibilityTraitUpdatesFrequently;
@@ -35,6 +35,14 @@ static UIAccessibilityContainerType containerOf(int role) {
     if (role == 18) return UIAccessibilityContainerTypeLandmark;
     if (role == 7 || role == 13 || role == 17) return UIAccessibilityContainerTypeSemanticGroup;
     return UIAccessibilityContainerTypeNone;
+}
+
+// Words UIKit has no localized form of (a mixed check, and before iOS 18 expanded and
+// collapsed) are said only to a user whose language is English; others hear the app's own
+// value words (Style.value) or nothing, never another language's.
+static bool englishUser(void) {
+    NSString *language = NSLocale.preferredLanguages.firstObject ?: @"en";
+    return [language isEqualToString:@"en"] || [language hasPrefix:@"en-"];
 }
 
 // True when node or a node above it is disabled (Style.disabled holds for what is inside).
@@ -79,7 +87,11 @@ static void applyAccess(UiHostNode *node) {
     }
     int role = node.role;
     UIAccessibilityTraits traits = role ? roleTraits(role) : node.baseTraits;
-    if (node.selected || (role == 6 && node.checked == 2)) traits |= UIAccessibilityTraitSelected;
+    bool toggle = role == 5 || role == 8 || (role == 0 && node.kind == 9);
+    // A radio, a checked menu item, and a toggle with words of the app's: "selected", in the
+    // user's language.
+    if (node.selected || (!toggle && node.checked == 2) || (toggle && node.checked == 2 && node.accessValue.length))
+        traits |= UIAccessibilityTraitSelected;
     if (disabledAbove(node)) traits |= UIAccessibilityTraitNotEnabled;
     view.accessibilityTraits = traits;
     view.accessibilityContainerType = containerOf(role);
@@ -92,23 +104,21 @@ static void applyAccess(UiHostNode *node) {
             view.accessibilityLabelBlock = ^NSString * { return childText(weak); };
         } else view.accessibilityLabel = childText(view);
     } else if (@available(iOS 17.0, *)) view.accessibilityLabelBlock = nil;
-    // The spoken value: the checked state, the app's value text or the range, then whether
-    // it is open where UIKit has no expanded status.
+    // The spoken value: the app's value text or the range, a mixed check, then whether it is
+    // open where UIKit has no expanded status.
     NSMutableArray<NSString *> *parts = [NSMutableArray new];
-    bool toggle = role == 8 || (role == 0 && node.kind == 9);
-    if (node.checked && role != 6 && !toggle) [parts addObject:@[@"unchecked", @"checked", @"mixed"][std::min(node.checked, 3) - 1]];
+    bool english = englishUser();
     NSString *text = node.accessValue ?: rangeText(node);
     if (text.length) [parts addObject:text];
+    else if (node.checked == 3 && english) [parts addObject:@"mixed"];
     if (@available(iOS 18.0, *)) {
         view.accessibilityExpandedStatus = node.expanded == 1 ? UIAccessibilityExpandedStatusCollapsed
                                          : node.expanded == 2 ? UIAccessibilityExpandedStatusExpanded
                                                               : UIAccessibilityExpandedStatusUnsupported;
-    } else if (node.expanded) [parts addObject:node.expanded == 2 ? @"expanded" : @"collapsed"];
-    if (toggle && node.checked) {
-        // A switch: "1" or "0" alone, which VoiceOver reads as on or off; words with more.
-        if (!parts.count && node.checked != 3) [parts addObject:node.checked == 2 ? @"1" : @"0"];
-        else [parts insertObject:@[@"off", @"on", @"mixed"][std::min(node.checked, 3) - 1] atIndex:0];
-    }
+    } else if (node.expanded && english) [parts addObject:node.expanded == 2 ? @"expanded" : @"collapsed"];
+    // A checkbox or a switch: "1" or "0" alone, which VoiceOver reads as on or off in the
+    // user's language (with the app's words it is "selected" when on, above).
+    if (toggle && (node.checked == 1 || node.checked == 2) && !parts.count) [parts addObject:node.checked == 2 ? @"1" : @"0"];
     view.accessibilityValue = parts.count ? [parts componentsJoinedByString:@", "] : nil;
     view.accessibilityHint = node.accessHint;
 }
