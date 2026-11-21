@@ -10,6 +10,9 @@
 int serve_version;
 Mutex serve_lock;
 String serve_error;
+// The compiler's warnings of the last build that worked, as text (`ui agent --json` passes
+// them on), else empty.
+String serve_warnings;
 
 // Whether a build is running, and the project being served (for `ui agent`).
 bool serve_building;
@@ -31,6 +34,8 @@ void serve_write_status() {
     String_appendf(&text, "{\"pid\": %d, \"port\": %d, \"version\": %d, \"building\": %s, \"source\": \"%016llx\", \"error\": ",
         process_pid(), serve_status_port, atomic_load(&serve_version), serve_building ? "true" : "false", serve_built_source);
     serve_json_string(&text, serve_error.data == null ? "" : serve_error.data);
+    String_append(&text, ", \"warnings\": ");
+    serve_json_string(&text, serve_warnings.data == null ? "" : serve_warnings.data);
     String_append(&text, "}\n");
     Mutex_unlock(&serve_lock);
     String tmp;
@@ -163,8 +168,12 @@ bool serve_build(string command, string target) {
         fs_list_free(&lines);
     }
     if (!ok && shown.len == 0) { String_from(&shown, "ui: the build failed"); }
+    String warnings;
+    defer String_free(&warnings);
+    if (ok) { serve_warnings_of(output, &warnings); }
     Mutex_lock(&serve_lock);
     String_from(&serve_error, ok ? "" : shown.data);
+    String_from(&serve_warnings, warnings.data == null ? "" : warnings.data);
     Mutex_unlock(&serve_lock);
     atomic_fetch_add(&serve_version, 1);
     serve_building = false;
@@ -175,6 +184,26 @@ bool serve_build(string command, string target) {
     else if (ok) { printf("ui: built in %.1f s\n", seconds); fflush(null); }
     else { println_err("ui: the build failed; waiting for a change"); }
     return ok;
+}
+
+// The compiler's warnings in a build's output (its text, or its JSON lines under --json) as
+// text, into `out`: each `FILE:LINE:COL: warning: ...` line with the lines that follow it up
+// to the next diagnostic.
+void serve_warnings_of(string output, String* out) {
+    String text;
+    defer String_free(&text);
+    if (ui_json) { diag_json_to_text(output, &text); } else { String_from(&text, output); }
+    List<String> lines;
+    defer fs_list_free(&lines);
+    String_lines(&text, &lines);
+    bool in_warning = false;
+    for (i in 0..lines.size) {
+        string line = lines.data[i].data == null ? "" : lines.data[i].data;
+        bool diagnostic = strstr(line, ": warning: ") != null || strstr(line, ": error: ") != null
+            || strstr(line, ": note: ") != null || strncmp(line, "ui: ", 4) == 0;
+        if (diagnostic) { in_warning = strstr(line, ": warning: ") != null; }
+        if (in_warning) { String_appendf(out, "%s\n", line); }
+    }
 }
 
 // A child build's output under --json: its JSON lines to standard output, as they are, and

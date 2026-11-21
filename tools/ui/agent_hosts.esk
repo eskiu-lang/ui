@@ -125,7 +125,19 @@ void agent_attach(Project* p, bool real_clock) {
             }
         } else { failing_since = 0; }
         JsonValue_free(answer);
-        if (fresh) { return; }
+        if (fresh) {
+            // `ui agent --json`: the compiler's warnings for this build, as JSON lines first.
+            *JsonValue built_status = agent_serve_status(p);
+            string warnings = built_status == null ? null : agent_member(built_status, "warnings");
+            if (ui_json && warnings != null && warnings[0] != 0) {
+                String lines;
+                diag_convert_text(warnings, &lines);
+                print(lines.data == null ? "" : lines.data);
+                String_free(&lines);
+            }
+            JsonValue_free(built_status);
+            return;
+        }
         *JsonValue now = agent_serve_status(p);
         if (now == null) { agent_fail("ui serve stopped; start it again (ui agent starts it when it is not running)"); }
         *JsonValue building = JsonValue_get(now, "building");
