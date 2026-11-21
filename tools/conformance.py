@@ -41,8 +41,9 @@ EXPECTED_STYLES = {
 }
 
 
-# Each platform's own way to ask a modal to close, tried after the shared script.
-EXTRA_LOG = {"android": ",close", "web": ",close"}
+# Each platform's own way to ask a modal to close, tried after the shared script (back on
+# Android, Escape on the web and the desktops).
+EXTRA_LOG = {"android": ",close", "web": ",close", "macos": ",close", "linux": ",close", "windows": ",close"}
 
 
 def differences(report, host=""):
@@ -155,6 +156,37 @@ def run_web():
         server.shutdown()
 
 
+def ui_tool():
+    """The ui tool, built once."""
+    ui = BUILD / ("ui.exe" if sys.platform == "win32" else "ui")
+    if not ui.exists():
+        subprocess.run(["eskiuc", HERE / "tools/ui/main.esk", "-o", BUILD / "ui"], check=True, timeout=300)
+    return ui
+
+
+def run_desktop(name):
+    """The AppKit, GTK or Win32 host's own run: tests/conformance built with the driver
+    (UI_TEST=1) and started with UI_CONFORMANCE=1, which runs the scene's script in the host and
+    prints its report."""
+    app = HERE / "tests/conformance"
+    built = subprocess.run([ui_tool(), "build", name], cwd=app, env={**os.environ, "UI_TEST": "1"}, capture_output=True,
+                           text=True, timeout=1800)
+    if built.returncode:
+        return None, "build failed: " + (built.stdout + built.stderr)[-800:]
+    program = {"macos": app / "build/ui/macos/conformance.app/Contents/MacOS/conformance",
+               "linux": app / "build/ui/linux/conformance", "windows": app / "build/ui/windows/conformance.exe"}[name]
+    env = {**os.environ, "UI_CONFORMANCE": "1", "UI_NO_OPEN": "1", "UI_AGENT_PORT": "8797"}
+    try:
+        result = subprocess.run([program], env=env, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return None, "timed out"
+    # A test build's driver keeps the app's output and prints it on stderr.
+    for line in (result.stdout + "\n" + result.stderr).splitlines():
+        if line.startswith("CONFORMANCE "):
+            return json.loads(line.split(" ", 1)[1]), None
+    return None, "no result: " + (result.stdout + result.stderr)[-800:]
+
+
 class Ping(http.server.BaseHTTPRequestHandler):
     """The scene's fetch: "pong", readable from any page."""
     def do_GET(self):
@@ -170,9 +202,8 @@ class Ping(http.server.BaseHTTPRequestHandler):
 
 def ui_tests(name):
     """`ui test NAME` on tests/conformance; None when the host is not available here."""
-    ui = BUILD / "ui"
-    subprocess.run(["eskiuc", HERE / "tools/ui/main.esk", "-o", ui], check=True, timeout=300)
-    result = subprocess.run([ui, "test", name], cwd=HERE / "tests/conformance", capture_output=True, text=True,
+    subprocess.run(["eskiuc", HERE / "tools/ui/main.esk", "-o", BUILD / "ui"], check=True, timeout=300)
+    result = subprocess.run([ui_tool(), "test", name], cwd=HERE / "tests/conformance", capture_output=True, text=True,
                             timeout=1800)
     print(result.stdout, end="")
     return result.returncode == 0
@@ -185,6 +216,8 @@ def available(name):
         return sys.platform == "darwin"
     if name == "linux":
         return sys.platform.startswith("linux") and subprocess.run(["pkg-config", "--exists", "gtk4"]).returncode == 0
+    if name == "windows":
+        return sys.platform == "win32"
     if name == "ios":
         devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "booted", "--json"], text=True))
         return any(d["state"] == "Booted" for group in devices["devices"].values() for d in group)
@@ -198,13 +231,15 @@ def available(name):
 def main():
     ping = http.server.ThreadingHTTPServer(("127.0.0.1", 8899), Ping)
     threading.Thread(target=ping.serve_forever, daemon=True).start()
-    wanted = sys.argv[1:] or ["ios", "android", "web", "macos"]
-    # The AppKit and GTK hosts have their ui tests and no run of their own yet.
-    hosts = {"ios": run_ios, "android": run_android, "web": run_web, "macos": lambda: (None, "the ui tests only"),
-             "linux": lambda: (None, "the ui tests only")}
+    # --host-only: the hosts' own runs without `ui test` (CI runs it on its own).
+    host_only = "--host-only" in sys.argv
+    wanted = [a for a in sys.argv[1:] if not a.startswith("--")] or ["ios", "android", "web", "macos", "linux", "windows"]
+    hosts = {"ios": run_ios, "android": run_android, "web": run_web}
+    for desktop in ("macos", "linux", "windows"):
+        hosts[desktop] = functools.partial(lambda name: run_desktop(name) if available(name) else (None, "not this system"), desktop)
     results, failed = {}, False
     for name in wanted:
-        if available(name) and not ui_tests(name):
+        if not host_only and available(name) and not ui_tests(name):
             failed = True
         report, skipped = hosts[name]()
         if report is None:

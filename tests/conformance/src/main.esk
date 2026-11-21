@@ -4,7 +4,8 @@ import "../../harness/conformance.esk";
 
 void ui_app_start(int which) {
     conformance_reset();
-    conformance_driven = true;
+    // A host's own run of the scene (UI_CONFORMANCE=1) asks for example 3: it serves the fetch.
+    conformance_driven = which != 3;
     ui_mount() { Conformance(); }
 }
 
